@@ -1,0 +1,227 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryStringBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.util</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryStringBuilder (org.eclipse.rdf4j.workbench.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryStringBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.util;
+&nbsp;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;/**
+&nbsp; * Helper class for substituting in variables to query templates for the purpose of saving and retrieving user queries
+&nbsp; * to a repository local to the workbench.
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; */
+&nbsp;public class QueryStringBuilder {
+&nbsp;
+&nbsp;	private final StringBuilder builder;
+&nbsp;
+<b class="nc">&nbsp;	private static final Pattern VAR_PATTERN = Pattern.compile(&quot;\\$&lt;\\w+&gt;&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new builder from the given template.
+&nbsp;	 *
+&nbsp;	 * @param template
+&nbsp;	 */
+<b class="nc">&nbsp;	public QueryStringBuilder(final String template) {</b>
+<b class="nc">&nbsp;		if (null == template || template.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Template is null or length is zero.&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!VAR_PATTERN.matcher(template).find()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Template did not contain variables.&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.builder = new StringBuilder(template);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the internal string being constructed.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return this.builder.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Replace the repository variable with the current repository URL.
+&nbsp;	 *
+&nbsp;	 * @param paramText the $&lt;...&gt; formatted parameter name
+&nbsp;	 * @param uri       any object who&#39;s toString() returns a valid URI
+&nbsp;	 */
+&nbsp;	protected void replaceURI(final String paramText, final Object uri) {
+<b class="nc">&nbsp;		replace(paramText, QueryStringBuilder.uriQuote(uri.toString()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Replace instances of the old text with a copy of the new text.
+&nbsp;	 *
+&nbsp;	 * @param paramText parameter in the form &quot;$&lt;paramName&gt;&quot;
+&nbsp;	 * @param newText   the new text
+&nbsp;	 */
+&nbsp;	protected void replace(final String paramText, final String newText) {
+<b class="nc">&nbsp;		int loc = builder.indexOf(paramText);</b>
+<b class="nc">&nbsp;		while (loc &gt;= 0) {</b>
+<b class="nc">&nbsp;			builder.replace(loc, loc + paramText.length(), newText);</b>
+<b class="nc">&nbsp;			loc = builder.indexOf(paramText);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void replaceQuote(final String paramText, final String newText) {
+<b class="nc">&nbsp;		this.replace(paramText, quote(newText));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Place double quotes around the given string.
+&nbsp;	 *
+&nbsp;	 * @param value the string to add quotes to
+&nbsp;	 * @return a copy of the given strings quoted with double quotes
+&nbsp;	 */
+&nbsp;	private static String quote(final String value) {
+<b class="nc">&nbsp;		return quote(value, &quot;\&quot;&quot;, &quot;\&quot;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Place double quotes around the given string and append an XSD data type.
+&nbsp;	 *
+&nbsp;	 * @param value the value to quote
+&nbsp;	 * @param type  the XSD data type name
+&nbsp;	 * @return a copy of the given string quoted with XSD data type appended
+&nbsp;	 */
+&nbsp;	protected static String xsdQuote(final String value, final String type) {
+<b class="nc">&nbsp;		return quote(value, &quot;\&quot;&quot;, &quot;\&quot;^^xsd:&quot; + type);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Place angle brackets around a URI or URL.
+&nbsp;	 *
+&nbsp;	 * @param uri an object whose toString() returns a URI or URL
+&nbsp;	 * @return a string quoting the given URI with angle brackets
+&nbsp;	 */
+&nbsp;	private static String uriQuote(final Object uri) {
+<b class="nc">&nbsp;		return quote(uri.toString(), &quot;&lt;&quot;, &quot;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static String quote(final String value, final String left, final String right) {
+<b class="nc">&nbsp;		return left + value + right;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

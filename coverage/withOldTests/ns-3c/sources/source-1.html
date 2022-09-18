@@ -1,0 +1,373 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DefaultFedXCostModel</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: DefaultFedXCostModel (org.eclipse.rdf4j.federated.optimizer)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DefaultFedXCostModel</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/68)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/90)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.optimizer;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXService;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NJoin;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NUnion;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Default implementation of the {@link FedXCostModel}
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+<b class="nc">&nbsp;public class DefaultFedXCostModel implements FedXCostModel {</b>
+&nbsp;
+<b class="nc">&nbsp;	public static DefaultFedXCostModel INSTANCE = new DefaultFedXCostModel();</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(DefaultFedXCostModel.class);</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public double estimateCost(TupleExpr tupleExpr, Set&lt;String&gt; joinVars) {
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof StatementSourcePattern) {</b>
+<b class="nc">&nbsp;			return estimateCost((StatementSourcePattern) tupleExpr, joinVars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof ExclusiveStatement) {</b>
+<b class="nc">&nbsp;			return estimateCost((ExclusiveStatement) tupleExpr, joinVars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;			return estimateCost((ExclusiveGroup) tupleExpr, joinVars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof NJoin) {</b>
+<b class="nc">&nbsp;			return estimateCost((NJoin) tupleExpr, joinVars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof NUnion) {</b>
+<b class="nc">&nbsp;			return estimateCost((NUnion) tupleExpr, joinVars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof FedXService) {</b>
+<b class="nc">&nbsp;			return estimateCost((FedXService) tupleExpr, joinVars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof Projection) {</b>
+<b class="nc">&nbsp;			return estimateCost((Projection) tupleExpr, joinVars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof BindingSetAssignment) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof Extension) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleExpr instanceof ArbitraryLengthPath) {</b>
+<b class="nc">&nbsp;			return estimateCost((ArbitraryLengthPath) tupleExpr, joinVars);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		log.debug(&quot;No cost estimation for &quot; + tupleExpr.getClass().getSimpleName() + &quot; available.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return 1000d;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(ExclusiveGroup group, Set&lt;String&gt; joinVars) {
+&nbsp;
+&nbsp;		// special heuristic: if not ordered at first place (i.e. there is a join var)
+&nbsp;		// use the same counting technique as for others
+<b class="nc">&nbsp;		if (joinVars.size() &gt; 0) {</b>
+<b class="nc">&nbsp;			int count = 0;</b>
+<b class="nc">&nbsp;			for (String var : group.getFreeVars()) {</b>
+<b class="nc">&nbsp;				if (!joinVars.contains(var)) {</b>
+<b class="nc">&nbsp;					count++;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return 100 + (count / group.getExclusiveExpressions().size());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// heuristic: a group has a selective statement, if one statement has 0 or 1 free variables
+&nbsp;		// if it has a selective statement, the group is executed as early as possible
+<b class="nc">&nbsp;		boolean hasSelectiveStatement = false;</b>
+&nbsp;
+&nbsp;		// TODO maybe add additional cost factor for ?x rdf:type :someType
+&nbsp;
+<b class="nc">&nbsp;		for (ExclusiveTupleExpr stmt : group.getExclusiveExpressions()) {</b>
+<b class="nc">&nbsp;			if (stmt.getFreeVarCount() &lt;= 1) {</b>
+<b class="nc">&nbsp;				hasSelectiveStatement = true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		double additionalCost = 0;</b>
+&nbsp;
+&nbsp;		// add some slight cost factor, if the subject in the query is not the same
+<b class="nc">&nbsp;		additionalCost += computeAdditionPatternCost(group.getExclusiveExpressions());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!hasSelectiveStatement) {</b>
+<b class="nc">&nbsp;			additionalCost += 4;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;//		if (hasExpensiveType)
+&nbsp;//			additionalCost += 1;
+&nbsp;
+<b class="nc">&nbsp;		return 0 + additionalCost + (group.getFreeVarCount() / group.getExclusiveExpressions().size());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If the subject is not the same for all triple patterns in the group, an additional cost of .5 is considered.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Example:
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * ?x p o . ?x p2 o2 =&gt; cost is 0
+&nbsp;	 *
+&nbsp;	 * ?x p ?s . ?s ?p2 val =&gt; additional cost is 0.5
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private double computeAdditionPatternCost(List&lt;ExclusiveTupleExpr&gt; stmts) {
+&nbsp;
+<b class="nc">&nbsp;		String s = null;</b>
+<b class="nc">&nbsp;		for (ExclusiveTupleExpr st : stmts) {</b>
+<b class="nc">&nbsp;			if (!(st instanceof ExclusiveStatement)) {</b>
+<b class="nc">&nbsp;				return 0.5;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String currentVar = QueryStringUtil.toString(((ExclusiveStatement) st).getSubjectVar());</b>
+<b class="nc">&nbsp;			if (!currentVar.equals(s) &amp;&amp; s != null) {</b>
+<b class="nc">&nbsp;				return 0.5;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			s = currentVar;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return 0.0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(ExclusiveStatement owned, Set&lt;String&gt; joinVars) {
+&nbsp;
+&nbsp;		/* currently the cost is the number of free vars that are executed in the join */
+&nbsp;
+<b class="nc">&nbsp;		int count = 100;</b>
+&nbsp;
+&nbsp;		// special heuristic: if exclusive statement with one free variable, more selective than owned group
+&nbsp;		// with more than 3 free variable
+<b class="nc">&nbsp;		if (owned.getFreeVarCount() &lt;= 1 &amp;&amp; joinVars.isEmpty()) {</b>
+<b class="nc">&nbsp;			count = 3;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (String var : owned.getFreeVars()) {</b>
+<b class="nc">&nbsp;			if (!joinVars.contains(var)) {</b>
+<b class="nc">&nbsp;				count++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return count;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(FedXService service, Set&lt;String&gt; joinVars) {
+&nbsp;
+<b class="nc">&nbsp;		int additionalCost = 0;</b>
+&nbsp;
+&nbsp;		// evaluate services with variable service ref late (since the service ref
+&nbsp;		// may be computed at evaluation time)
+<b class="nc">&nbsp;		if (!service.getService().getServiceRef().hasValue()) {</b>
+<b class="nc">&nbsp;			additionalCost += 1000;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (service.getNumberOfTriplePatterns() &lt;= 1) {</b>
+<b class="nc">&nbsp;			if (joinVars.isEmpty() &amp;&amp; service.getFreeVarCount() &lt;= 1) {</b>
+<b class="nc">&nbsp;				additionalCost = 3; // compare exclusive statement</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				additionalCost += 100; // compare all statements</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return 0 + additionalCost + service.getFreeVarCount();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(Projection projection, Set&lt;String&gt; joinVars) {
+&nbsp;
+&nbsp;		// cost estimator for sub query
+&nbsp;
+<b class="nc">&nbsp;		return 0 + projection.getBindingNames().size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(StatementSourcePattern stmt, Set&lt;String&gt; joinVars) {
+&nbsp;
+&nbsp;		/* currently the cost is the number of free vars that are executed in the join */
+&nbsp;
+<b class="nc">&nbsp;		int count = 100;</b>
+<b class="nc">&nbsp;		for (String var : stmt.getFreeVars()) {</b>
+<b class="nc">&nbsp;			if (!joinVars.contains(var)) {</b>
+<b class="nc">&nbsp;				count++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return count;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(NUnion nunion, Set&lt;String&gt; joinVars) {
+&nbsp;
+&nbsp;		// the unions cost is determined is determined by the minimum cost
+&nbsp;		// of the children + penalty cost of number of arguments
+<b class="nc">&nbsp;		double min = Double.MAX_VALUE;</b>
+<b class="nc">&nbsp;		for (TupleExpr t : nunion.getArgs()) {</b>
+<b class="nc">&nbsp;			double cost = estimateCost(t, joinVars);</b>
+<b class="nc">&nbsp;			if (cost &lt; min) {</b>
+<b class="nc">&nbsp;				min = cost;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return min + nunion.getNumberOfArguments() - 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(NJoin join, Set&lt;String&gt; joinVars) {
+&nbsp;
+&nbsp;		// cost of a join is determined by the cost of the first join arg
+&nbsp;		// Note: the join order of this join is already determined (depth first)
+&nbsp;		// in addition we add a penalty for the number of join arguments
+<b class="nc">&nbsp;		double cost = estimateCost(join.getArg(0), joinVars);</b>
+&nbsp;
+<b class="nc">&nbsp;		return cost + join.getNumberOfArguments() - 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double estimateCost(ArbitraryLengthPath path, Set&lt;String&gt; joinVars) {
+&nbsp;
+&nbsp;		/* currently the cost is the number of free vars that are executed in the join */
+&nbsp;
+<b class="nc">&nbsp;		int count = 100;</b>
+<b class="nc">&nbsp;		for (String var : QueryAlgebraUtil.getFreeVars(path.getPathExpression())) {</b>
+<b class="nc">&nbsp;			if (!joinVars.contains(var)) {</b>
+<b class="nc">&nbsp;				count++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return count;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

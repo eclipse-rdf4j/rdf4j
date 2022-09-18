@@ -1,0 +1,323 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Connect</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: Connect (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Connect</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/67)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+&nbsp;import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;
+&nbsp;/**
+&nbsp; * Connect command
+&nbsp; *
+&nbsp; * @author dale
+&nbsp; */
+&nbsp;public class Connect extends ConsoleCommand {
+&nbsp;	private final Disconnect disconnect;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;connect&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Connects to a (local or remote) set of repositories&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return PrintHelp.USAGE</b>
+&nbsp;				+ &quot;connect default                         Opens the default repository set for this console\n&quot;
+&nbsp;				+ &quot;connect &lt;dataDirectory&gt;                 Opens the repository set in the specified data dir\n&quot;
+&nbsp;				+ &quot;connect &lt;serverURL&gt; [user [password]]   Connects to an RDF4J server with optional credentials\n&quot;;
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 * @param disconnect
+&nbsp;	 */
+&nbsp;	public Connect(ConsoleIO consoleIO, ConsoleState state, Disconnect disconnect) {
+<b class="nc">&nbsp;		super(consoleIO, state);</b>
+<b class="nc">&nbsp;		this.disconnect = disconnect;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(String... tokens) {
+<b class="nc">&nbsp;		if (tokens.length &lt; 2) {</b>
+<b class="nc">&nbsp;			writeln(getHelpLong());</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final String target = tokens[1];</b>
+<b class="nc">&nbsp;		if (&quot;default&quot;.equalsIgnoreCase(target)) {</b>
+<b class="nc">&nbsp;			connectDefault();</b>
+&nbsp;		} else {
+&nbsp;			try {
+<b class="nc">&nbsp;				new URL(target);</b>
+&nbsp;				// target is a valid URL
+<b class="nc">&nbsp;				final String username = (tokens.length &gt; 2) ? tokens[2] : null; // NOPMD</b>
+<b class="nc">&nbsp;				final String password = (tokens.length &gt; 3) ? tokens[3] : null; // NOPMD</b>
+<b class="nc">&nbsp;				connectRemote(target, username, password);</b>
+<b class="nc">&nbsp;			} catch (MalformedURLException e) {</b>
+&nbsp;				// assume target is a directory path
+<b class="nc">&nbsp;				connectLocal(target);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Connect to default repository
+&nbsp;	 *
+&nbsp;	 * @return true if connected
+&nbsp;	 */
+&nbsp;	public boolean connectDefault() {
+<b class="nc">&nbsp;		return installNewManager(new LocalRepositoryManager(this.state.getDataDirectory()), &quot;default data directory&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Connect to remote repository
+&nbsp;	 *
+&nbsp;	 * @param url    URL of remote repository
+&nbsp;	 * @param user   username
+&nbsp;	 * @param passwd password
+&nbsp;	 * @return true on success
+&nbsp;	 */
+&nbsp;	private boolean connectRemote(final String url, final String user, final String passwd) {
+<b class="nc">&nbsp;		final String pass = (passwd == null) ? &quot;&quot; : passwd;</b>
+<b class="nc">&nbsp;		boolean result = false;</b>
+&nbsp;		try {
+&nbsp;			// Ping server
+<b class="nc">&nbsp;			final HttpClientSessionManager client = new SharedHttpClientSessionManager();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				try (RDF4JProtocolSession httpClient = client.createRDF4JProtocolSession(url)) {</b>
+<b class="nc">&nbsp;					if (user != null) {</b>
+<b class="nc">&nbsp;						httpClient.setUsernameAndPassword(user, pass);</b>
+&nbsp;					}
+&nbsp;					// Ping the server
+<b class="nc">&nbsp;					httpClient.getServerProtocol();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				client.shutDown();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			final RemoteRepositoryManager manager = new RemoteRepositoryManager(url);</b>
+<b class="nc">&nbsp;			manager.setUsernameAndPassword(user, pass);</b>
+<b class="nc">&nbsp;			result = installNewManager(manager, url);</b>
+<b class="nc">&nbsp;		} catch (UnauthorizedException e) {</b>
+<b class="nc">&nbsp;			if (user != null &amp;&amp; pass.length() &gt; 0) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Authentication for user &#39;&quot; + user + &quot;&#39; failed&quot;);</b>
+&nbsp;			} else {
+&nbsp;				// Ask user for credentials
+&nbsp;				try {
+<b class="nc">&nbsp;					writeln(&quot;Authentication required&quot;);</b>
+<b class="nc">&nbsp;					final String username = consoleIO.readln(&quot;Username: &quot;);</b>
+<b class="nc">&nbsp;					final String password = consoleIO.readPassword(&quot;Password: &quot;);</b>
+<b class="nc">&nbsp;					connectRemote(url, username, password);</b>
+<b class="nc">&nbsp;				} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;					writeError(&quot;Failed to read user credentials&quot;, ioe);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException | RepositoryException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to access the server&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Connect to local repository
+&nbsp;	 *
+&nbsp;	 * @param path directory of the local repository
+&nbsp;	 * @return true on success
+&nbsp;	 */
+&nbsp;	public boolean connectLocal(final String path) {
+<b class="nc">&nbsp;		final File dir = new File(path);</b>
+<b class="nc">&nbsp;		boolean result = false;</b>
+<b class="nc">&nbsp;		if (dir.exists() &amp;&amp; dir.isDirectory()) {</b>
+<b class="nc">&nbsp;			result = installNewManager(new LocalRepositoryManager(dir), dir.toString());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeError(&quot;Specified path is not an (existing) directory: &quot; + path);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Install and initialize new repository manager
+&nbsp;	 *
+&nbsp;	 * @param newManager   repository manager
+&nbsp;	 * @param newManagerID repository manager ID
+&nbsp;	 * @return true on success
+&nbsp;	 */
+&nbsp;	private boolean installNewManager(final RepositoryManager newManager, final String newManagerID) {
+<b class="nc">&nbsp;		boolean installed = false;</b>
+<b class="nc">&nbsp;		final String managerID = this.state.getManagerID();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (newManagerID.equals(managerID)) {</b>
+<b class="nc">&nbsp;			writeln(&quot;Already connected to &quot; + managerID);</b>
+<b class="nc">&nbsp;			installed = true;</b>
+&nbsp;		} else {
+&nbsp;			try {
+<b class="nc">&nbsp;				newManager.init();</b>
+<b class="nc">&nbsp;				disconnect.execute(false);</b>
+&nbsp;
+<b class="nc">&nbsp;				this.state.setManager(newManager);</b>
+<b class="nc">&nbsp;				this.state.setManagerID(newManagerID);</b>
+<b class="nc">&nbsp;				writeln(&quot;Connected to &quot; + newManagerID);</b>
+&nbsp;
+<b class="nc">&nbsp;				installed = true;</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Failed to install new manager&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return installed;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Connect to remote repository without username of password
+&nbsp;	 *
+&nbsp;	 * @param url URL of the repository
+&nbsp;	 * @return true on success
+&nbsp;	 */
+&nbsp;	public boolean connectRemote(final String url) {
+<b class="nc">&nbsp;		return connectRemote(url, null, null);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

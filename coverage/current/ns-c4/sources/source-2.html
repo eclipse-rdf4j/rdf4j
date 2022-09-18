@@ -1,0 +1,304 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractForwardChainingInferencerConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.inferencer.fc</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractForwardChainingInferencerConnection (org.eclipse.rdf4j.sail.inferencer.fc)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractForwardChainingInferencerConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.inferencer.fc;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnectionListener;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.model.SailModel;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;public abstract class AbstractForwardChainingInferencerConnection extends InferencerConnectionWrapper
+&nbsp;		implements SailConnectionListener {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	static private final Logger logger = LoggerFactory.getLogger(AbstractForwardChainingInferencerConnection.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final Sail sail;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * true if the base Sail reported removed statements.
+&nbsp;	 */
+&nbsp;	private boolean statementsRemoved;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Contains the statements that have been reported by the base Sail as
+&nbsp;	 */
+&nbsp;	private Model newStatements;
+&nbsp;
+&nbsp;	protected int totalInferred;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public AbstractForwardChainingInferencerConnection(Sail sail, InferencerConnection con) {
+<b class="nc">&nbsp;		super(con);</b>
+<b class="nc">&nbsp;		this.sail = sail;</b>
+<b class="nc">&nbsp;		con.addConnectionListener(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	// Called by base sail
+&nbsp;	@Override
+&nbsp;	public void statementAdded(Statement st) {
+<b class="nc">&nbsp;		if (statementsRemoved) {</b>
+&nbsp;			// No need to record, starting from scratch anyway
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (newStatements == null) {</b>
+<b class="nc">&nbsp;			newStatements = createModel();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		newStatements.add(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract Model createModel();
+&nbsp;
+&nbsp;	// Called by base sail
+&nbsp;	@Override
+&nbsp;	public void statementRemoved(Statement st) {
+<b class="nc">&nbsp;		boolean removed = (newStatements != null) ? newStatements.remove(st) : false;</b>
+<b class="nc">&nbsp;		if (!removed) {</b>
+&nbsp;			// trigger full rebuild
+<b class="nc">&nbsp;			statementsRemoved = true;</b>
+<b class="nc">&nbsp;			newStatements = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushUpdates() throws SailException {
+<b class="nc">&nbsp;		if (needsFullRecomputation()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;full recomputation needed, starting inferencing from scratch&quot;);</b>
+<b class="nc">&nbsp;			clearInferred();</b>
+<b class="nc">&nbsp;			super.flushUpdates();</b>
+&nbsp;
+<b class="nc">&nbsp;			addAxiomStatements();</b>
+<b class="nc">&nbsp;			super.flushUpdates();</b>
+&nbsp;
+<b class="nc">&nbsp;			newStatements = new SailModel(getWrappedConnection(), true);</b>
+<b class="nc">&nbsp;			statementsRemoved = false;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.flushUpdates();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hasNewStatements()) {</b>
+<b class="nc">&nbsp;			doInferencing();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		newStatements = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws SailException {
+<b class="nc">&nbsp;		this.begin(sail.getDefaultIsolationLevel());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin(IsolationLevel level) throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		IsolationLevel compatibleLevel = IsolationLevels.getCompatibleIsolationLevel(level,</b>
+<b class="nc">&nbsp;				sail.getSupportedIsolationLevels());</b>
+<b class="nc">&nbsp;		if (compatibleLevel == null) {</b>
+<b class="nc">&nbsp;			throw new UnknownSailTransactionStateException(</b>
+&nbsp;					&quot;Isolation level &quot; + level + &quot; not compatible with this Sail&quot;);
+&nbsp;		}
+<b class="nc">&nbsp;		super.begin(compatibleLevel);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws SailException {
+<b class="nc">&nbsp;		super.rollback();</b>
+&nbsp;
+<b class="nc">&nbsp;		statementsRemoved = false;</b>
+<b class="nc">&nbsp;		newStatements = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds all basic set of axiom statements from which the complete set can be inferred to the underlying Sail.
+&nbsp;	 */
+&nbsp;	protected abstract void addAxiomStatements() throws SailException;
+&nbsp;
+&nbsp;	protected void doInferencing() throws SailException {
+&nbsp;		// initialize some vars
+<b class="nc">&nbsp;		totalInferred = 0;</b>
+<b class="nc">&nbsp;		int iteration = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		while (hasNewStatements()) {</b>
+<b class="nc">&nbsp;			iteration++;</b>
+<b class="nc">&nbsp;			logger.trace(&quot;starting iteration &quot; + iteration);</b>
+<b class="nc">&nbsp;			Model newThisIteration = prepareIteration();</b>
+&nbsp;
+<b class="nc">&nbsp;			int nofInferred = applyRules(newThisIteration);</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.trace(&quot;iteration &quot; + iteration + &quot; done; inferred &quot; + nofInferred + &quot; new statements&quot;);</b>
+<b class="nc">&nbsp;			totalInferred += nofInferred;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (totalInferred &gt; 0) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;{} inferred {} new statements&quot;, this.getClass().getName(), totalInferred);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the number of newly inferred statements.
+&nbsp;	 */
+&nbsp;	protected abstract int applyRules(Model iteration) throws SailException;
+&nbsp;
+&nbsp;	protected Model prepareIteration() {
+<b class="nc">&nbsp;		Model newThisIteration = newStatements;</b>
+<b class="nc">&nbsp;		newStatements = null;</b>
+<b class="nc">&nbsp;		return newThisIteration;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean hasNewStatements() {
+<b class="nc">&nbsp;		return newStatements != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates if a full recomputation of the deductive closure is needed.
+&nbsp;	 */
+&nbsp;	protected boolean needsFullRecomputation() {
+<b class="nc">&nbsp;		return statementsRemoved;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

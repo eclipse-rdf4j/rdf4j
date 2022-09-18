@@ -1,0 +1,345 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Queries</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.core.query</a>
+</div>
+
+<h1>Coverage Summary for Class: Queries (org.eclipse.rdf4j.sparqlbuilder.core.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Queries</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.core.query;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.GraphTemplate;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Projection;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.TriplesTemplate;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
+&nbsp;
+&nbsp;/**
+&nbsp; * A class with static methods to create SPARQL queries
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/&quot;&gt; SPARQL Query Language&lt;/a&gt;
+&nbsp; */
+&nbsp;public class Queries {
+&nbsp;	// prevent instantiation of this class
+&nbsp;	private Queries() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Select query
+&nbsp;	 *
+&nbsp;	 * @param projectables the initial set of {@link Projectable}(s), if any, to select
+&nbsp;	 *
+&nbsp;	 * @return a new {@link SelectQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select&quot;&gt;SPARQL Select Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static SelectQuery SELECT(Projectable... projectables) {
+<b class="nc">&nbsp;		return new SelectQuery().select(projectables);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Select query
+&nbsp;	 *
+&nbsp;	 * @param select the {@link Projection} to set initially
+&nbsp;	 * @return a new {@link SelectQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select&quot;&gt;SPARQL Select Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static SelectQuery SELECT(Projection select) {
+<b class="nc">&nbsp;		return new SelectQuery().select(select);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Construct query
+&nbsp;	 *
+&nbsp;	 * @param patterns the initial set of {@link TriplePattern}(s), if any, to construct
+&nbsp;	 * @return a new {@link ConstructQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#construct&quot;&gt;SPARQL Construct Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static ConstructQuery CONSTRUCT(TriplePattern... patterns) {
+<b class="nc">&nbsp;		return new ConstructQuery().construct(patterns);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Construct query
+&nbsp;	 *
+&nbsp;	 * @param construct the {@link GraphTemplate} to set initially
+&nbsp;	 * @return a new {@link ConstructQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#construct&quot;&gt;SPARQL Construct Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static ConstructQuery CONSTRUCT(GraphTemplate construct) {
+<b class="nc">&nbsp;		return new ConstructQuery().construct(construct);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL INSERT DATA query
+&nbsp;	 *
+&nbsp;	 * @param triples the initial set of {@link TriplePattern}(s), if any, to use
+&nbsp;	 *
+&nbsp;	 * @return a new {@link InsertDataQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#insertData&quot;&gt; SPARQL INSERT DATA Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static InsertDataQuery INSERT_DATA(TriplePattern... triples) {
+<b class="nc">&nbsp;		return new InsertDataQuery().insertData(triples);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL INSERT DATA query
+&nbsp;	 *
+&nbsp;	 * @param triplesTemplate the {@link TriplesTemplate} to set initially
+&nbsp;	 *
+&nbsp;	 * @return a new {@link InsertDataQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#insertData&quot;&gt; SPARQL INSERT DATA Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static InsertDataQuery INSERT_DATA(TriplesTemplate triplesTemplate) {
+<b class="nc">&nbsp;		return new InsertDataQuery().insertData(triplesTemplate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL DELETE DATA query
+&nbsp;	 *
+&nbsp;	 * @param triples the initial set of {@link TriplePattern}(s), if any, to use
+&nbsp;	 *
+&nbsp;	 * @return a new {@link DeleteDataQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#deleteData&quot;&gt; SPARQL DELETE DATA Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static DeleteDataQuery DELETE_DATA(TriplePattern... triples) {
+<b class="nc">&nbsp;		return new DeleteDataQuery().deleteData(triples);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL DELETE DATA query
+&nbsp;	 *
+&nbsp;	 * @param triplesTemplate the {@link TriplesTemplate} to set initially
+&nbsp;	 *
+&nbsp;	 * @return a new {@link DeleteDataQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#deleteData&quot;&gt; SPARQL DELETE DATA Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static DeleteDataQuery DELETE_DATA(TriplesTemplate triplesTemplate) {
+<b class="nc">&nbsp;		return new DeleteDataQuery().deleteData(triplesTemplate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a SPARQL Modify query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link ModifyQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#deleteInsert&quot;&gt; SPARQL Modify Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static ModifyQuery MODIFY() {
+<b class="nc">&nbsp;		return new ModifyQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience method, creates a SPARQL DELETE query using ModifyQuery.
+&nbsp;	 *
+&nbsp;	 * @param triples the initial set of {@link TriplePattern}(s), if any, to use
+&nbsp;	 * @return a new {@link ModifyQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#delete&quot;&gt; SPARQL DELETE Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static ModifyQuery DELETE(TriplePattern... triples) {
+<b class="nc">&nbsp;		return new ModifyQuery().delete(triples);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience method, creates a SPARQL INSERT query using ModifyQuery.
+&nbsp;	 *
+&nbsp;	 * @param triples the initial set of {@link TriplePattern}(s), if any, to use
+&nbsp;	 * @return a new {@link ModifyQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#insert&quot;&gt; SPARQL INSERT Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static ModifyQuery INSERT(TriplePattern... triples) {
+<b class="nc">&nbsp;		return new ModifyQuery().insert(triples);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a SPARQL LOAD query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link LoadQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#load&quot;&gt; SPARQL LOAD Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static LoadQuery LOAD() {
+<b class="nc">&nbsp;		return new LoadQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a SPARQL CLEAR Query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link ClearQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#clear&quot;&gt; SPARQL CLEAR Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static ClearQuery CLEAR() {
+<b class="nc">&nbsp;		return new ClearQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a SPARQL CREATE Query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link CreateQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#create&quot;&gt; SPARQL CREATE Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static CreateQuery CREATE() {
+<b class="nc">&nbsp;		return new CreateQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a SPARQL DROP Query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link DropQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#drop&quot;&gt; SPARQL DROP Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static DropQuery DROP() {
+<b class="nc">&nbsp;		return new DropQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a SPARQL COPY Query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link CopyQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#copy&quot;&gt; SPARQL COPY Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static CopyQuery COPY() {
+<b class="nc">&nbsp;		return new CopyQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a SPARQL MOVE Query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link MoveQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#move&quot;&gt; SPARQL MOVE Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static MoveQuery MOVE() {
+<b class="nc">&nbsp;		return new MoveQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new SPARQL ADD Query
+&nbsp;	 *
+&nbsp;	 * @return a new {@link AddQuery}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#add&quot;&gt; SPARQL ADD Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static AddQuery ADD() {
+<b class="nc">&nbsp;		return new AddQuery();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

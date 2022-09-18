@@ -1,0 +1,219 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BindingSet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query</a>
+</div>
+
+<h1>Coverage Summary for Class: BindingSet (org.eclipse.rdf4j.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BindingSet</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;
+&nbsp;/**
+&nbsp; * A BindingSet is a set of named value bindings, which is used a.o. to represent a single query solution. Values are
+&nbsp; * indexed by name of the binding which typically corresponds to the names of the variables used in the projection of
+&nbsp; * the orginal query.
+&nbsp; */
+&nbsp;public interface BindingSet extends Iterable&lt;Binding&gt;, Serializable {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an iterator over the bindings in this BindingSet. This only returns bindings with non-null values. An
+&nbsp;	 * implementation is free to return the bindings in arbitrary order.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	Iterator&lt;Binding&gt; iterator();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the names of the bindings in this BindingSet.
+&nbsp;	 *
+&nbsp;	 * @return A set of binding names.
+&nbsp;	 */
+&nbsp;	Set&lt;String&gt; getBindingNames();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the binding with the specified name from this BindingSet.
+&nbsp;	 *
+&nbsp;	 * @param bindingName The name of the binding.
+&nbsp;	 * @return The binding with the specified name, or &lt;var&gt;null&lt;/var&gt; if there is no such binding in this BindingSet.
+&nbsp;	 */
+&nbsp;	Binding getBinding(String bindingName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this BindingSet has a binding with the specified name.
+&nbsp;	 *
+&nbsp;	 * @param bindingName The name of the binding.
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if this BindingSet has a binding with the specified name, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	boolean hasBinding(String bindingName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the value of the binding with the specified name from this BindingSet.
+&nbsp;	 *
+&nbsp;	 * @param bindingName The name of the binding.
+&nbsp;	 * @return The value of the binding with the specified name, or &lt;var&gt;null&lt;/var&gt; if there is no such binding in this
+&nbsp;	 *         BindingSet.
+&nbsp;	 */
+&nbsp;	Value getValue(String bindingName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the number of bindings in this BindingSet.
+&nbsp;	 *
+&nbsp;	 * @return The number of bindings in this BindingSet.
+&nbsp;	 */
+&nbsp;	int size();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares a BindingSet object to another object.
+&nbsp;	 *
+&nbsp;	 * @param o The object to compare this binding to.
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the other object is an instance of {@link BindingSet} and it contains the same set of
+&nbsp;	 *         bindings (disregarding order), &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	boolean equals(Object o);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The hash code of a binding is defined as the bit-wise XOR of the hash codes of its bindings:
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * int hashCode = 0;
+&nbsp;	 *
+&nbsp;	 * for (Binding binding : this) {
+&nbsp;	 * 	hashCode &amp;circ;= binding.getName().hashCode() &amp;circ; binding.getValue().hashCode();
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * Note: the calculated hash code intentionally does not depend on the order in which the bindings are iterated
+&nbsp;	 * over.
+&nbsp;	 *
+&nbsp;	 * @return A hash code for the BindingSet.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	int hashCode();
+&nbsp;
+&nbsp;	default boolean isEmpty() {
+<b class="fc">&nbsp;		return size() == 0;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

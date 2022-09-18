@@ -1,0 +1,209 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DistinctModelReducingUnionIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: DistinctModelReducingUnionIteration (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DistinctModelReducingUnionIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (16/16)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;p&gt;
+&nbsp; * An Iteration that takes two source. An iterator and a model.
+&nbsp; * &lt;/p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * For every statement returned by the iterator, that statement is removed from the model. Once the iterator is
+&nbsp; * exhausted, a new filteredStatementsIterator is created by applying the filterable function to the model.
+&nbsp; * &lt;/p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * The point of this iteration is to create a distinct iterator that produces only distinct results in a lazy and
+&nbsp; * mutable manner. This is useful when iterating in a transaction, since the user may have added duplicate statements.
+&nbsp; * On a potential second iteration there will be no need for further deduplication, since the initial deduplication was
+&nbsp; * mutable.
+&nbsp; * &lt;/p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * Model will throw a ConcurrentModificationException if two threads call .remove(...) at the same time or one thread
+&nbsp; * calls .next() on an iterator while another calls .remove(...). This is resolved by synchronizing access to the model
+&nbsp; * and by consuming the entire iterator into an ArrayList, effectively caching the filtered part of the model in memory.
+&nbsp; * There is no overflow to disk for this cache.
+&nbsp; * &lt;/p&gt;
+&nbsp; **/
+&nbsp;public class DistinctModelReducingUnionIteration extends LookAheadIteration&lt;Statement, SailException&gt; {
+&nbsp;
+&nbsp;	private final CloseableIteration&lt;? extends Statement, SailException&gt; iterator;
+&nbsp;	private final Consumer&lt;Statement&gt; approvedRemover;
+&nbsp;	private final Supplier&lt;Iterable&lt;Statement&gt;&gt; approvedSupplier;
+&nbsp;
+&nbsp;	DistinctModelReducingUnionIteration(CloseableIteration&lt;? extends Statement, SailException&gt; iterator,
+&nbsp;			Consumer&lt;Statement&gt; approvedRemover,
+<b class="fc">&nbsp;			Supplier&lt;Iterable&lt;Statement&gt;&gt; approvedSupplier) {</b>
+<b class="fc">&nbsp;		this.iterator = iterator;</b>
+<b class="fc">&nbsp;		this.approvedRemover = approvedRemover;</b>
+<b class="fc">&nbsp;		this.approvedSupplier = approvedSupplier;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Iterator&lt;? extends Statement&gt; filteredStatementsIterator;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Statement getNextElement() throws SailException {
+<b class="fc">&nbsp;		Statement next = null;</b>
+&nbsp;
+&nbsp;		// first run through the statements from the base store
+<b class="fc">&nbsp;		if (iterator.hasNext()) {</b>
+<b class="fc">&nbsp;			next = iterator.next();</b>
+&nbsp;
+&nbsp;			// remove the statement from the approved model in the Changeset, in case the approved model has a duplicate
+<b class="fc">&nbsp;			approvedRemover.accept(next);</b>
+&nbsp;		} else {
+&nbsp;			// we have now exhausted the base store and will start returning data added in this transaction but not yet
+&nbsp;			// committed, eg. approved model in the Changeset
+&nbsp;
+<b class="fc">&nbsp;			if (filteredStatementsIterator == null) {</b>
+<b class="fc">&nbsp;				filteredStatementsIterator = approvedSupplier.get().iterator();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (filteredStatementsIterator.hasNext()) {</b>
+<b class="fc">&nbsp;				next = filteredStatementsIterator.next();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return next;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			iterator.close();</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			super.handleClose();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

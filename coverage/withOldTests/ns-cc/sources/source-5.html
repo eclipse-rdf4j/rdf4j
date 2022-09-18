@@ -1,0 +1,1224 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LuceneIndex</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: LuceneIndex (org.eclipse.rdf4j.sail.lucene.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LuceneIndex</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/65)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/194)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/357)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LuceneIndex$DocumentStoredFieldVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/69)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/206)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/373)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene.impl;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSail.FUZZY_PREFIX_LENGTH_KEY;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.StringReader;
+&nbsp;import java.lang.reflect.UndeclaredThrowableException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.nio.file.Paths;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.math.NumberUtils;
+&nbsp;import org.apache.lucene.analysis.Analyzer;
+&nbsp;import org.apache.lucene.analysis.TokenStream;
+&nbsp;import org.apache.lucene.analysis.standard.StandardAnalyzer;
+&nbsp;import org.apache.lucene.document.Document;
+&nbsp;import org.apache.lucene.document.Field.Store;
+&nbsp;import org.apache.lucene.document.LatLonPoint;
+&nbsp;import org.apache.lucene.document.LatLonShape;
+&nbsp;import org.apache.lucene.document.ShapeField;
+&nbsp;import org.apache.lucene.document.StoredField;
+&nbsp;import org.apache.lucene.document.StringField;
+&nbsp;import org.apache.lucene.document.TextField;
+&nbsp;import org.apache.lucene.geo.Line;
+&nbsp;import org.apache.lucene.geo.Polygon;
+&nbsp;import org.apache.lucene.geo.Rectangle;
+&nbsp;import org.apache.lucene.index.CorruptIndexException;
+&nbsp;import org.apache.lucene.index.DirectoryReader;
+&nbsp;import org.apache.lucene.index.FieldInfo;
+&nbsp;import org.apache.lucene.index.IndexReader;
+&nbsp;import org.apache.lucene.index.IndexWriter;
+&nbsp;import org.apache.lucene.index.IndexWriterConfig;
+&nbsp;import org.apache.lucene.index.IndexWriterConfig.OpenMode;
+&nbsp;import org.apache.lucene.index.IndexableField;
+&nbsp;import org.apache.lucene.index.LeafReader;
+&nbsp;import org.apache.lucene.index.LeafReaderContext;
+&nbsp;import org.apache.lucene.index.PostingsEnum;
+&nbsp;import org.apache.lucene.index.StoredFieldVisitor;
+&nbsp;import org.apache.lucene.index.Term;
+&nbsp;import org.apache.lucene.queryparser.classic.ParseException;
+&nbsp;import org.apache.lucene.queryparser.classic.QueryParser;
+&nbsp;import org.apache.lucene.search.BooleanClause.Occur;
+&nbsp;import org.apache.lucene.search.BooleanQuery;
+&nbsp;import org.apache.lucene.search.IndexSearcher;
+&nbsp;import org.apache.lucene.search.Query;
+&nbsp;import org.apache.lucene.search.ScoreDoc;
+&nbsp;import org.apache.lucene.search.TermQuery;
+&nbsp;import org.apache.lucene.search.TopDocs;
+&nbsp;import org.apache.lucene.search.highlight.Formatter;
+&nbsp;import org.apache.lucene.search.highlight.Highlighter;
+&nbsp;import org.apache.lucene.search.highlight.QueryScorer;
+&nbsp;import org.apache.lucene.search.highlight.SimpleHTMLFormatter;
+&nbsp;import org.apache.lucene.search.similarities.ClassicSimilarity;
+&nbsp;import org.apache.lucene.search.similarities.Similarity;
+&nbsp;import org.apache.lucene.spatial.SpatialStrategy;
+&nbsp;import org.apache.lucene.spatial.prefix.RecursivePrefixTreeStrategy;
+&nbsp;import org.apache.lucene.spatial.prefix.tree.SpatialPrefixTree;
+&nbsp;import org.apache.lucene.spatial.prefix.tree.SpatialPrefixTreeFactory;
+&nbsp;import org.apache.lucene.spatial.query.SpatialOperation;
+&nbsp;import org.apache.lucene.store.Directory;
+&nbsp;import org.apache.lucene.store.FSDirectory;
+&nbsp;import org.apache.lucene.store.RAMDirectory;
+&nbsp;import org.apache.lucene.util.Bits;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEOF;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.AbstractLuceneIndex;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.AbstractReaderMonitor;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.DocumentResult;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.DocumentScore;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchDocument;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchFields;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SimpleBulkUpdater;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.util.GeoUnits;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContext;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContextFactory;
+&nbsp;import org.locationtech.spatial4j.shape.Point;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.base.Function;
+&nbsp;import com.google.common.collect.Iterables;
+&nbsp;import com.google.common.collect.Sets;
+&nbsp;
+&nbsp;/**
+&nbsp; * A LuceneIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
+&nbsp; * IndexReaders, IndexWriters and IndexSearchers in a way that is suitable for a LuceneSail.
+&nbsp; *
+&nbsp; * @see LuceneSail
+&nbsp; */
+&nbsp;public class LuceneIndex extends AbstractLuceneIndex {
+&nbsp;
+&nbsp;	static {
+&nbsp;		// do NOT set this to Integer.MAX_VALUE, because this breaks fuzzy
+&nbsp;		// queries
+<b class="nc">&nbsp;		BooleanQuery.setMaxClauseCount(1024 * 1024);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static final String GEO_FIELD_PREFIX = &quot;_geo_&quot;;
+&nbsp;	private static final String POINT_FIELD_PREFIX = &quot;_pt_&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(getClass());</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The Directory that holds the Lucene index files.
+&nbsp;	 */
+&nbsp;	private volatile Directory directory;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The Analyzer used to tokenize strings and queries.
+&nbsp;	 */
+&nbsp;	private volatile Analyzer analyzer;
+&nbsp;
+&nbsp;	private volatile Analyzer queryAnalyzer;
+&nbsp;
+&nbsp;	private volatile Similarity similarity;
+&nbsp;
+&nbsp;	private volatile int fuzzyPrefixLength;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The IndexWriter that can be used to alter the index&#39; contents. Created lazily.
+&nbsp;	 */
+&nbsp;	private volatile IndexWriter indexWriter;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This holds IndexReader and IndexSearcher.
+&nbsp;	 */
+&nbsp;	protected volatile ReaderMonitor currentMonitor;
+&nbsp;
+&nbsp;	private volatile Function&lt;? super String, ? extends SpatialStrategy&gt; geoStrategyMapper;
+&nbsp;
+<b class="nc">&nbsp;	private final AtomicBoolean closed = new AtomicBoolean(false);</b>
+&nbsp;
+<b class="nc">&nbsp;	public LuceneIndex() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor for keeping backwards compatibility.
+&nbsp;	 *
+&nbsp;	 * @param directory
+&nbsp;	 * @param analyzer
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public LuceneIndex(Directory directory, Analyzer analyzer) throws IOException {
+<b class="nc">&nbsp;		this(directory, analyzer, new ClassicSimilarity());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new LuceneIndex.
+&nbsp;	 *
+&nbsp;	 * @param directory  The Directory in which an index can be found and/or in which index files are written.
+&nbsp;	 * @param analyzer   The Analyzer that will be used for tokenizing strings to index and queries.
+&nbsp;	 * @param similarity The Similarity that will be used for scoring.
+&nbsp;	 * @throws IOException When the Directory could not be unlocked.
+&nbsp;	 */
+<b class="nc">&nbsp;	public LuceneIndex(Directory directory, Analyzer analyzer, Similarity similarity) throws IOException {</b>
+<b class="nc">&nbsp;		this.directory = directory;</b>
+<b class="nc">&nbsp;		this.analyzer = analyzer;</b>
+<b class="nc">&nbsp;		this.similarity = similarity;</b>
+<b class="nc">&nbsp;		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.&lt;String, String&gt;emptyMap());</b>
+&nbsp;
+<b class="nc">&nbsp;		postInit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	@Override
+&nbsp;	public synchronized void initialize(Properties parameters) throws Exception {
+<b class="nc">&nbsp;		super.initialize(parameters);</b>
+<b class="nc">&nbsp;		this.directory = createDirectory(parameters);</b>
+<b class="nc">&nbsp;		this.analyzer = createAnalyzer(parameters);</b>
+<b class="nc">&nbsp;		this.similarity = createSimilarity(parameters);</b>
+&nbsp;		// slightly hacky cast to cope with the fact that Properties is
+&nbsp;		// Map&lt;Object,Object&gt;
+&nbsp;		// even though it is effectively Map&lt;String,String&gt;
+<b class="nc">&nbsp;		this.geoStrategyMapper = createSpatialStrategyMapper((Map&lt;String, String&gt;) (Map&lt;?, ?&gt;) parameters);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (parameters.containsKey(FUZZY_PREFIX_LENGTH_KEY)) {</b>
+<b class="nc">&nbsp;			this.fuzzyPrefixLength = NumberUtils.toInt(parameters.getProperty(FUZZY_PREFIX_LENGTH_KEY), 0);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		postInit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Directory createDirectory(Properties parameters) throws IOException {
+&nbsp;		Directory dir;
+<b class="nc">&nbsp;		if (parameters.containsKey(LuceneSail.LUCENE_DIR_KEY)) {</b>
+<b class="nc">&nbsp;			dir = FSDirectory.open(Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY)));</b>
+<b class="nc">&nbsp;		} else if (parameters.containsKey(LuceneSail.LUCENE_RAMDIR_KEY)</b>
+<b class="nc">&nbsp;				&amp;&amp; &quot;true&quot;.equals(parameters.getProperty(LuceneSail.LUCENE_RAMDIR_KEY))) {</b>
+<b class="nc">&nbsp;			dir = new RAMDirectory();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IOException(&quot;No luceneIndex set, and no &#39;&quot; + LuceneSail.LUCENE_DIR_KEY + &quot;&#39; or &#39;&quot;</b>
+&nbsp;					+ LuceneSail.LUCENE_RAMDIR_KEY + &quot;&#39; parameter given. &quot;);
+&nbsp;		}
+<b class="nc">&nbsp;		return dir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Analyzer createAnalyzer(Properties parameters) throws Exception {
+&nbsp;		Analyzer a;
+<b class="nc">&nbsp;		if (parameters.containsKey(LuceneSail.ANALYZER_CLASS_KEY)) {</b>
+<b class="nc">&nbsp;			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			a = new StandardAnalyzer();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return a;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Similarity createSimilarity(Properties parameters) throws Exception {
+&nbsp;		Similarity s;
+<b class="nc">&nbsp;		if (parameters.containsKey(LuceneSail.SIMILARITY_CLASS_KEY)) {</b>
+<b class="nc">&nbsp;			s = (Similarity) Class.forName(parameters.getProperty(LuceneSail.SIMILARITY_CLASS_KEY)).newInstance();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			s = new ClassicSimilarity();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return s;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void postInit() throws IOException {
+<b class="nc">&nbsp;		this.queryAnalyzer = new StandardAnalyzer();</b>
+&nbsp;
+&nbsp;		// do some initialization for new indices
+<b class="nc">&nbsp;		if (!DirectoryReader.indexExists(directory)) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;creating new Lucene index in directory {}&quot;, directory);</b>
+<b class="nc">&nbsp;			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();</b>
+<b class="nc">&nbsp;			indexWriterConfig.setOpenMode(OpenMode.CREATE);</b>
+<b class="nc">&nbsp;			IndexWriter writer = new IndexWriter(directory, indexWriterConfig);</b>
+<b class="nc">&nbsp;			writer.close();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Function&lt;String, ? extends SpatialStrategy&gt; createSpatialStrategyMapper(Map&lt;String, String&gt; parameters) {
+<b class="nc">&nbsp;		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();</b>
+<b class="nc">&nbsp;		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);</b>
+<b class="nc">&nbsp;		final SpatialPrefixTree spt = SpatialPrefixTreeFactory.makeSPT(parameters, classLoader, geoContext);</b>
+<b class="nc">&nbsp;		return (String field) -&gt; new RecursivePrefixTreeStrategy(spt, GEO_FIELD_PREFIX + field);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected SpatialContext getSpatialContext(String property) {
+<b class="nc">&nbsp;		return geoStrategyMapper.apply(property).getSpatialContext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// //////////////////////////////// Setters and getters
+&nbsp;
+&nbsp;	public Directory getDirectory() {
+<b class="nc">&nbsp;		return directory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Analyzer getAnalyzer() {
+<b class="nc">&nbsp;		return analyzer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Function&lt;? super String, ? extends SpatialStrategy&gt; getSpatialStrategyMapper() {
+<b class="nc">&nbsp;		return geoStrategyMapper;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// //////////////////////////////// Methods for controlled index access
+&nbsp;	// For quick&#39;n&#39;easy access to reader, the indexreader is returned directly
+&nbsp;	// result LuceneQueryIterators use the more elaborate
+&nbsp;	// ReaderMonitor directly to be able to close the reader when they
+&nbsp;	// are done.
+&nbsp;
+&nbsp;	public synchronized IndexReader getIndexReader() throws IOException {
+<b class="nc">&nbsp;		if (closed.get()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Index has been closed&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return getIndexSearcher().getIndexReader();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized IndexSearcher getIndexSearcher() throws IOException {
+<b class="nc">&nbsp;		if (closed.get()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Index has been closed&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		IndexSearcher indexSearcher = getCurrentMonitor().getIndexSearcher();</b>
+<b class="nc">&nbsp;		indexSearcher.setSimilarity(similarity);</b>
+<b class="nc">&nbsp;		return indexSearcher;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Current monitor holds instance of IndexReader and IndexSearcher It is used to keep track of readers
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized ReaderMonitor getCurrentMonitor() {
+<b class="nc">&nbsp;		if (closed.get()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Index has been closed&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (currentMonitor == null) {</b>
+<b class="nc">&nbsp;			currentMonitor = new ReaderMonitor(this, directory);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return currentMonitor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized IndexWriter getIndexWriter() throws IOException {
+<b class="nc">&nbsp;		if (closed.get()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Index has been closed&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (indexWriter == null || !indexWriter.isOpen()) {</b>
+<b class="nc">&nbsp;			IndexWriterConfig indexWriterConfig = getIndexWriterConfig();</b>
+<b class="nc">&nbsp;			indexWriter = new IndexWriter(directory, indexWriterConfig);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return indexWriter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() throws IOException {
+&nbsp;		// try-finally setup ensures that closing of an instance is not skipped
+&nbsp;		// when an earlier instance resulted in an IOException
+&nbsp;		// FIXME: is there a more elegant way to ensure this?
+<b class="nc">&nbsp;		if (closed.compareAndSet(false, true)) {</b>
+&nbsp;			try {
+&nbsp;				// This close oldMonitors which hold InderReader and
+&nbsp;				// IndexSeracher
+&nbsp;				// Monitor close IndexReader and IndexSearcher
+<b class="nc">&nbsp;				ReaderMonitor toCloseCurrentMonitor = currentMonitor;</b>
+<b class="nc">&nbsp;				currentMonitor = null;</b>
+<b class="nc">&nbsp;				if (toCloseCurrentMonitor != null) {</b>
+<b class="nc">&nbsp;					toCloseCurrentMonitor.close();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				List&lt;Throwable&gt; exceptions = new ArrayList&lt;&gt;();</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					synchronized (oldmonitors) {</b>
+<b class="nc">&nbsp;						if (oldmonitors.size() &gt; 0) {</b>
+<b class="nc">&nbsp;							logger.warn(</b>
+&nbsp;									&quot;LuceneSail: On shutdown {} IndexReaders were not closed. This is due to non-closed Query Iterators, which must be closed!&quot;,
+<b class="nc">&nbsp;									oldmonitors.size());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						for (AbstractReaderMonitor monitor : oldmonitors) {</b>
+&nbsp;							try {
+<b class="nc">&nbsp;								monitor.close();</b>
+<b class="nc">&nbsp;							} catch (Throwable e) {</b>
+<b class="nc">&nbsp;								exceptions.add(e);</b>
+<b class="nc">&nbsp;							}</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;						oldmonitors.clear();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="nc">&nbsp;						IndexWriter toCloseIndexWriter = indexWriter;</b>
+<b class="nc">&nbsp;						indexWriter = null;</b>
+<b class="nc">&nbsp;						if (toCloseIndexWriter != null) {</b>
+<b class="nc">&nbsp;							toCloseIndexWriter.close();</b>
+&nbsp;						}
+&nbsp;					} finally {
+<b class="nc">&nbsp;						if (!exceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;							throw new UndeclaredThrowableException(exceptions.get(0));</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	// //////////////////////////////// Methods for updating the index
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized SearchDocument getDocument(String id) throws IOException {
+<b class="nc">&nbsp;		Document document = getDocument(idTerm(id));</b>
+<b class="nc">&nbsp;		return (document != null) ? new LuceneDocument(document, geoStrategyMapper) : null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized Iterable&lt;? extends SearchDocument&gt; getDocuments(String resourceId) throws IOException {
+<b class="nc">&nbsp;		List&lt;Document&gt; docs = getDocuments(new Term(SearchFields.URI_FIELD_NAME, resourceId));</b>
+<b class="nc">&nbsp;		return Iterables.transform(docs, (Document doc) -&gt; new LuceneDocument(doc, geoStrategyMapper));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized SearchDocument newDocument(String id, String resourceId, String context) {
+<b class="nc">&nbsp;		return new LuceneDocument(id, resourceId, context, geoStrategyMapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized SearchDocument copyDocument(SearchDocument doc) {
+<b class="nc">&nbsp;		Document document = ((LuceneDocument) doc).getDocument();</b>
+<b class="nc">&nbsp;		Document newDocument = new Document();</b>
+&nbsp;
+&nbsp;		// add all existing fields (including id, uri, context, and text)
+<b class="nc">&nbsp;		for (IndexableField oldField : document.getFields()) {</b>
+<b class="nc">&nbsp;			newDocument.add(oldField);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return new LuceneDocument(newDocument, geoStrategyMapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized void addDocument(SearchDocument doc) throws IOException {
+<b class="nc">&nbsp;		getIndexWriter().addDocument(((LuceneDocument) doc).getDocument());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized void updateDocument(SearchDocument doc) throws IOException {
+<b class="nc">&nbsp;		getIndexWriter().updateDocument(idTerm(doc.getId()), ((LuceneDocument) doc).getDocument());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized void deleteDocument(SearchDocument doc) throws IOException {
+<b class="nc">&nbsp;		getIndexWriter().deleteDocuments(idTerm(doc.getId()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized BulkUpdater newBulkUpdate() {
+<b class="nc">&nbsp;		return new SimpleBulkUpdater(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Term idTerm(String id) {
+<b class="nc">&nbsp;		return new Term(SearchFields.ID_FIELD_NAME, id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a Document representing the specified document ID (combination of resource and context), or null when no
+&nbsp;	 * such Document exists yet.
+&nbsp;	 */
+&nbsp;	private Document getDocument(Term idTerm) throws IOException {
+<b class="nc">&nbsp;		IndexReader reader = getIndexReader();</b>
+<b class="nc">&nbsp;		List&lt;LeafReaderContext&gt; leaves = reader.leaves();</b>
+<b class="nc">&nbsp;		int size = leaves.size();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; size; i++) {</b>
+<b class="nc">&nbsp;			LeafReader lreader = leaves.get(i).reader();</b>
+<b class="nc">&nbsp;			Document document = getDocument(lreader, idTerm);</b>
+<b class="nc">&nbsp;			if (document != null) {</b>
+<b class="nc">&nbsp;				return document;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;		// no such Document
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Document getDocument(LeafReader reader, Term term) throws IOException {
+<b class="nc">&nbsp;		PostingsEnum docs = reader.postings(term);</b>
+<b class="nc">&nbsp;		if (docs != null) {</b>
+<b class="nc">&nbsp;			int docId = docs.nextDoc();</b>
+&nbsp;			// PostingsEnum may contain deleted documents, we have to cope for it
+<b class="nc">&nbsp;			while (docId != PostingsEnum.NO_MORE_DOCS) {</b>
+&nbsp;
+&nbsp;				// if document is deleted, skip and continue
+<b class="nc">&nbsp;				Bits liveDocs = reader.getLiveDocs();</b>
+<b class="nc">&nbsp;				if (liveDocs != null &amp;&amp; !liveDocs.get(docId)) {</b>
+<b class="nc">&nbsp;					docId = docs.nextDoc();</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (docs.nextDoc() != PostingsEnum.NO_MORE_DOCS) {</b>
+<b class="nc">&nbsp;					throw new IllegalStateException(&quot;Multiple Documents for term &quot; + term.text());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return readDocument(reader, docId, null);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
+&nbsp;	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+&nbsp;	 * context
+&nbsp;	 */
+&nbsp;	private List&lt;Document&gt; getDocuments(Term uriTerm) throws IOException {
+<b class="nc">&nbsp;		List&lt;Document&gt; result = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		IndexReader reader = getIndexReader();</b>
+<b class="nc">&nbsp;		List&lt;LeafReaderContext&gt; leaves = reader.leaves();</b>
+<b class="nc">&nbsp;		int size = leaves.size();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; size; i++) {</b>
+<b class="nc">&nbsp;			LeafReader lreader = leaves.get(i).reader();</b>
+<b class="nc">&nbsp;			addDocuments(lreader, uriTerm, result);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void addDocuments(LeafReader reader, Term term, Collection&lt;Document&gt; documents) throws IOException {
+<b class="nc">&nbsp;		PostingsEnum docs = reader.postings(term);</b>
+<b class="nc">&nbsp;		if (docs != null) {</b>
+&nbsp;			int docId;
+<b class="nc">&nbsp;			while ((docId = docs.nextDoc()) != PostingsEnum.NO_MORE_DOCS) {</b>
+<b class="nc">&nbsp;				Bits liveDocs = reader.getLiveDocs();</b>
+&nbsp;				// Maybe some of the docs have been deleted! Check that too..
+<b class="nc">&nbsp;				if (liveDocs != null &amp;&amp; !liveDocs.get(docId)) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				Document document = readDocument(reader, docId, null);</b>
+<b class="nc">&nbsp;				documents.add(document);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
+&nbsp;	 * exists yet.
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @param context
+&nbsp;	 * @return document
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public synchronized Document getDocument(Resource subject, Resource context) throws IOException {
+&nbsp;		// fetch the Document representing this Resource
+<b class="nc">&nbsp;		String resourceId = SearchFields.getResourceID(subject);</b>
+<b class="nc">&nbsp;		String contextId = SearchFields.getContextID(context);</b>
+<b class="nc">&nbsp;		Term idTerm = new Term(SearchFields.ID_FIELD_NAME, SearchFields.formIdString(resourceId, contextId));</b>
+<b class="nc">&nbsp;		return getDocument(idTerm);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
+&nbsp;	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+&nbsp;	 * context
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @return list of documents
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public synchronized List&lt;Document&gt; getDocuments(Resource subject) throws IOException {
+<b class="nc">&nbsp;		String resourceId = SearchFields.getResourceID(subject);</b>
+<b class="nc">&nbsp;		Term uriTerm = new Term(SearchFields.URI_FIELD_NAME, resourceId);</b>
+<b class="nc">&nbsp;		return getDocuments(uriTerm);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stores and indexes an ID in a Document.
+&nbsp;	 *
+&nbsp;	 * @param id
+&nbsp;	 * @param document
+&nbsp;	 */
+&nbsp;	public static void addIDField(String id, Document document) {
+<b class="nc">&nbsp;		document.add(new StringField(SearchFields.ID_FIELD_NAME, id, Store.YES));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add the &quot;context&quot; value to the doc
+&nbsp;	 *
+&nbsp;	 * @param context  the context or null, if null-context
+&nbsp;	 * @param document the document
+&nbsp;	 */
+&nbsp;	public static void addContextField(String context, Document document) {
+<b class="nc">&nbsp;		if (context != null) {</b>
+<b class="nc">&nbsp;			document.add(new StringField(SearchFields.CONTEXT_FIELD_NAME, context, Store.YES));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stores and indexes the resource ID in a Document.
+&nbsp;	 *
+&nbsp;	 * @param resourceId
+&nbsp;	 * @param document
+&nbsp;	 */
+&nbsp;	public static void addResourceField(String resourceId, Document document) {
+<b class="nc">&nbsp;		document.add(new StringField(SearchFields.URI_FIELD_NAME, resourceId, Store.YES));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void addPredicateField(String predicate, String text, Document document) {
+&nbsp;		// store this predicate
+<b class="nc">&nbsp;		document.add(new TextField(predicate, text, Store.YES));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void addStoredOnlyPredicateField(String predicate, String text, Document document) {
+&nbsp;		// store this predicate
+<b class="nc">&nbsp;		document.add(new StoredField(predicate, text));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void addTextField(String text, Document document) {
+&nbsp;		// and in TEXT_FIELD_NAME
+<b class="nc">&nbsp;		document.add(new TextField(SearchFields.TEXT_FIELD_NAME, text, Store.YES));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * invalidate readers, free them if possible (readers that are still open by a {@link LuceneQueryConnection} will
+&nbsp;	 * not be closed. Synchronized on oldmonitors because it manipulates them
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private void invalidateReaders() throws IOException {
+<b class="nc">&nbsp;		synchronized (oldmonitors) {</b>
+&nbsp;			// Move current monitor to old monitors and set null
+<b class="nc">&nbsp;			if (currentMonitor != null) {</b>
+&nbsp;				// we do NOT close it directly as it may be used by an open
+&nbsp;				// result
+&nbsp;				// iterator, hence moving it to the
+&nbsp;				// list of oldmonitors where it is handled as other older
+&nbsp;				// monitors
+<b class="nc">&nbsp;				oldmonitors.add(currentMonitor);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			currentMonitor = null;</b>
+&nbsp;
+&nbsp;			// close all monitors if possible
+<b class="nc">&nbsp;			for (Iterator&lt;AbstractReaderMonitor&gt; i = oldmonitors.iterator(); i.hasNext();) {</b>
+<b class="nc">&nbsp;				AbstractReaderMonitor monitor = i.next();</b>
+<b class="nc">&nbsp;				if (monitor.closeWhenPossible()) {</b>
+<b class="nc">&nbsp;					i.remove();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// check if all readers were closed
+<b class="nc">&nbsp;			if (oldmonitors.isEmpty()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Deleting unused files from Lucene index&quot;);</b>
+&nbsp;
+&nbsp;				// clean up unused files (marked as &#39;deletable&#39; in Luke
+&nbsp;				// Filewalker)
+<b class="nc">&nbsp;				getIndexWriter().deleteUnusedFiles();</b>
+&nbsp;
+&nbsp;				// logIndexStats();
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unused&quot;)
+&nbsp;	private void logIndexStats() {
+&nbsp;		try {
+&nbsp;			IndexReader reader;
+&nbsp;			try {
+<b class="nc">&nbsp;				reader = getIndexReader();</b>
+&nbsp;
+&nbsp;				Document doc;
+<b class="nc">&nbsp;				int totalFields = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;				Set&lt;String&gt; ids = new HashSet&lt;&gt;();</b>
+&nbsp;				String[] idArray;
+<b class="nc">&nbsp;				int count = 0;</b>
+<b class="nc">&nbsp;				for (int i = 0; i &lt; reader.maxDoc(); i++) {</b>
+<b class="nc">&nbsp;					if (isDeleted(reader, i)) {</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					doc = readDocument(reader, i, null);</b>
+<b class="nc">&nbsp;					totalFields += doc.getFields().size();</b>
+<b class="nc">&nbsp;					count++;</b>
+<b class="nc">&nbsp;					idArray = doc.getValues(&quot;id&quot;);</b>
+<b class="nc">&nbsp;					for (String id : idArray) {</b>
+<b class="nc">&nbsp;						ids.add(id);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				logger.info(&quot;Total documents in the index: &quot; + reader.numDocs()</b>
+<b class="nc">&nbsp;						+ &quot;, number of deletable documents in the index: &quot; + reader.numDeletedDocs()</b>
+&nbsp;						+ &quot;, valid documents: &quot; + count + &quot;, total fields in all documents: &quot; + totalFields
+<b class="nc">&nbsp;						+ &quot;, average number of fields per document: &quot; + ((double) totalFields) / reader.numDocs());</b>
+<b class="nc">&nbsp;				logger.info(&quot;Distinct ids in the index: &quot; + ids.size());</b>
+&nbsp;
+&nbsp;			} finally {
+<b class="nc">&nbsp;				ReaderMonitor toCloseCurrentMonitor = currentMonitor;</b>
+<b class="nc">&nbsp;				currentMonitor = null;</b>
+<b class="nc">&nbsp;				if (toCloseCurrentMonitor != null) {</b>
+<b class="nc">&nbsp;					toCloseCurrentMonitor.closeWhenPossible();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			logger.warn(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void begin() throws IOException {
+&nbsp;		// nothing to do
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Commits any changes done to the LuceneIndex since the last commit. The semantics is synchronous to
+&nbsp;	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rolled back whenever the LuceneSailConnection
+&nbsp;	 * is committed/rolled back.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void commit() throws IOException {
+<b class="nc">&nbsp;		getIndexWriter().commit();</b>
+&nbsp;		// the old IndexReaders/Searchers are not outdated
+<b class="nc">&nbsp;		invalidateReaders();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void rollback() throws IOException {
+<b class="nc">&nbsp;		getIndexWriter().rollback();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// //////////////////////////////// Methods for querying the index
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the passed query.
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @param query       string
+&nbsp;	 * @param propertyURI
+&nbsp;	 * @param highlight
+&nbsp;	 * @return the parsed query
+&nbsp;	 * @throws MalformedQueryException when the parsing breaks
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected Iterable&lt;? extends DocumentScore&gt; query(Resource subject, String query, IRI propertyURI,
+&nbsp;			boolean highlight) throws MalformedQueryException, IOException {
+&nbsp;		Query q;
+&nbsp;		try {
+<b class="nc">&nbsp;			q = getQueryParser(propertyURI).parse(query);</b>
+<b class="nc">&nbsp;		} catch (ParseException e) {</b>
+<b class="nc">&nbsp;			throw new MalformedQueryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		final Highlighter highlighter;
+<b class="nc">&nbsp;		if (highlight) {</b>
+<b class="nc">&nbsp;			Formatter formatter = new SimpleHTMLFormatter(SearchFields.HIGHLIGHTER_PRE_TAG,</b>
+&nbsp;					SearchFields.HIGHLIGHTER_POST_TAG);
+<b class="nc">&nbsp;			highlighter = new Highlighter(formatter, new QueryScorer(q));</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			highlighter = null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		TopDocs docs;
+<b class="nc">&nbsp;		if (subject != null) {</b>
+<b class="nc">&nbsp;			docs = search(subject, q);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			docs = search(q);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Iterables.transform(Arrays.asList(docs.scoreDocs),</b>
+<b class="nc">&nbsp;				(ScoreDoc doc) -&gt; new LuceneDocumentScore(doc, highlighter, LuceneIndex.this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Iterable&lt;? extends DocumentDistance&gt; geoQuery(final IRI geoProperty, Point p, final IRI units,
+&nbsp;			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
+<b class="nc">&nbsp;		double degs = GeoUnits.toDegrees(distance, units);</b>
+<b class="nc">&nbsp;		final String geoField = SearchFields.getPropertyField(geoProperty);</b>
+<b class="nc">&nbsp;		SpatialContext context = SpatialContext.GEO;</b>
+<b class="nc">&nbsp;		final Shape boundingCircle = context.getShapeFactory().circle(p, degs);</b>
+&nbsp;
+&nbsp;		// use LatLonPoint for distance query after indexing it with the same data structure
+&nbsp;
+<b class="nc">&nbsp;		Query q = LatLonPoint.newDistanceQuery(POINT_FIELD_PREFIX + geoField, p.getY(), p.getX(), distance);</b>
+<b class="nc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			q = addContextTerm(q, (Resource) contextVar.getValue());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TopDocs docs = search(q);</b>
+<b class="nc">&nbsp;		final boolean requireContext = (contextVar != null &amp;&amp; !contextVar.hasValue());</b>
+<b class="nc">&nbsp;		return Iterables.transform(Arrays.asList(docs.scoreDocs),</b>
+<b class="nc">&nbsp;				(ScoreDoc doc) -&gt; new LuceneDocumentDistance(doc, geoField, units, boundingCircle.getCenter(),</b>
+&nbsp;						requireContext,
+&nbsp;						LuceneIndex.this));
+&nbsp;	}
+&nbsp;
+&nbsp;	private Query addContextTerm(Query q, Resource ctx) {
+<b class="nc">&nbsp;		BooleanQuery.Builder combinedQuery = new BooleanQuery.Builder();</b>
+<b class="nc">&nbsp;		TermQuery idQuery = new TermQuery(new Term(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx)));</b>
+&nbsp;		// the specified named graph or not the unnamed graph
+<b class="nc">&nbsp;		combinedQuery.add(idQuery, ctx != null ? Occur.MUST : Occur.MUST_NOT);</b>
+<b class="nc">&nbsp;		combinedQuery.add(q, Occur.MUST);</b>
+<b class="nc">&nbsp;		return combinedQuery.build();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Iterable&lt;? extends DocumentResult&gt; geoRelationQuery(String relation, IRI geoProperty, String wkt,
+&nbsp;			Var contextVar) throws MalformedQueryException, IOException {
+&nbsp;
+<b class="nc">&nbsp;		Object shape = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			shape = super.parseLuceneQueryShape(SearchFields.getPropertyField(geoProperty), wkt);</b>
+<b class="nc">&nbsp;		} catch (java.text.ParseException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;error while parsing wkt geometry&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		SpatialOperation op = toSpatialOp(relation);</b>
+<b class="nc">&nbsp;		if (op == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String geoField = SearchFields.getPropertyField(geoProperty);</b>
+&nbsp;
+&nbsp;		// Use the new indexing algorithm from lucene (LatLonShape)
+<b class="nc">&nbsp;		Query q = makeQuery(op, GEO_FIELD_PREFIX + geoField, shape);</b>
+<b class="nc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			q = addContextTerm(q, (Resource) contextVar.getValue());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TopDocs docs = search(q);</b>
+<b class="nc">&nbsp;		final Set&lt;String&gt; fields = Sets.newHashSet(SearchFields.URI_FIELD_NAME, geoField);</b>
+<b class="nc">&nbsp;		if (contextVar != null &amp;&amp; !contextVar.hasValue()) {</b>
+<b class="nc">&nbsp;			fields.add(SearchFields.CONTEXT_FIELD_NAME);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Iterables.transform(Arrays.asList(docs.scoreDocs),</b>
+<b class="nc">&nbsp;				(ScoreDoc doc) -&gt; new LuceneDocumentResult(doc, LuceneIndex.this, fields));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ShapeField.QueryRelation getRelation(SpatialOperation op) {
+<b class="nc">&nbsp;		switch (op.toString()) {</b>
+&nbsp;		case &quot;Contains&quot;:
+<b class="nc">&nbsp;			return ShapeField.QueryRelation.INTERSECTS;</b>
+&nbsp;		case &quot;Within&quot;:
+<b class="nc">&nbsp;			return ShapeField.QueryRelation.WITHIN;</b>
+&nbsp;		case &quot;Disjoint&quot;:
+<b class="nc">&nbsp;			return ShapeField.QueryRelation.DISJOINT;</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;The geo function [&quot; + op.toString() + &quot;] is not supported&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Query makeQuery(SpatialOperation op, String geoField, Object shape) {
+<b class="nc">&nbsp;		Query q = null;</b>
+<b class="nc">&nbsp;		ShapeField.QueryRelation relation = getRelation(op);</b>
+<b class="nc">&nbsp;		if (shape instanceof double[]) {</b>
+<b class="nc">&nbsp;			double[] point = (double[]) shape;</b>
+<b class="nc">&nbsp;			q = LatLonShape.newBoxQuery(geoField, relation, point[1], point[1], point[0], point[0]);</b>
+<b class="nc">&nbsp;		} else if (shape instanceof Polygon) {</b>
+<b class="nc">&nbsp;			q = LatLonShape.newPolygonQuery(geoField, relation, (Polygon) shape);</b>
+<b class="nc">&nbsp;		} else if (shape instanceof Polygon[]) {</b>
+<b class="nc">&nbsp;			q = LatLonShape.newPolygonQuery(geoField, relation, (Polygon[]) shape);</b>
+<b class="nc">&nbsp;		} else if (shape instanceof Line) {</b>
+<b class="nc">&nbsp;			q = LatLonShape.newLineQuery(geoField, relation, (Line) shape);</b>
+<b class="nc">&nbsp;		} else if (shape instanceof Line[]) {</b>
+<b class="nc">&nbsp;			q = LatLonShape.newLineQuery(geoField, relation, (Line[]) shape);</b>
+<b class="nc">&nbsp;		} else if (shape instanceof Rectangle) {</b>
+<b class="nc">&nbsp;			Rectangle box = (Rectangle) shape;</b>
+<b class="nc">&nbsp;			q = LatLonShape.newBoxQuery(geoField, relation, box.minLat, box.minLon, box.maxLat, box.maxLon);</b>
+<b class="nc">&nbsp;		} else if (shape instanceof Rectangle[]) {</b>
+<b class="nc">&nbsp;			Rectangle box = ((Rectangle[]) shape)[0];</b>
+<b class="nc">&nbsp;			q = LatLonShape.newBoxQuery(geoField, relation, box.minLat, box.minLon, box.maxLat, box.maxLon);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return q;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private SpatialOperation toSpatialOp(String relation) {
+<b class="nc">&nbsp;		if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.Intersects;</b>
+<b class="nc">&nbsp;		} else if (GEOF.SF_DISJOINT.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.IsDisjointTo;</b>
+<b class="nc">&nbsp;		} else if (GEOF.SF_EQUALS.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.IsEqualTo;</b>
+<b class="nc">&nbsp;		} else if (GEOF.SF_OVERLAPS.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.Overlaps;</b>
+<b class="nc">&nbsp;		} else if (GEOF.EH_COVERED_BY.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.IsWithin;</b>
+<b class="nc">&nbsp;		} else if (GEOF.EH_COVERS.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.Contains;</b>
+<b class="nc">&nbsp;		} else if (GEOF.SF_WITHIN.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.IsWithin;</b>
+<b class="nc">&nbsp;		} else if (GEOF.EH_CONTAINS.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return SpatialOperation.Contains;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the lucene hit with the given id of the respective lucene query
+&nbsp;	 *
+&nbsp;	 * @param docId        the id of the document to return
+&nbsp;	 * @param fieldsToLoad
+&nbsp;	 * @return the requested hit, or null if it fails
+&nbsp;	 */
+&nbsp;	public synchronized Document getDocument(int docId, Set&lt;String&gt; fieldsToLoad) {
+&nbsp;		try {
+<b class="nc">&nbsp;			return readDocument(getIndexReader(), docId, fieldsToLoad);</b>
+<b class="nc">&nbsp;		} catch (CorruptIndexException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;The index seems to be corrupted:&quot;, e);</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Could not read from index:&quot;, e);</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized String getSnippet(String fieldName, String text, Highlighter highlighter) {
+&nbsp;		String snippet;
+&nbsp;		try {
+<b class="nc">&nbsp;			TokenStream tokenStream = getAnalyzer().tokenStream(fieldName, new StringReader(text));</b>
+<b class="nc">&nbsp;			snippet = highlighter.getBestFragments(tokenStream, text, 2, &quot;...&quot;);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Exception while getting snippet for field &quot; + fieldName, e);</b>
+<b class="nc">&nbsp;			snippet = null;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return snippet;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the given query only for the given resource.
+&nbsp;	 *
+&nbsp;	 * @param resource
+&nbsp;	 * @param query
+&nbsp;	 * @return top documents
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public synchronized TopDocs search(Resource resource, Query query) throws IOException {
+&nbsp;		// rewrite the query
+<b class="nc">&nbsp;		TermQuery idQuery = new TermQuery(new Term(SearchFields.URI_FIELD_NAME, SearchFields.getResourceID(resource)));</b>
+<b class="nc">&nbsp;		BooleanQuery.Builder combinedQuery = new BooleanQuery.Builder();</b>
+<b class="nc">&nbsp;		combinedQuery.add(idQuery, Occur.MUST);</b>
+<b class="nc">&nbsp;		combinedQuery.add(query, Occur.MUST);</b>
+<b class="nc">&nbsp;		return search(combinedQuery.build());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the given query and returns the results as a TopDocs instance.
+&nbsp;	 *
+&nbsp;	 * @param query
+&nbsp;	 * @return top documents
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public synchronized TopDocs search(Query query) throws IOException {
+&nbsp;		int nDocs;
+<b class="nc">&nbsp;		if (maxDocs &gt; 0) {</b>
+<b class="nc">&nbsp;			nDocs = maxDocs;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			nDocs = Math.max(getIndexReader().numDocs(), 1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return getIndexSearcher().search(query, nDocs);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryParser getQueryParser(IRI propertyURI) {
+&nbsp;		String fieldName;
+&nbsp;		// check out which query parser to use, based on the given property URI
+<b class="nc">&nbsp;		if (propertyURI == null) {</b>
+&nbsp;			// if we have no property given, we create a default query parser which has the TEXT_FIELD_NAME as the
+&nbsp;			// default field
+<b class="nc">&nbsp;			fieldName = SearchFields.TEXT_FIELD_NAME;</b>
+&nbsp;		} else {
+&nbsp;			// otherwise we create a query parser that has the given property as the default field
+<b class="nc">&nbsp;			fieldName = SearchFields.getPropertyField(propertyURI);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		QueryParser queryParser = new QueryParser(fieldName, queryAnalyzer);</b>
+<b class="nc">&nbsp;		queryParser.setFuzzyPrefixLength(fuzzyPrefixLength);</b>
+<b class="nc">&nbsp;		return queryParser;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param contexts
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void clearContexts(Resource... contexts) throws IOException {
+<b class="nc">&nbsp;		logger.debug(&quot;deleting contexts: {}&quot;, Arrays.toString(contexts));</b>
+&nbsp;		// these resources have to be read from the underlying rdf store
+&nbsp;		// and their triples have to be added to the luceneindex after deletion
+&nbsp;		// of
+&nbsp;		// documents
+&nbsp;
+&nbsp;		// remove all contexts passed
+<b class="nc">&nbsp;		for (Resource context : contexts) {</b>
+&nbsp;			// attention: context can be NULL!
+<b class="nc">&nbsp;			String contextString = SearchFields.getContextID(context);</b>
+<b class="nc">&nbsp;			Term contextTerm = new Term(SearchFields.CONTEXT_FIELD_NAME, contextString);</b>
+&nbsp;
+&nbsp;			// now delete all documents from the deleted context
+<b class="nc">&nbsp;			getIndexWriter().deleteDocuments(contextTerm);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void clear() throws IOException {
+<b class="nc">&nbsp;		if (closed.get()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Index has been closed&quot;);</b>
+&nbsp;		}
+&nbsp;		// clear
+&nbsp;		// the old IndexReaders/Searchers are not outdated
+<b class="nc">&nbsp;		invalidateReaders();</b>
+<b class="nc">&nbsp;		if (indexWriter != null) {</b>
+<b class="nc">&nbsp;			indexWriter.close();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// crate new writer
+<b class="nc">&nbsp;		IndexWriterConfig indexWriterConfig = getIndexWriterConfig();</b>
+<b class="nc">&nbsp;		indexWriterConfig.setOpenMode(OpenMode.CREATE);</b>
+<b class="nc">&nbsp;		indexWriter = new IndexWriter(directory, indexWriterConfig);</b>
+<b class="nc">&nbsp;		indexWriter.close();</b>
+<b class="nc">&nbsp;		indexWriter = null;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	//
+&nbsp;	// Lucene helper methods
+&nbsp;	//
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method produces {@link IndexWriterConfig} using settings.
+&nbsp;	 *
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private IndexWriterConfig getIndexWriterConfig() {
+<b class="nc">&nbsp;		IndexWriterConfig cnf = new IndexWriterConfig(analyzer);</b>
+<b class="nc">&nbsp;		cnf.setSimilarity(similarity);</b>
+<b class="nc">&nbsp;		return cnf;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isDeleted(IndexReader reader, int docId) {
+<b class="nc">&nbsp;		if (reader.hasDeletions()) {</b>
+<b class="nc">&nbsp;			List&lt;LeafReaderContext&gt; leaves = reader.leaves();</b>
+<b class="nc">&nbsp;			int size = leaves.size();</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; size; i++) {</b>
+<b class="nc">&nbsp;				Bits liveDocs = leaves.get(i).reader().getLiveDocs();</b>
+<b class="nc">&nbsp;				if (docId &lt; liveDocs.length()) {</b>
+<b class="nc">&nbsp;					boolean isDeleted = !liveDocs.get(docId);</b>
+<b class="nc">&nbsp;					if (isDeleted) {</b>
+<b class="nc">&nbsp;						return true;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Document readDocument(IndexReader reader, int docId, Set&lt;String&gt; fieldsToLoad) throws IOException {
+<b class="nc">&nbsp;		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor(fieldsToLoad);</b>
+<b class="nc">&nbsp;		reader.document(docId, visitor);</b>
+<b class="nc">&nbsp;		return visitor.getDocument();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static class DocumentStoredFieldVisitor extends StoredFieldVisitor {
+&nbsp;
+&nbsp;		private final Set&lt;String&gt; fieldsToLoad;
+&nbsp;
+<b class="nc">&nbsp;		private final Document document = new Document();</b>
+&nbsp;
+<b class="nc">&nbsp;		DocumentStoredFieldVisitor(Set&lt;String&gt; fieldsToLoad) {</b>
+<b class="nc">&nbsp;			this.fieldsToLoad = fieldsToLoad;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Status needsField(FieldInfo fieldInfo) throws IOException {
+<b class="nc">&nbsp;			return (fieldsToLoad == null || fieldsToLoad.contains(fieldInfo.name)) ? Status.YES : Status.NO;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void stringField(FieldInfo fieldInfo, byte[] value) {
+<b class="nc">&nbsp;			final String stringValue = new String(value, StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;			String name = fieldInfo.name;</b>
+<b class="nc">&nbsp;			if (SearchFields.ID_FIELD_NAME.equals(name)) {</b>
+<b class="nc">&nbsp;				addIDField(stringValue, document);</b>
+<b class="nc">&nbsp;			} else if (SearchFields.CONTEXT_FIELD_NAME.equals(name)) {</b>
+<b class="nc">&nbsp;				addContextField(stringValue, document);</b>
+<b class="nc">&nbsp;			} else if (SearchFields.URI_FIELD_NAME.equals(name)) {</b>
+<b class="nc">&nbsp;				addResourceField(stringValue, document);</b>
+<b class="nc">&nbsp;			} else if (SearchFields.TEXT_FIELD_NAME.equals(name)) {</b>
+<b class="nc">&nbsp;				addTextField(stringValue, document);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				addPredicateField(name, stringValue, document);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		Document getDocument() {
+<b class="nc">&nbsp;			return document;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

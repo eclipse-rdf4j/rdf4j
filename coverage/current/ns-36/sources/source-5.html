@@ -1,0 +1,325 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ParallelServiceExecutor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.concurrent</a>
+</div>
+
+<h1>Coverage Summary for Class: ParallelServiceExecutor (org.eclipse.rdf4j.federated.evaluation.concurrent)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ParallelServiceExecutor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ParallelServiceExecutor$ParallelServiceTask</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.concurrent;
+&nbsp;
+&nbsp;import java.util.concurrent.CountDownLatch;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXService;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Parallel executor for {@link FedXService} nodes, which wrap SERVICE expressions.
+&nbsp; *
+&nbsp; * Uses the union scheduler to execute the task
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class ParallelServiceExecutor extends LookAheadIteration&lt;BindingSet, QueryEvaluationException&gt;
+&nbsp;		implements ParallelExecutor&lt;BindingSet&gt; {
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * IMPLEMENTATION NOTE
+&nbsp;	 *
+&nbsp;	 * This class explicitly does not extend ParallelServiceExecutor: here the execution of the #run() is non blocking,
+&nbsp;	 * i.g. blocking is done a consumption time of the iterator
+&nbsp;	 */
+&nbsp;
+<b class="nc">&nbsp;	protected static final Logger log = LoggerFactory.getLogger(ParallelServiceExecutor.class);</b>
+&nbsp;
+&nbsp;	protected final FedXService service;
+&nbsp;	protected final FederationEvalStrategy strategy;
+&nbsp;	protected final BindingSet bindings;
+&nbsp;	protected final FederationContext federationContext;
+&nbsp;
+<b class="nc">&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; rightIter = null;</b>
+<b class="nc">&nbsp;	protected boolean finished = false;</b>
+<b class="nc">&nbsp;	protected Exception error = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	private CountDownLatch latch = null;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param service
+&nbsp;	 * @param strategy
+&nbsp;	 * @param bindings
+&nbsp;	 * @param federationContext
+&nbsp;	 */
+&nbsp;	public ParallelServiceExecutor(FedXService service,
+&nbsp;			FederationEvalStrategy strategy, BindingSet bindings, FederationContext federationContext) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.service = service;</b>
+<b class="nc">&nbsp;		this.strategy = strategy;</b>
+<b class="nc">&nbsp;		this.bindings = bindings;</b>
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void run() {
+&nbsp;
+<b class="nc">&nbsp;		latch = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		ControlledWorkerScheduler&lt;BindingSet&gt; scheduler = federationContext.getManager().getUnionScheduler();</b>
+<b class="nc">&nbsp;		scheduler.schedule(new ParallelServiceTask());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addResult(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res) {
+&nbsp;
+<b class="nc">&nbsp;		rightIter = res;</b>
+<b class="nc">&nbsp;		latch.countDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void toss(Exception e) {
+&nbsp;
+<b class="nc">&nbsp;		error = e;</b>
+<b class="nc">&nbsp;		latch.countDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void done() {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isFinished() {
+<b class="nc">&nbsp;		synchronized (this) {</b>
+<b class="nc">&nbsp;			return finished;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryInfo getQueryInfo() {
+<b class="nc">&nbsp;		return service.getQueryInfo();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet getNextElement() throws QueryEvaluationException {
+&nbsp;
+&nbsp;		// error resulting from TOSS
+<b class="nc">&nbsp;		if (error != null) {</b>
+<b class="nc">&nbsp;			if (error instanceof QueryEvaluationException) {</b>
+<b class="nc">&nbsp;				throw (QueryEvaluationException) error;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(error);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (rightIter == null) {</b>
+&nbsp;			// block if not evaluated
+&nbsp;			try {
+<b class="nc">&nbsp;				boolean completed = latch.await(getQueryInfo().getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);</b>
+<b class="nc">&nbsp;				if (!completed) {</b>
+<b class="nc">&nbsp;					throw new QueryInterruptedException(&quot;Timeout during service evaluation&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;				log.debug(&quot;Error while evaluating service expression. Thread got interrupted.&quot;);</b>
+<b class="nc">&nbsp;				error = e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// check again for error
+<b class="nc">&nbsp;		if (error != null) {</b>
+<b class="nc">&nbsp;			if (error instanceof QueryEvaluationException) {</b>
+<b class="nc">&nbsp;				throw (QueryEvaluationException) error;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(error);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (rightIter.hasNext()) {</b>
+<b class="nc">&nbsp;			return rightIter.next();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Task for evaluating service requests
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 */
+<b class="nc">&nbsp;	private class ParallelServiceTask extends ParallelTaskBase&lt;BindingSet&gt; {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; performTaskInternal() throws Exception {
+&nbsp;
+&nbsp;			// Note: in order two avoid deadlocks we consume the SERVICE result.
+&nbsp;			// This is basically required to avoid processing background tuple
+&nbsp;			// request (i.e. HTTP slots) in the correct order.
+<b class="nc">&nbsp;			return new CollectionIteration&lt;&gt;(Iterations.asList(strategy.evaluate(service.getService(), bindings)));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ParallelExecutor&lt;BindingSet&gt; getControl() {
+<b class="nc">&nbsp;			return ParallelServiceExecutor.this;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

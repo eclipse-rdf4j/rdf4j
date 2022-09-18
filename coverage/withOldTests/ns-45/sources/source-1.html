@@ -1,0 +1,736 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Protocol</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.protocol</a>
+</div>
+
+<h1>Coverage Summary for Class: Protocol (org.eclipse.rdf4j.http.protocol)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Protocol</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Protocol$Action</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">Protocol$TIMEOUT</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/65)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.protocol;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+&nbsp;
+<b class="nc">&nbsp;public abstract class Protocol {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Defines the action a particular transaction update is executing.
+&nbsp;	 *
+&nbsp;	 * @author Jeen Broekstra
+&nbsp;	 */
+<b class="nc">&nbsp;	public enum Action {</b>
+&nbsp;		/** adding data */
+<b class="nc">&nbsp;		ADD,</b>
+&nbsp;		/** deleting data */
+<b class="nc">&nbsp;		DELETE,</b>
+&nbsp;		/** getStatements or exportStatements */
+<b class="nc">&nbsp;		GET,</b>
+&nbsp;		/** retrieving repository size */
+<b class="nc">&nbsp;		SIZE,</b>
+&nbsp;		/** SPARQL query */
+<b class="nc">&nbsp;		QUERY,</b>
+&nbsp;		/** SPARQL Update */
+<b class="nc">&nbsp;		UPDATE,</b>
+&nbsp;		/** Keep alive ping @since 2.3 */
+<b class="nc">&nbsp;		PING,</b>
+&nbsp;		/** prepare */
+<b class="nc">&nbsp;		PREPARE,</b>
+&nbsp;		/** commit */
+<b class="nc">&nbsp;		COMMIT,</b>
+&nbsp;		/** rollback */
+<b class="nc">&nbsp;		ROLLBACK</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Use an enum to allow ActiveTransactionRegistry enum to access the static values. This is necessary because enum
+&nbsp;	 * are initialize before static fields.
+&nbsp;	 */
+<b class="nc">&nbsp;	@Deprecated</b>
+&nbsp;	public enum TIMEOUT {
+<b class="nc">&nbsp;		CACHE;</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction cache
+&nbsp;		 * timeout (in seconds).
+&nbsp;		 */
+&nbsp;		public static final String CACHE_PROPERTY = &quot;rdf4j.server.txn.registry.timeout&quot;;
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Default timeout setting for transaction cache entries (in seconds).
+&nbsp;		 */
+&nbsp;		public final static int DEFAULT = 60;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction cache
+&nbsp;	 * timeout (in seconds).
+&nbsp;	 */
+&nbsp;	public static final String CACHE_TIMEOUT_PROPERTY = Protocol.TIMEOUT.CACHE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default timeout setting for transaction cache entries (in seconds).
+&nbsp;	 */
+&nbsp;	public final static int DEFAULT_TIMEOUT = Protocol.TIMEOUT.DEFAULT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Protocol version.
+&nbsp;	 *
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;12: since RDF4J 3.5.0&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;11: since RDF4J 3.3.0&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;10: since RDF4J 3.1.0&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;9: since RDF4J 3.0.0&lt;/li&gt;
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 */
+&nbsp;	public static final String VERSION = &quot;12&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the &#39;subject&#39; parameter of a statement query.
+&nbsp;	 */
+&nbsp;	public static final String SUBJECT_PARAM_NAME = &quot;subj&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the &#39;predicate&#39; parameter of a statement query.
+&nbsp;	 */
+&nbsp;	public static final String PREDICATE_PARAM_NAME = &quot;pred&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the &#39;object&#39; parameter of statement query.
+&nbsp;	 */
+&nbsp;	public static final String OBJECT_PARAM_NAME = &quot;obj&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the &#39;includeInferred&#39; parameter.
+&nbsp;	 */
+&nbsp;	public static final String INCLUDE_INFERRED_PARAM_NAME = &quot;infer&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the context parameter.
+&nbsp;	 */
+&nbsp;	public static final String CONTEXT_PARAM_NAME = &quot;context&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter value for the NULL context.
+&nbsp;	 */
+&nbsp;	public static final String NULL_PARAM_VALUE = &quot;null&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the graph parameter.
+&nbsp;	 */
+&nbsp;	public static final String GRAPH_PARAM_NAME = &quot;graph&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the update parameter.
+&nbsp;	 */
+&nbsp;	public static final String UPDATE_PARAM_NAME = &quot;update&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the base-URI parameter.
+&nbsp;	 */
+&nbsp;	public static final String BASEURI_PARAM_NAME = &quot;baseURI&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the query parameter.
+&nbsp;	 */
+&nbsp;	public static final String QUERY_PARAM_NAME = &quot;query&quot;;
+&nbsp;
+&nbsp;	public static final String LIMIT_PARAM_NAME = &quot;limit&quot;;
+&nbsp;
+&nbsp;	public static final String OFFSET_PARAM_NAME = &quot;offset&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the query language parameter.
+&nbsp;	 */
+&nbsp;	public static final String QUERY_LANGUAGE_PARAM_NAME = &quot;queryLn&quot;;
+&nbsp;
+&nbsp;	public static final String TIMEOUT_PARAM_NAME = &quot;timeout&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the default remove graph URI parameter.
+&nbsp;	 */
+&nbsp;	public static final String REMOVE_GRAPH_PARAM_NAME = &quot;remove-graph-uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the default insert graph URI parameter.
+&nbsp;	 */
+&nbsp;	public static final String INSERT_GRAPH_PARAM_NAME = &quot;insert-graph-uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the default graph URI parameter for update.
+&nbsp;	 */
+&nbsp;	public static final String USING_GRAPH_PARAM_NAME = &quot;using-graph-uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the named graph URI parameter for update.
+&nbsp;	 */
+&nbsp;	public static final String USING_NAMED_GRAPH_PARAM_NAME = &quot;using-named-graph-uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the default graph URI parameter.
+&nbsp;	 */
+&nbsp;	public static final String DEFAULT_GRAPH_PARAM_NAME = &quot;default-graph-uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the named graph URI parameter.
+&nbsp;	 */
+&nbsp;	public static final String NAMED_GRAPH_PARAM_NAME = &quot;named-graph-uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the Accept parameter (may also be used as the name of the Accept HTTP header).
+&nbsp;	 */
+&nbsp;	public static final String ACCEPT_PARAM_NAME = &quot;Accept&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the isolation level used in transactions.
+&nbsp;	 *
+&nbsp;	 * @deprecated since 3.3.0. Use &lt;code&gt;transaction-setting__isolation-level&lt;/code&gt; instead.
+&nbsp;	 * @see #TRANSACTION_SETTINGS_PREFIX
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final String ISOLATION_LEVEL_PARAM_NAME = &quot;isolation-level&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prefix for transaction settings in the query param
+&nbsp;	 *
+&nbsp;	 * @since 3.3.0
+&nbsp;	 */
+&nbsp;	public static final String TRANSACTION_SETTINGS_PREFIX = &quot;transaction-setting__&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the action parameter used in transactions.
+&nbsp;	 */
+&nbsp;	public static final String ACTION_PARAM_NAME = &quot;action&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter name for the distinct parameter.
+&nbsp;	 */
+&nbsp;	public static final String DISTINCT_PARAM_NAME = &quot;distinct&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the protocol resource.
+&nbsp;	 */
+&nbsp;	public static final String PROTOCOL = &quot;protocol&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the config resource.
+&nbsp;	 */
+&nbsp;	public static final String CONFIG = &quot;config&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the repository list resource.
+&nbsp;	 */
+&nbsp;	public static final String REPOSITORIES = &quot;repositories&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the statement list resource of a repository.
+&nbsp;	 */
+&nbsp;	public static final String STATEMENTS = &quot;statements&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the transaction resources of a repository.
+&nbsp;	 */
+&nbsp;	public static final String TRANSACTIONS = &quot;transactions&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the context list resource of a repository.
+&nbsp;	 */
+&nbsp;	public static final String CONTEXTS = &quot;contexts&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the namespaces list resource of a repository.
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACES = &quot;namespaces&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter prefix for query-external variable bindings.
+&nbsp;	 */
+&nbsp;	public static final String BINDING_PREFIX = &quot;$&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Relative location of the &#39;size&#39; resource of a repository.
+&nbsp;	 */
+&nbsp;	public static final String SIZE = &quot;size&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * MIME type for transactions: &lt;var&gt;application/x-rdftransaction&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static final String TXN_MIME_TYPE = &quot;application/x-rdftransaction&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * MIME type for www forms: &lt;var&gt;application/x-www-form-urlencoded&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static final String FORM_MIME_TYPE = &quot;application/x-www-form-urlencoded&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * MIME type for SPARQL update: &lt;var&gt;application/sparql-query&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static final String SPARQL_QUERY_MIME_TYPE = &quot;application/sparql-query&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * MIME type for SPARQL update: &lt;var&gt;application/sparql-update&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static final String SPARQL_UPDATE_MIME_TYPE = &quot;application/sparql-update&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parameter for server instruction to preserve blank node ids when parsing request data.
+&nbsp;	 */
+&nbsp;	public static final String PRESERVE_BNODE_ID_PARAM_NAME = &quot;preserveNodeId&quot;;
+&nbsp;
+&nbsp;	private static String getServerDir(String serverLocation) {
+<b class="nc">&nbsp;		if (serverLocation.endsWith(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;			return serverLocation;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return serverLocation + &quot;/&quot;;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the protocol resource on the specified server.
+&nbsp;	 *
+&nbsp;	 * @param serverLocation the base location of a server implementing this REST protocol.
+&nbsp;	 * @return the location of the protocol resource on the specified server
+&nbsp;	 */
+&nbsp;	public static final String getProtocolLocation(String serverLocation) {
+<b class="nc">&nbsp;		return getServerDir(serverLocation) + PROTOCOL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the server configuration resource on the specified server.
+&nbsp;	 *
+&nbsp;	 * @param serverLocation the base location of a server implementing this REST protocol.
+&nbsp;	 * @return the location of the server configuration resource on the specified server
+&nbsp;	 */
+&nbsp;	public static final String getConfigLocation(String serverLocation) {
+<b class="nc">&nbsp;		return getServerDir(serverLocation) + CONFIG;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the repository list resource on the specified server.
+&nbsp;	 *
+&nbsp;	 * @param serverLocation the base location of a server implementing this REST protocol.
+&nbsp;	 * @return the location of the repository list resource on the specified server
+&nbsp;	 */
+&nbsp;	public static final String getRepositoriesLocation(String serverLocation) {
+<b class="nc">&nbsp;		return getServerDir(serverLocation) + REPOSITORIES;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of a specific repository resource on the specified server.
+&nbsp;	 *
+&nbsp;	 * @param serverLocation the base location of a server implementing this REST protocol.
+&nbsp;	 * @param repositoryID   the ID of the repository
+&nbsp;	 * @return the location of a specific repository resource on the specified server
+&nbsp;	 */
+&nbsp;	public static final String getRepositoryLocation(String serverLocation, String repositoryID) {
+<b class="nc">&nbsp;		return getRepositoriesLocation(serverLocation) + &quot;/&quot; + repositoryID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the config of a specific repository resource.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @return the location of the configuration resource for the specified repository
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public static final String getRepositoryConfigLocation(String repositoryLocation) {
+<b class="nc">&nbsp;		return repositoryLocation + &quot;/&quot; + CONFIG;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the statements resource for a specific repository.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @return the location of the statements resource for the specified repository
+&nbsp;	 */
+&nbsp;	public static final String getStatementsLocation(String repositoryLocation) {
+<b class="nc">&nbsp;		return repositoryLocation + &quot;/&quot; + STATEMENTS;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the transaction resources for a specific repository.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @return the location of the transaction resources for the specified repository
+&nbsp;	 */
+&nbsp;	public static final String getTransactionsLocation(String repositoryLocation) {
+<b class="nc">&nbsp;		return repositoryLocation + &quot;/&quot; + TRANSACTIONS;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Extracts the server location from the repository location.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @return the location of the server resource for the specified repository.
+&nbsp;	 */
+&nbsp;	public static final String getServerLocation(String repositoryLocation) {
+<b class="nc">&nbsp;		String serverLocation = repositoryLocation.substring(0, repositoryLocation.lastIndexOf(&#39;/&#39;));</b>
+<b class="nc">&nbsp;		serverLocation = serverLocation.substring(0, serverLocation.lastIndexOf(&#39;/&#39;));</b>
+<b class="nc">&nbsp;		return serverLocation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Extracts the repository ID from the repository location.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @return the ID of the repository.
+&nbsp;	 */
+&nbsp;	public static final String getRepositoryID(String repositoryLocation) {
+<b class="nc">&nbsp;		String repositoryID = repositoryLocation.substring(repositoryLocation.lastIndexOf(&#39;/&#39;) + 1);</b>
+<b class="nc">&nbsp;		return repositoryID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the contexts lists resource for a specific repository.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @return the location of the contexts lists resource for the specified repository
+&nbsp;	 */
+&nbsp;	public static final String getContextsLocation(String repositoryLocation) {
+<b class="nc">&nbsp;		return repositoryLocation + &quot;/&quot; + CONTEXTS;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the namespaces lists resource for a specific repository on the specified server.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the base location of a server implementing this REST protocol.
+&nbsp;	 * @return the location of the namespaces lists resource for a specific repository on the specified server
+&nbsp;	 */
+&nbsp;	public static final String getNamespacesLocation(String repositoryLocation) {
+<b class="nc">&nbsp;		return repositoryLocation + &quot;/&quot; + NAMESPACES;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the namespace with the specified prefix for a specific repository on the specified server.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @param prefix             the namespace prefix
+&nbsp;	 * @return the location of the the namespace with the specified prefix for a specific repository on the specified
+&nbsp;	 *         server
+&nbsp;	 */
+&nbsp;	public static final String getNamespacePrefixLocation(String repositoryLocation, String prefix) {
+<b class="nc">&nbsp;		return getNamespacesLocation(repositoryLocation) + &quot;/&quot; + prefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the location of the &#39;size&#39; resource for a specific repository on the specified server.
+&nbsp;	 *
+&nbsp;	 * @param repositoryLocation the location of a repository implementing this REST protocol.
+&nbsp;	 * @return the location of the &#39;size&#39; resource for a specific repository on the specified server
+&nbsp;	 */
+&nbsp;	public static final String getSizeLocation(String repositoryLocation) {
+<b class="nc">&nbsp;		return repositoryLocation + &quot;/&quot; + SIZE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encodes a value in a canonical serialized string format, for use in a URL query parameter.
+&nbsp;	 *
+&nbsp;	 * @param value The value to encode, possibly &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return The protocol-serialized representation of the supplied value, or {@link #NULL_PARAM_VALUE} if the
+&nbsp;	 *         supplied value was &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static String encodeValue(Value value) {
+<b class="nc">&nbsp;		return NTriplesUtil.toNTriplesString(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode a previously encoded value.
+&nbsp;	 *
+&nbsp;	 * @param encodedValue the encoded value
+&nbsp;	 * @param valueFactory the factory to use for constructing the Value
+&nbsp;	 * @return the decoded Value
+&nbsp;	 * @see #encodeValue(Value)
+&nbsp;	 */
+&nbsp;	public static Value decodeValue(String encodedValue, ValueFactory valueFactory) {
+<b class="nc">&nbsp;		if (encodedValue != null) {</b>
+<b class="nc">&nbsp;			return NTriplesUtil.parseValue(encodedValue, valueFactory);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode a previously encoded Resource.
+&nbsp;	 *
+&nbsp;	 * @param encodedValue the encoded value
+&nbsp;	 * @param valueFactory the factory to use for constructing the Resource
+&nbsp;	 * @return the decoded Resource
+&nbsp;	 * @see #encodeValue(Value)
+&nbsp;	 */
+&nbsp;	public static Resource decodeResource(String encodedValue, ValueFactory valueFactory) {
+<b class="nc">&nbsp;		if (encodedValue != null) {</b>
+<b class="nc">&nbsp;			return NTriplesUtil.parseResource(encodedValue, valueFactory);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode a previously encoded URI.
+&nbsp;	 *
+&nbsp;	 * @param encodedValue the encoded value
+&nbsp;	 * @param valueFactory the factory to use for constructing the URI
+&nbsp;	 * @return the decoded URI
+&nbsp;	 * @see #encodeValue(Value)
+&nbsp;	 */
+&nbsp;	public static IRI decodeURI(String encodedValue, ValueFactory valueFactory) {
+<b class="nc">&nbsp;		if (encodedValue != null) {</b>
+<b class="nc">&nbsp;			return NTriplesUtil.parseURI(encodedValue, valueFactory);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encodes a context resource for use in a URL.
+&nbsp;	 *
+&nbsp;	 * @param context The context to encode, possibly &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return The protocol-serialized representation of the supplied context, or {@link #NULL_PARAM_VALUE} if the
+&nbsp;	 *         supplied value was &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static String encodeContext(Resource context) {
+<b class="nc">&nbsp;		if (context == null) {</b>
+<b class="nc">&nbsp;			return Protocol.NULL_PARAM_VALUE;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return encodeValue(context);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode a previously encoded context Resource.
+&nbsp;	 *
+&nbsp;	 * @param encodedValue the encoded value
+&nbsp;	 * @param valueFactory the factory to use for constructing the Resource
+&nbsp;	 * @return the decoded Resource, or null if the encoded values was null or equal to {@link #NULL_PARAM_VALUE}
+&nbsp;	 */
+&nbsp;	public static Resource decodeContext(String encodedValue, ValueFactory valueFactory) {
+<b class="nc">&nbsp;		if (encodedValue == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="nc">&nbsp;		} else if (NULL_PARAM_VALUE.equals(encodedValue)) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			Resource context = decodeResource(encodedValue, valueFactory);</b>
+&nbsp;			// Context must be an IRI or BNode but never Triple
+<b class="nc">&nbsp;			if (context instanceof Triple) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Invalid context value: &quot; + encodedValue);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return context;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encode context resources for use in a URL.
+&nbsp;	 *
+&nbsp;	 * @param contexts the contexts to encode, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return the encoded contexts
+&nbsp;	 * @throws IllegalArgumentException If the &lt;var&gt;contexts&lt;/var&gt; is &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static String[] encodeContexts(Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(contexts,</b>
+&nbsp;				&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+&nbsp;
+<b class="nc">&nbsp;		String[] result = new String[contexts.length];</b>
+<b class="nc">&nbsp;		for (int index = 0; index &lt; contexts.length; index++) {</b>
+<b class="nc">&nbsp;			result[index] = encodeContext(contexts[index]);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode previously encoded contexts.
+&nbsp;	 *
+&nbsp;	 * @param encodedValues the encoded values
+&nbsp;	 * @param valueFactory  the factory to use for constructing the Resources
+&nbsp;	 * @return the decoded Resources, or an empty array if the supplied &lt;var&gt;encodedValues&lt;/var&gt; was &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static Resource[] decodeContexts(String[] encodedValues, ValueFactory valueFactory) {
+&nbsp;		Resource[] result;
+&nbsp;
+<b class="nc">&nbsp;		if (encodedValues == null) {</b>
+<b class="nc">&nbsp;			result = new Resource[0];</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			result = new Resource[encodedValues.length];</b>
+<b class="nc">&nbsp;			for (int index = 0; index &lt; encodedValues.length; index++) {</b>
+<b class="nc">&nbsp;				result[index] = decodeContext(encodedValues[index], valueFactory);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

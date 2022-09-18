@@ -1,0 +1,500 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemStatementList</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: MemStatementList (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemStatementList</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    68.8%
+  </span>
+  <span class="absValue">
+    (11/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    27.1%
+  </span>
+  <span class="absValue">
+    (26/96)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    51.9%
+  </span>
+  <span class="absValue">
+    (82/158)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.AtomicReference;
+&nbsp;import java.util.concurrent.locks.LockSupport;
+&nbsp;import java.util.concurrent.locks.StampedLock;
+&nbsp;
+&nbsp;/**
+&nbsp; * A dedicated data structure for storing MemStatement objects, offering operations optimized for their use in the
+&nbsp; * memory Sail.
+&nbsp; */
+<b class="fc">&nbsp;public class MemStatementList {</b>
+<b class="fc">&nbsp;	private static final MemStatement[] EMPTY_ARRAY = {};</b>
+&nbsp;
+&nbsp;	// statements will be null when the array is growing
+<b class="fc">&nbsp;	private volatile MemStatement[] statements = EMPTY_ARRAY;</b>
+&nbsp;	private static final VarHandle STATEMENTS;
+&nbsp;	static final VarHandle STATEMENTS_ARRAY;
+&nbsp;
+&nbsp;	private volatile int size;
+&nbsp;	private static final VarHandle SIZE;
+&nbsp;
+&nbsp;	// When inserting a new statement into the statements array we need to iterate through the array looking for a free
+&nbsp;	// spot. We keep track of where we last inserted a statement by storting that index in previouslyInsertedIndex. This
+&nbsp;	// doesn&#39;t guarantee that previouslyInsertedIndex+1 wil be free, but it gives us a decent hint as to where to start
+&nbsp;	// looking. When multiple threads are inserting at the same time the previouslyInsertedIndex should be considered
+&nbsp;	// &quot;best effort&quot;.
+<b class="fc">&nbsp;	private volatile int previouslyInsertedIndex = -1;</b>
+&nbsp;	private static final VarHandle PREVIOUSLY_INSERTED_INDEX;
+&nbsp;
+<b class="fc">&nbsp;	private volatile int guaranteedLastIndexInUse = -1;</b>
+&nbsp;	private static final VarHandle GUARANTEED_LAST_INDEX_IN_USE;
+&nbsp;
+&nbsp;	private volatile boolean prioritiseCleanup;
+&nbsp;	private static final VarHandle PRIORITISE_CLEANUP;
+&nbsp;
+<b class="fc">&nbsp;	private final StampedLock addRemoveLock = new StampedLock();</b>
+&nbsp;
+<b class="fc">&nbsp;	private final AtomicReference&lt;Thread&gt; prioritisedThread = new AtomicReference&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;	public MemStatementList() {</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	public MemStatementList(int capacity) {</b>
+<b class="fc">&nbsp;		statements = new MemStatement[capacity];</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int size() {
+<b class="fc">&nbsp;		return ((int) SIZE.getAcquire(this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isEmpty() {
+<b class="fc">&nbsp;		return ((int) SIZE.getAcquire(this)) == 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void add(MemStatement st) throws InterruptedException {
+&nbsp;
+<b class="pc">&nbsp;		if (((boolean) PRIORITISE_CLEANUP.getOpaque(this))) {</b>
+<b class="nc">&nbsp;			long start = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;			long stop = start + TimeUnit.SECONDS.toMillis(30);</b>
+<b class="nc">&nbsp;			while (stop &gt; System.currentTimeMillis() &amp;&amp; ((boolean) PRIORITISE_CLEANUP.getVolatile(this))) {</b>
+<b class="nc">&nbsp;				LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		long readLock = addRemoveLock.readLock();</b>
+&nbsp;		try {
+&nbsp;			do {
+&nbsp;
+<b class="fc">&nbsp;				MemStatement[] statements = getStatements();</b>
+<b class="fc">&nbsp;				int length = statements.length;</b>
+&nbsp;
+<b class="fc">&nbsp;				if (length &gt; (int) SIZE.getAcquire(this)) {</b>
+&nbsp;
+<b class="fc">&nbsp;					int previouslyInsertedIndex = (int) PREVIOUSLY_INSERTED_INDEX.getOpaque(this);</b>
+<b class="pc">&nbsp;					if (previouslyInsertedIndex &gt;= length) {</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+&nbsp;
+<b class="pc">&nbsp;					int i = previouslyInsertedIndex + 1 &gt;= length ? 0 : previouslyInsertedIndex + 1;</b>
+&nbsp;
+<b class="pc">&nbsp;					for (; i != previouslyInsertedIndex; i = (i + 1 &gt;= length ? 0 : i + 1)) {</b>
+&nbsp;
+<b class="pc">&nbsp;						if (statements[i] == null) {</b>
+&nbsp;
+<b class="fc">&nbsp;							boolean success = STATEMENTS_ARRAY.compareAndSet(statements, i, null, st);</b>
+<b class="pc">&nbsp;							if (success) {</b>
+&nbsp;
+&nbsp;								// check if the statements array has been swapped out (because it was grown) while we
+&nbsp;								// were
+&nbsp;								// inserting into it
+<b class="fc">&nbsp;								MemStatement[] statementsAfterInsert = getStatements();</b>
+<b class="pc">&nbsp;								if (statementsAfterInsert != statements</b>
+<b class="nc">&nbsp;										&amp;&amp; STATEMENTS_ARRAY.getAcquire(statements, i) != st) {</b>
+&nbsp;									// we wrote into an array while it was growing and our write was lost
+<b class="nc">&nbsp;									break;</b>
+&nbsp;								}
+&nbsp;
+<b class="fc">&nbsp;								PREVIOUSLY_INSERTED_INDEX.setRelease(this, i);</b>
+<b class="fc">&nbsp;								SIZE.getAndAdd(this, 1);</b>
+&nbsp;
+<b class="fc">&nbsp;								updateGuaranteedLastIndexInUse(i);</b>
+&nbsp;
+&nbsp;								return;
+&nbsp;							}
+&nbsp;						}
+&nbsp;
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+&nbsp;
+&nbsp;				// statements array is probably full
+&nbsp;
+<b class="pc">&nbsp;				if (STATEMENTS.compareAndSet(this, statements, null)) {// Grow array</b>
+<b class="fc">&nbsp;					MemStatement[] newArray = new MemStatement[Math.max(4, length * 2)];</b>
+<b class="fc">&nbsp;					if (statements != EMPTY_ARRAY) {</b>
+<b class="fc">&nbsp;						System.arraycopy(statements, 0, newArray, 0, length);</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					STATEMENTS.setRelease(this, newArray);</b>
+&nbsp;				}
+<b class="pc">&nbsp;				if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;					throw new InterruptedException();</b>
+&nbsp;				}
+<b class="fc">&nbsp;			} while (true);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			addRemoveLock.unlockRead(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void updateGuaranteedLastIndexInUse(int newValue) {
+<b class="fc">&nbsp;		int guaranteedLastIndexInUse = (int) GUARANTEED_LAST_INDEX_IN_USE.getAcquire(this);</b>
+<b class="pc">&nbsp;		if (guaranteedLastIndexInUse &lt; newValue) {</b>
+<b class="pc">&nbsp;			while (guaranteedLastIndexInUse &lt; newValue</b>
+<b class="pc">&nbsp;					&amp;&amp; !GUARANTEED_LAST_INDEX_IN_USE.compareAndSet(this, guaranteedLastIndexInUse, newValue)) {</b>
+<b class="nc">&nbsp;				guaranteedLastIndexInUse = (int) GUARANTEED_LAST_INDEX_IN_USE.getAcquire(this);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void remove(MemStatement st) throws InterruptedException {
+&nbsp;
+&nbsp;		do {
+<b class="nc">&nbsp;			MemStatement[] statements = getStatements();</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean success = true;</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; statements.length; i++) {</b>
+<b class="nc">&nbsp;				if (statements[i] == st) {</b>
+&nbsp;
+<b class="nc">&nbsp;					success = innerRemove(st, statements, i);</b>
+&nbsp;
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (success) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;				throw new InterruptedException();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} while (true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void remove(MemStatement st, int index) throws InterruptedException {
+&nbsp;
+&nbsp;		do {
+<b class="nc">&nbsp;			MemStatement[] statements = getStatements();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (statements[index] == st &amp;&amp; innerRemove(st, statements, index)) {</b>
+&nbsp;				return;
+&nbsp;			} else {
+<b class="nc">&nbsp;				remove(st);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;				throw new InterruptedException();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} while (true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean innerRemove(MemStatement st, MemStatement[] statements, int i) throws InterruptedException {
+<b class="nc">&nbsp;		long writeLock = addRemoveLock.writeLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (getStatements() != statements) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean success = STATEMENTS_ARRAY.compareAndSet(statements, i, st, null);</b>
+<b class="nc">&nbsp;			if (success) {</b>
+&nbsp;				while (true) {
+<b class="nc">&nbsp;					int size = size();</b>
+<b class="nc">&nbsp;					boolean decrementedSize = SIZE.compareAndSet(this, size, size - 1);</b>
+<b class="nc">&nbsp;					if (decrementedSize) {</b>
+<b class="nc">&nbsp;						return true;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			addRemoveLock.unlockWrite(writeLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public void clear() {
+<b class="fc">&nbsp;		long writeLock = addRemoveLock.writeLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			statements = EMPTY_ARRAY;</b>
+<b class="fc">&nbsp;			size = 0;</b>
+<b class="fc">&nbsp;			previouslyInsertedIndex = -1;</b>
+<b class="fc">&nbsp;			guaranteedLastIndexInUse = -10;</b>
+<b class="fc">&nbsp;			prioritiseCleanup = false;</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			addRemoveLock.unlockWrite(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void cleanSnapshots(int currentSnapshot) throws InterruptedException {
+&nbsp;		boolean error;
+&nbsp;		do {
+<b class="nc">&nbsp;			MemStatement[] statements = getStatements();</b>
+&nbsp;
+&nbsp;			// reset the error flag
+<b class="nc">&nbsp;			error = false;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; i &lt; statements.length; i++) {</b>
+&nbsp;
+<b class="nc">&nbsp;				if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;					throw new InterruptedException();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				MemStatement statement = statements[i];</b>
+<b class="nc">&nbsp;				if (statement != null &amp;&amp; statement.getTillSnapshot() &lt;= currentSnapshot) {</b>
+<b class="nc">&nbsp;					boolean success = innerRemove(statement, statements, i);</b>
+<b class="nc">&nbsp;					if (!success) {</b>
+<b class="nc">&nbsp;						error = true;</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!error) {</b>
+&nbsp;				// make sure that the statements list didn&#39;t grow while we were cleaning it
+<b class="nc">&nbsp;				error = !STATEMENTS.compareAndSet(this, statements, statements);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} while (error);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Iterates through this list and returns the statement that exactly matches the provided arguments. The subject,
+&nbsp;	 * predicate and object should not be null. If the context is null it will match statements with null as their
+&nbsp;	 * context.
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @param predicate
+&nbsp;	 * @param object
+&nbsp;	 * @param context
+&nbsp;	 * @param snapshot
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public MemStatement getExact(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
+&nbsp;			int snapshot) throws InterruptedException {
+&nbsp;
+<b class="fc">&nbsp;		MemStatement[] statements = getStatements();</b>
+<b class="fc">&nbsp;		int lastIndexToCheck = getGuaranteedLastIndexInUse();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt;= lastIndexToCheck; i++) {</b>
+<b class="fc">&nbsp;			MemStatement memStatement = statements[i];</b>
+<b class="pc">&nbsp;			if (memStatement != null &amp;&amp; memStatement.exactMatch(subject, predicate, object, context)</b>
+<b class="fc">&nbsp;					&amp;&amp; memStatement.isInSnapshot(snapshot)) {</b>
+<b class="fc">&nbsp;				return memStatement;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An internal method to retrieve the inner array that stores the statements. Useful to reduce the number of
+&nbsp;	 * volatile reads.
+&nbsp;	 *
+&nbsp;	 * @return the underlying array og MemStatements
+&nbsp;	 */
+&nbsp;	public MemStatement[] getStatements() throws InterruptedException {
+<b class="fc">&nbsp;		MemStatement[] statements = (MemStatement[]) STATEMENTS.getAcquire(this);</b>
+<b class="pc">&nbsp;		while (statements == null) {</b>
+<b class="nc">&nbsp;			if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;				throw new InterruptedException();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Thread.onSpinWait();</b>
+<b class="nc">&nbsp;			statements = (MemStatement[]) STATEMENTS.getAcquire(this);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return statements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getGuaranteedLastIndexInUse() {
+<b class="fc">&nbsp;		return ((int) GUARANTEED_LAST_INDEX_IN_USE.getAcquire(this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPrioritiseCleanup(boolean prioritiseCleanup) {
+<b class="nc">&nbsp;		if (!prioritiseCleanup) {</b>
+<b class="nc">&nbsp;			if (prioritisedThread.compareAndSet(Thread.currentThread(), null)) {</b>
+<b class="nc">&nbsp;				PRIORITISE_CLEANUP.setVolatile(this, false);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				assert !((boolean) PRIORITISE_CLEANUP.getVolatile(this));</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (prioritisedThread.compareAndSet(null, Thread.currentThread())) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().setPriority(Thread.MAX_PRIORITY);</b>
+<b class="nc">&nbsp;				PRIORITISE_CLEANUP.setVolatile(this, true);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;A cleanup thread is already prioritised: &quot; + prioritisedThread.get());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			SIZE = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;					.in(MemStatementList.class)</b>
+<b class="fc">&nbsp;					.findVarHandle(MemStatementList.class, &quot;size&quot;, int.class);</b>
+<b class="nc">&nbsp;		} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			PREVIOUSLY_INSERTED_INDEX = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;					.in(MemStatementList.class)</b>
+<b class="fc">&nbsp;					.findVarHandle(MemStatementList.class, &quot;previouslyInsertedIndex&quot;, int.class);</b>
+<b class="nc">&nbsp;		} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			GUARANTEED_LAST_INDEX_IN_USE = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;					.in(MemStatementList.class)</b>
+<b class="fc">&nbsp;					.findVarHandle(MemStatementList.class, &quot;guaranteedLastIndexInUse&quot;, int.class);</b>
+<b class="nc">&nbsp;		} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			PRIORITISE_CLEANUP = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;					.in(MemStatementList.class)</b>
+<b class="fc">&nbsp;					.findVarHandle(MemStatementList.class, &quot;prioritiseCleanup&quot;, boolean.class);</b>
+<b class="nc">&nbsp;		} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			STATEMENTS = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;					.in(MemStatementList.class)</b>
+<b class="fc">&nbsp;					.findVarHandle(MemStatementList.class, &quot;statements&quot;, MemStatement[].class);</b>
+<b class="nc">&nbsp;		} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static {
+<b class="fc">&nbsp;		STATEMENTS_ARRAY = MethodHandles.arrayElementVarHandle(MemStatement[].class);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

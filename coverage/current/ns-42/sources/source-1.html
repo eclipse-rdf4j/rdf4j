@@ -1,0 +1,195 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractHTTPQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.client.query</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractHTTPQuery (org.eclipse.rdf4j.http.client.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractHTTPQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.client.query;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.impl.AbstractQuery;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for any {@link Query} operation over HTTP.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public abstract class AbstractHTTPQuery extends AbstractQuery {
+&nbsp;
+&nbsp;	private final SPARQLProtocolSession httpClient;
+&nbsp;
+&nbsp;	protected final QueryLanguage queryLanguage;
+&nbsp;
+&nbsp;	protected final String queryString;
+&nbsp;
+&nbsp;	protected final String baseURI;
+&nbsp;
+&nbsp;	protected AbstractHTTPQuery(SPARQLProtocolSession httpClient, QueryLanguage queryLanguage, String queryString,
+&nbsp;			String baseURI) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.httpClient = httpClient;</b>
+<b class="nc">&nbsp;		this.queryLanguage = queryLanguage;</b>
+<b class="nc">&nbsp;		this.queryString = queryString;</b>
+&nbsp;		// TODO think about the following
+&nbsp;		// for legacy reasons we should support the empty string for baseURI
+&nbsp;		// this is used in the SPARQL repository in several places, e.g. in
+&nbsp;		// getStatements
+<b class="nc">&nbsp;		this.baseURI = baseURI != null &amp;&amp; baseURI.length() &gt; 0 ? baseURI : null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the {@link SPARQLProtocolSession} to be used for all HTTP based interaction
+&nbsp;	 */
+&nbsp;	protected SPARQLProtocolSession getHttpClient() {
+<b class="nc">&nbsp;		return httpClient;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Binding[] getBindingsArray() {
+<b class="nc">&nbsp;		BindingSet bindings = this.getBindings();</b>
+&nbsp;
+<b class="nc">&nbsp;		Binding[] bindingsArray = new Binding[bindings.size()];</b>
+&nbsp;
+<b class="nc">&nbsp;		Iterator&lt;Binding&gt; iter = bindings.iterator();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; bindings.size(); i++) {</b>
+<b class="nc">&nbsp;			bindingsArray[i] = iter.next();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return bindingsArray;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+<b class="nc">&nbsp;		super.setMaxExecutionTime(maxExecutionTimeSeconds);</b>
+<b class="nc">&nbsp;		this.httpClient.setConnectionTimeout(1000L * this.getMaxExecutionTime());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return queryString;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

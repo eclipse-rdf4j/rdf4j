@@ -1,0 +1,263 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CachingOperationInstantiator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.operationcache</a>
+</div>
+
+<h1>Coverage Summary for Class: CachingOperationInstantiator (org.eclipse.rdf4j.spring.operationcache)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CachingOperationInstantiator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.operationcache;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils.findWrapper;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.WeakHashMap;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.apache.commons.collections4.map.LRUMap;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.spring.resultcache.CachingRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.spring.resultcache.ClearableAwareUpdate;
+&nbsp;import org.eclipse.rdf4j.spring.resultcache.ResultCachingGraphQuery;
+&nbsp;import org.eclipse.rdf4j.spring.resultcache.ResultCachingTupleQuery;
+&nbsp;import org.eclipse.rdf4j.spring.support.DirectOperationInstantiator;
+&nbsp;import org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+<b class="nc">&nbsp;public class CachingOperationInstantiator extends DirectOperationInstantiator {</b>
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+<b class="nc">&nbsp;	private final Map&lt;RepositoryConnection, Map&lt;String, Operation&gt;&gt; cachedOperations = Collections</b>
+<b class="nc">&nbsp;			.synchronizedMap(new WeakHashMap&lt;&gt;());</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery getTupleQuery(
+&nbsp;			RepositoryConnection con,
+&nbsp;			Class&lt;?&gt; owner,
+&nbsp;			String operationName,
+&nbsp;			Supplier&lt;String&gt; tupleQueryStringSupplier) {
+<b class="nc">&nbsp;		return cachedOrNewOp(</b>
+&nbsp;				TupleQuery.class,
+&nbsp;				con,
+&nbsp;				owner,
+&nbsp;				operationName,
+<b class="nc">&nbsp;				() -&gt; getTupleQuery(con, tupleQueryStringSupplier.get()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update getUpdate(
+&nbsp;			RepositoryConnection con,
+&nbsp;			Class&lt;?&gt; owner,
+&nbsp;			String operationName,
+&nbsp;			Supplier&lt;String&gt; updateStringSupplier) {
+<b class="nc">&nbsp;		return cachedOrNewOp(</b>
+&nbsp;				Update.class,
+&nbsp;				con,
+&nbsp;				owner,
+&nbsp;				operationName,
+<b class="nc">&nbsp;				() -&gt; getUpdate(con, updateStringSupplier.get()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery getGraphQuery(
+&nbsp;			RepositoryConnection con,
+&nbsp;			Class&lt;?&gt; owner,
+&nbsp;			String operationName,
+&nbsp;			Supplier&lt;String&gt; graphQueryStringSupplier) {
+<b class="nc">&nbsp;		return cachedOrNewOp(</b>
+&nbsp;				GraphQuery.class,
+&nbsp;				con,
+&nbsp;				owner,
+&nbsp;				operationName,
+<b class="nc">&nbsp;				() -&gt; getGraphQuery(con, graphQueryStringSupplier.get()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T extends Operation&gt; T cachedOrNewOp(
+&nbsp;			Class&lt;T&gt; type,
+&nbsp;			RepositoryConnection con,
+&nbsp;			Class&lt;?&gt; owner,
+&nbsp;			String operationName,
+&nbsp;			Supplier&lt;Operation&gt; operationSupplier) {
+<b class="nc">&nbsp;		String key = makeOperationCacheKey(type, owner, operationName);</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(</b>
+&nbsp;					&quot;Obtaining operation of type {} for owner {} with name {}&quot;,
+<b class="nc">&nbsp;					type.getSimpleName(),</b>
+&nbsp;					owner,
+&nbsp;					operationName);
+&nbsp;		}
+<b class="nc">&nbsp;		RepositoryConnection rootConnection = RepositoryConnectionWrappingUtils.findRoot(con);</b>
+<b class="nc">&nbsp;		Map&lt;String, Operation&gt; cachedOperationsForConnection = this.cachedOperations.get(rootConnection);</b>
+<b class="nc">&nbsp;		if (cachedOperationsForConnection == null) {</b>
+<b class="nc">&nbsp;			if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;				logger.debug(</b>
+&nbsp;						&quot;No operations cached with connection yet, initializing operation cache for connection {}&quot;,
+<b class="nc">&nbsp;						rootConnection.hashCode());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			cachedOperationsForConnection = new LRUMap&lt;&gt;(200, 10);</b>
+<b class="nc">&nbsp;			this.cachedOperations.put(rootConnection, cachedOperationsForConnection);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Operation op = cachedOperationsForConnection.get(key);</b>
+<b class="nc">&nbsp;		if (op == null) {</b>
+<b class="nc">&nbsp;			if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Instantiating operation and caching for future reuse&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			op = operationSupplier.get();</b>
+<b class="nc">&nbsp;			cachedOperationsForConnection.put(key, op);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			renewLocalCacheIfPossible(op, con);</b>
+<b class="nc">&nbsp;			if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Reusing cached operation&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return (T) op;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void renewLocalCacheIfPossible(Operation op, RepositoryConnection con) {
+<b class="nc">&nbsp;		Optional&lt;CachingRepositoryConnection&gt; wrapperOpt = findWrapper(con, CachingRepositoryConnection.class);</b>
+<b class="nc">&nbsp;		if (wrapperOpt.isPresent()) {</b>
+<b class="nc">&nbsp;			CachingRepositoryConnection cachingCon = wrapperOpt.get();</b>
+<b class="nc">&nbsp;			if (op instanceof ResultCachingGraphQuery) {</b>
+<b class="nc">&nbsp;				cachingCon.renewLocalResultCache((ResultCachingGraphQuery) op);</b>
+<b class="nc">&nbsp;			} else if (op instanceof ResultCachingTupleQuery) {</b>
+<b class="nc">&nbsp;				cachingCon.renewLocalResultCache((ResultCachingTupleQuery) op);</b>
+<b class="nc">&nbsp;			} else if (op instanceof ClearableAwareUpdate) {</b>
+<b class="nc">&nbsp;				((ClearableAwareUpdate) op).renewClearable(cachingCon);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T extends Operation&gt; String makeOperationCacheKey(
+&nbsp;			Class&lt;T&gt; operationType, Class&lt;?&gt; owner, String name) {
+<b class="nc">&nbsp;		return operationType.getSimpleName() + &quot;:&quot; + owner.getName() + &quot;:&quot; + name;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

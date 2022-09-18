@@ -1,0 +1,882 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryJoinOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryJoinOptimizer (org.eclipse.rdf4j.query.algebra.evaluation.optimizer)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryJoinOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (5/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    91.7%
+  </span>
+  <span class="absValue">
+    (11/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    94.7%
+  </span>
+  <span class="absValue">
+    (18/19)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryJoinOptimizer$JoinVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    90.5%
+  </span>
+  <span class="absValue">
+    (19/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    76.4%
+  </span>
+  <span class="absValue">
+    (139/182)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    88.6%
+  </span>
+  <span class="absValue">
+    (240/271)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">QueryJoinOptimizer$JoinVisitor$StatementPatternVarCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (4/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (10/15)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    90%
+  </span>
+  <span class="absValue">
+    (27/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    76.2%
+  </span>
+  <span class="absValue">
+    (154/202)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.9%
+  </span>
+  <span class="absValue">
+    (268/305)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+&nbsp;
+&nbsp;/**
+&nbsp; * A query optimizer that re-orders nested Joins.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public class QueryJoinOptimizer implements QueryOptimizer {
+&nbsp;
+&nbsp;	protected final EvaluationStatistics statistics;
+&nbsp;	private final boolean trackResultSize;
+&nbsp;
+&nbsp;	public QueryJoinOptimizer(EvaluationStatistics statistics) {
+<b class="nc">&nbsp;		this(statistics, false);</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {</b>
+<b class="fc">&nbsp;		this.statistics = statistics;</b>
+<b class="fc">&nbsp;		this.trackResultSize = trackResultSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="fc">&nbsp;		tupleExpr.visit(new JoinVisitor(statistics, trackResultSize));</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class JoinVisitor extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;		private final EvaluationStatistics statistics;
+<b class="fc">&nbsp;		Set&lt;String&gt; boundVars = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		protected JoinVisitor(EvaluationStatistics statistics, boolean trackResultSize) {
+<b class="fc">&nbsp;			super(trackResultSize);</b>
+<b class="fc">&nbsp;			this.statistics = statistics;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(LeftJoin leftJoin) {
+<b class="fc">&nbsp;			leftJoin.getLeftArg().visit(this);</b>
+&nbsp;
+<b class="fc">&nbsp;			Set&lt;String&gt; origBoundVars = boundVars;</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				boundVars = new HashSet&lt;&gt;(boundVars);</b>
+<b class="fc">&nbsp;				boundVars.addAll(leftJoin.getLeftArg().getBindingNames());</b>
+&nbsp;
+<b class="fc">&nbsp;				leftJoin.getRightArg().visit(this);</b>
+&nbsp;			} finally {
+<b class="fc">&nbsp;				boundVars = origBoundVars;</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(StatementPattern node) throws RuntimeException {
+<b class="fc">&nbsp;			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void optimizePriorityJoin(Set&lt;String&gt; origBoundVars, TupleExpr join) {
+&nbsp;
+<b class="fc">&nbsp;			Set&lt;String&gt; saveBoundVars = boundVars;</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				boundVars = new HashSet&lt;&gt;(origBoundVars);</b>
+<b class="fc">&nbsp;				join.visit(this);</b>
+&nbsp;			} finally {
+<b class="fc">&nbsp;				boundVars = saveBoundVars;</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Join node) {
+&nbsp;
+<b class="fc">&nbsp;			Set&lt;String&gt; origBoundVars = boundVars;</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				boundVars = new HashSet&lt;&gt;(boundVars);</b>
+&nbsp;
+&nbsp;				// Recursively get the join arguments
+<b class="fc">&nbsp;				List&lt;TupleExpr&gt; joinArgs = getJoinArgs(node, new ArrayList&lt;&gt;());</b>
+&nbsp;
+&nbsp;				// get all extensions (BIND clause)
+<b class="fc">&nbsp;				List&lt;TupleExpr&gt; orderedExtensions = getExtensionTupleExprs(joinArgs);</b>
+<b class="fc">&nbsp;				joinArgs.removeAll(orderedExtensions);</b>
+&nbsp;
+&nbsp;				// get all subselects and order them
+<b class="fc">&nbsp;				List&lt;TupleExpr&gt; orderedSubselects = reorderSubselects(getSubSelects(joinArgs));</b>
+<b class="fc">&nbsp;				joinArgs.removeAll(orderedSubselects);</b>
+&nbsp;
+&nbsp;				// Reorder the subselects and extensions to a more optimal sequence
+&nbsp;				List&lt;TupleExpr&gt; priorityArgs;
+<b class="fc">&nbsp;				if (orderedExtensions.isEmpty()) {</b>
+<b class="fc">&nbsp;					priorityArgs = orderedSubselects;</b>
+<b class="pc">&nbsp;				} else if (orderedSubselects.isEmpty()) {</b>
+<b class="fc">&nbsp;					priorityArgs = orderedExtensions;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					priorityArgs = new ArrayList&lt;&gt;(orderedExtensions.size() + orderedSubselects.size());</b>
+<b class="nc">&nbsp;					priorityArgs.addAll(orderedExtensions);</b>
+<b class="nc">&nbsp;					priorityArgs.addAll(orderedSubselects);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Reorder the (recursive) join arguments to a more optimal sequence
+<b class="fc">&nbsp;				List&lt;TupleExpr&gt; orderedJoinArgs = new ArrayList&lt;&gt;(joinArgs.size());</b>
+&nbsp;
+&nbsp;				// We order all remaining join arguments based on cardinality and
+&nbsp;				// variable frequency statistics
+<b class="fc">&nbsp;				if (joinArgs.size() &gt; 0) {</b>
+&nbsp;					// Build maps of cardinalities and vars per tuple expression
+<b class="fc">&nbsp;					Map&lt;TupleExpr, Double&gt; cardinalityMap = Collections.emptyMap();</b>
+<b class="fc">&nbsp;					Map&lt;TupleExpr, List&lt;Var&gt;&gt; varsMap = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;					for (TupleExpr tupleExpr : joinArgs) {</b>
+<b class="pc">&nbsp;						if (tupleExpr instanceof Join) {</b>
+&nbsp;							// we can skip calculating the cardinality for instances of Join since we will anyway &quot;meet&quot;
+&nbsp;							// these nodes
+<b class="nc">&nbsp;							continue;</b>
+&nbsp;						}
+&nbsp;
+<b class="fc">&nbsp;						double cardinality = statistics.getCardinality(tupleExpr);</b>
+&nbsp;
+<b class="fc">&nbsp;						tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));</b>
+<b class="fc">&nbsp;						if (!hasCachedCardinality(tupleExpr)) {</b>
+<b class="fc">&nbsp;							if (cardinalityMap.isEmpty()) {</b>
+<b class="fc">&nbsp;								cardinalityMap = new HashMap&lt;&gt;();</b>
+&nbsp;							}
+<b class="fc">&nbsp;							cardinalityMap.put(tupleExpr, cardinality);</b>
+&nbsp;						}
+<b class="pc">&nbsp;						if (tupleExpr instanceof ZeroLengthPath) {</b>
+<b class="nc">&nbsp;							varsMap.put(tupleExpr, ((ZeroLengthPath) tupleExpr).getVarList());</b>
+&nbsp;						} else {
+<b class="fc">&nbsp;							varsMap.put(tupleExpr, getStatementPatternVars(tupleExpr));</b>
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// Build map of var frequences
+<b class="fc">&nbsp;					Map&lt;Var, Integer&gt; varFreqMap = new HashMap&lt;&gt;((varsMap.size() + 1) * 2);</b>
+<b class="fc">&nbsp;					for (List&lt;Var&gt; varList : varsMap.values()) {</b>
+<b class="fc">&nbsp;						fillVarFreqMap(varList, varFreqMap);</b>
+<b class="fc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// order all other join arguments based on available statistics
+<b class="fc">&nbsp;					while (!joinArgs.isEmpty()) {</b>
+<b class="fc">&nbsp;						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap);</b>
+&nbsp;
+<b class="fc">&nbsp;						joinArgs.remove(tupleExpr);</b>
+<b class="fc">&nbsp;						orderedJoinArgs.add(tupleExpr);</b>
+&nbsp;
+&nbsp;						// Recursively optimize join arguments
+<b class="fc">&nbsp;						tupleExpr.visit(this);</b>
+&nbsp;
+<b class="fc">&nbsp;						boundVars.addAll(tupleExpr.getBindingNames());</b>
+<b class="fc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Build new join hierarchy
+<b class="fc">&nbsp;				TupleExpr priorityJoins = null;</b>
+<b class="fc">&nbsp;				if (priorityArgs.size() &gt; 0) {</b>
+<b class="fc">&nbsp;					priorityJoins = priorityArgs.get(0);</b>
+<b class="fc">&nbsp;					for (int i = 1; i &lt; priorityArgs.size(); i++) {</b>
+<b class="fc">&nbsp;						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				if (orderedJoinArgs.size() &gt; 0) {</b>
+&nbsp;					// Note: generated hierarchy is right-recursive to help the
+&nbsp;					// IterativeEvaluationOptimizer to factor out the left-most join
+&nbsp;					// argument
+<b class="fc">&nbsp;					int i = orderedJoinArgs.size() - 1;</b>
+<b class="fc">&nbsp;					TupleExpr replacement = orderedJoinArgs.get(i);</b>
+<b class="fc">&nbsp;					for (i--; i &gt;= 0; i--) {</b>
+<b class="fc">&nbsp;						replacement = new Join(orderedJoinArgs.get(i), replacement);</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					if (priorityJoins != null) {</b>
+<b class="fc">&nbsp;						replacement = new Join(priorityJoins, replacement);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					// Replace old join hierarchy
+<b class="fc">&nbsp;					node.replaceWith(replacement);</b>
+&nbsp;
+&nbsp;					// we optimize after the replacement call above in case the optimize call below
+&nbsp;					// recurses back into this function and we need all the node&#39;s parent/child pointers
+&nbsp;					// set up correctly for replacement to work on subsequent calls
+<b class="fc">&nbsp;					if (priorityJoins != null) {</b>
+<b class="fc">&nbsp;						optimizePriorityJoin(origBoundVars, priorityJoins);</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;				} else {</b>
+&nbsp;					// only subselect/priority joins involved in this query.
+<b class="fc">&nbsp;					node.replaceWith(priorityJoins);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="fc">&nbsp;				boundVars = origBoundVars;</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected &lt;L extends List&lt;TupleExpr&gt;&gt; L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
+<b class="fc">&nbsp;			if (tupleExpr instanceof Join) {</b>
+<b class="fc">&nbsp;				Join join = (Join) tupleExpr;</b>
+<b class="fc">&nbsp;				getJoinArgs(join.getLeftArg(), joinArgs);</b>
+<b class="fc">&nbsp;				getJoinArgs(join.getRightArg(), joinArgs);</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				joinArgs.add(tupleExpr);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return joinArgs;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected List&lt;Var&gt; getStatementPatternVars(TupleExpr tupleExpr) {
+<b class="fc">&nbsp;			if (tupleExpr instanceof StatementPattern) {</b>
+<b class="fc">&nbsp;				return ((StatementPattern) tupleExpr).getVarList();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (tupleExpr instanceof BindingSetAssignment) {</b>
+<b class="fc">&nbsp;				return List.of();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return new StatementPatternVarCollector(tupleExpr).getVars();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected &lt;M extends Map&lt;Var, Integer&gt;&gt; void fillVarFreqMap(List&lt;Var&gt; varList, M varFreqMap) {
+<b class="fc">&nbsp;			if (varList.isEmpty()) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			for (Var var : varList) {</b>
+<b class="fc">&nbsp;				varFreqMap.compute(var, (k, v) -&gt; {</b>
+<b class="fc">&nbsp;					if (v == null) {</b>
+<b class="fc">&nbsp;						return 1;</b>
+&nbsp;					}
+<b class="fc">&nbsp;					return v + 1;</b>
+&nbsp;				});
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected List&lt;Extension&gt; getExtensions(List&lt;TupleExpr&gt; expressions) {
+<b class="nc">&nbsp;			List&lt;Extension&gt; extensions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			for (TupleExpr expr : expressions) {</b>
+<b class="nc">&nbsp;				if (expr instanceof Extension) {</b>
+<b class="nc">&nbsp;					extensions.add((Extension) expr);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return extensions;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private List&lt;TupleExpr&gt; getExtensionTupleExprs(List&lt;TupleExpr&gt; expressions) {
+<b class="pc">&nbsp;			if (expressions.isEmpty())</b>
+<b class="nc">&nbsp;				return List.of();</b>
+&nbsp;
+<b class="fc">&nbsp;			List&lt;TupleExpr&gt; extensions = List.of();</b>
+<b class="fc">&nbsp;			for (TupleExpr expr : expressions) {</b>
+<b class="fc">&nbsp;				if (TupleExprs.containsExtension(expr)) {</b>
+<b class="fc">&nbsp;					if (extensions.isEmpty()) {</b>
+<b class="fc">&nbsp;						extensions = List.of(expr);</b>
+&nbsp;					} else {
+<b class="pc">&nbsp;						if (extensions.size() == 1) {</b>
+<b class="fc">&nbsp;							extensions = new ArrayList&lt;&gt;(extensions);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						extensions.add(expr);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;			return extensions;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected List&lt;TupleExpr&gt; getSubSelects(List&lt;TupleExpr&gt; expressions) {
+<b class="fc">&nbsp;			if (expressions.isEmpty())</b>
+<b class="fc">&nbsp;				return List.of();</b>
+&nbsp;
+<b class="fc">&nbsp;			List&lt;TupleExpr&gt; subselects = List.of();</b>
+<b class="fc">&nbsp;			for (TupleExpr expr : expressions) {</b>
+<b class="fc">&nbsp;				if (TupleExprs.containsSubquery(expr)) {</b>
+<b class="fc">&nbsp;					if (subselects.isEmpty()) {</b>
+<b class="fc">&nbsp;						subselects = List.of(expr);</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						if (subselects.size() == 1) {</b>
+<b class="fc">&nbsp;							subselects = new ArrayList&lt;&gt;(subselects);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						subselects.add(expr);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;			return subselects;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Determines an optimal ordering of subselect join arguments, based on variable bindings. An ordering is
+&nbsp;		 * considered optimal if for each consecutive element it holds that first of all its shared variables with all
+&nbsp;		 * previous elements is maximized, and second, the union of all its variables with all previous elements is
+&nbsp;		 * maximized.
+&nbsp;		 * &lt;p&gt;
+&nbsp;		 * Example: reordering
+&nbsp;		 *
+&nbsp;		 * &lt;pre&gt;
+&nbsp;		 *   [f] [a b c] [e f] [a d] [b e]
+&nbsp;		 * &lt;/pre&gt;
+&nbsp;		 * &lt;p&gt;
+&nbsp;		 * should result in:
+&nbsp;		 *
+&nbsp;		 * &lt;pre&gt;
+&nbsp;		 *   [a b c] [a d] [b e] [e f] [f]
+&nbsp;		 * &lt;/pre&gt;
+&nbsp;		 *
+&nbsp;		 * @param subSelects the original ordering of expressions
+&nbsp;		 * @return the optimized ordering of expressions
+&nbsp;		 */
+&nbsp;		protected List&lt;TupleExpr&gt; reorderSubselects(List&lt;TupleExpr&gt; subSelects) {
+&nbsp;
+<b class="fc">&nbsp;			if (subSelects.size() == 1) {</b>
+<b class="fc">&nbsp;				return subSelects;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			List&lt;TupleExpr&gt; result = new ArrayList&lt;&gt;();</b>
+<b class="fc">&nbsp;			if (subSelects.isEmpty()) {</b>
+<b class="fc">&nbsp;				return result;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Step 1: determine size of join for each pair of arguments
+<b class="fc">&nbsp;			HashMap&lt;Integer, List&lt;TupleExpr[]&gt;&gt; joinSizes = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;			int maxJoinSize = 0;</b>
+<b class="fc">&nbsp;			for (int i = 0; i &lt; subSelects.size(); i++) {</b>
+<b class="fc">&nbsp;				TupleExpr firstArg = subSelects.get(i);</b>
+<b class="fc">&nbsp;				for (int j = i + 1; j &lt; subSelects.size(); j++) {</b>
+<b class="fc">&nbsp;					TupleExpr secondArg = subSelects.get(j);</b>
+&nbsp;
+<b class="fc">&nbsp;					int joinSize = getJoinSize(firstArg.getBindingNames(), secondArg.getBindingNames());</b>
+&nbsp;
+<b class="fc">&nbsp;					if (joinSize &gt; maxJoinSize) {</b>
+<b class="fc">&nbsp;						maxJoinSize = joinSize;</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					List&lt;TupleExpr[]&gt; l;
+&nbsp;
+<b class="fc">&nbsp;					if (joinSizes.containsKey(joinSize)) {</b>
+<b class="fc">&nbsp;						l = joinSizes.get(joinSize);</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						l = new ArrayList&lt;&gt;();</b>
+&nbsp;					}
+<b class="fc">&nbsp;					TupleExpr[] tupleTuple = new TupleExpr[] { firstArg, secondArg };</b>
+<b class="fc">&nbsp;					l.add(tupleTuple);</b>
+<b class="fc">&nbsp;					joinSizes.put(joinSize, l);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// Step 2: find the first two elements for the ordered list by
+&nbsp;			// selecting the pair with first of all,
+&nbsp;			// the highest join size, and second, the highest union size.
+&nbsp;
+<b class="fc">&nbsp;			TupleExpr[] maxUnionTupleTuple = null;</b>
+<b class="fc">&nbsp;			int currentUnionSize = -1;</b>
+&nbsp;
+&nbsp;			// get a list of all argument pairs with the maximum join size
+<b class="fc">&nbsp;			List&lt;TupleExpr[]&gt; list = joinSizes.get(maxJoinSize);</b>
+&nbsp;
+&nbsp;			// select the pair that has the highest union size.
+<b class="fc">&nbsp;			for (TupleExpr[] tupleTuple : list) {</b>
+<b class="fc">&nbsp;				Set&lt;String&gt; names = tupleTuple[0].getBindingNames();</b>
+<b class="fc">&nbsp;				names.addAll(tupleTuple[1].getBindingNames());</b>
+<b class="fc">&nbsp;				int unionSize = names.size();</b>
+&nbsp;
+<b class="fc">&nbsp;				if (unionSize &gt; currentUnionSize) {</b>
+<b class="fc">&nbsp;					maxUnionTupleTuple = tupleTuple;</b>
+<b class="fc">&nbsp;					currentUnionSize = unionSize;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// add the pair to the result list.
+<b class="pc">&nbsp;			assert maxUnionTupleTuple != null;</b>
+<b class="fc">&nbsp;			result.add(maxUnionTupleTuple[0]);</b>
+<b class="fc">&nbsp;			result.add(maxUnionTupleTuple[1]);</b>
+&nbsp;
+&nbsp;			// Step 3: sort the rest of the list by selecting and adding an element
+&nbsp;			// at a time.
+<b class="fc">&nbsp;			while (result.size() &lt; subSelects.size()) {</b>
+<b class="fc">&nbsp;				result.add(getNextSubselect(result, subSelects));</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private TupleExpr getNextSubselect(List&lt;TupleExpr&gt; currentList, List&lt;TupleExpr&gt; joinArgs) {
+&nbsp;
+&nbsp;			// determine union of names of all elements currently in the list: this
+&nbsp;			// corresponds to the projection resulting from joining all these
+&nbsp;			// elements.
+<b class="fc">&nbsp;			Set&lt;String&gt; currentListNames = new HashSet&lt;&gt;();</b>
+<b class="fc">&nbsp;			for (TupleExpr expr : currentList) {</b>
+<b class="fc">&nbsp;				currentListNames.addAll(expr.getBindingNames());</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// select the next argument from the list, by checking that it has,
+&nbsp;			// first, the highest join size with the current list, and second, the
+&nbsp;			// highest union size.
+<b class="fc">&nbsp;			TupleExpr selected = null;</b>
+<b class="fc">&nbsp;			int currentUnionSize = -1;</b>
+<b class="fc">&nbsp;			int currentJoinSize = -1;</b>
+<b class="fc">&nbsp;			for (TupleExpr candidate : joinArgs) {</b>
+<b class="fc">&nbsp;				if (!currentList.contains(candidate)) {</b>
+&nbsp;
+<b class="fc">&nbsp;					Set&lt;String&gt; names = candidate.getBindingNames();</b>
+<b class="fc">&nbsp;					int joinSize = getJoinSize(currentListNames, names);</b>
+&nbsp;
+<b class="fc">&nbsp;					Set&lt;String&gt; candidateBindingNames = candidate.getBindingNames();</b>
+<b class="fc">&nbsp;					int unionSize = getUnionSize(currentListNames, candidateBindingNames);</b>
+&nbsp;
+<b class="pc">&nbsp;					if (joinSize &gt; currentJoinSize) {</b>
+<b class="fc">&nbsp;						selected = candidate;</b>
+<b class="fc">&nbsp;						currentJoinSize = joinSize;</b>
+<b class="fc">&nbsp;						currentUnionSize = unionSize;</b>
+<b class="nc">&nbsp;					} else if (joinSize == currentJoinSize) {</b>
+<b class="nc">&nbsp;						if (unionSize &gt; currentUnionSize) {</b>
+<b class="nc">&nbsp;							selected = candidate;</b>
+<b class="nc">&nbsp;							currentUnionSize = unionSize;</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			return selected;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Selects from a list of tuple expressions the next tuple expression that should be evaluated. This method
+&nbsp;		 * selects the tuple expression with highest number of bound variables, preferring variables that have been
+&nbsp;		 * bound in other tuple expressions over variables with a fixed value.
+&nbsp;		 */
+&nbsp;		protected TupleExpr selectNextTupleExpr(List&lt;TupleExpr&gt; expressions, Map&lt;TupleExpr, Double&gt; cardinalityMap,
+&nbsp;				Map&lt;TupleExpr, List&lt;Var&gt;&gt; varsMap, Map&lt;Var, Integer&gt; varFreqMap) {
+<b class="fc">&nbsp;			if (expressions.size() == 1) {</b>
+<b class="fc">&nbsp;				TupleExpr tupleExpr = expressions.get(0);</b>
+<b class="pc">&nbsp;				if (tupleExpr.getCostEstimate() &lt; 0) {</b>
+<b class="fc">&nbsp;					tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));</b>
+&nbsp;				}
+<b class="fc">&nbsp;				return tupleExpr;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			TupleExpr result = null;</b>
+<b class="fc">&nbsp;			double lowestCost = Double.POSITIVE_INFINITY;</b>
+&nbsp;
+<b class="fc">&nbsp;			for (TupleExpr tupleExpr : expressions) {</b>
+&nbsp;				// Calculate a score for this tuple expression
+<b class="fc">&nbsp;				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (cost &lt; lowestCost || result == null) {</b>
+&nbsp;					// More specific path expression found
+<b class="fc">&nbsp;					lowestCost = cost;</b>
+<b class="fc">&nbsp;					result = tupleExpr;</b>
+<b class="fc">&nbsp;					if (cost == 0)</b>
+<b class="fc">&nbsp;						break;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="pc">&nbsp;			assert result != null;</b>
+<b class="fc">&nbsp;			result.setCostEstimate(lowestCost);</b>
+&nbsp;
+<b class="fc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getTupleExprCost(TupleExpr tupleExpr, Map&lt;TupleExpr, Double&gt; cardinalityMap,
+&nbsp;				Map&lt;TupleExpr, List&lt;Var&gt;&gt; varsMap, Map&lt;Var, Integer&gt; varFreqMap) {
+&nbsp;
+&nbsp;			// BindingSetAssignment has a typical constant cost. This cost is not based on statistics so is much more
+&nbsp;			// reliable. If the BindingSetAssignment binds to any of the other variables in the other tuple expressions
+&nbsp;			// to choose from, then the cost of the BindingSetAssignment should be set to 0 since it will always limit
+&nbsp;			// the upper bound of any other costs. This way the BindingSetAssignment will be chosen as the left
+&nbsp;			// argument.
+<b class="fc">&nbsp;			if (tupleExpr instanceof BindingSetAssignment) {</b>
+&nbsp;
+<b class="fc">&nbsp;				Set&lt;Var&gt; varsUsedInOtherExpressions = varFreqMap.keySet();</b>
+&nbsp;
+<b class="fc">&nbsp;				for (String assuredBindingName : tupleExpr.getAssuredBindingNames()) {</b>
+<b class="fc">&nbsp;					if (varsUsedInOtherExpressions.contains(new Var(assuredBindingName))) {</b>
+<b class="fc">&nbsp;						return 0;</b>
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			double cost;
+&nbsp;
+<b class="fc">&nbsp;			if (hasCachedCardinality(tupleExpr)) {</b>
+<b class="fc">&nbsp;				cost = ((AbstractQueryModelNode) tupleExpr).getCardinality();</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				cost = cardinalityMap.get(tupleExpr);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			List&lt;Var&gt; vars = varsMap.get(tupleExpr);</b>
+&nbsp;
+&nbsp;			// Compensate for variables that are bound earlier in the evaluation
+<b class="fc">&nbsp;			List&lt;Var&gt; unboundVars = getUnboundVars(vars);</b>
+<b class="fc">&nbsp;			int constantVars = countConstantVars(vars);</b>
+&nbsp;
+<b class="fc">&nbsp;			int nonConstantVarCount = vars.size() - constantVars;</b>
+&nbsp;
+<b class="fc">&nbsp;			if (nonConstantVarCount &gt; 0) {</b>
+<b class="fc">&nbsp;				double exp = (double) unboundVars.size() / nonConstantVarCount;</b>
+<b class="fc">&nbsp;				cost = Math.pow(cost, exp);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (unboundVars.isEmpty()) {</b>
+&nbsp;				// Prefer patterns with more bound vars
+<b class="fc">&nbsp;				if (nonConstantVarCount &gt; 0) {</b>
+<b class="fc">&nbsp;					cost /= nonConstantVarCount;</b>
+&nbsp;				}
+&nbsp;			} else {
+&nbsp;				// Prefer patterns that bind variables from other tuple expressions
+<b class="fc">&nbsp;				int foreignVarFreq = getForeignVarFreq(unboundVars, varFreqMap);</b>
+<b class="fc">&nbsp;				if (foreignVarFreq &gt; 0) {</b>
+<b class="fc">&nbsp;					cost /= 1 + foreignVarFreq;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return cost;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private int countConstantVars(List&lt;Var&gt; vars) {
+<b class="fc">&nbsp;			int size = 0;</b>
+&nbsp;
+<b class="fc">&nbsp;			for (Var var : vars) {</b>
+<b class="fc">&nbsp;				if (var.hasValue()) {</b>
+<b class="fc">&nbsp;					size++;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			return size;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Deprecated(forRemoval = true, since = &quot;4.1.0&quot;)
+&nbsp;		protected List&lt;Var&gt; getUnboundVars(Iterable&lt;Var&gt; vars) {
+&nbsp;
+<b class="nc">&nbsp;			List&lt;Var&gt; ret = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Var var : vars) {</b>
+<b class="nc">&nbsp;				if (!var.hasValue() &amp;&amp; var.getName() != null &amp;&amp; !boundVars.contains(var.getName())) {</b>
+<b class="nc">&nbsp;					if (ret == null) {</b>
+<b class="nc">&nbsp;						ret = Collections.singletonList(var);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						if (ret.size() == 1) {</b>
+<b class="nc">&nbsp;							ret = new ArrayList&lt;&gt;(ret);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						ret.add(var);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return ret != null ? ret : Collections.emptyList();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected List&lt;Var&gt; getUnboundVars(List&lt;Var&gt; vars) {
+<b class="fc">&nbsp;			int size = vars.size();</b>
+<b class="fc">&nbsp;			if (size == 0) {</b>
+<b class="fc">&nbsp;				return List.of();</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (size == 1) {</b>
+<b class="nc">&nbsp;				Var var = vars.get(0);</b>
+<b class="nc">&nbsp;				if (!var.hasValue() &amp;&amp; var.getName() != null &amp;&amp; !boundVars.contains(var.getName())) {</b>
+<b class="nc">&nbsp;					return List.of(var);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return List.of();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			List&lt;Var&gt; ret = null;</b>
+&nbsp;
+<b class="fc">&nbsp;			for (Var var : vars) {</b>
+<b class="pc">&nbsp;				if (!var.hasValue() &amp;&amp; var.getName() != null &amp;&amp; !boundVars.contains(var.getName())) {</b>
+<b class="fc">&nbsp;					if (ret == null) {</b>
+<b class="fc">&nbsp;						ret = List.of(var);</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						if (ret.size() == 1) {</b>
+<b class="fc">&nbsp;							ret = new ArrayList&lt;&gt;(ret);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						ret.add(var);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			return ret != null ? ret : Collections.emptyList();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected int getForeignVarFreq(List&lt;Var&gt; ownUnboundVars, Map&lt;Var, Integer&gt; varFreqMap) {
+<b class="pc">&nbsp;			if (ownUnboundVars.isEmpty()) {</b>
+<b class="nc">&nbsp;				return 0;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (ownUnboundVars.size() == 1) {</b>
+<b class="fc">&nbsp;				return varFreqMap.get(ownUnboundVars.get(0)) - 1;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				int result = -ownUnboundVars.size();</b>
+<b class="fc">&nbsp;				for (Var var : new HashSet&lt;&gt;(ownUnboundVars)) {</b>
+<b class="fc">&nbsp;					result += varFreqMap.get(var);</b>
+<b class="fc">&nbsp;				}</b>
+<b class="fc">&nbsp;				return result;</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private static class StatementPatternVarCollector extends StatementPatternVisitor {
+&nbsp;
+&nbsp;			private final TupleExpr tupleExpr;
+&nbsp;			private List&lt;Var&gt; vars;
+&nbsp;
+<b class="fc">&nbsp;			public StatementPatternVarCollector(TupleExpr tupleExpr) {</b>
+<b class="fc">&nbsp;				this.tupleExpr = tupleExpr;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void accept(StatementPattern node) {
+<b class="fc">&nbsp;				if (vars == null) {</b>
+<b class="fc">&nbsp;					vars = new ArrayList&lt;&gt;(node.getVarList());</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					vars.addAll(node.getVarList());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			public List&lt;Var&gt; getVars() {
+<b class="pc">&nbsp;				if (vars == null) {</b>
+&nbsp;					try {
+<b class="fc">&nbsp;						tupleExpr.visit(this);</b>
+<b class="nc">&nbsp;					} catch (Exception e) {</b>
+<b class="nc">&nbsp;						if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;							Thread.currentThread().interrupt();</b>
+&nbsp;						}
+<b class="nc">&nbsp;						throw new IllegalStateException(e);</b>
+<b class="fc">&nbsp;					}</b>
+<b class="pc">&nbsp;					if (vars == null) {</b>
+<b class="nc">&nbsp;						vars = Collections.emptyList();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				return vars;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static int getUnionSize(Set&lt;String&gt; currentListNames, Set&lt;String&gt; candidateBindingNames) {
+<b class="fc">&nbsp;		int count = 0;</b>
+<b class="fc">&nbsp;		for (String n : currentListNames) {</b>
+<b class="fc">&nbsp;			if (!candidateBindingNames.contains(n)) {</b>
+<b class="fc">&nbsp;				count++;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return candidateBindingNames.size() + count;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static int getJoinSize(Set&lt;String&gt; currentListNames, Set&lt;String&gt; names) {
+<b class="fc">&nbsp;		int count = 0;</b>
+<b class="fc">&nbsp;		for (String name : names) {</b>
+<b class="fc">&nbsp;			if (currentListNames.contains(name)) {</b>
+<b class="fc">&nbsp;				count++;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return count;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean hasCachedCardinality(TupleExpr tupleExpr) {
+<b class="pc">&nbsp;		return tupleExpr instanceof AbstractQueryModelNode</b>
+<b class="fc">&nbsp;				&amp;&amp; ((AbstractQueryModelNode) tupleExpr).isCardinalitySet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

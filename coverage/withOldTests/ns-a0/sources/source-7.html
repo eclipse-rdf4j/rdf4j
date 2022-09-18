@@ -1,0 +1,185 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ServiceJoinConversionIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sparql.federation</a>
+</div>
+
+<h1>Coverage Summary for Class: ServiceJoinConversionIteration (org.eclipse.rdf4j.repository.sparql.federation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ServiceJoinConversionIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sparql.federation;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * Inserts original bindings into the result, uses ?__rowIdx to resolve original bindings. See
+&nbsp; * {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator} and {@link SPARQLFederatedService}.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class ServiceJoinConversionIteration
+&nbsp;		extends ConvertingIteration&lt;BindingSet, BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	protected final List&lt;BindingSet&gt; bindings;
+&nbsp;
+&nbsp;	public ServiceJoinConversionIteration(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+&nbsp;			List&lt;BindingSet&gt; bindings) {
+<b class="nc">&nbsp;		super(iter);</b>
+<b class="nc">&nbsp;		this.bindings = bindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet convert(BindingSet bIn) throws QueryEvaluationException {
+&nbsp;
+&nbsp;		// overestimate the capacity
+<b class="nc">&nbsp;		SPARQLQueryBindingSet res = new SPARQLQueryBindingSet(bIn.size() + bindings.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		int bIndex = -1;</b>
+<b class="nc">&nbsp;		Iterator&lt;Binding&gt; bIter = bIn.iterator();</b>
+<b class="nc">&nbsp;		while (bIter.hasNext()) {</b>
+<b class="nc">&nbsp;			Binding b = bIter.next();</b>
+<b class="nc">&nbsp;			String name = b.getName();</b>
+<b class="nc">&nbsp;			if (name.equals(&quot;__rowIdx&quot;)) {</b>
+<b class="nc">&nbsp;				bIndex = Integer.parseInt(b.getValue().stringValue());</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			res.addBinding(b.getName(), b.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// should never occur: in such case we would have to create the cross product (which
+&nbsp;		// is dealt with in another place)
+<b class="nc">&nbsp;		if (bIndex == -1) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(</b>
+&nbsp;					&quot;Invalid join. Probably this is due to non-standard behavior of the SPARQL endpoint. &quot;
+&nbsp;							+ &quot;Please report to the developers.&quot;);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		res.addAll(bindings.get(bIndex));</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

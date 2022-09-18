@@ -1,0 +1,326 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > XMLDatatypeMathUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.util</a>
+</div>
+
+<h1>Coverage Summary for Class: XMLDatatypeMathUtil (org.eclipse.rdf4j.query.algebra.evaluation.util)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">XMLDatatypeMathUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/65)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">XMLDatatypeMathUtil$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/66)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.util;
+&nbsp;
+&nbsp;import javax.xml.datatype.DatatypeConstants;
+&nbsp;import javax.xml.datatype.Duration;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A utility class for evaluation of extended &quot;mathematical&quot; expressions on RDF literals. They do not work only on
+&nbsp; * numeric literals but also on durations
+&nbsp; *
+&nbsp; * @author Thomas Pellissier Tanon
+&nbsp; */
+<b class="nc">&nbsp;public class XMLDatatypeMathUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the result of applying the supplied math operator on the supplied left and right operand.
+&nbsp;	 *
+&nbsp;	 * @param leftLit  a datatype literal
+&nbsp;	 * @param rightLit a datatype literal
+&nbsp;	 * @param op       a mathematical operator, as definied by MathExpr.MathOp.
+&nbsp;	 * @return a datatype literal
+&nbsp;	 */
+&nbsp;	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		CoreDatatype.XSD leftDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);</b>
+<b class="nc">&nbsp;		CoreDatatype.XSD rightDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (leftDatatype != null &amp;&amp; rightDatatype != null) {</b>
+<b class="nc">&nbsp;			if (leftDatatype.isNumericDatatype() &amp;&amp; rightDatatype.isNumericDatatype()) {</b>
+<b class="nc">&nbsp;				return MathUtil.compute(leftLit, rightLit, op);</b>
+<b class="nc">&nbsp;			} else if (leftDatatype.isDurationDatatype() &amp;&amp; rightDatatype.isDurationDatatype()) {</b>
+<b class="nc">&nbsp;				return operationsBetweenDurations(leftLit, rightLit, op);</b>
+<b class="nc">&nbsp;			} else if (leftDatatype.isDecimalDatatype() &amp;&amp; rightDatatype.isDurationDatatype()) {</b>
+<b class="nc">&nbsp;				return operationsBetweenDurationAndDecimal(rightLit, leftLit, op);</b>
+<b class="nc">&nbsp;			} else if (leftDatatype.isDurationDatatype() &amp;&amp; rightDatatype.isDecimalDatatype()) {</b>
+<b class="nc">&nbsp;				return operationsBetweenDurationAndDecimal(leftLit, rightLit, op);</b>
+<b class="nc">&nbsp;			} else if (leftDatatype.isCalendarDatatype() &amp;&amp; rightDatatype.isDurationDatatype()) {</b>
+<b class="nc">&nbsp;				return operationsBetweenCalendarAndDuration(leftLit, rightLit, op);</b>
+<b class="nc">&nbsp;			} else if (leftDatatype.isDurationDatatype() &amp;&amp; rightDatatype.isCalendarDatatype()) {</b>
+<b class="nc">&nbsp;				return operationsBetweenDurationAndCalendar(leftLit, rightLit, op);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new ValueExprEvaluationException(&quot;Mathematical operators are not supported on these operands&quot;);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Literal operationsBetweenDurations(Literal leftLit, Literal rightLit, MathOp op) {
+<b class="nc">&nbsp;		Duration left = XMLDatatypeUtil.parseDuration(leftLit.getLabel());</b>
+<b class="nc">&nbsp;		Duration right = XMLDatatypeUtil.parseDuration(rightLit.getLabel());</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			switch (op) {</b>
+&nbsp;			case PLUS:
+&nbsp;				// op:add-yearMonthDurations and op:add-dayTimeDurations
+<b class="nc">&nbsp;				return buildLiteral(left.add(right));</b>
+&nbsp;			case MINUS:
+&nbsp;				// op:subtract-yearMonthDurations and op:subtract-dayTimeDurations
+<b class="nc">&nbsp;				return buildLiteral(left.subtract(right));</b>
+&nbsp;			case MULTIPLY:
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(&quot;Multiplication is not defined on xsd:duration.&quot;);</b>
+&nbsp;			case DIVIDE:
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(&quot;Division is not defined on xsd:duration.&quot;);</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unknown operator: &quot; + op);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Literal operationsBetweenDurationAndDecimal(Literal durationLit, Literal decimalLit, MathOp op) {
+<b class="nc">&nbsp;		Duration duration = XMLDatatypeUtil.parseDuration(durationLit.getLabel());</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (op == MathOp.MULTIPLY) {</b>
+&nbsp;				// op:multiply-dayTimeDuration and op:multiply-yearMonthDuration
+<b class="nc">&nbsp;				return buildLiteral(duration.multiply(decimalLit.decimalValue()));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(</b>
+&nbsp;						&quot;Only multiplication is defined between xsd:decimal and xsd:duration.&quot;);
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Literal operationsBetweenCalendarAndDuration(Literal calendarLit, Literal durationLit, MathOp op) {
+<b class="nc">&nbsp;		XMLGregorianCalendar calendar = (XMLGregorianCalendar) calendarLit.calendarValue().clone();</b>
+<b class="nc">&nbsp;		Duration duration = XMLDatatypeUtil.parseDuration(durationLit.getLabel());</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			switch (op) {</b>
+&nbsp;			case PLUS:
+&nbsp;				// op:add-yearMonthDuration-to-dateTime and op:add-dayTimeDuration-to-dateTime and
+&nbsp;				// op:add-yearMonthDuration-to-date and op:add-dayTimeDuration-to-date and
+&nbsp;				// op:add-dayTimeDuration-to-time
+<b class="nc">&nbsp;				calendar.add(duration);</b>
+<b class="nc">&nbsp;				return SimpleValueFactory.getInstance().createLiteral(calendar);</b>
+&nbsp;			case MINUS:
+&nbsp;				// op:subtract-yearMonthDuration-from-dateTime and op:subtract-dayTimeDuration-from-dateTime and
+&nbsp;				// op:subtract-yearMonthDuration-from-date and op:subtract-dayTimeDuration-from-date and
+&nbsp;				// op:subtract-dayTimeDuration-from-time
+<b class="nc">&nbsp;				calendar.add(duration.negate());</b>
+<b class="nc">&nbsp;				return SimpleValueFactory.getInstance().createLiteral(calendar);</b>
+&nbsp;			case MULTIPLY:
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(</b>
+&nbsp;						&quot;Multiplication is not defined between xsd:duration and calendar values.&quot;);
+&nbsp;			case DIVIDE:
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(</b>
+&nbsp;						&quot;Division is not defined between xsd:duration and calendar values.&quot;);
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unknown operator: &quot; + op);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Literal operationsBetweenDurationAndCalendar(Literal durationLit, Literal calendarLit, MathOp op) {
+<b class="nc">&nbsp;		Duration duration = XMLDatatypeUtil.parseDuration(durationLit.getLabel());</b>
+<b class="nc">&nbsp;		XMLGregorianCalendar calendar = (XMLGregorianCalendar) calendarLit.calendarValue().clone();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (op == MathOp.PLUS) {</b>
+&nbsp;				// op:add-yearMonthDuration-to-dateTime and op:add-dayTimeDuration-to-dateTime and
+&nbsp;				// op:add-yearMonthDuration-to-date and op:add-dayTimeDuration-to-date and
+&nbsp;				// op:add-dayTimeDuration-to-time
+<b class="nc">&nbsp;				calendar.add(duration);</b>
+<b class="nc">&nbsp;				return SimpleValueFactory.getInstance().createLiteral(calendar);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(</b>
+&nbsp;						&quot;Only addition is defined between xsd:duration and calendar datatypes.&quot;);
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Literal buildLiteral(Duration duration) {
+<b class="nc">&nbsp;		return SimpleValueFactory.getInstance().createLiteral(duration.toString(), getDatatypeForDuration(duration));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static CoreDatatype.XSD getDatatypeForDuration(Duration duration) {
+&nbsp;		// Could not be implemented with Duration.getXMLSchemaType that is too strict (&quot;P1Y&quot; is considered invalid)
+&nbsp;
+<b class="nc">&nbsp;		boolean yearSet = duration.isSet(DatatypeConstants.YEARS);</b>
+<b class="nc">&nbsp;		boolean monthSet = duration.isSet(DatatypeConstants.MONTHS);</b>
+<b class="nc">&nbsp;		boolean daySet = duration.isSet(DatatypeConstants.DAYS);</b>
+<b class="nc">&nbsp;		boolean hourSet = duration.isSet(DatatypeConstants.HOURS);</b>
+<b class="nc">&nbsp;		boolean minuteSet = duration.isSet(DatatypeConstants.MINUTES);</b>
+<b class="nc">&nbsp;		boolean secondSet = duration.isSet(DatatypeConstants.SECONDS);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!yearSet &amp;&amp; !monthSet) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.DAYTIMEDURATION;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!daySet &amp;&amp; !hourSet &amp;&amp; !minuteSet &amp;&amp; !secondSet) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.YEARMONTHDURATION;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return CoreDatatype.XSD.DURATION;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

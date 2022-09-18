@@ -1,0 +1,227 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SearchIndex</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: SearchIndex (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">SearchIndex</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SearchIndex is a one-stop-shop abstraction of a Lucene index. It takes care of proper synchronization of
+&nbsp; * IndexReaders, IndexWriters and IndexSearchers in a way that is suitable for a LuceneSail.
+&nbsp; *
+&nbsp; * @see LuceneSail
+&nbsp; */
+&nbsp;public interface SearchIndex {
+&nbsp;
+&nbsp;	void initialize(Properties parameters) throws Exception;
+&nbsp;
+&nbsp;	Collection&lt;BindingSet&gt; evaluate(SearchQueryEvaluator query) throws SailException;
+&nbsp;
+&nbsp;	void shutDown() throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does not make
+&nbsp;	 * much since to index xsd:float.
+&nbsp;	 *
+&nbsp;	 * @param literal the literal to be accepted
+&nbsp;	 * @return true if the given literal will be indexed by this LuceneIndex
+&nbsp;	 */
+&nbsp;	boolean accept(Literal literal);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns true if the given property contains a geometry.
+&nbsp;	 *
+&nbsp;	 * @param propertyName
+&nbsp;	 * @return boolean
+&nbsp;	 */
+&nbsp;	boolean isGeoField(String propertyName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns true if the given statement is a type statement, see {@link LuceneSail#INDEXEDTYPES} to use. This method
+&nbsp;	 * should return false if {@link #isTypeFilteringEnabled()} returns false.
+&nbsp;	 *
+&nbsp;	 * @param statement statement
+&nbsp;	 * @return boolean
+&nbsp;	 */
+&nbsp;	boolean isTypeStatement(Statement statement);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * is the {@link LuceneSail#INDEXEDTYPES} parameter set for this index.
+&nbsp;	 *
+&nbsp;	 * @return boolean
+&nbsp;	 */
+&nbsp;	boolean isTypeFilteringEnabled();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns true if the given statement is a type statement of the right type, see {@link LuceneSail#INDEXEDTYPES} to
+&nbsp;	 * use. This method should return false if {@link #isTypeFilteringEnabled()} returns false.
+&nbsp;	 *
+&nbsp;	 * @param statement statement
+&nbsp;	 * @return boolean
+&nbsp;	 */
+&nbsp;	boolean isIndexedTypeStatement(Statement statement);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the accepted types for a particular predicate map (predicate -&gt; [objects])
+&nbsp;	 */
+&nbsp;	Map&lt;IRI, Set&lt;IRI&gt;&gt; getIndexedTypeMapping();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Begins a transaction.
+&nbsp;	 *
+&nbsp;	 * @throws java.io.IOException
+&nbsp;	 */
+&nbsp;	void begin() throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Commits any changes done to the LuceneIndex since the last commit.The semantics is synchronous to
+&nbsp;	 * SailConnection.commit(), i.e. the LuceneIndex should be committed/rolled back whenever the LuceneSailConnection
+&nbsp;	 * is committed/rolled back.
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	void commit() throws IOException;
+&nbsp;
+&nbsp;	void rollback() throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indexes the specified Statement.This should be called from within a begin-commit-rollback block.
+&nbsp;	 *
+&nbsp;	 * @param statement
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	void addStatement(Statement statement) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the specified Statement from the indexes.This should be called from within a begin-commit-rollback
+&nbsp;	 *
+&nbsp;	 * block.
+&nbsp;	 *
+&nbsp;	 * @param statement
+&nbsp;	 * @throws java.io.IOException
+&nbsp;	 */
+&nbsp;	void removeStatement(Statement statement) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add many statements at the same time, remove many statements at the same time.Ordering by resource has to be done
+&nbsp;	 * inside this method. The passed added/removed sets are disjunct, no statement can be in both. This should be
+&nbsp;	 * called from within a begin-commit-rollback block.
+&nbsp;	 *
+&nbsp;	 * @param added   all added statements, can have multiple subjects
+&nbsp;	 * @param removed all removed statements, can have multiple subjects
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	void addRemoveStatements(Collection&lt;Statement&gt; added, Collection&lt;Statement&gt; removed) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This should be called from within a begin-commit-rollback block.
+&nbsp;	 *
+&nbsp;	 * @param contexts
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	void clearContexts(Resource... contexts) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add a complete Lucene Document based on these statements.Do not search for an existing document with the same
+&nbsp;	 * subject id. (assume the existing document was deleted). This should be called from within a begin-commit-rollback
+&nbsp;	 * block.
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @param statements the statements that make up the resource
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	void addDocuments(Resource subject, List&lt;Statement&gt; statements) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clears the indexes.
+&nbsp;	 *
+&nbsp;	 * @throws java.io.IOException
+&nbsp;	 */
+&nbsp;	void clear() throws IOException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

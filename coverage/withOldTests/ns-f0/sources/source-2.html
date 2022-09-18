@@ -1,0 +1,162 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConstraintViolation</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spin</a>
+</div>
+
+<h1>Coverage Summary for Class: ConstraintViolation (org.eclipse.rdf4j.spin)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConstraintViolation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.spin;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;
+&nbsp;/**
+&nbsp; * Class to store SPIN constraint violation RDF statements.
+&nbsp; */
+&nbsp;public class ConstraintViolation implements Serializable {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 3699022598761641221L;
+&nbsp;
+&nbsp;	private final String message;
+&nbsp;
+&nbsp;	private final String root;
+&nbsp;
+&nbsp;	private final String path;
+&nbsp;
+&nbsp;	private final String value;
+&nbsp;
+&nbsp;	private final ConstraintViolationLevel level;
+&nbsp;
+<b class="nc">&nbsp;	public ConstraintViolation(String message, String root, String path, String value, ConstraintViolationLevel level) {</b>
+<b class="nc">&nbsp;		this.message = message;</b>
+<b class="nc">&nbsp;		this.root = root;</b>
+<b class="nc">&nbsp;		this.path = path;</b>
+<b class="nc">&nbsp;		this.value = value;</b>
+<b class="nc">&nbsp;		this.level = level;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getMessage() {
+<b class="nc">&nbsp;		return message;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getRoot() {
+<b class="nc">&nbsp;		return root;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getPath() {
+<b class="nc">&nbsp;		return path;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getValue() {
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ConstraintViolationLevel getLevel() {
+<b class="nc">&nbsp;		return level;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

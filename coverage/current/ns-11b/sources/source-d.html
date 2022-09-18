@@ -1,0 +1,389 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLSyntaxComplianceTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLSyntaxComplianceTest (org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLSyntaxComplianceTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SPARQLSyntaxComplianceTest$SPARQLSyntaxManifest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/106)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
+&nbsp;
+&nbsp;import static org.junit.Assert.fail;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Deque;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DeleteData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.InsertData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.sail.helpers.SailUpdateExecutor;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.junit.runners.Parameterized;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A test suite that runs SPARQL syntax tests.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; *
+&nbsp; */
+&nbsp;public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SPARQLSyntaxComplianceTest.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final List&lt;String&gt; excludedSubdirs = List.of();</b>
+&nbsp;
+&nbsp;	private final String queryFileURL;
+&nbsp;	private final boolean positiveTest;
+&nbsp;
+&nbsp;	@Parameterized.Parameters(name = &quot;{0}&quot;)
+&nbsp;	public static Collection&lt;Object[]&gt; data() {
+<b class="nc">&nbsp;		return Arrays.asList(getTestData());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SPARQLSyntaxComplianceTest(String displayName, String testURI, String name, String queryFileURL,
+&nbsp;			boolean positiveTest) {
+&nbsp;
+<b class="nc">&nbsp;		super(displayName, testURI, name);</b>
+<b class="nc">&nbsp;		this.queryFileURL = queryFileURL;</b>
+<b class="nc">&nbsp;		this.positiveTest = positiveTest;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Object[][] getTestData() {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Object[]&gt; tests = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Deque&lt;String&gt; manifests = new ArrayDeque&lt;&gt;();</b>
+<b class="nc">&nbsp;		manifests.add(</b>
+<b class="nc">&nbsp;				SPARQLSyntaxComplianceTest.class.getClassLoader()</b>
+<b class="nc">&nbsp;						.getResource(&quot;testcases-sparql-1.1-w3c/manifest-all.ttl&quot;)</b>
+<b class="nc">&nbsp;						.toExternalForm());</b>
+<b class="nc">&nbsp;		while (!manifests.isEmpty()) {</b>
+<b class="nc">&nbsp;			String pop = manifests.pop();</b>
+<b class="nc">&nbsp;			SPARQLSyntaxManifest manifest = new SPARQLSyntaxManifest(pop);</b>
+<b class="nc">&nbsp;			tests.addAll(manifest.tests);</b>
+<b class="nc">&nbsp;			manifests.addAll(manifest.subManifests);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		Object[][] result = new Object[tests.size()][6];</b>
+<b class="nc">&nbsp;		tests.toArray(result);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static class SPARQLSyntaxManifest {
+<b class="nc">&nbsp;		List&lt;Object[]&gt; tests = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		List&lt;String&gt; subManifests = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public SPARQLSyntaxManifest(String filename) {</b>
+<b class="nc">&nbsp;			SailRepository sailRepository = new SailRepository(new MemoryStore());</b>
+<b class="nc">&nbsp;			try (SailRepositoryConnection connection = sailRepository.getConnection()) {</b>
+<b class="nc">&nbsp;				connection.add(new URL(filename), filename, RDFFormat.TURTLE);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			try (SailRepositoryConnection connection = sailRepository.getConnection()) {</b>
+&nbsp;
+<b class="nc">&nbsp;				String manifestQuery = &quot; PREFIX qt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt; &quot;</b>
+&nbsp;						+ &quot;PREFIX mf: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt; &quot;
+&nbsp;						+ &quot;SELECT DISTINCT ?manifestFile &quot;
+&nbsp;						+ &quot;WHERE { [] mf:include [ rdf:rest*/rdf:first ?manifestFile ] . }   &quot;;
+&nbsp;
+<b class="nc">&nbsp;				try (TupleQueryResult manifestResults = connection</b>
+<b class="nc">&nbsp;						.prepareTupleQuery(QueryLanguage.SPARQL, manifestQuery, filename)</b>
+<b class="nc">&nbsp;						.evaluate()) {</b>
+<b class="nc">&nbsp;					for (BindingSet bindingSet : manifestResults) {</b>
+<b class="nc">&nbsp;						String subManifestFile = bindingSet.getValue(&quot;manifestFile&quot;).stringValue();</b>
+<b class="nc">&nbsp;						if (includeSubManifest(subManifestFile, excludedSubdirs)) {</b>
+<b class="nc">&nbsp;							subManifests.add(subManifestFile);</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				StringBuilder query = new StringBuilder(512);</b>
+<b class="nc">&nbsp;				query.append(&quot;PREFIX mf: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt; &quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;PREFIX qt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt; &quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;PREFIX dawgt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#&gt; &quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;SELECT ?TestURI ?Name ?Action ?Type &quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;WHERE { [] rdf:first ?TestURI. &quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;        ?TestURI a ?Type ; &quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;                 mf:name ?Name ;&quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;                 mf:action ?Action ;&quot;);</b>
+<b class="nc">&nbsp;				query.append(&quot;                 dawgt:approval dawgt:Approved . &quot;);</b>
+<b class="nc">&nbsp;				query.append(</b>
+&nbsp;						&quot;        FILTER(?Type IN (mf:PositiveSyntaxTest, mf:NegativeSyntaxTest, mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) &quot;);
+<b class="nc">&nbsp;				query.append(&quot; } &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;				try (TupleQueryResult result = connection.prepareTupleQuery(query.toString()).evaluate()) {</b>
+<b class="nc">&nbsp;					for (BindingSet bs : result) {</b>
+&nbsp;						// FIXME I&#39;m sure there&#39;s a neater way to do this
+<b class="nc">&nbsp;						String testName = bs.getValue(&quot;Name&quot;).stringValue();</b>
+<b class="nc">&nbsp;						String displayName = filename.substring(</b>
+<b class="nc">&nbsp;								filename.lastIndexOf(&quot;testcases-sparql-1.1-w3c/&quot;)</b>
+<b class="nc">&nbsp;										+ &quot;testcases-sparql-1.1-w3c/&quot;.length(),</b>
+<b class="nc">&nbsp;								filename.lastIndexOf(&quot;/&quot;))</b>
+&nbsp;								+ &quot;: &quot; + testName;
+&nbsp;
+<b class="nc">&nbsp;						IRI testURI = (IRI) bs.getValue(&quot;TestURI&quot;);</b>
+<b class="nc">&nbsp;						Value action = bs.getValue(&quot;Action&quot;);</b>
+<b class="nc">&nbsp;						String type = bs.getValue(&quot;Type&quot;).toString();</b>
+<b class="nc">&nbsp;						boolean positiveTest = type</b>
+<b class="nc">&nbsp;								.equals(&quot;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11&quot;)</b>
+<b class="nc">&nbsp;								|| type.equals(</b>
+&nbsp;										&quot;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11&quot;);
+&nbsp;
+<b class="nc">&nbsp;						tests.add(new Object[] {</b>
+&nbsp;								displayName,
+<b class="nc">&nbsp;								testURI.stringValue(),</b>
+&nbsp;								testName,
+<b class="nc">&nbsp;								action.stringValue(),</b>
+<b class="nc">&nbsp;								positiveTest });</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void runTest() throws Exception {
+<b class="nc">&nbsp;		InputStream stream = new URL(queryFileURL).openStream();</b>
+<b class="nc">&nbsp;		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));</b>
+<b class="nc">&nbsp;		stream.close();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			ParsedOperation operation = parseOperation(query, queryFileURL);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!positiveTest) {</b>
+<b class="nc">&nbsp;				boolean dataBlockUpdate = false;</b>
+<b class="nc">&nbsp;				if (operation instanceof ParsedUpdate) {</b>
+<b class="nc">&nbsp;					for (UpdateExpr updateExpr : ((ParsedUpdate) operation).getUpdateExprs()) {</b>
+<b class="nc">&nbsp;						if (updateExpr instanceof InsertData || updateExpr instanceof DeleteData) {</b>
+&nbsp;							// parsing for these operation happens during actual
+&nbsp;							// execution, so try and execute.
+<b class="nc">&nbsp;							dataBlockUpdate = true;</b>
+&nbsp;
+<b class="nc">&nbsp;							MemoryStore store = new MemoryStore();</b>
+<b class="nc">&nbsp;							store.init();</b>
+<b class="nc">&nbsp;							NotifyingSailConnection conn = store.getConnection();</b>
+&nbsp;							try {
+<b class="nc">&nbsp;								conn.begin();</b>
+<b class="nc">&nbsp;								SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(), null);</b>
+<b class="nc">&nbsp;								exec.executeUpdate(updateExpr, null, null, true, -1);</b>
+<b class="nc">&nbsp;								conn.rollback();</b>
+<b class="nc">&nbsp;								fail(&quot;Negative test case should have failed to parse&quot;);</b>
+<b class="nc">&nbsp;							} catch (SailException e) {</b>
+<b class="nc">&nbsp;								if (!(e.getCause() instanceof RDFParseException)) {</b>
+<b class="nc">&nbsp;									logger.error(&quot;unexpected error in negative test case&quot;, e);</b>
+<b class="nc">&nbsp;									fail(&quot;unexpected error in negative test case&quot;);</b>
+&nbsp;								}
+&nbsp;								// fall through - a parse exception is expected for a
+&nbsp;								// negative test case
+<b class="nc">&nbsp;								conn.rollback();</b>
+&nbsp;							} finally {
+<b class="nc">&nbsp;								conn.close();</b>
+<b class="nc">&nbsp;							}</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (!dataBlockUpdate) {</b>
+<b class="nc">&nbsp;					fail(&quot;Negative test case should have failed to parse&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			if (positiveTest) {</b>
+<b class="nc">&nbsp;				e.printStackTrace();</b>
+<b class="nc">&nbsp;				fail(&quot;Positive test case failed: &quot; + e.getMessage());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

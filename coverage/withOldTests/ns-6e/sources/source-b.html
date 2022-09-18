@@ -1,0 +1,282 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ServiceQueryEvaluationStep</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps</a>
+</div>
+
+<h1>Coverage Summary for Class: ServiceQueryEvaluationStep (org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ServiceQueryEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ServiceQueryEvaluationStep$BoundVarVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;
+&nbsp;public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
+&nbsp;	private final Service service;
+&nbsp;	private final Var serviceRef;
+&nbsp;	private final FederatedServiceResolver serviceResolver;
+&nbsp;
+<b class="nc">&nbsp;	public ServiceQueryEvaluationStep(Service service, Var serviceRef, FederatedServiceResolver serviceResolver) {</b>
+<b class="nc">&nbsp;		this.service = service;</b>
+<b class="nc">&nbsp;		this.serviceRef = serviceRef;</b>
+<b class="nc">&nbsp;		this.serviceResolver = serviceResolver;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings) {
+&nbsp;		String serviceUri;
+<b class="nc">&nbsp;		if (serviceRef.hasValue()) {</b>
+<b class="nc">&nbsp;			serviceUri = serviceRef.getValue().stringValue();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (bindings != null &amp;&amp; bindings.getValue(serviceRef.getName()) != null) {</b>
+<b class="nc">&nbsp;				serviceUri = bindings.getBinding(serviceRef.getName()).getValue().stringValue();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new QueryEvaluationException(&quot;SERVICE variables must be bound at evaluation time.&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			FederatedService fs = serviceResolver.getService(serviceUri);</b>
+&nbsp;
+&nbsp;			// create a copy of the free variables, and remove those for which
+&nbsp;			// bindings are available (we can set them as constraints!)
+<b class="nc">&nbsp;			Set&lt;String&gt; freeVars = new HashSet&lt;&gt;(service.getServiceVars());</b>
+<b class="nc">&nbsp;			freeVars.removeAll(bindings.getBindingNames());</b>
+&nbsp;
+&nbsp;			// Get bindings from values pre-bound into variables.
+<b class="nc">&nbsp;			MapBindingSet allBindings = new MapBindingSet();</b>
+<b class="nc">&nbsp;			for (Binding binding : bindings) {</b>
+<b class="nc">&nbsp;				allBindings.setBinding(binding.getName(), binding.getValue());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Var&gt; boundVars = getBoundVariables(service);</b>
+<b class="nc">&nbsp;			for (Var boundVar : boundVars) {</b>
+<b class="nc">&nbsp;				freeVars.remove(boundVar.getName());</b>
+<b class="nc">&nbsp;				allBindings.setBinding(boundVar.getName(), boundVar.getValue());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			bindings = allBindings;</b>
+&nbsp;
+<b class="nc">&nbsp;			String baseUri = service.getBaseURI();</b>
+&nbsp;
+&nbsp;			// special case: no free variables =&gt; perform ASK query
+<b class="nc">&nbsp;			if (freeVars.isEmpty()) {</b>
+<b class="nc">&nbsp;				boolean exists = fs.ask(service, bindings, baseUri);</b>
+&nbsp;
+&nbsp;				// check if triples are available (with inserted bindings)
+<b class="nc">&nbsp;				if (exists) {</b>
+<b class="nc">&nbsp;					return new SingletonIteration&lt;&gt;(bindings);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return EMPTY_ITERATION;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			// otherwise: perform a SELECT query
+<b class="nc">&nbsp;			return fs.select(service, freeVars, bindings,</b>
+&nbsp;					baseUri);
+&nbsp;
+<b class="nc">&nbsp;		} catch (RuntimeException e) {</b>
+&nbsp;			// suppress exceptions if silent
+<b class="nc">&nbsp;			if (service.isSilent()) {</b>
+<b class="nc">&nbsp;				return new SingletonIteration&lt;&gt;(bindings);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw e;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Set&lt;Var&gt; getBoundVariables(Service service) {
+<b class="nc">&nbsp;		BoundVarVisitor visitor = new BoundVarVisitor();</b>
+<b class="nc">&nbsp;		visitor.meet(service);</b>
+<b class="nc">&nbsp;		return visitor.boundVars;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class BoundVarVisitor extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+<b class="nc">&nbsp;		final Set&lt;Var&gt; boundVars = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		private BoundVarVisitor() {
+<b class="nc">&nbsp;			super(true);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="nc">&nbsp;			if (var.hasValue()) {</b>
+<b class="nc">&nbsp;				boundVars.add(var);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

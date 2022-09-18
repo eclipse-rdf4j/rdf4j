@@ -1,0 +1,186 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BoundJoinVALUESConversionIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: BoundJoinVALUESConversionIteration (org.eclipse.rdf4j.federated.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BoundJoinVALUESConversionIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * Inserts original bindings into the result. This implementation is used for bound joins with VALUES clauses, see
+&nbsp; * {@link SparqlFederationEvalStrategyWithValues}.
+&nbsp; * &lt;p&gt;
+&nbsp; * It is assumed the the query results contain a binding for &quot;?__index&quot; which corresponds to the index in the input
+&nbsp; * mappings. See {@link QueryStringUtil} for details
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see SparqlFederationEvalStrategy
+&nbsp; * @since 3.0
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class BoundJoinVALUESConversionIteration
+&nbsp;		extends ConvertingIteration&lt;BindingSet, BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The binding name for the index
+&nbsp;	 */
+&nbsp;	public static final String INDEX_BINDING_NAME = &quot;__index&quot;;
+&nbsp;
+&nbsp;	protected final List&lt;BindingSet&gt; bindings;
+&nbsp;
+&nbsp;	public BoundJoinVALUESConversionIteration(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+&nbsp;			List&lt;BindingSet&gt; bindings) {
+<b class="nc">&nbsp;		super(iter);</b>
+<b class="nc">&nbsp;		this.bindings = bindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet convert(BindingSet bIn) throws QueryEvaluationException {
+<b class="nc">&nbsp;		QueryBindingSet res = new QueryBindingSet();</b>
+<b class="nc">&nbsp;		int bIndex = Integer.parseInt(bIn.getBinding(INDEX_BINDING_NAME).getValue().stringValue());</b>
+<b class="nc">&nbsp;		Iterator&lt;Binding&gt; bIter = bIn.iterator();</b>
+<b class="nc">&nbsp;		while (bIter.hasNext()) {</b>
+<b class="nc">&nbsp;			Binding b = bIter.next();</b>
+<b class="nc">&nbsp;			if (b.getName().equals(INDEX_BINDING_NAME)) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			res.addBinding(b);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		for (Binding bs : bindings.get(bIndex)) {</b>
+<b class="nc">&nbsp;			res.setBinding(bs);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,292 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FilterIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: FilterIterator (org.eclipse.rdf4j.query.algebra.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FilterIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (12/12)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">FilterIterator$RetainedVariableFilteredQueryEvaluationContext</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.5%
+  </span>
+  <span class="absValue">
+    (6/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (3/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    62.5%
+  </span>
+  <span class="absValue">
+    (10/16)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    64.3%
+  </span>
+  <span class="absValue">
+    (9/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70%
+  </span>
+  <span class="absValue">
+    (7/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    78.6%
+  </span>
+  <span class="absValue">
+    (22/28)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.function.BiConsumer;
+&nbsp;import java.util.function.Predicate;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.FilterIteration;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class FilterIterator extends FilterIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	private final QueryValueEvaluationStep condition;
+&nbsp;	private final EvaluationStrategy strategy;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public FilterIterator(Filter filter, CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+&nbsp;			QueryValueEvaluationStep condition, EvaluationStrategy strategy) throws QueryEvaluationException {
+<b class="fc">&nbsp;		super(iter);</b>
+<b class="fc">&nbsp;		this.condition = condition;</b>
+<b class="fc">&nbsp;		this.strategy = strategy;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
+&nbsp;		try {
+<b class="fc">&nbsp;			return strategy.isTrue(condition, bindings);</b>
+<b class="fc">&nbsp;		} catch (ValueExprEvaluationException e) {</b>
+&nbsp;			// failed to evaluate condition
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isPartOfSubQuery(QueryModelNode node) {
+<b class="fc">&nbsp;		if (node instanceof SubQueryValueOperator) {</b>
+<b class="fc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		QueryModelNode parent = node.getParentNode();</b>
+<b class="fc">&nbsp;		if (parent == null) {</b>
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return isPartOfSubQuery(parent);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This is used to make sure that no variable is seen by the filter that are not in scope. Historically important in
+&nbsp;	 * subquery cases.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public static final class RetainedVariableFilteredQueryEvaluationContext implements QueryEvaluationContext {
+&nbsp;		private final Filter node;
+&nbsp;		private final QueryEvaluationContext context;
+&nbsp;
+<b class="fc">&nbsp;		public RetainedVariableFilteredQueryEvaluationContext(Filter node, QueryEvaluationContext contextToFilter) {</b>
+<b class="fc">&nbsp;			this.node = node;</b>
+<b class="fc">&nbsp;			this.context = contextToFilter;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Literal getNow() {
+<b class="nc">&nbsp;			return context.getNow();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Dataset getDataset() {
+<b class="fc">&nbsp;			return context.getDataset();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Predicate&lt;BindingSet&gt; hasBinding(String variableName) {
+<b class="pc">&nbsp;			if (isVariableInScope(variableName)) {</b>
+<b class="fc">&nbsp;				return context.hasBinding(variableName);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return (bs) -&gt; false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		boolean isVariableInScope(String variableName) {
+<b class="fc">&nbsp;			return node.getBindingNames().contains(variableName);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public java.util.function.Function&lt;BindingSet, Binding&gt; getBinding(String variableName) {
+<b class="nc">&nbsp;			if (isVariableInScope(variableName)) {</b>
+<b class="nc">&nbsp;				return context.getBinding(variableName);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return (bs) -&gt; null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public java.util.function.Function&lt;BindingSet, Value&gt; getValue(String variableName) {
+<b class="fc">&nbsp;			if (isVariableInScope(variableName)) {</b>
+<b class="fc">&nbsp;				return context.getValue(variableName);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return (bs) -&gt; null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public BiConsumer&lt;Value, MutableBindingSet&gt; setBinding(String variableName) {
+<b class="nc">&nbsp;			return context.setBinding(variableName);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

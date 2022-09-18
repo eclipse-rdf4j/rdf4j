@@ -1,0 +1,185 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemNamespaceStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory</a>
+</div>
+
+<h1>Coverage Summary for Class: MemNamespaceStore (org.eclipse.rdf4j.sail.memory)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemNamespaceStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (5/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    85.7%
+  </span>
+  <span class="absValue">
+    (12/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * An in-memory store for namespace prefix information.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;class MemNamespaceStore implements Iterable&lt;SimpleNamespace&gt; {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Map storing namespace information by their prefix.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Map&lt;String, SimpleNamespace&gt; namespacesMap = new LinkedHashMap&lt;&gt;(16);</b>
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public String getNamespace(String prefix) {
+<b class="fc">&nbsp;		String result = null;</b>
+<b class="fc">&nbsp;		SimpleNamespace namespace = namespacesMap.get(prefix);</b>
+<b class="fc">&nbsp;		if (namespace != null) {</b>
+<b class="fc">&nbsp;			result = namespace.getName();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setNamespace(String prefix, String name) {
+<b class="fc">&nbsp;		SimpleNamespace ns = namespacesMap.get(prefix);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (ns != null) {</b>
+<b class="nc">&nbsp;			ns.setName(name);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			namespacesMap.put(prefix, new SimpleNamespace(prefix, name));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removeNamespace(String prefix) {
+<b class="fc">&nbsp;		namespacesMap.remove(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;SimpleNamespace&gt; iterator() {
+<b class="nc">&nbsp;		return namespacesMap.values().iterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void clear() {
+<b class="fc">&nbsp;		namespacesMap.clear();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

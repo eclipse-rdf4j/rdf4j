@@ -1,0 +1,322 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LmdbRecordIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lmdb</a>
+</div>
+
+<h1>Coverage Summary for Class: LmdbRecordIterator (org.eclipse.rdf4j.sail.lmdb)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LmdbRecordIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/83)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lmdb;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.util.concurrent.locks.StampedLock;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.TripleStore.TripleIndex;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
+&nbsp;import org.lwjgl.PointerBuffer;
+&nbsp;import org.lwjgl.system.MemoryStack;
+&nbsp;import org.lwjgl.util.lmdb.MDBVal;
+&nbsp;
+&nbsp;/**
+&nbsp; * A record iterator that wraps a native LMDB iterator.
+&nbsp; *
+&nbsp; */
+&nbsp;class LmdbRecordIterator implements RecordIterator {
+&nbsp;	private final Pool pool;
+&nbsp;
+&nbsp;	private final TripleIndex index;
+&nbsp;
+&nbsp;	private final long cursor;
+&nbsp;
+&nbsp;	private final MDBVal maxKey;
+&nbsp;
+&nbsp;	private final GroupMatcher groupMatcher;
+&nbsp;
+&nbsp;	private final Txn txnRef;
+&nbsp;
+&nbsp;	private long txnRefVersion;
+&nbsp;
+&nbsp;	private final long txn;
+&nbsp;
+&nbsp;	private final int dbi;
+&nbsp;
+<b class="nc">&nbsp;	private boolean closed = false;</b>
+&nbsp;
+&nbsp;	private final MDBVal keyData;
+&nbsp;
+&nbsp;	private final MDBVal valueData;
+&nbsp;
+&nbsp;	private ByteBuffer minKeyBuf;
+&nbsp;
+&nbsp;	private ByteBuffer maxKeyBuf;
+&nbsp;
+&nbsp;	private int lastResult;
+&nbsp;
+<b class="nc">&nbsp;	private final long[] quad = new long[4];</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean fetchNext = false;</b>
+&nbsp;
+&nbsp;	private final StampedLock txnLock;
+&nbsp;
+&nbsp;	LmdbRecordIterator(Pool pool, TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+<b class="nc">&nbsp;			long context, boolean explicit, Txn txnRef) throws IOException {</b>
+<b class="nc">&nbsp;		this.pool = pool;</b>
+<b class="nc">&nbsp;		this.keyData = pool.getVal();</b>
+<b class="nc">&nbsp;		this.valueData = pool.getVal();</b>
+<b class="nc">&nbsp;		this.index = index;</b>
+<b class="nc">&nbsp;		if (rangeSearch) {</b>
+<b class="nc">&nbsp;			minKeyBuf = pool.getKeyBuffer();</b>
+<b class="nc">&nbsp;			index.getMinKey(minKeyBuf, subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			minKeyBuf.flip();</b>
+&nbsp;
+<b class="nc">&nbsp;			this.maxKey = pool.getVal();</b>
+<b class="nc">&nbsp;			this.maxKeyBuf = pool.getKeyBuffer();</b>
+<b class="nc">&nbsp;			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			maxKeyBuf.flip();</b>
+<b class="nc">&nbsp;			this.maxKey.mv_data(maxKeyBuf);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			minKeyBuf = null;</b>
+<b class="nc">&nbsp;			this.maxKey = null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean matchValues = subj &gt; 0 || pred &gt; 0 || obj &gt; 0 || context &gt;= 0;</b>
+<b class="nc">&nbsp;		if (matchValues) {</b>
+<b class="nc">&nbsp;			this.groupMatcher = index.createMatcher(subj, pred, obj, context);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.groupMatcher = null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.dbi = index.getDB(explicit);</b>
+<b class="nc">&nbsp;		this.txnRef = txnRef;</b>
+<b class="nc">&nbsp;		this.txnLock = txnRef.lock();</b>
+&nbsp;
+<b class="nc">&nbsp;		long stamp = txnLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			this.txnRefVersion = txnRef.version();</b>
+<b class="nc">&nbsp;			this.txn = txnRef.get();</b>
+&nbsp;
+<b class="nc">&nbsp;			try (MemoryStack stack = MemoryStack.stackPush()) {</b>
+<b class="nc">&nbsp;				PointerBuffer pp = stack.mallocPointer(1);</b>
+<b class="nc">&nbsp;				E(mdb_cursor_open(txn, dbi, pp));</b>
+<b class="nc">&nbsp;				cursor = pp.get(0);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			txnLock.unlockRead(stamp);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long[] next() throws IOException {
+<b class="nc">&nbsp;		long stamp = txnLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (txnRefVersion != txnRef.version()) {</b>
+&nbsp;				// cursor must be renewed
+<b class="nc">&nbsp;				mdb_cursor_renew(txn, cursor);</b>
+<b class="nc">&nbsp;				if (fetchNext) {</b>
+&nbsp;					// cursor must be positioned on last item, reuse minKeyBuf if available
+<b class="nc">&nbsp;					if (minKeyBuf == null) {</b>
+<b class="nc">&nbsp;						minKeyBuf = pool.getKeyBuffer();</b>
+&nbsp;					}
+<b class="nc">&nbsp;					minKeyBuf.clear();</b>
+<b class="nc">&nbsp;					index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);</b>
+<b class="nc">&nbsp;					minKeyBuf.flip();</b>
+<b class="nc">&nbsp;					keyData.mv_data(minKeyBuf);</b>
+<b class="nc">&nbsp;					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);</b>
+<b class="nc">&nbsp;					if (lastResult != 0) {</b>
+&nbsp;						// use MDB_SET_RANGE if key was deleted
+<b class="nc">&nbsp;						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (lastResult != 0) {</b>
+<b class="nc">&nbsp;						close();</b>
+<b class="nc">&nbsp;						return null;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;				// update version of txn ref
+<b class="nc">&nbsp;				this.txnRefVersion = txnRef.version();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (fetchNext) {</b>
+<b class="nc">&nbsp;				lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);</b>
+<b class="nc">&nbsp;				fetchNext = false;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (minKeyBuf != null) {</b>
+&nbsp;					// set cursor to min key
+<b class="nc">&nbsp;					keyData.mv_data(minKeyBuf);</b>
+<b class="nc">&nbsp;					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);</b>
+&nbsp;				} else {
+&nbsp;					// set cursor to first item
+<b class="nc">&nbsp;					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			while (lastResult == 0) {</b>
+&nbsp;				// if (maxKey != null &amp;&amp; TripleStore.COMPARATOR.compare(keyData.mv_data(), maxKey.mv_data()) &gt; 0) {
+<b class="nc">&nbsp;				if (maxKey != null &amp;&amp; mdb_cmp(txn, dbi, keyData, maxKey) &gt; 0) {</b>
+<b class="nc">&nbsp;					lastResult = MDB_NOTFOUND;</b>
+<b class="nc">&nbsp;				} else if (groupMatcher != null &amp;&amp; !groupMatcher.matches(keyData.mv_data())) {</b>
+&nbsp;					// value doesn&#39;t match search key/mask, fetch next value
+<b class="nc">&nbsp;					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);</b>
+&nbsp;				} else {
+&nbsp;					// Matching value found
+<b class="nc">&nbsp;					index.keyToQuad(keyData.mv_data(), quad);</b>
+&nbsp;					// fetch next value
+<b class="nc">&nbsp;					fetchNext = true;</b>
+<b class="nc">&nbsp;					return quad;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			close();</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			txnLock.unlockRead(stamp);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws IOException {
+<b class="nc">&nbsp;		if (!closed) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				mdb_cursor_close(cursor);</b>
+<b class="nc">&nbsp;				pool.free(keyData);</b>
+<b class="nc">&nbsp;				pool.free(valueData);</b>
+<b class="nc">&nbsp;				if (minKeyBuf != null) {</b>
+<b class="nc">&nbsp;					pool.free(minKeyBuf);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (maxKey != null) {</b>
+<b class="nc">&nbsp;					pool.free(maxKeyBuf);</b>
+<b class="nc">&nbsp;					pool.free(maxKey);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				closed = true;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,232 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlQueryRenderer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql.experimental</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlQueryRenderer (org.eclipse.rdf4j.queryrender.sparql.experimental)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlQueryRenderer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql.experimental;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+&nbsp;import org.eclipse.rdf4j.queryrender.BaseTupleExprRenderer;
+&nbsp;import org.eclipse.rdf4j.queryrender.QueryRenderer;
+&nbsp;import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
+&nbsp;
+&nbsp;/**
+&nbsp; * An alternative implementation of the SPARQL query renderer (more complete than the default
+&nbsp; * {@link SPARQLQueryRenderer})
+&nbsp; *
+&nbsp; * @author Andriy Nikolov
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; * @apiNote This feature is in an experimental state: its existence, signature or behavior may change without warning
+&nbsp; *          from one release to the next.
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;public class SparqlQueryRenderer extends BaseTupleExprRenderer implements QueryRenderer {
+&nbsp;
+<b class="nc">&nbsp;	public SparqlQueryRenderer() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryLanguage getLanguage() {
+<b class="nc">&nbsp;		return QueryLanguage.SPARQL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String render(ParsedQuery theQuery) throws Exception {
+<b class="nc">&nbsp;		if (theQuery instanceof ParsedTupleQuery) {</b>
+<b class="nc">&nbsp;			ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();</b>
+<b class="nc">&nbsp;			PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();</b>
+<b class="nc">&nbsp;			SerializableParsedTupleQuery toSerialize = parserVisitor</b>
+<b class="nc">&nbsp;					.transformToSerialize((ParsedTupleQuery) theQuery);</b>
+<b class="nc">&nbsp;			return serializerVisitor.serialize(toSerialize);</b>
+<b class="nc">&nbsp;		} else if (theQuery instanceof ParsedBooleanQuery) {</b>
+<b class="nc">&nbsp;			ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();</b>
+<b class="nc">&nbsp;			PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();</b>
+<b class="nc">&nbsp;			SerializableParsedBooleanQuery toSerialize = parserVisitor</b>
+<b class="nc">&nbsp;					.transformToSerialize((ParsedBooleanQuery) theQuery);</b>
+<b class="nc">&nbsp;			return serializerVisitor.serialize(toSerialize);</b>
+<b class="nc">&nbsp;		} else if (theQuery instanceof ParsedGraphQuery) {</b>
+<b class="nc">&nbsp;			ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();</b>
+<b class="nc">&nbsp;			PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();</b>
+<b class="nc">&nbsp;			SerializableParsedConstructQuery toSerialize = parserVisitor</b>
+<b class="nc">&nbsp;					.transformToSerialize((ParsedGraphQuery) theQuery);</b>
+<b class="nc">&nbsp;			return serializerVisitor.serialize(toSerialize);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;Only SELECT, ASK, and CONSTRUCT queries are supported&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public String render(ParsedOperation theOperation) throws Exception {
+<b class="nc">&nbsp;		if (theOperation instanceof ParsedQuery) {</b>
+<b class="nc">&nbsp;			return render((ParsedQuery) theOperation);</b>
+<b class="nc">&nbsp;		} else if (theOperation instanceof ParsedUpdate) {</b>
+<b class="nc">&nbsp;			return renderUpdate((ParsedUpdate) theOperation);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Only ParsedQuery and ParsedUpdate operations are supported&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String renderUpdate(ParsedUpdate theUpdate) throws Exception {
+<b class="nc">&nbsp;		StringBuilder exprBuilder = new StringBuilder();</b>
+<b class="nc">&nbsp;		boolean multipleExpressions = (theUpdate.getUpdateExprs().size() &gt; 1);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (UpdateExpr updateExpr : theUpdate.getUpdateExprs()) {</b>
+<b class="nc">&nbsp;			ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();</b>
+<b class="nc">&nbsp;			PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();</b>
+<b class="nc">&nbsp;			SerializableParsedUpdate toSerialize = parserVisitor</b>
+<b class="nc">&nbsp;					.transformToSerialize((UpdateExpr) updateExpr, theUpdate.getDatasetMapping().get(updateExpr));</b>
+<b class="nc">&nbsp;			exprBuilder.append(serializerVisitor.serialize(toSerialize));</b>
+<b class="nc">&nbsp;			if (multipleExpressions) {</b>
+<b class="nc">&nbsp;				exprBuilder.append(&quot;;\n&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return exprBuilder.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String render(TupleExpr theExpr) throws Exception {
+<b class="nc">&nbsp;		ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();</b>
+<b class="nc">&nbsp;		PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();</b>
+<b class="nc">&nbsp;		SerializableParsedTupleQuery toSerialize = parserVisitor.transformToSerialize(theExpr);</b>
+<b class="nc">&nbsp;		return serializerVisitor.serialize(toSerialize);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String renderValueExpr(ValueExpr theExpr) throws Exception {
+<b class="nc">&nbsp;		PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();</b>
+<b class="nc">&nbsp;		theExpr.visit(serializerVisitor);</b>
+<b class="nc">&nbsp;		return serializerVisitor.builder.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,203 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CookieHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.proxy</a>
+</div>
+
+<h1>Coverage Summary for Class: CookieHandler (org.eclipse.rdf4j.workbench.proxy)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CookieHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.proxy;
+&nbsp;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.http.Cookie;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles cookies for proxy servlets.
+&nbsp; */
+&nbsp;public class CookieHandler {
+&nbsp;
+&nbsp;	protected static final String COOKIE_AGE_PARAM = &quot;cookie-max-age&quot;;
+&nbsp;
+&nbsp;	private final String maxAge;
+&nbsp;
+<b class="nc">&nbsp;	protected CookieHandler(final String maxAge) {</b>
+<b class="nc">&nbsp;		this.maxAge = maxAge;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected CookieHandler(final ServletConfig config) {
+<b class="nc">&nbsp;		this(config.getInitParameter(COOKIE_AGE_PARAM));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected String getCookieNullIfEmpty(final HttpServletRequest req, final HttpServletResponse resp,
+&nbsp;			final String name) {
+<b class="nc">&nbsp;		String value = this.getCookie(req, resp, name);</b>
+<b class="nc">&nbsp;		if (null != value &amp;&amp; value.isEmpty()) {</b>
+<b class="nc">&nbsp;			value = null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected String getCookie(final HttpServletRequest req, final HttpServletResponse resp, final String name) {
+<b class="nc">&nbsp;		String value = null;</b>
+<b class="nc">&nbsp;		final Cookie[] cookies = req.getCookies();</b>
+<b class="nc">&nbsp;		if (cookies != null) {</b>
+<b class="nc">&nbsp;			for (Cookie cookie : cookies) {</b>
+<b class="nc">&nbsp;				if (name.equals(cookie.getName())) {</b>
+<b class="nc">&nbsp;					resp.addHeader(&quot;Vary&quot;, &quot;Cookie&quot;);</b>
+<b class="nc">&nbsp;					initCookie(cookie, req);</b>
+<b class="nc">&nbsp;					resp.addCookie(cookie);</b>
+<b class="nc">&nbsp;					value = cookie.getValue();</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void initCookie(final Cookie cookie, final HttpServletRequest req) {
+<b class="nc">&nbsp;		final String context = req.getContextPath();</b>
+<b class="nc">&nbsp;		cookie.setPath(context.isEmpty() ? &quot;/&quot; : context);</b>
+<b class="nc">&nbsp;		if (maxAge != null) {</b>
+<b class="nc">&nbsp;			cookie.setMaxAge(Integer.parseInt(maxAge));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param req   servlet request
+&nbsp;	 * @param resp  servlet response
+&nbsp;	 * @param name  cookie name
+&nbsp;	 * @param value cookie value
+&nbsp;	 */
+&nbsp;	protected void addNewCookie(final HttpServletRequest req, final HttpServletResponse resp, final String name,
+&nbsp;			final String value) {
+<b class="nc">&nbsp;		final Cookie cookie = new Cookie(name, value);</b>
+<b class="nc">&nbsp;		initCookie(cookie, req);</b>
+<b class="nc">&nbsp;		resp.addCookie(cookie);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the maximum age allowed for cookies
+&nbsp;	 */
+&nbsp;	public String getMaxAge() {
+<b class="nc">&nbsp;		return maxAge;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

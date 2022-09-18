@@ -1,0 +1,255 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EvaluationStrategyTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.sail</a>
+</div>
+
+<h1>Coverage Summary for Class: EvaluationStrategyTest (org.eclipse.rdf4j.testsuite.sail)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EvaluationStrategyTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.sail;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryProvider;
+&nbsp;import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
+&nbsp;import org.junit.AfterClass;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.BeforeClass;
+&nbsp;import org.junit.Rule;
+&nbsp;import org.junit.Test;
+&nbsp;import org.junit.rules.TemporaryFolder;
+&nbsp;
+&nbsp;/**
+&nbsp; * Test cases for behavior of {@link StrictEvaluationStrategy} and {@link ExtendedEvaluationStrategy} on base Sail
+&nbsp; * implementations.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public abstract class EvaluationStrategyTest {</b>
+&nbsp;
+&nbsp;	@BeforeClass
+&nbsp;	public static void setUpClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterClass
+&nbsp;	public static void afterClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;false&quot;);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	@Rule</b>
+&nbsp;	public TemporaryFolder tempDir = new TemporaryFolder();
+&nbsp;
+&nbsp;	private Repository strictRepo;
+&nbsp;
+&nbsp;	private Repository extendedRepo;
+&nbsp;
+&nbsp;	private RepositoryManager manager;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws java.lang.Exception
+&nbsp;	 */
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		manager = RepositoryProvider.getRepositoryManager(tempDir.newFolder());</b>
+&nbsp;
+<b class="nc">&nbsp;		BaseSailConfig strictStoreConfig = getBaseSailConfig();</b>
+<b class="nc">&nbsp;		strictStoreConfig.setEvaluationStrategyFactoryClassName(StrictEvaluationStrategyFactory.class.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		strictRepo = createRepo(strictStoreConfig, &quot;test-strict&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		BaseSailConfig extendedStoreConfig = getBaseSailConfig();</b>
+<b class="nc">&nbsp;		extendedStoreConfig.setEvaluationStrategyFactoryClassName(ExtendedEvaluationStrategyFactory.class.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		extendedRepo = createRepo(extendedStoreConfig, &quot;test-extended&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Repository createRepo(BaseSailConfig config, String id) {
+<b class="nc">&nbsp;		RepositoryImplConfig ric = new SailRepositoryConfig(config);</b>
+<b class="nc">&nbsp;		manager.addRepositoryConfig(new RepositoryConfig(id, ric));</b>
+&nbsp;
+<b class="nc">&nbsp;		return manager.getRepository(id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDatetimeSubtypesStrict() {
+<b class="nc">&nbsp;		ValueFactory vf = strictRepo.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection conn = strictRepo.getConnection()) {</b>
+<b class="nc">&nbsp;			Literal l1 = vf.createLiteral(&quot;2009&quot;, XSD.GYEAR);</b>
+<b class="nc">&nbsp;			Literal l2 = vf.createLiteral(&quot;2009-01&quot;, CoreDatatype.XSD.GYEARMONTH);</b>
+<b class="nc">&nbsp;			IRI s1 = vf.createIRI(&quot;urn:s1&quot;);</b>
+<b class="nc">&nbsp;			IRI s2 = vf.createIRI(&quot;urn:s2&quot;);</b>
+<b class="nc">&nbsp;			conn.add(s1, RDFS.LABEL, l1);</b>
+<b class="nc">&nbsp;			conn.add(s2, RDFS.LABEL, l2);</b>
+&nbsp;
+<b class="nc">&nbsp;			String query = &quot;SELECT * WHERE { ?s rdfs:label ?l . FILTER(?l &gt;= \&quot;2008\&quot;^^xsd:gYear) }&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;BindingSet&gt; result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());</b>
+<b class="nc">&nbsp;			assertEquals(1, result.size());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDatetimeSubtypesExtended() {
+<b class="nc">&nbsp;		ValueFactory vf = extendedRepo.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection conn = extendedRepo.getConnection()) {</b>
+<b class="nc">&nbsp;			Literal l1 = vf.createLiteral(&quot;2009&quot;, CoreDatatype.XSD.GYEAR);</b>
+<b class="nc">&nbsp;			Literal l2 = vf.createLiteral(&quot;2009-01&quot;, XSD.GYEARMONTH);</b>
+<b class="nc">&nbsp;			IRI s1 = vf.createIRI(&quot;urn:s1&quot;);</b>
+<b class="nc">&nbsp;			IRI s2 = vf.createIRI(&quot;urn:s2&quot;);</b>
+<b class="nc">&nbsp;			conn.add(s1, RDFS.LABEL, l1);</b>
+<b class="nc">&nbsp;			conn.add(s2, RDFS.LABEL, l2);</b>
+&nbsp;
+<b class="nc">&nbsp;			String query = &quot;SELECT * WHERE { ?s rdfs:label ?l . FILTER(?l &gt;= \&quot;2008\&quot;^^xsd:gYear) }&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;BindingSet&gt; result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());</b>
+<b class="nc">&nbsp;			assertEquals(2, result.size());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a configuration object for the base Sail that should be tested.
+&nbsp;	 *
+&nbsp;	 * @return a {@link BaseSailConfig}.
+&nbsp;	 */
+&nbsp;	protected abstract BaseSailConfig getBaseSailConfig();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

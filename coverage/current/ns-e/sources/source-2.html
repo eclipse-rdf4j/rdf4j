@@ -1,0 +1,302 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExclusiveLockManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks</a>
+</div>
+
+<h1>Coverage Summary for Class: ExclusiveLockManager (org.eclipse.rdf4j.common.concurrent.locks)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ExclusiveLockManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ExclusiveLockManager$ExclusiveLock</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks;
+&nbsp;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.locks.StampedLock;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockTracking;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A simple non-reentrant lock.
+&nbsp; *
+&nbsp; * @author Håvard M. Ottestad
+&nbsp; */
+&nbsp;public class ExclusiveLockManager {
+&nbsp;
+<b class="nc">&nbsp;	private final static Logger logger = LoggerFactory.getLogger(ExclusiveLockManager.class);</b>
+&nbsp;
+&nbsp;	// the underlying lock object
+<b class="nc">&nbsp;	final StampedLock lock = new StampedLock();</b>
+&nbsp;
+&nbsp;	private final int waitToCollect;
+&nbsp;
+&nbsp;	LockMonitoring lockMonitoring;
+&nbsp;
+&nbsp;	public ExclusiveLockManager() {
+<b class="nc">&nbsp;		this(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ExclusiveLockManager(boolean trackLocks) {
+<b class="nc">&nbsp;		this(trackLocks, LockMonitoring.INITIAL_WAIT_TO_COLLECT);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public ExclusiveLockManager(boolean trackLocks, int collectionFrequency) {</b>
+&nbsp;
+<b class="nc">&nbsp;		this.waitToCollect = collectionFrequency;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (trackLocks || Properties.lockTrackingEnabled()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			lockMonitoring = new LockTracking(</b>
+&nbsp;					true,
+&nbsp;					&quot;ExclusiveLockManager&quot;,
+<b class="nc">&nbsp;					LoggerFactory.getLogger(this.getClass()),</b>
+&nbsp;					waitToCollect,
+<b class="nc">&nbsp;					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)</b>
+&nbsp;			);
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			lockMonitoring = new LockCleaner(</b>
+&nbsp;					false,
+&nbsp;					&quot;ExclusiveLockManager&quot;,
+<b class="nc">&nbsp;					LoggerFactory.getLogger(this.getClass()),</b>
+<b class="nc">&nbsp;					Lock.ExtendedSupplier.wrap(this::getExclusiveLockInner, this::tryExclusiveLockInner)</b>
+&nbsp;			);
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private Lock tryExclusiveLockInner() {
+&nbsp;
+<b class="nc">&nbsp;		long writeLock = lock.tryWriteLock();</b>
+<b class="nc">&nbsp;		if (writeLock != 0) {</b>
+<b class="nc">&nbsp;			return new ExclusiveLock(writeLock, lock);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			lockMonitoring.runCleanup();</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private Lock getExclusiveLockInner() throws InterruptedException {
+&nbsp;
+&nbsp;		long writeLock;
+&nbsp;
+<b class="nc">&nbsp;		if (lockMonitoring.requiresManualCleanup()) {</b>
+&nbsp;			do {
+<b class="nc">&nbsp;				if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;					throw new InterruptedException();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				writeLock = lock.tryWriteLock(waitToCollect, TimeUnit.MILLISECONDS);</b>
+<b class="nc">&nbsp;				if (writeLock == 0) {</b>
+<b class="nc">&nbsp;					lockMonitoring.runCleanup();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} while (writeLock == 0);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeLock = lock.writeLockInterruptibly();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new ExclusiveLock(writeLock, lock);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Lock tryExclusiveLock() {
+<b class="nc">&nbsp;		return lockMonitoring.tryLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Lock getExclusiveLock() throws InterruptedException {
+<b class="nc">&nbsp;		return lockMonitoring.getLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isActiveLock() {
+<b class="nc">&nbsp;		return lock.isWriteLocked();</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	static class ExclusiveLock implements Lock {</b>
+&nbsp;
+&nbsp;		private final StampedLock lock;
+&nbsp;		private long stamp;
+&nbsp;
+<b class="nc">&nbsp;		public ExclusiveLock(long stamp, StampedLock lock) {</b>
+<b class="nc">&nbsp;			assert stamp != 0;</b>
+<b class="nc">&nbsp;			this.stamp = stamp;</b>
+<b class="nc">&nbsp;			this.lock = lock;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isActive() {
+<b class="nc">&nbsp;			return stamp != 0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void release() {
+<b class="nc">&nbsp;			long temp = stamp;</b>
+<b class="nc">&nbsp;			stamp = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (temp == 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalMonitorStateException(&quot;Trying to release a lock that is not locked&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			lock.unlockWrite(temp);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

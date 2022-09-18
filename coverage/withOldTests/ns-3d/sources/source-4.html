@@ -1,0 +1,261 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXRepositoryConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXRepositoryConnection (org.eclipse.rdf4j.federated.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXRepositoryConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/39)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.repository;
+&nbsp;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.structures.FedXBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.federated.structures.FedXGraphQuery;
+&nbsp;import org.eclipse.rdf4j.federated.structures.FedXTupleQuery;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryType;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailGraphQuery;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailQuery;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;
+&nbsp;import com.google.common.collect.Sets;
+&nbsp;
+&nbsp;/**
+&nbsp; * A special {@link SailRepositoryConnection} which adds the original query string as binding to the returned query. The
+&nbsp; * binding name is defined by {@link #BINDING_ORIGINAL_QUERY} and is added to all query instances returned by the
+&nbsp; * available prepare methods.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FedXRepositoryConnection extends SailRepositoryConnection {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * We add a binding to each parsed query mapping the original query in order to send the original query to the
+&nbsp;	 * endpoint if there is only a single federation member is relevant for this query.
+&nbsp;	 */
+&nbsp;	public static final String BINDING_ORIGINAL_QUERY = &quot;__originalQuery&quot;;
+&nbsp;	public static final String BINDING_ORIGINAL_BASE_URI = &quot;__originalBaseURI&quot;;
+&nbsp;	public static final String BINDING_ORIGINAL_QUERY_TYPE = &quot;__originalQueryType&quot;;
+&nbsp;	public static final String BINDING_ORIGINAL_MAX_EXECUTION_TIME = &quot;__originalQueryMaxExecutionTime&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The number of bindings in the external binding set that are added by FedX.
+&nbsp;	 *
+&nbsp;	 * @see #BINDING_ORIGINAL_QUERY
+&nbsp;	 * @see #BINDING_ORIGINAL_QUERY_TYPE
+&nbsp;	 * @see #BINDING_ORIGINAL_MAX_EXECUTION_TIME
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Set&lt;String&gt; FEDX_BINDINGS = Collections.unmodifiableSet(</b>
+<b class="nc">&nbsp;			Sets.newHashSet(BINDING_ORIGINAL_QUERY, BINDING_ORIGINAL_BASE_URI, BINDING_ORIGINAL_QUERY_TYPE,</b>
+&nbsp;					BINDING_ORIGINAL_MAX_EXECUTION_TIME));
+&nbsp;
+&nbsp;	private final FederationContext federationContext;
+&nbsp;
+&nbsp;	protected FedXRepositoryConnection(FedXRepository repository,
+&nbsp;			SailConnection sailConnection) {
+<b class="nc">&nbsp;		super(repository, sailConnection);</b>
+<b class="nc">&nbsp;		this.federationContext = repository.getFederationContext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailQuery prepareQuery(QueryLanguage ql, String queryString,
+&nbsp;			String baseURI) throws MalformedQueryException {
+<b class="nc">&nbsp;		SailQuery q = super.prepareQuery(ql, queryString, baseURI);</b>
+<b class="nc">&nbsp;		if (q instanceof SailTupleQuery) {</b>
+<b class="nc">&nbsp;			insertOriginalQueryString(q, queryString, baseURI, QueryType.SELECT);</b>
+<b class="nc">&nbsp;			q = new FedXTupleQuery((SailTupleQuery) q);</b>
+<b class="nc">&nbsp;		} else if (q instanceof SailGraphQuery) {</b>
+<b class="nc">&nbsp;			insertOriginalQueryString(q, queryString, baseURI, determineGraphQueryType((SailGraphQuery) q));</b>
+<b class="nc">&nbsp;			q = new FedXGraphQuery((SailGraphQuery) q);</b>
+<b class="nc">&nbsp;		} else if (q instanceof SailBooleanQuery) {</b>
+<b class="nc">&nbsp;			insertOriginalQueryString(q, queryString, baseURI, QueryType.ASK);</b>
+<b class="nc">&nbsp;			q = new FedXBooleanQuery((SailBooleanQuery) q);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		setIncludeInferredDefault(q);</b>
+<b class="nc">&nbsp;		return q;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FedXTupleQuery prepareTupleQuery(QueryLanguage ql,
+&nbsp;			String queryString, String baseURI) throws MalformedQueryException {
+<b class="nc">&nbsp;		SailTupleQuery q = super.prepareTupleQuery(ql, queryString, baseURI);</b>
+<b class="nc">&nbsp;		insertOriginalQueryString(q, queryString, baseURI, QueryType.SELECT);</b>
+<b class="nc">&nbsp;		setIncludeInferredDefault(q);</b>
+<b class="nc">&nbsp;		return new FedXTupleQuery(q);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FedXGraphQuery prepareGraphQuery(QueryLanguage ql,
+&nbsp;			String queryString, String baseURI) throws MalformedQueryException {
+<b class="nc">&nbsp;		SailGraphQuery q = super.prepareGraphQuery(ql, queryString, baseURI);</b>
+<b class="nc">&nbsp;		insertOriginalQueryString(q, queryString, baseURI, determineGraphQueryType(q));</b>
+<b class="nc">&nbsp;		setIncludeInferredDefault(q);</b>
+<b class="nc">&nbsp;		return new FedXGraphQuery(q);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql,
+&nbsp;			String queryString, String baseURI) throws MalformedQueryException {
+<b class="nc">&nbsp;		SailBooleanQuery q = super.prepareBooleanQuery(ql, queryString, baseURI);</b>
+<b class="nc">&nbsp;		insertOriginalQueryString(q, queryString, baseURI, QueryType.ASK);</b>
+<b class="nc">&nbsp;		setIncludeInferredDefault(q);</b>
+<b class="nc">&nbsp;		return new FedXBooleanQuery(q);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(QueryLanguage ql, String updateString, String baseURI)
+&nbsp;			throws RepositoryException, MalformedQueryException {
+<b class="nc">&nbsp;		Update update = super.prepareUpdate(ql, updateString, baseURI);</b>
+<b class="nc">&nbsp;		insertOriginalQueryString(update, updateString, baseURI, QueryType.UPDATE);</b>
+<b class="nc">&nbsp;		return update;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setIncludeInferredDefault(SailQuery query) {
+<b class="nc">&nbsp;		query.setIncludeInferred(federationContext.getConfig().getIncludeInferredDefault());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void insertOriginalQueryString(Operation query, String queryString, String baseURI, QueryType qt) {
+<b class="nc">&nbsp;		if (baseURI != null) {</b>
+<b class="nc">&nbsp;			query.setBinding(BINDING_ORIGINAL_BASE_URI, FedXUtil.literal(baseURI));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		query.setBinding(BINDING_ORIGINAL_QUERY, FedXUtil.literal(queryString));</b>
+<b class="nc">&nbsp;		query.setBinding(BINDING_ORIGINAL_QUERY_TYPE, FedXUtil.literal(qt.name()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryType determineGraphQueryType(SailGraphQuery q) {
+<b class="nc">&nbsp;		if (q.getParsedQuery() instanceof ParsedDescribeQuery) {</b>
+<b class="nc">&nbsp;			return QueryType.DESCRIBE;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return QueryType.CONSTRUCT;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

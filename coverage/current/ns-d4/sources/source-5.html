@@ -1,0 +1,637 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Node</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.btree</a>
+</div>
+
+<h1>Coverage Summary for Class: Node (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Node</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/146)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/170)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Node$NodeListenerNotifier</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/146)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/170)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.btree;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.concurrent.ConcurrentLinkedDeque;
+&nbsp;import java.util.concurrent.atomic.AtomicInteger;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+&nbsp;
+<b class="nc">&nbsp;class Node {</b>
+&nbsp;
+&nbsp;	/** This node&#39;s ID. */
+&nbsp;	private final int id;
+&nbsp;
+&nbsp;	private final BTree tree;
+&nbsp;
+&nbsp;	/** This node&#39;s data. */
+&nbsp;	private final byte[] data;
+&nbsp;
+&nbsp;	/** The number of values containined in this node. */
+&nbsp;	private int valueCount;
+&nbsp;
+&nbsp;	/** The number of objects currently &#39;using&#39; this node. */
+<b class="nc">&nbsp;	private final AtomicInteger usageCount = new AtomicInteger(0);</b>
+&nbsp;
+&nbsp;	/** Flag indicating whether the contents of data has changed. */
+&nbsp;	private boolean dataChanged;
+&nbsp;
+&nbsp;	/** Registered listeners that want to be notified of changes to the node. */
+<b class="nc">&nbsp;	private final ConcurrentLinkedDeque&lt;NodeListener&gt; listeners = new ConcurrentLinkedDeque&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new Node object with the specified ID.
+&nbsp;	 *
+&nbsp;	 * @param id The node&#39;s ID, must be larger than &lt;var&gt;0&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If the specified &lt;var&gt;id&lt;/var&gt; is &amp;lt;= &lt;var&gt;0&lt;/var&gt;.
+&nbsp;	 */
+<b class="nc">&nbsp;	public Node(int id, BTree tree) {</b>
+<b class="nc">&nbsp;		if (id &lt;= 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;id must be larger than 0, is: &quot; + id + &quot; in &quot; + tree.getFile());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.id = id;</b>
+<b class="nc">&nbsp;		this.tree = tree;</b>
+<b class="nc">&nbsp;		this.valueCount = 0;</b>
+&nbsp;
+&nbsp;		// Allocate enough room to store one more value and node ID;
+&nbsp;		// this greatly simplifies the algorithm for splitting a node.
+<b class="nc">&nbsp;		this.data = new byte[tree.nodeSize + tree.slotSize];</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getID() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;node &quot; + getID();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isLeaf() {
+<b class="nc">&nbsp;		return getChildNodeID(0) == 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int use() {
+<b class="nc">&nbsp;		return usageCount.incrementAndGet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void release() throws IOException {
+<b class="nc">&nbsp;		int newUsage = usageCount.decrementAndGet();</b>
+<b class="nc">&nbsp;		assert newUsage &gt;= 0 : &quot;Releasing node while usage count is &quot; + (newUsage + 1);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (newUsage == 0) {</b>
+<b class="nc">&nbsp;			tree.releaseNode(this);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getUsageCount() {
+<b class="nc">&nbsp;		return usageCount.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean dataChanged() {
+<b class="nc">&nbsp;		return dataChanged;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getValueCount() {
+<b class="nc">&nbsp;		return valueCount;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getNodeCount() {
+<b class="nc">&nbsp;		if (isLeaf()) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return valueCount + 1;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if this node has any values.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if this node has no values, &lt;var&gt;fals&lt;/var&gt; if it has.
+&nbsp;	 */
+&nbsp;	public boolean isEmpty() {
+<b class="nc">&nbsp;		return valueCount == 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isFull() {
+<b class="nc">&nbsp;		return valueCount == tree.branchFactor - 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public byte[] getValue(int valueIdx) {
+<b class="nc">&nbsp;		assert valueIdx &gt;= 0 : &quot;valueIdx must be positive, is: &quot; + valueIdx;</b>
+<b class="nc">&nbsp;		assert valueIdx &lt; valueCount : &quot;valueIdx out of range (&quot; + valueIdx + &quot; &gt;= &quot; + valueCount + &quot;)&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		return ByteArrayUtil.get(data, valueIdx2offset(valueIdx), tree.valueSize);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setValue(int valueIdx, byte[] value) {
+<b class="nc">&nbsp;		assert value != null : &quot;value must not be null&quot;;</b>
+<b class="nc">&nbsp;		assert valueIdx &gt;= 0 : &quot;valueIdx must be positive, is: &quot; + valueIdx;</b>
+<b class="nc">&nbsp;		assert valueIdx &lt; valueCount : &quot;valueIdx out of range (&quot; + valueIdx + &quot; &gt;= &quot; + valueCount + &quot;)&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayUtil.put(value, data, valueIdx2offset(valueIdx));</b>
+<b class="nc">&nbsp;		dataChanged = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the value that can be found at the specified valueIdx and the node ID directly to the right of it.
+&nbsp;	 *
+&nbsp;	 * @param valueIdx A legal value index.
+&nbsp;	 * @return The value that was removed.
+&nbsp;	 * @see #removeValueLeft
+&nbsp;	 */
+&nbsp;	public byte[] removeValueRight(int valueIdx) {
+<b class="nc">&nbsp;		assert valueIdx &gt;= 0 : &quot;valueIdx must be positive, is: &quot; + valueIdx;</b>
+<b class="nc">&nbsp;		assert valueIdx &lt; valueCount : &quot;valueIdx out of range (&quot; + valueIdx + &quot; &gt;= &quot; + valueCount + &quot;)&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		byte[] value = getValue(valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;		int endOffset = valueIdx2offset(valueCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (valueIdx &lt; valueCount - 1) {</b>
+&nbsp;			// Shift the rest of the data one slot to the left
+<b class="nc">&nbsp;			shiftData(valueIdx2offset(valueIdx + 1), endOffset, -tree.slotSize);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Clear last slot
+<b class="nc">&nbsp;		clearData(endOffset - tree.slotSize, endOffset);</b>
+&nbsp;
+<b class="nc">&nbsp;		setValueCount(--valueCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		dataChanged = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		notifyValueRemoved(valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the value that can be found at the specified valueIdx and the node ID directly to the left of it.
+&nbsp;	 *
+&nbsp;	 * @param valueIdx A legal value index.
+&nbsp;	 * @return The value that was removed.
+&nbsp;	 * @see #removeValueRight
+&nbsp;	 */
+&nbsp;	public byte[] removeValueLeft(int valueIdx) {
+<b class="nc">&nbsp;		assert valueIdx &gt;= 0 : &quot;valueIdx must be positive, is: &quot; + valueIdx;</b>
+<b class="nc">&nbsp;		assert valueIdx &lt; valueCount : &quot;valueIdx out of range (&quot; + valueIdx + &quot; &gt;= &quot; + valueCount + &quot;)&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		byte[] value = getValue(valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;		int endOffset = valueIdx2offset(valueCount);</b>
+&nbsp;
+&nbsp;		// Move the rest of the data one slot to the left
+<b class="nc">&nbsp;		shiftData(nodeIdx2offset(valueIdx + 1), endOffset, -tree.slotSize);</b>
+&nbsp;
+&nbsp;		// Clear last slot
+<b class="nc">&nbsp;		clearData(endOffset - tree.slotSize, endOffset);</b>
+&nbsp;
+<b class="nc">&nbsp;		setValueCount(--valueCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		dataChanged = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		notifyValueRemoved(valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getChildNodeID(int nodeIdx) {
+<b class="nc">&nbsp;		assert nodeIdx &gt;= 0 : &quot;nodeIdx must be positive, is: &quot; + nodeIdx;</b>
+<b class="nc">&nbsp;		assert nodeIdx &lt;= valueCount : &quot;nodeIdx out of range (&quot; + nodeIdx + &quot; &gt; &quot; + valueCount + &quot;)&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		return ByteArrayUtil.getInt(data, nodeIdx2offset(nodeIdx));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setChildNodeID(int nodeIdx, int nodeID) {
+<b class="nc">&nbsp;		assert nodeIdx &gt;= 0 : &quot;nodeIdx must not be negative, is: &quot; + nodeIdx;</b>
+<b class="nc">&nbsp;		assert nodeIdx &lt;= valueCount : &quot;nodeIdx out of range (&quot; + nodeIdx + &quot; &gt; &quot; + valueCount + &quot;)&quot;;</b>
+<b class="nc">&nbsp;		assert nodeID &gt;= 0 : &quot;nodeID must not be negative, is: &quot; + nodeID;</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(nodeID, data, nodeIdx2offset(nodeIdx));</b>
+<b class="nc">&nbsp;		dataChanged = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Node getChildNode(int nodeIdx) throws IOException {
+<b class="nc">&nbsp;		assert nodeIdx &gt;= 0 : &quot;nodeIdx must be positive, is: &quot; + nodeIdx;</b>
+<b class="nc">&nbsp;		assert nodeIdx &lt;= valueCount : &quot;nodeIdx out of range (&quot; + nodeIdx + &quot; &gt; &quot; + valueCount + &quot;)&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		int childNodeID = getChildNodeID(nodeIdx);</b>
+<b class="nc">&nbsp;		return tree.readNode(childNodeID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Searches the node for values that match the specified key and returns its index. If no such value can be found,
+&nbsp;	 * the index of the first value that is larger is returned as a negative value by multiplying the index with -1 and
+&nbsp;	 * substracting 1 (result = -index - 1). The index can be calculated from this negative value using the same
+&nbsp;	 * function, i.e.: index = -result - 1.
+&nbsp;	 */
+&nbsp;	public int search(byte[] key) {
+<b class="nc">&nbsp;		int low = 0;</b>
+<b class="nc">&nbsp;		int high = valueCount - 1;</b>
+&nbsp;
+<b class="nc">&nbsp;		while (low &lt;= high) {</b>
+<b class="nc">&nbsp;			int mid = (low + high) &gt;&gt; 1;</b>
+<b class="nc">&nbsp;			int diff = tree.comparator.compareBTreeValues(key, data, valueIdx2offset(mid), tree.valueSize);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (diff &lt; 0) {</b>
+&nbsp;				// key smaller than middle value
+<b class="nc">&nbsp;				high = mid - 1;</b>
+<b class="nc">&nbsp;			} else if (diff &gt; 0) {</b>
+&nbsp;				// key larger than middle value
+<b class="nc">&nbsp;				low = mid + 1;</b>
+&nbsp;			} else {
+&nbsp;				// key equal to middle value
+<b class="nc">&nbsp;				return mid;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return -low - 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void insertValueNodeIDPair(int valueIdx, byte[] value, int nodeID) {
+<b class="nc">&nbsp;		assert valueIdx &gt;= 0 : &quot;valueIdx must be positive, is: &quot; + valueIdx;</b>
+<b class="nc">&nbsp;		assert valueIdx &lt;= valueCount : &quot;valueIdx out of range (&quot; + valueIdx + &quot; &gt; &quot; + valueCount + &quot;)&quot;;</b>
+<b class="nc">&nbsp;		assert value != null : &quot;value must not be null&quot;;</b>
+<b class="nc">&nbsp;		assert nodeID &gt;= 0 : &quot;nodeID must not be negative, is: &quot; + nodeID;</b>
+&nbsp;
+<b class="nc">&nbsp;		int offset = valueIdx2offset(valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (valueIdx &lt; valueCount) {</b>
+&nbsp;			// Shift values right of &lt;offset&gt; to the right
+<b class="nc">&nbsp;			shiftData(offset, valueIdx2offset(valueCount), tree.slotSize);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Insert the new value-nodeID pair
+<b class="nc">&nbsp;		ByteArrayUtil.put(value, data, offset);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(nodeID, data, offset + tree.valueSize);</b>
+&nbsp;
+&nbsp;		// Raise the value count
+<b class="nc">&nbsp;		setValueCount(++valueCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		notifyValueAdded(valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;		dataChanged = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void insertNodeIDValuePair(int nodeIdx, int nodeID, byte[] value) {
+<b class="nc">&nbsp;		assert nodeIdx &gt;= 0 : &quot;nodeIdx must not be negative, is: &quot; + nodeIdx;</b>
+<b class="nc">&nbsp;		assert nodeIdx &lt;= valueCount : &quot;nodeIdx out of range (&quot; + nodeIdx + &quot; &gt; &quot; + valueCount + &quot;)&quot;;</b>
+<b class="nc">&nbsp;		assert nodeID &gt;= 0 : &quot;nodeID must not be negative, is: &quot; + nodeID;</b>
+<b class="nc">&nbsp;		assert value != null : &quot;value must not be null&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		int offset = nodeIdx2offset(nodeIdx);</b>
+&nbsp;
+&nbsp;		// Shift values right of &lt;offset&gt; to the right
+<b class="nc">&nbsp;		shiftData(offset, valueIdx2offset(valueCount), tree.slotSize);</b>
+&nbsp;
+&nbsp;		// Insert the new slot
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(nodeID, data, offset);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.put(value, data, offset + 4);</b>
+&nbsp;
+&nbsp;		// Raise the value count
+<b class="nc">&nbsp;		setValueCount(++valueCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		notifyValueAdded(nodeIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;		dataChanged = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Splits the node, moving half of its values to the supplied new node, inserting the supplied value-nodeID pair and
+&nbsp;	 * returning the median value. The behaviour of this method when called on a node that isn&#39;t full is not specified
+&nbsp;	 * and can produce unexpected results!
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public byte[] splitAndInsert(byte[] newValue, int newNodeID, int newValueIdx, Node newNode) throws IOException {
+&nbsp;		// First store the new value-node pair in data, then split it. This
+&nbsp;		// can be done because data got one spare slot when it was allocated.
+<b class="nc">&nbsp;		insertValueNodeIDPair(newValueIdx, newValue, newNodeID);</b>
+&nbsp;
+<b class="nc">&nbsp;		assert valueCount == tree.branchFactor : &quot;Node contains &quot; + valueCount + &quot; values, expected &quot;</b>
+&nbsp;				+ tree.branchFactor;
+&nbsp;
+&nbsp;		// Node now contains exactly [branchFactor] values. The median
+&nbsp;		// value at index [branchFactor/2] is moved to the parent
+&nbsp;		// node, the values left of the median stay in this node, the
+&nbsp;		// values right of the median are moved to the new node.
+<b class="nc">&nbsp;		int medianIdx = tree.branchFactor / 2;</b>
+<b class="nc">&nbsp;		int medianOffset = valueIdx2offset(medianIdx);</b>
+<b class="nc">&nbsp;		int splitOffset = medianOffset + tree.valueSize;</b>
+&nbsp;
+&nbsp;		// Move all data (including the spare slot) to the right of
+&nbsp;		// &lt;splitOffset&gt; to the new node
+<b class="nc">&nbsp;		System.arraycopy(data, splitOffset, newNode.data, 4, data.length - splitOffset);</b>
+&nbsp;
+&nbsp;		// Get the median value
+<b class="nc">&nbsp;		byte[] medianValue = getValue(medianIdx);</b>
+&nbsp;
+&nbsp;		// Clear the right half of the data in this node
+<b class="nc">&nbsp;		clearData(medianOffset, data.length);</b>
+&nbsp;
+&nbsp;		// Update the value counts
+<b class="nc">&nbsp;		setValueCount(medianIdx);</b>
+<b class="nc">&nbsp;		newNode.setValueCount(tree.branchFactor - medianIdx - 1);</b>
+<b class="nc">&nbsp;		newNode.dataChanged = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		notifyNodeSplit(newNode, medianIdx);</b>
+&nbsp;
+&nbsp;		// Return the median value; it should be inserted into the parent node
+<b class="nc">&nbsp;		return medianValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void mergeWithRightSibling(byte[] medianValue, Node rightSibling) throws IOException {
+<b class="nc">&nbsp;		assert valueCount + rightSibling.getValueCount()</b>
+&nbsp;				+ 1 &lt; tree.branchFactor : &quot;Nodes contain too many values to be merged; left: &quot; + valueCount
+<b class="nc">&nbsp;						+ &quot;; right: &quot; + rightSibling.getValueCount();</b>
+&nbsp;
+&nbsp;		// Append median value from parent node
+<b class="nc">&nbsp;		insertValueNodeIDPair(valueCount, medianValue, 0);</b>
+&nbsp;
+<b class="nc">&nbsp;		int rightIdx = valueCount;</b>
+&nbsp;
+&nbsp;		// Append all values and node references from right sibling
+<b class="nc">&nbsp;		System.arraycopy(rightSibling.data, 4, data, nodeIdx2offset(rightIdx),</b>
+<b class="nc">&nbsp;				valueIdx2offset(rightSibling.valueCount) - 4);</b>
+&nbsp;
+<b class="nc">&nbsp;		setValueCount(valueCount + rightSibling.valueCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		rightSibling.clearData(4, valueIdx2offset(rightSibling.valueCount));</b>
+<b class="nc">&nbsp;		rightSibling.setValueCount(0);</b>
+<b class="nc">&nbsp;		rightSibling.dataChanged = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		rightSibling.notifyNodeMerged(this, rightIdx);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void rotateLeft(int valueIdx, Node leftChildNode, Node rightChildNode) throws IOException {
+<b class="nc">&nbsp;		leftChildNode.insertValueNodeIDPair(leftChildNode.getValueCount(), this.getValue(valueIdx),</b>
+<b class="nc">&nbsp;				rightChildNode.getChildNodeID(0));</b>
+<b class="nc">&nbsp;		setValue(valueIdx, rightChildNode.removeValueLeft(0));</b>
+<b class="nc">&nbsp;		notifyRotatedLeft(valueIdx, leftChildNode, rightChildNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void rotateRight(int valueIdx, Node leftChildNode, Node rightChildNode) throws IOException {
+<b class="nc">&nbsp;		rightChildNode.insertNodeIDValuePair(0, leftChildNode.getChildNodeID(leftChildNode.getValueCount()),</b>
+<b class="nc">&nbsp;				this.getValue(valueIdx - 1));</b>
+<b class="nc">&nbsp;		setValue(valueIdx - 1, leftChildNode.removeValueRight(leftChildNode.getValueCount() - 1));</b>
+<b class="nc">&nbsp;		notifyRotatedRight(valueIdx, leftChildNode, rightChildNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void register(NodeListener listener) {
+&nbsp;		// assert !listeners.contains(listener);
+<b class="nc">&nbsp;		listeners.add(listener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void deregister(NodeListener listener) {
+&nbsp;		// assert listeners.contains(listener);
+<b class="nc">&nbsp;		listeners.removeFirstOccurrence(listener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifyValueAdded(int index) {
+<b class="nc">&nbsp;		notifySafeListeners(nl -&gt; nl.valueAdded(this, index));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifyValueRemoved(int index) {
+<b class="nc">&nbsp;		notifySafeListeners(nl -&gt; nl.valueRemoved(this, index));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifyRotatedLeft(int index, Node leftChildNode, Node rightChildNode) throws IOException {
+<b class="nc">&nbsp;		notifyListeners(nl -&gt; nl.rotatedLeft(this, index, leftChildNode, rightChildNode));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifyRotatedRight(int index, Node leftChildNode, Node rightChildNode) throws IOException {
+<b class="nc">&nbsp;		notifyListeners(nl -&gt; nl.rotatedRight(this, index, leftChildNode, rightChildNode));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifyNodeSplit(Node rightNode, int medianIdx) throws IOException {
+<b class="nc">&nbsp;		notifyListeners(nl -&gt; nl.nodeSplit(this, rightNode, medianIdx));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifyNodeMerged(Node targetNode, int mergeIdx) throws IOException {
+<b class="nc">&nbsp;		notifyListeners(nl -&gt; nl.nodeMergedWith(this, targetNode, mergeIdx));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@FunctionalInterface
+&nbsp;	private interface NodeListenerNotifier {
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return true if the notifier should be deregistered
+&nbsp;		 */
+&nbsp;		boolean apply(NodeListener listener) throws IOException;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifyListeners(NodeListenerNotifier notifier) throws IOException {
+<b class="nc">&nbsp;		Iterator&lt;NodeListener&gt; iter = listeners.iterator();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			boolean deregister = notifier.apply(iter.next());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (deregister) {</b>
+<b class="nc">&nbsp;				iter.remove();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void notifySafeListeners(Function&lt;NodeListener, Boolean&gt; notifier) {
+<b class="nc">&nbsp;		Iterator&lt;NodeListener&gt; iter = listeners.iterator();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			boolean deregister = notifier.apply(iter.next());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (deregister) {</b>
+<b class="nc">&nbsp;				iter.remove();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void read() throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.wrap(data);</b>
+&nbsp;
+&nbsp;		// Don&#39;t fill the spare slot in data:
+<b class="nc">&nbsp;		buf.limit(tree.nodeSize);</b>
+&nbsp;
+<b class="nc">&nbsp;		int bytesRead = tree.nioFile.read(buf, tree.nodeID2offset(id));</b>
+<b class="nc">&nbsp;		assert bytesRead == tree.nodeSize : &quot;Read operation didn&#39;t read the entire node (&quot; + bytesRead + &quot; of &quot;</b>
+&nbsp;				+ tree.nodeSize + &quot; bytes)&quot;;
+&nbsp;
+<b class="nc">&nbsp;		valueCount = ByteArrayUtil.getInt(data, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void write() throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.wrap(data);</b>
+&nbsp;
+&nbsp;		// Don&#39;t write the spare slot in data to the file:
+<b class="nc">&nbsp;		buf.limit(tree.nodeSize);</b>
+&nbsp;
+<b class="nc">&nbsp;		int bytesWritten = tree.nioFile.write(buf, tree.nodeID2offset(id));</b>
+<b class="nc">&nbsp;		assert bytesWritten == tree.nodeSize : &quot;Write operation didn&#39;t write the entire node (&quot; + bytesWritten + &quot; of &quot;</b>
+&nbsp;				+ tree.nodeSize + &quot; bytes)&quot;;
+&nbsp;
+<b class="nc">&nbsp;		dataChanged = false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Shifts the data between &lt;var&gt;startOffset&lt;/var&gt; (inclusive) and &lt;var&gt;endOffset&lt;/var&gt; (exclusive) &lt;var&gt;shift&lt;/var&gt;
+&nbsp;	 * positions to the right. Negative shift values can be used to shift data to the left.
+&nbsp;	 */
+&nbsp;	private void shiftData(int startOffset, int endOffset, int shift) {
+<b class="nc">&nbsp;		System.arraycopy(data, startOffset, data, startOffset + shift, endOffset - startOffset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clears the data between &lt;var&gt;startOffset&lt;/var&gt; (inclusive) and &lt;var&gt;endOffset&lt;/var&gt; (exclusive). All bytes in
+&nbsp;	 * this range will be set to 0.
+&nbsp;	 */
+&nbsp;	private void clearData(int startOffset, int endOffset) {
+<b class="nc">&nbsp;		Arrays.fill(data, startOffset, endOffset, (byte) 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setValueCount(int valueCount) {
+<b class="nc">&nbsp;		this.valueCount = valueCount;</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(valueCount, data, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int valueIdx2offset(int id) {
+<b class="nc">&nbsp;		return 8 + id * tree.slotSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int nodeIdx2offset(int id) {
+<b class="nc">&nbsp;		return 4 + id * tree.slotSize;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

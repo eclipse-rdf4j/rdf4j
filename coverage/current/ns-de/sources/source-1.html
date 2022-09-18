@@ -1,0 +1,430 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ShaclSailConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.config</a>
+</div>
+
+<h1>Coverage Summary for Class: ShaclSailConfig (org.eclipse.rdf4j.sail.shacl.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ShaclSailConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/116)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.config;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.literal;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.CACHE_SELECT_NODES;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.GLOBAL_LOG_VALIDATION_EXECUTION;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_PLANS;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.LOG_VALIDATION_VIOLATIONS;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.NAMESPACE;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PARALLEL_VALIDATION;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.PERFORMANCE_LOGGING;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.RDFS_SUB_CLASS_REASONING;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.SERIALIZABLE_VALIDATION;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.config.ShaclSailSchema.VALIDATION_ENABLED;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.StreamSupport;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailConfigException;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailImplConfig;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link SailImplConfig} for {@link ShaclSail} configuration.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class ShaclSailConfig extends AbstractDelegatingSailImplConfig {
+&nbsp;
+&nbsp;	public static final boolean PARALLEL_VALIDATION_DEFAULT = true;
+&nbsp;	public static final boolean LOG_VALIDATION_PLANS_DEFAULT = false;
+&nbsp;	public static final boolean LOG_VALIDATION_VIOLATIONS_DEFAULT = false;
+&nbsp;	public static final boolean VALIDATION_ENABLED_DEFAULT = true;
+&nbsp;	public static final boolean CACHE_SELECT_NODES_DEFAULT = true;
+&nbsp;	public static final boolean GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT = false;
+&nbsp;	public static final boolean RDFS_SUB_CLASS_REASONING_DEFAULT = true;
+&nbsp;	public static final boolean PERFORMANCE_LOGGING_DEFAULT = false;
+&nbsp;	public static final boolean SERIALIZABLE_VALIDATION_DEFAULT = true;
+&nbsp;	public static final boolean ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT = false;
+&nbsp;	public static final boolean DASH_DATA_SHAPES_DEFAULT = false;
+&nbsp;	public final static long VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT = 1_000_000;
+&nbsp;	public final static long VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT = 1_000;
+&nbsp;	public final static long TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT = 500_000;
+<b class="nc">&nbsp;	public final static Set&lt;IRI&gt; SHAPES_GRAPHS_DEFAULT = Set.of(RDF4J.SHACL_SHAPE_GRAPH);</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean parallelValidation = PARALLEL_VALIDATION_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean logValidationPlans = LOG_VALIDATION_PLANS_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean logValidationViolations = LOG_VALIDATION_VIOLATIONS_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean validationEnabled = VALIDATION_ENABLED_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean cacheSelectNodes = CACHE_SELECT_NODES_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean globalLogValidationExecution = GLOBAL_LOG_VALIDATION_EXECUTION_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean rdfsSubClassReasoning = RDFS_SUB_CLASS_REASONING_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean performanceLogging = PERFORMANCE_LOGGING_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean serializableValidation = SERIALIZABLE_VALIDATION_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean eclipseRdf4jShaclExtensions = ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean dashDataShapes = DASH_DATA_SHAPES_DEFAULT;</b>
+<b class="nc">&nbsp;	private long validationResultsLimitTotal = VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;</b>
+<b class="nc">&nbsp;	private long validationResultsLimitPerConstraint = VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;</b>
+<b class="nc">&nbsp;	private long transactionalValidationLimit = TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT;</b>
+<b class="nc">&nbsp;	private Set&lt;IRI&gt; shapesGraphs = SHAPES_GRAPHS_DEFAULT;</b>
+&nbsp;
+&nbsp;	public ShaclSailConfig() {
+<b class="nc">&nbsp;		super(ShaclSailFactory.SAIL_TYPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ShaclSailConfig(SailImplConfig delegate) {
+<b class="nc">&nbsp;		super(ShaclSailFactory.SAIL_TYPE, delegate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isLogValidationPlans() {
+<b class="nc">&nbsp;		return logValidationPlans;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setLogValidationPlans(boolean logValidationPlans) {
+<b class="nc">&nbsp;		this.logValidationPlans = logValidationPlans;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isLogValidationViolations() {
+<b class="nc">&nbsp;		return logValidationViolations;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setLogValidationViolations(boolean logValidationViolations) {
+<b class="nc">&nbsp;		this.logValidationViolations = logValidationViolations;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isGlobalLogValidationExecution() {
+<b class="nc">&nbsp;		return globalLogValidationExecution;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setGlobalLogValidationExecution(boolean globalLogValidationExecution) {
+<b class="nc">&nbsp;		this.globalLogValidationExecution = globalLogValidationExecution;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isValidationEnabled() {
+<b class="nc">&nbsp;		return validationEnabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setValidationEnabled(boolean validationEnabled) {
+<b class="nc">&nbsp;		this.validationEnabled = validationEnabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isParallelValidation() {
+<b class="nc">&nbsp;		return parallelValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setParallelValidation(boolean parallelValidation) {
+<b class="nc">&nbsp;		this.parallelValidation = parallelValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isCacheSelectNodes() {
+<b class="nc">&nbsp;		return cacheSelectNodes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setCacheSelectNodes(boolean cacheSelectNodes) {
+<b class="nc">&nbsp;		this.cacheSelectNodes = cacheSelectNodes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isRdfsSubClassReasoning() {
+<b class="nc">&nbsp;		return rdfsSubClassReasoning;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
+<b class="nc">&nbsp;		this.rdfsSubClassReasoning = rdfsSubClassReasoning;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isPerformanceLogging() {
+<b class="nc">&nbsp;		return performanceLogging;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPerformanceLogging(boolean performanceLogging) {
+<b class="nc">&nbsp;		this.performanceLogging = performanceLogging;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isSerializableValidation() {
+<b class="nc">&nbsp;		return serializableValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setSerializableValidation(boolean serializableValidation) {
+<b class="nc">&nbsp;		this.serializableValidation = serializableValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	public boolean isEclipseRdf4jShaclExtensions() {
+<b class="nc">&nbsp;		return eclipseRdf4jShaclExtensions;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	public void setEclipseRdf4jShaclExtensions(boolean eclipseRdf4jShaclExtensions) {
+<b class="nc">&nbsp;		this.eclipseRdf4jShaclExtensions = eclipseRdf4jShaclExtensions;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	public boolean isDashDataShapes() {
+<b class="nc">&nbsp;		return dashDataShapes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	public void setDashDataShapes(boolean dashDataShapes) {
+<b class="nc">&nbsp;		this.dashDataShapes = dashDataShapes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getValidationResultsLimitTotal() {
+<b class="nc">&nbsp;		return validationResultsLimitTotal;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getValidationResultsLimitPerConstraint() {
+<b class="nc">&nbsp;		return validationResultsLimitPerConstraint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
+<b class="nc">&nbsp;		this.validationResultsLimitTotal = validationResultsLimitTotal;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
+<b class="nc">&nbsp;		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getTransactionalValidationLimit() {
+<b class="nc">&nbsp;		return transactionalValidationLimit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setTransactionalValidationLimit(long transactionalValidationLimit) {
+<b class="nc">&nbsp;		this.transactionalValidationLimit = transactionalValidationLimit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;IRI&gt; getShapesGraphs() {
+<b class="nc">&nbsp;		return shapesGraphs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setShapesGraphs(Set&lt;IRI&gt; shapesGraphs) {
+<b class="nc">&nbsp;		this.shapesGraphs = shapesGraphs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model m) {
+<b class="nc">&nbsp;		Resource implNode = super.export(m);</b>
+&nbsp;
+<b class="nc">&nbsp;		m.setNamespace(&quot;sail-shacl&quot;, NAMESPACE);</b>
+<b class="nc">&nbsp;		m.add(implNode, PARALLEL_VALIDATION, BooleanLiteral.valueOf(isParallelValidation()));</b>
+<b class="nc">&nbsp;		m.add(implNode, LOG_VALIDATION_PLANS, BooleanLiteral.valueOf(isLogValidationPlans()));</b>
+<b class="nc">&nbsp;		m.add(implNode, LOG_VALIDATION_VIOLATIONS, BooleanLiteral.valueOf(isLogValidationViolations()));</b>
+<b class="nc">&nbsp;		m.add(implNode, VALIDATION_ENABLED, BooleanLiteral.valueOf(isValidationEnabled()));</b>
+<b class="nc">&nbsp;		m.add(implNode, CACHE_SELECT_NODES, BooleanLiteral.valueOf(isCacheSelectNodes()));</b>
+<b class="nc">&nbsp;		m.add(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, BooleanLiteral.valueOf(isGlobalLogValidationExecution()));</b>
+<b class="nc">&nbsp;		m.add(implNode, RDFS_SUB_CLASS_REASONING, BooleanLiteral.valueOf(isRdfsSubClassReasoning()));</b>
+<b class="nc">&nbsp;		m.add(implNode, PERFORMANCE_LOGGING, BooleanLiteral.valueOf(isPerformanceLogging()));</b>
+<b class="nc">&nbsp;		m.add(implNode, SERIALIZABLE_VALIDATION, BooleanLiteral.valueOf(isSerializableValidation()));</b>
+<b class="nc">&nbsp;		m.add(implNode, ShaclSailSchema.ECLIPSE_RDF4J_SHACL_EXTENSIONS,</b>
+<b class="nc">&nbsp;				BooleanLiteral.valueOf(isEclipseRdf4jShaclExtensions()));</b>
+<b class="nc">&nbsp;		m.add(implNode, ShaclSailSchema.DASH_DATA_SHAPES, BooleanLiteral.valueOf(isDashDataShapes()));</b>
+&nbsp;
+<b class="nc">&nbsp;		m.add(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL,</b>
+<b class="nc">&nbsp;				literal(getValidationResultsLimitTotal()));</b>
+<b class="nc">&nbsp;		m.add(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT,</b>
+<b class="nc">&nbsp;				literal(getValidationResultsLimitPerConstraint()));</b>
+&nbsp;
+<b class="nc">&nbsp;		m.add(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT,</b>
+<b class="nc">&nbsp;				literal(getTransactionalValidationLimit()));</b>
+&nbsp;
+<b class="nc">&nbsp;		for (IRI shapesGraph : shapesGraphs) {</b>
+<b class="nc">&nbsp;			m.add(implNode, ShaclSailSchema.SHAPES_GRAPH, shapesGraph);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return implNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model m, Resource implNode) throws SailConfigException {
+<b class="nc">&nbsp;		super.parse(m, implNode);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, PARALLEL_VALIDATION, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setParallelValidation(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_PLANS, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setLogValidationPlans(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LOG_VALIDATION_VIOLATIONS, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setLogValidationViolations(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, VALIDATION_ENABLED, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setValidationEnabled(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, CACHE_SELECT_NODES, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setCacheSelectNodes(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, GLOBAL_LOG_VALIDATION_EXECUTION, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setGlobalLogValidationExecution(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, RDFS_SUB_CLASS_REASONING, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setRdfsSubClassReasoning(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, PERFORMANCE_LOGGING, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setPerformanceLogging(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, SERIALIZABLE_VALIDATION, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setSerializableValidation(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.ECLIPSE_RDF4J_SHACL_EXTENSIONS, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setEclipseRdf4jShaclExtensions(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.DASH_DATA_SHAPES, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setDashDataShapes(l.booleanValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_TOTAL, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setValidationResultsLimitTotal(l.longValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(</b>
+<b class="nc">&nbsp;					m.getStatements(implNode, ShaclSailSchema.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setValidationResultsLimitPerConstraint(l.longValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(</b>
+<b class="nc">&nbsp;					m.getStatements(implNode, ShaclSailSchema.TRANSACTIONAL_VALIDATION_LIMIT, null))</b>
+<b class="nc">&nbsp;					.ifPresent(l -&gt; setTransactionalValidationLimit(l.longValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			if (m.contains(implNode, ShaclSailSchema.SHAPES_GRAPH, null)) {</b>
+<b class="nc">&nbsp;				setShapesGraphs(StreamSupport</b>
+<b class="nc">&nbsp;						.stream(m.getStatements(implNode, ShaclSailSchema.SHAPES_GRAPH, null).spliterator(), false)</b>
+<b class="nc">&nbsp;						.peek(statement -&gt; {</b>
+<b class="nc">&nbsp;							if (!statement.getObject().isIRI()) {</b>
+<b class="nc">&nbsp;								throw new IllegalArgumentException(&quot;Expected IRI but found &quot;</b>
+<b class="nc">&nbsp;										+ statement.getObject().getClass().getSimpleName() + &quot; at &quot; + statement);</b>
+&nbsp;							}
+&nbsp;						})
+<b class="nc">&nbsp;						.map(Statement::getObject)</b>
+<b class="nc">&nbsp;						.map(o -&gt; ((IRI) o))</b>
+<b class="nc">&nbsp;						.collect(Collectors.toUnmodifiableSet()));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			throw new SailConfigException(&quot;error parsing Sail configuration&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

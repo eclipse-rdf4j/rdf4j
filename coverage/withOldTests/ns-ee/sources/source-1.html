@@ -1,0 +1,418 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Rdf</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.rdf</a>
+</div>
+
+<h1>Coverage Summary for Class: Rdf (org.eclipse.rdf4j.sparqlbuilder.rdf)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Rdf</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/35)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.rdf;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.AnonymousBlankNode;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.PropertiesBlankNode;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.NumericLiteral;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral.StringLiteral;
+&nbsp;
+&nbsp;/**
+&nbsp; * A class with static methods to create basic {@link SparqlBuilder} RDF objects from either string values or RDF4J
+&nbsp; * Model objects.
+&nbsp; */
+&nbsp;public class Rdf {
+&nbsp;	private Rdf() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SparqlBuilder Iri instance from a String iri
+&nbsp;	 *
+&nbsp;	 * @param iriString the String representing the iri
+&nbsp;	 * @return the {@link Iri} instance
+&nbsp;	 */
+&nbsp;	public static Iri iri(String iriString) {
+&nbsp;		try {
+<b class="nc">&nbsp;			ParsedIRI parsedIri = ParsedIRI.create(iriString);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (parsedIri != null) {</b>
+<b class="nc">&nbsp;				return () -&gt; &quot;&lt;&quot; + iriString + &quot;&gt;&quot;;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return () -&gt; iriString;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return () -&gt; iriString;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SparqlBuilder Iri instance from an {@link IRI}
+&nbsp;	 *
+&nbsp;	 * @param iri the IRI
+&nbsp;	 * @return the SparqlBuilder {@link Iri} instance
+&nbsp;	 */
+&nbsp;	public static Iri iri(IRI iri) {
+<b class="nc">&nbsp;		return iri(iri.stringValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SparqlBuilder Iri instance from a namespace and local name
+&nbsp;	 *
+&nbsp;	 * @param namespace the namespace of the Iri
+&nbsp;	 * @param localName the local name of the Iri
+&nbsp;	 * @return a {@link Iri} instance
+&nbsp;	 */
+&nbsp;	public static Iri iri(String namespace, String localName) {
+<b class="nc">&nbsp;		return iri(namespace + localName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * creates a labeled blank node
+&nbsp;	 *
+&nbsp;	 * @param label the label of the blank node
+&nbsp;	 * @return a new {@link LabeledBlankNode} instance
+&nbsp;	 */
+&nbsp;	public static LabeledBlankNode bNode(String label) {
+<b class="nc">&nbsp;		return new LabeledBlankNode(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * creates a label-less blank node, identified by the supplied predicate-object lists
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate of the initial predicate-object list to populate this blank node with
+&nbsp;	 * @param objects   the objects of the initial predicate-object list to populate this blank node with
+&nbsp;	 * @return a new {@link PropertiesBlankNode} instance
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes&quot;&gt; Blank node syntax&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static PropertiesBlankNode bNode(RdfPredicate predicate, RdfObject... objects) {
+<b class="nc">&nbsp;		return new PropertiesBlankNode(predicate, objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * creates a label-less blank node, identified by the supplied predicate-object lists
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate of the initial predicate-object list to populate this blank node with
+&nbsp;	 * @param objects   the objects of the initial predicate-object list to populate this blank node with
+&nbsp;	 * @return a new {@link PropertiesBlankNode} instance
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes&quot;&gt; Blank node syntax&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static PropertiesBlankNode bNode(IRI predicate, RdfObject... objects) {
+<b class="nc">&nbsp;		return bNode(Rdf.iri(predicate), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * create an empty anonymous blank node
+&nbsp;	 *
+&nbsp;	 * @return an empty {@link AnonymousBlankNode} instance
+&nbsp;	 */
+&nbsp;	public static AnonymousBlankNode bNode() {
+<b class="nc">&nbsp;		return new AnonymousBlankNode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * create an RDF string literal
+&nbsp;	 *
+&nbsp;	 * @param stringValue the String instance to create a literal from
+&nbsp;	 * @return a {@link StringLiteral} instance representing the given String
+&nbsp;	 */
+&nbsp;	public static StringLiteral literalOf(String stringValue) {
+<b class="nc">&nbsp;		return new StringLiteral(stringValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * create a literal with a datatype
+&nbsp;	 *
+&nbsp;	 * @param stringValue the literal string
+&nbsp;	 * @param dataType    the datatype tag
+&nbsp;	 * @return a {@link StringLiteral} instance representing the given String and datatype
+&nbsp;	 */
+&nbsp;	public static StringLiteral literalOfType(String stringValue, Iri dataType) {
+<b class="nc">&nbsp;		return new StringLiteral(stringValue, dataType);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * create a literal with a datatype
+&nbsp;	 *
+&nbsp;	 * @param stringValue the literal string
+&nbsp;	 * @param dataType    the datatype as a {@link IRI}
+&nbsp;	 * @return a {@link StringLiteral} instance representing the given String and datatype
+&nbsp;	 */
+&nbsp;	public static StringLiteral literalOfType(String stringValue, IRI dataType) {
+<b class="nc">&nbsp;		return literalOfType(stringValue, iri(dataType));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * create a literal with a language tag
+&nbsp;	 *
+&nbsp;	 * @param stringValue the literal string
+&nbsp;	 * @param language    the language tag
+&nbsp;	 * @return a {@link StringLiteral} instance representing the given String and language
+&nbsp;	 */
+&nbsp;	public static StringLiteral literalOfLanguage(String stringValue, String language) {
+<b class="nc">&nbsp;		return new StringLiteral(stringValue, language);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * create an RDF numeric literal
+&nbsp;	 *
+&nbsp;	 * @param numberValue the Number instance to create a literal from
+&nbsp;	 * @return a {@link NumericLiteral} instance representing the given Number
+&nbsp;	 */
+&nbsp;	public static NumericLiteral literalOf(Number numberValue) {
+<b class="nc">&nbsp;		return new NumericLiteral(numberValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * create an RDF boolean literal
+&nbsp;	 *
+&nbsp;	 * @param boolValue the boolean to create a literal from
+&nbsp;	 * @return a {@link BooleanLiteral} instance representing the given boolean
+&nbsp;	 */
+&nbsp;	public static BooleanLiteral literalOf(Boolean boolValue) {
+<b class="nc">&nbsp;		return new BooleanLiteral(boolValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link RdfPredicateObjectList}
+&nbsp;	 *
+&nbsp;	 * @param predicate the {@link RdfPredicate} of the predicate-object list
+&nbsp;	 * @param objects   the {@link RdfObject}(s) of the list
+&nbsp;	 * @return a new {@link RdfPredicateObjectList}
+&nbsp;	 */
+&nbsp;	public static RdfPredicateObjectList predicateObjectList(RdfPredicate predicate, RdfObject... objects) {
+<b class="nc">&nbsp;		return new RdfPredicateObjectList(predicate, objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link RdfPredicateObjectList}
+&nbsp;	 *
+&nbsp;	 * @param predicate the {@link RdfPredicate} of the predicate-object list
+&nbsp;	 * @param objects   the {@link RdfObject}(s) of the list
+&nbsp;	 * @return a new {@link RdfPredicateObjectList}
+&nbsp;	 */
+&nbsp;	public static RdfPredicateObjectList predicateObjectList(IRI predicate, RdfObject... objects) {
+<b class="nc">&nbsp;		return predicateObjectList(Rdf.iri(predicate), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link RdfPredicateObjectListCollection} with an initial {@link RdfPredicateObjectList}
+&nbsp;	 *
+&nbsp;	 * @param predicate the {@link RdfPredicate} of the initial {@link RdfPredicateObjectList}
+&nbsp;	 * @param objects   the {@link RdfObject}(s) of the initial {@link RdfPredicateObjectList}
+&nbsp;	 * @return a new {@link RdfPredicateObjectListCollection}
+&nbsp;	 */
+&nbsp;	public static RdfPredicateObjectListCollection predicateObjectListCollection(RdfPredicate predicate,
+&nbsp;			RdfObject... objects) {
+<b class="nc">&nbsp;		return new RdfPredicateObjectListCollection().andHas(predicate, objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link RdfPredicateObjectListCollection} with an initial {@link RdfPredicateObjectList}
+&nbsp;	 *
+&nbsp;	 * @param predicate the {@link RdfPredicate} of the initial {@link RdfPredicateObjectList}
+&nbsp;	 * @param objects   the {@link RdfObject}(s) of the initial {@link RdfPredicateObjectList}
+&nbsp;	 * @return a new {@link RdfPredicateObjectListCollection}
+&nbsp;	 */
+&nbsp;	public static RdfPredicateObjectListCollection predicateObjectListCollection(IRI predicate,
+&nbsp;			RdfObject... objects) {
+<b class="nc">&nbsp;		return predicateObjectListCollection(Rdf.iri(predicate), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link RdfPredicateObjectListCollection} with the given {@link RdfPredicateObjectList}(s)
+&nbsp;	 *
+&nbsp;	 * @param predicateObjectLists the {@link RdfPredicateObjectList}(s) to add to the collection
+&nbsp;	 * @return a new {@link RdfPredicateObjectListCollection}
+&nbsp;	 */
+&nbsp;	public static RdfPredicateObjectListCollection predicateObjectListCollection(
+&nbsp;			RdfPredicateObjectList... predicateObjectLists) {
+<b class="nc">&nbsp;		return new RdfPredicateObjectListCollection().andHas(predicateObjectLists);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an array of object {@link Value}s to an array of {@link RdfObject}s.
+&nbsp;	 *
+&nbsp;	 * @param values an array of {@link Value}.
+&nbsp;	 * @return an array of {@link RdfObject}
+&nbsp;	 */
+&nbsp;	public static RdfObject[] objects(Value... values) {
+<b class="nc">&nbsp;		return Arrays.stream(values).map(Rdf::object).toArray(RdfObject[]::new);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an object {@link Value}s to an {@link RdfObject}s.
+&nbsp;	 *
+&nbsp;	 * @param value an RDF {@link Value}.
+&nbsp;	 * @return an {@link RdfObject}
+&nbsp;	 */
+&nbsp;	public static RdfObject object(Value value) {
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			return iri((IRI) value);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			return bNode(((BNode) value).getID());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Literal lit = (Literal) value;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (lit.getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;			return literalOfLanguage(lit.getLabel(), lit.getLanguage().orElse(null));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return literalOfType(lit.getLabel(), lit.getDatatype());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert an array of {@link String}s to an array of {@link StringLiteral}s
+&nbsp;	 *
+&nbsp;	 * @param literals the {@link String}s to convert
+&nbsp;	 * @return an array of the corresponding {@link StringLiteral}s
+&nbsp;	 */
+&nbsp;	public static StringLiteral[] toRdfLiteralArray(String... literals) {
+<b class="nc">&nbsp;		return Arrays.stream(literals).map(Rdf::literalOf).toArray(StringLiteral[]::new);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert an array of {@link Boolean}s to an array of {@link BooleanLiteral}s
+&nbsp;	 *
+&nbsp;	 * @param literals the {@link Boolean}s to convert
+&nbsp;	 * @return an array of the corresponding {@link BooleanLiteral}s
+&nbsp;	 */
+&nbsp;	public static BooleanLiteral[] toRdfLiteralArray(Boolean... literals) {
+<b class="nc">&nbsp;		return Arrays.stream(literals).map(Rdf::literalOf).toArray(BooleanLiteral[]::new);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert an array of {@link Number}s to an array of {@link NumericLiteral}s
+&nbsp;	 *
+&nbsp;	 * @param literals the {@link Number}s to convert
+&nbsp;	 * @return an array of the corresponding {@link NumericLiteral}s
+&nbsp;	 */
+&nbsp;	public static NumericLiteral[] toRdfLiteralArray(Number... literals) {
+<b class="nc">&nbsp;		return Arrays.stream(literals).map(Rdf::literalOf).toArray(NumericLiteral[]::new);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

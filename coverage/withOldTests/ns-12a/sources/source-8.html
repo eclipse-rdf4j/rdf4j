@@ -1,0 +1,430 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DescribeTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.sparql.tests</a>
+</div>
+
+<h1>Coverage Summary for Class: DescribeTest (org.eclipse.rdf4j.testsuite.sparql.tests)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DescribeTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (11/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    47.2%
+  </span>
+  <span class="absValue">
+    (34/72)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (186/186)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.testsuite.sparql.tests;
+&nbsp;
+&nbsp;import static org.assertj.core.api.Assertions.assertThat;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
+&nbsp;import org.junit.Test;
+&nbsp;
+&nbsp;/**
+&nbsp; * Tests on SPARQL DESCRIBE queries
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class DescribeTest extends AbstractComplianceTest {</b>
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeA() throws Exception {
+<b class="fc">&nbsp;		loadTestData(&quot;/testdata-query/dataset-describe.trig&quot;);</b>
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE ex:a&quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory f = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI a = f.createIRI(&quot;http://example.org/a&quot;);</b>
+<b class="fc">&nbsp;		IRI p = f.createIRI(&quot;http://example.org/p&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+<b class="fc">&nbsp;			Set&lt;Value&gt; objects = result.filter(a, p, null).objects();</b>
+<b class="fc">&nbsp;			assertThat(objects).isNotNull();</b>
+<b class="fc">&nbsp;			for (Value object : objects) {</b>
+<b class="pc">&nbsp;				if (object instanceof BNode) {</b>
+<b class="fc">&nbsp;					assertThat(result.contains((Resource) object, null, null)).isTrue();</b>
+<b class="fc">&nbsp;					assertThat(result.filter((Resource) object, null, null)).hasSize(2);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeAWhere() throws Exception {
+<b class="fc">&nbsp;		loadTestData(&quot;/testdata-query/dataset-describe.trig&quot;);</b>
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE ?x WHERE {?x rdfs:label \&quot;a\&quot;. } &quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory f = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI a = f.createIRI(&quot;http://example.org/a&quot;);</b>
+<b class="fc">&nbsp;		IRI p = f.createIRI(&quot;http://example.org/p&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+<b class="fc">&nbsp;			Set&lt;Value&gt; objects = result.filter(a, p, null).objects();</b>
+<b class="fc">&nbsp;			assertThat(objects).isNotNull();</b>
+<b class="fc">&nbsp;			for (Value object : objects) {</b>
+<b class="pc">&nbsp;				if (object instanceof BNode) {</b>
+<b class="fc">&nbsp;					assertThat(result.contains((Resource) object, null, null)).isTrue();</b>
+<b class="fc">&nbsp;					assertThat(result.filter((Resource) object, null, null)).hasSize(2);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeWhere() throws Exception {
+<b class="fc">&nbsp;		loadTestData(&quot;/testdata-query/dataset-describe.trig&quot;);</b>
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE ?x WHERE {?x rdfs:label ?y . } &quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory vf = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI a = vf.createIRI(&quot;http://example.org/a&quot;);</b>
+<b class="fc">&nbsp;		IRI b = vf.createIRI(&quot;http://example.org/b&quot;);</b>
+<b class="fc">&nbsp;		IRI c = vf.createIRI(&quot;http://example.org/c&quot;);</b>
+<b class="fc">&nbsp;		IRI e = vf.createIRI(&quot;http://example.org/e&quot;);</b>
+<b class="fc">&nbsp;		IRI f = vf.createIRI(&quot;http://example.org/f&quot;);</b>
+<b class="fc">&nbsp;		IRI p = vf.createIRI(&quot;http://example.org/p&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+<b class="fc">&nbsp;			assertThat(result.contains(a, p, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(b, RDFS.LABEL, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(c, RDFS.LABEL, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(null, p, b)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(e, RDFS.LABEL, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(null, p, e)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(f, null, null)).isFalse();</b>
+<b class="fc">&nbsp;			Set&lt;Value&gt; objects = result.filter(a, p, null).objects();</b>
+<b class="fc">&nbsp;			assertThat(objects).isNotNull();</b>
+<b class="fc">&nbsp;			for (Value object : objects) {</b>
+<b class="pc">&nbsp;				if (object instanceof BNode) {</b>
+<b class="fc">&nbsp;					assertThat(result.contains((Resource) object, null, null)).isTrue();</b>
+<b class="fc">&nbsp;					assertThat(result.filter((Resource) object, null, null)).hasSize(2);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeB() throws Exception {
+<b class="fc">&nbsp;		loadTestData(&quot;/testdata-query/dataset-describe.trig&quot;);</b>
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE ex:b&quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory f = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI b = f.createIRI(&quot;http://example.org/b&quot;);</b>
+<b class="fc">&nbsp;		IRI p = f.createIRI(&quot;http://example.org/p&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+<b class="fc">&nbsp;			Set&lt;Resource&gt; subjects = result.filter(null, p, b).subjects();</b>
+<b class="fc">&nbsp;			assertThat(subjects).isNotNull();</b>
+<b class="fc">&nbsp;			for (Value subject : subjects) {</b>
+<b class="pc">&nbsp;				if (subject instanceof BNode) {</b>
+<b class="fc">&nbsp;					assertThat(result.contains(null, null, subject)).isTrue();</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeD() throws Exception {
+<b class="fc">&nbsp;		loadTestData(&quot;/testdata-query/dataset-describe.trig&quot;);</b>
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE ex:d&quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory f = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI d = f.createIRI(&quot;http://example.org/d&quot;);</b>
+<b class="fc">&nbsp;		IRI p = f.createIRI(&quot;http://example.org/p&quot;);</b>
+<b class="fc">&nbsp;		IRI e = f.createIRI(&quot;http://example.org/e&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+&nbsp;
+<b class="fc">&nbsp;			assertThat(result.contains(null, p, e)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(e, null, null)).isFalse();</b>
+&nbsp;
+<b class="fc">&nbsp;			Set&lt;Value&gt; objects = result.filter(d, p, null).objects();</b>
+<b class="fc">&nbsp;			assertThat(objects).isNotNull();</b>
+<b class="fc">&nbsp;			for (Value object : objects) {</b>
+<b class="pc">&nbsp;				if (object instanceof BNode) {</b>
+<b class="fc">&nbsp;					Set&lt;Value&gt; childObjects = result.filter((BNode) object, null, null).objects();</b>
+<b class="fc">&nbsp;					assertThat(childObjects).isNotEmpty();</b>
+<b class="fc">&nbsp;					for (Value childObject : childObjects) {</b>
+<b class="pc">&nbsp;						if (childObject instanceof BNode) {</b>
+<b class="fc">&nbsp;							assertThat(result.contains((BNode) childObject, null, null)).isTrue();</b>
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeF() throws Exception {
+<b class="fc">&nbsp;		loadTestData(&quot;/testdata-query/dataset-describe.trig&quot;);</b>
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE ex:f&quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory vf = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI f = vf.createIRI(&quot;http://example.org/f&quot;);</b>
+<b class="fc">&nbsp;		IRI p = vf.createIRI(&quot;http://example.org/p&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+&nbsp;
+<b class="fc">&nbsp;			assertThat(result).isNotNull().hasSize(4);</b>
+&nbsp;
+<b class="fc">&nbsp;			Set&lt;Value&gt; objects = result.filter(f, p, null).objects();</b>
+<b class="fc">&nbsp;			for (Value object : objects) {</b>
+<b class="pc">&nbsp;				if (object instanceof BNode) {</b>
+<b class="fc">&nbsp;					Set&lt;Value&gt; childObjects = result.filter((BNode) object, null, null).objects();</b>
+<b class="fc">&nbsp;					assertThat(childObjects).isNotEmpty();</b>
+<b class="fc">&nbsp;					for (Value childObject : childObjects) {</b>
+<b class="pc">&nbsp;						if (childObject instanceof BNode) {</b>
+<b class="fc">&nbsp;							assertThat(result.contains((BNode) childObject, null, null)).isTrue();</b>
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeMultipleA() {
+<b class="fc">&nbsp;		String update = &quot;insert data { &lt;urn:1&gt; &lt;urn:p1&gt; &lt;urn:v&gt; . [] &lt;urn:blank&gt; &lt;urn:1&gt; . &lt;urn:2&gt; &lt;urn:p2&gt; &lt;urn:3&gt; . } &quot;;</b>
+<b class="fc">&nbsp;		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();</b>
+&nbsp;
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE &lt;urn:1&gt; &lt;urn:2&gt; &quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory vf = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI urn1 = vf.createIRI(&quot;urn:1&quot;);</b>
+<b class="fc">&nbsp;		IRI p1 = vf.createIRI(&quot;urn:p1&quot;);</b>
+<b class="fc">&nbsp;		IRI p2 = vf.createIRI(&quot;urn:p2&quot;);</b>
+<b class="fc">&nbsp;		IRI urn2 = vf.createIRI(&quot;urn:2&quot;);</b>
+<b class="fc">&nbsp;		IRI blank = vf.createIRI(&quot;urn:blank&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn1, p1, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(null, blank, urn1)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn2, p2, null)).isTrue();</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeMultipleB() {
+<b class="fc">&nbsp;		String update = &quot;insert data { &lt;urn:1&gt; &lt;urn:p1&gt; &lt;urn:v&gt; . &lt;urn:1&gt; &lt;urn:blank&gt; [] . &lt;urn:2&gt; &lt;urn:p2&gt; &lt;urn:3&gt; . } &quot;;</b>
+<b class="fc">&nbsp;		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();</b>
+&nbsp;
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE &lt;urn:1&gt; &lt;urn:2&gt; &quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory vf = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI urn1 = vf.createIRI(&quot;urn:1&quot;);</b>
+<b class="fc">&nbsp;		IRI p1 = vf.createIRI(&quot;urn:p1&quot;);</b>
+<b class="fc">&nbsp;		IRI p2 = vf.createIRI(&quot;urn:p2&quot;);</b>
+<b class="fc">&nbsp;		IRI urn2 = vf.createIRI(&quot;urn:2&quot;);</b>
+<b class="fc">&nbsp;		IRI blank = vf.createIRI(&quot;urn:blank&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+&nbsp;
+<b class="fc">&nbsp;			assertThat(result.contains(urn1, p1, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn1, blank, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn2, p2, null)).isTrue();</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeMultipleC() {
+<b class="fc">&nbsp;		String update = &quot;insert data { &lt;urn:1&gt; &lt;urn:p1&gt; &lt;urn:v&gt; . [] &lt;urn:blank&gt; &lt;urn:1&gt;. &lt;urn:1&gt; &lt;urn:blank&gt; [] . &lt;urn:2&gt; &lt;urn:p2&gt; &lt;urn:3&gt; . } &quot;;</b>
+<b class="fc">&nbsp;		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();</b>
+&nbsp;
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE &lt;urn:1&gt; &lt;urn:2&gt; &quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory vf = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI urn1 = vf.createIRI(&quot;urn:1&quot;);</b>
+<b class="fc">&nbsp;		IRI p1 = vf.createIRI(&quot;urn:p1&quot;);</b>
+<b class="fc">&nbsp;		IRI p2 = vf.createIRI(&quot;urn:p2&quot;);</b>
+<b class="fc">&nbsp;		IRI urn2 = vf.createIRI(&quot;urn:2&quot;);</b>
+<b class="fc">&nbsp;		IRI blank = vf.createIRI(&quot;urn:blank&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+&nbsp;
+<b class="fc">&nbsp;			assertThat(result.contains(urn1, p1, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn1, blank, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(null, blank, urn1)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn2, p2, null)).isTrue();</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDescribeMultipleD() {
+<b class="fc">&nbsp;		String update = &quot;insert data { &lt;urn:1&gt; &lt;urn:p1&gt; &lt;urn:v&gt; . [] &lt;urn:blank&gt; &lt;urn:1&gt;. &lt;urn:2&gt; &lt;urn:p2&gt; &lt;urn:3&gt; . [] &lt;urn:blank&gt; &lt;urn:2&gt; . &lt;urn:4&gt; &lt;urn:p2&gt; &lt;urn:3&gt; . &lt;urn:4&gt; &lt;urn:blank&gt; [] .} &quot;;</b>
+<b class="fc">&nbsp;		conn.prepareUpdate(QueryLanguage.SPARQL, update).execute();</b>
+&nbsp;
+<b class="fc">&nbsp;		String query = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DESCRIBE &lt;urn:1&gt; &lt;urn:2&gt; &lt;urn:4&gt; &quot;;
+&nbsp;
+<b class="fc">&nbsp;		GraphQuery gq = conn.prepareGraphQuery(QueryLanguage.SPARQL, query);</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueFactory vf = conn.getValueFactory();</b>
+<b class="fc">&nbsp;		IRI urn1 = vf.createIRI(&quot;urn:1&quot;);</b>
+<b class="fc">&nbsp;		IRI p1 = vf.createIRI(&quot;urn:p1&quot;);</b>
+<b class="fc">&nbsp;		IRI p2 = vf.createIRI(&quot;urn:p2&quot;);</b>
+<b class="fc">&nbsp;		IRI urn2 = vf.createIRI(&quot;urn:2&quot;);</b>
+<b class="fc">&nbsp;		IRI urn4 = vf.createIRI(&quot;urn:4&quot;);</b>
+<b class="fc">&nbsp;		IRI blank = vf.createIRI(&quot;urn:blank&quot;);</b>
+<b class="pc">&nbsp;		try (GraphQueryResult evaluate = gq.evaluate()) {</b>
+<b class="fc">&nbsp;			Model result = QueryResults.asModel(evaluate);</b>
+&nbsp;
+<b class="fc">&nbsp;			assertThat(result.contains(urn1, p1, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(null, blank, urn1)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn2, p2, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn4, p2, null)).isTrue();</b>
+<b class="fc">&nbsp;			assertThat(result.contains(urn4, blank, null)).isTrue();</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,212 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ServerHTTPException</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server</a>
+</div>
+
+<h1>Coverage Summary for Class: ServerHTTPException (org.eclipse.rdf4j.http.server)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ServerHTTPException</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server;
+&nbsp;
+&nbsp;import java.net.HttpURLConnection;
+&nbsp;
+&nbsp;/**
+&nbsp; * HTTP-related exception indicating that an error occurred in a server. Status codes for these types of errors are in
+&nbsp; * the 5xx range. The default status code for constructors without a &lt;var&gt;statusCode&lt;/var&gt; parameter is &lt;var&gt;500
+&nbsp; * Internal Server Error&lt;/var&gt;.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class ServerHTTPException extends HTTPException {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -3949837199542648966L;
+&nbsp;
+&nbsp;	private static final int DEFAULT_STATUS_CODE = HttpURLConnection.HTTP_INTERNAL_ERROR;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link ServerHTTPException} with status code 500 &quot;Internal Server Error&quot;.
+&nbsp;	 */
+&nbsp;	public ServerHTTPException() {
+<b class="nc">&nbsp;		this(DEFAULT_STATUS_CODE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link ServerHTTPException} with status code 500 &quot;Internal Server Error&quot;.
+&nbsp;	 */
+&nbsp;	public ServerHTTPException(String msg) {
+<b class="nc">&nbsp;		this(DEFAULT_STATUS_CODE, msg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link ServerHTTPException} with status code 500 &quot;Internal Server Error&quot;.
+&nbsp;	 */
+&nbsp;	public ServerHTTPException(String msg, Throwable t) {
+<b class="nc">&nbsp;		this(DEFAULT_STATUS_CODE, t);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+&nbsp;	 * range.
+&nbsp;	 *
+&nbsp;	 * @throws IllegalArgumentException If &lt;var&gt;statusCode&lt;/var&gt; is not in the 5xx range.
+&nbsp;	 */
+&nbsp;	public ServerHTTPException(int statusCode) {
+<b class="nc">&nbsp;		super(statusCode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+&nbsp;	 * range.
+&nbsp;	 *
+&nbsp;	 * @throws IllegalArgumentException If &lt;var&gt;statusCode&lt;/var&gt; is not in the 5xx range.
+&nbsp;	 */
+&nbsp;	public ServerHTTPException(int statusCode, String message) {
+<b class="nc">&nbsp;		super(statusCode, message);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+&nbsp;	 * range.
+&nbsp;	 *
+&nbsp;	 * @throws IllegalArgumentException If &lt;var&gt;statusCode&lt;/var&gt; is not in the 5xx range.
+&nbsp;	 */
+&nbsp;	public ServerHTTPException(int statusCode, String message, Throwable t) {
+<b class="nc">&nbsp;		super(statusCode, message, t);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link ServerHTTPException} with the specified status code. The supplied status code must be in the 5xx
+&nbsp;	 * range.
+&nbsp;	 *
+&nbsp;	 * @throws IllegalArgumentException If &lt;var&gt;statusCode&lt;/var&gt; is not in the 5xx range.
+&nbsp;	 */
+&nbsp;	public ServerHTTPException(int statusCode, Throwable t) {
+<b class="nc">&nbsp;		super(statusCode, t);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void setStatusCode(int statusCode) {
+<b class="nc">&nbsp;		if (statusCode &lt; 500 || statusCode &gt; 599) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Status code must be in the 5xx range, is: &quot; + statusCode);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		super.setStatusCode(statusCode);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

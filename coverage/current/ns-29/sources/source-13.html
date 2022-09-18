@@ -1,0 +1,351 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TupleAndGraphQueryEvaluator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: TupleAndGraphQueryEvaluator (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TupleAndGraphQueryEvaluator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/68)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * Evaluator tuple and graph queries
+&nbsp; *
+&nbsp; * @author dale
+&nbsp; */
+&nbsp;public class TupleAndGraphQueryEvaluator {
+&nbsp;
+&nbsp;	private final ConsoleIO consoleIO;
+&nbsp;	private final ConsoleState state;
+&nbsp;	private final Map&lt;String, ConsoleSetting&gt; settings;
+&nbsp;
+&nbsp;	private static final ParserConfig nonVerifyingParserConfig;
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		nonVerifyingParserConfig = new ParserConfig();</b>
+<b class="nc">&nbsp;		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);</b>
+<b class="nc">&nbsp;		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);</b>
+<b class="nc">&nbsp;		nonVerifyingParserConfig.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 * @param settings
+&nbsp;	 */
+<b class="nc">&nbsp;	public TupleAndGraphQueryEvaluator(ConsoleIO consoleIO, ConsoleState state, Map&lt;String, ConsoleSetting&gt; settings) {</b>
+<b class="nc">&nbsp;		this.consoleIO = consoleIO;</b>
+<b class="nc">&nbsp;		this.state = state;</b>
+<b class="nc">&nbsp;		this.settings = settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console IO
+&nbsp;	 *
+&nbsp;	 * @return console IO
+&nbsp;	 */
+&nbsp;	protected ConsoleIO getConsoleIO() {
+<b class="nc">&nbsp;		return this.consoleIO;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console State
+&nbsp;	 *
+&nbsp;	 * @return console state
+&nbsp;	 */
+&nbsp;	protected ConsoleState getConsoleState() {
+<b class="nc">&nbsp;		return this.state;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console settings
+&nbsp;	 *
+&nbsp;	 * @return console settings
+&nbsp;	 */
+&nbsp;	protected Map&lt;String, ConsoleSetting&gt; getConsoleSettings() {
+<b class="nc">&nbsp;		return this.settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate SPARQL tuple query and send the output to a writer. If writer is null, the console will be used for
+&nbsp;	 * output.
+&nbsp;	 *
+&nbsp;	 * @param queryLn     query language
+&nbsp;	 * @param queryString query string
+&nbsp;	 * @param writer      result writer or null
+&nbsp;	 * @throws UnsupportedQueryLanguageException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	protected void evaluateTupleQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
+&nbsp;			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+&nbsp;			RepositoryException {
+<b class="nc">&nbsp;		Repository repository = state.getRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Evaluating &quot; + queryLn.getName() + &quot; query...&quot;);</b>
+<b class="nc">&nbsp;		int resultCount = 0;</b>
+<b class="nc">&nbsp;		long startTime = System.nanoTime();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection();</b>
+<b class="nc">&nbsp;				TupleQueryResult res = con.prepareTupleQuery(queryLn, queryString).evaluate()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;String&gt; bindingNames = res.getBindingNames();</b>
+<b class="nc">&nbsp;			if (bindingNames.isEmpty()) {</b>
+<b class="nc">&nbsp;				while (res.hasNext()) {</b>
+<b class="nc">&nbsp;					res.next();</b>
+<b class="nc">&nbsp;					resultCount++;</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				writer.startDocument();</b>
+<b class="nc">&nbsp;				writer.startHeader();</b>
+<b class="nc">&nbsp;				writer.startQueryResult(bindingNames);</b>
+<b class="nc">&nbsp;				writer.endHeader();</b>
+&nbsp;
+<b class="nc">&nbsp;				while (res.hasNext()) {</b>
+<b class="nc">&nbsp;					writer.handleSolution(res.next());</b>
+<b class="nc">&nbsp;					resultCount++;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				writer.endQueryResult();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		long endTime = System.nanoTime();</b>
+<b class="nc">&nbsp;		consoleIO.writeln(resultCount + &quot; result(s) (&quot; + (endTime - startTime) / 1_000_000 + &quot; ms)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate SPARQL graph query
+&nbsp;	 *
+&nbsp;	 * @param queryLn     query language
+&nbsp;	 * @param queryString query string
+&nbsp;	 * @param writer      RDFWriter to write the results to
+&nbsp;	 * @param namespaces  namespaces to write to the RDFWriter
+&nbsp;	 * @throws UnsupportedQueryLanguageException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	protected void evaluateGraphQuery(QueryLanguage queryLn, String queryString, RDFWriter writer,
+&nbsp;			Collection&lt;Namespace&gt; namespaces) throws UnsupportedQueryLanguageException, MalformedQueryException,
+&nbsp;			QueryEvaluationException, RepositoryException {
+<b class="nc">&nbsp;		Repository repository = state.getRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Evaluating &quot; + queryLn.getName() + &quot; query...&quot;);</b>
+<b class="nc">&nbsp;		int resultCount = 0;</b>
+<b class="nc">&nbsp;		long startTime = System.nanoTime();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection();</b>
+<b class="nc">&nbsp;				GraphQueryResult res = con.prepareGraphQuery(queryLn, queryString).evaluate()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			con.setParserConfig(nonVerifyingParserConfig);</b>
+&nbsp;
+<b class="nc">&nbsp;			writer.startRDF();</b>
+&nbsp;
+<b class="nc">&nbsp;			namespaces.forEach(ns -&gt; writer.handleNamespace(ns.getPrefix(), ns.getName()));</b>
+&nbsp;
+<b class="nc">&nbsp;			while (res.hasNext()) {</b>
+<b class="nc">&nbsp;				writer.handleStatement(res.next());</b>
+<b class="nc">&nbsp;				resultCount++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writer.endRDF();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		long endTime = System.nanoTime();</b>
+<b class="nc">&nbsp;		consoleIO.writeln(resultCount + &quot; results (&quot; + (endTime - startTime) / 1_000_000 + &quot; ms)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a boolean SPARQL query
+&nbsp;	 *
+&nbsp;	 * @param queryLn     query language
+&nbsp;	 * @param queryString query string
+&nbsp;	 * @param writer
+&nbsp;	 * @throws UnsupportedQueryLanguageException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	protected void evaluateBooleanQuery(QueryLanguage queryLn, String queryString, QueryResultWriter writer)
+&nbsp;			throws UnsupportedQueryLanguageException, MalformedQueryException, QueryEvaluationException,
+&nbsp;			RepositoryException {
+<b class="nc">&nbsp;		Repository repository = state.getRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Evaluating &quot; + queryLn.getName() + &quot; query...&quot;);</b>
+<b class="nc">&nbsp;		long startTime = System.nanoTime();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			boolean result = con.prepareBooleanQuery(queryLn, queryString).evaluate();</b>
+&nbsp;
+<b class="nc">&nbsp;			writer.startDocument();</b>
+<b class="nc">&nbsp;			writer.handleBoolean(result);</b>
+<b class="nc">&nbsp;			writer.endQueryResult();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		long endTime = System.nanoTime();</b>
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Query evaluated in &quot; + (endTime - startTime) / 1_000_000 + &quot; ms&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Execute a SPARQL update
+&nbsp;	 *
+&nbsp;	 * @param queryLn     query language
+&nbsp;	 * @param queryString query string
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws UpdateExecutionException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 */
+&nbsp;	protected void executeUpdate(QueryLanguage queryLn, String queryString)
+&nbsp;			throws RepositoryException, UpdateExecutionException, MalformedQueryException {
+<b class="nc">&nbsp;		Repository repository = state.getRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Executing update...&quot;);</b>
+<b class="nc">&nbsp;		long startTime = System.nanoTime();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			con.prepareUpdate(queryLn, queryString).execute();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		long endTime = System.nanoTime();</b>
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Update executed in &quot; + (endTime - startTime) / 1_000_000 + &quot; ms&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

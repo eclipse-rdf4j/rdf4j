@@ -1,0 +1,262 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLRepositoryConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sparql.config</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLRepositoryConfig (org.eclipse.rdf4j.repository.sparql.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLRepositoryConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sparql.config;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Configuration for a SPARQL endpoint.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public class SPARQLRepositoryConfig extends AbstractRepositoryImplConfig {
+&nbsp;
+<b class="nc">&nbsp;	private static final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+&nbsp;	public static final String NAMESPACE = &quot;http://www.openrdf.org/config/repository/sparql#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configuration setting for the SPARQL query endpoint. Required.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final IRI QUERY_ENDPOINT = vf</b>
+<b class="nc">&nbsp;			.createIRI(&quot;http://www.openrdf.org/config/repository/sparql#query-endpoint&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configuration setting for the SPARQL update endpoint. Optional.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final IRI UPDATE_ENDPOINT = vf</b>
+<b class="nc">&nbsp;			.createIRI(&quot;http://www.openrdf.org/config/repository/sparql#update-endpoint&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configuration setting for enabling/disabling direct result pass-through. Optional.
+&nbsp;	 *
+&nbsp;	 * @see SPARQLProtocolSession#isPassThroughEnabled()
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final IRI PASS_THROUGH_ENABLED = vf</b>
+<b class="nc">&nbsp;			.createIRI(&quot;http://www.openrdf.org/config/repository/sparql#pass-through-enabled&quot;);</b>
+&nbsp;
+&nbsp;	private String queryEndpointUrl;
+&nbsp;
+&nbsp;	private String updateEndpointUrl;
+&nbsp;
+&nbsp;	private Boolean passThroughEnabled;
+&nbsp;
+&nbsp;	public SPARQLRepositoryConfig() {
+<b class="nc">&nbsp;		super(SPARQLRepositoryFactory.REPOSITORY_TYPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SPARQLRepositoryConfig(String queryEndpointUrl) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		setQueryEndpointUrl(queryEndpointUrl);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SPARQLRepositoryConfig(String queryEndpointUrl, String updateEndpointUrl) {
+<b class="nc">&nbsp;		this(queryEndpointUrl);</b>
+<b class="nc">&nbsp;		setUpdateEndpointUrl(updateEndpointUrl);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getQueryEndpointUrl() {
+<b class="nc">&nbsp;		return queryEndpointUrl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setQueryEndpointUrl(String url) {
+<b class="nc">&nbsp;		this.queryEndpointUrl = url;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getUpdateEndpointUrl() {
+<b class="nc">&nbsp;		return updateEndpointUrl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setUpdateEndpointUrl(String url) {
+<b class="nc">&nbsp;		this.updateEndpointUrl = url;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void validate() throws RepositoryConfigException {
+<b class="nc">&nbsp;		super.validate();</b>
+<b class="nc">&nbsp;		if (getQueryEndpointUrl() == null) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(&quot;No endpoint URL specified for SPARQL repository&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model m) {
+<b class="nc">&nbsp;		Resource implNode = super.export(m);</b>
+&nbsp;
+<b class="nc">&nbsp;		m.setNamespace(&quot;sparql&quot;, NAMESPACE);</b>
+<b class="nc">&nbsp;		if (getQueryEndpointUrl() != null) {</b>
+<b class="nc">&nbsp;			m.add(implNode, QUERY_ENDPOINT, vf.createIRI(getQueryEndpointUrl()));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getUpdateEndpointUrl() != null) {</b>
+<b class="nc">&nbsp;			m.add(implNode, UPDATE_ENDPOINT, vf.createIRI(getUpdateEndpointUrl()));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getPassThroughEnabled() != null) {</b>
+<b class="nc">&nbsp;			m.add(implNode, PASS_THROUGH_ENABLED, BooleanLiteral.valueOf(getPassThroughEnabled()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return implNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model m, Resource implNode) throws RepositoryConfigException {
+<b class="nc">&nbsp;		super.parse(m, implNode);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Models.objectIRI(m.getStatements(implNode, QUERY_ENDPOINT, null))</b>
+<b class="nc">&nbsp;					.ifPresent(iri -&gt; setQueryEndpointUrl(iri.stringValue()));</b>
+<b class="nc">&nbsp;			Models.objectIRI(m.getStatements(implNode, UPDATE_ENDPOINT, null))</b>
+<b class="nc">&nbsp;					.ifPresent(iri -&gt; setUpdateEndpointUrl(iri.stringValue()));</b>
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, PASS_THROUGH_ENABLED, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; setPassThroughEnabled(lit.booleanValue()));</b>
+<b class="nc">&nbsp;		} catch (ModelException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the passThroughEnabled
+&nbsp;	 */
+&nbsp;	public Boolean getPassThroughEnabled() {
+<b class="nc">&nbsp;		return passThroughEnabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param passThroughEnabled the passThroughEnabled to set
+&nbsp;	 */
+&nbsp;	public void setPassThroughEnabled(Boolean passThroughEnabled) {
+<b class="nc">&nbsp;		this.passThroughEnabled = passThroughEnabled;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

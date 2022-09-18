@@ -1,0 +1,260 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DeactivatedValidationLogger</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: DeactivatedValidationLogger (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DeactivatedValidationLogger</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.StringUtils;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;public class ValidationExecutionLogger {
+&nbsp;
+&nbsp;	private final static Logger logger = LoggerFactory.getLogger(ValidationExecutionLogger.class);
+&nbsp;
+&nbsp;	private final List&lt;LogStatement&gt; list = new ArrayList&lt;&gt;();
+&nbsp;
+&nbsp;	ValidationExecutionLogger() {
+&nbsp;	}
+&nbsp;
+&nbsp;	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
+&nbsp;		LogStatement logStatement = new LogStatement(depth, name, tuple, planNode, id, message);
+&nbsp;		list.add(logStatement);
+&nbsp;	}
+&nbsp;
+&nbsp;	public void flush() {
+&nbsp;		Map&lt;String, List&lt;LogStatement&gt;&gt; map = new HashMap&lt;&gt;();
+&nbsp;
+&nbsp;		list.forEach(s -&gt; {
+&nbsp;			map.computeIfAbsent(s.getId(), (ss) -&gt; new ArrayList&lt;&gt;());
+&nbsp;			map.get(s.getId()).add(s);
+&nbsp;		});
+&nbsp;
+&nbsp;		Set&lt;String&gt; printed = new HashSet&lt;&gt;();
+&nbsp;
+&nbsp;		for (LogStatement logStatement : list) {
+&nbsp;			if (!printed.contains(logStatement.getId())) {
+&nbsp;				printed.add(logStatement.getId());
+&nbsp;				map.get(logStatement.getId()).stream().map(Object::toString).forEachOrdered(logger::info);
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isEnabled() {
+&nbsp;		return true;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static ValidationExecutionLogger getInstance(boolean enabled) {
+&nbsp;		if (enabled) {
+&nbsp;			return new ValidationExecutionLogger();
+&nbsp;		} else {
+&nbsp;			return DeactivatedValidationLogger.getInstance();
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+&nbsp;
+&nbsp;class DeactivatedValidationLogger extends ValidationExecutionLogger {
+&nbsp;
+<b class="nc">&nbsp;	private static final DeactivatedValidationLogger instance = new DeactivatedValidationLogger();</b>
+&nbsp;
+&nbsp;	private DeactivatedValidationLogger() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static ValidationExecutionLogger getInstance() {
+<b class="nc">&nbsp;		return instance;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	void log(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flush() {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isEnabled() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+&nbsp;
+&nbsp;class LogStatement {
+&nbsp;
+&nbsp;	private final int depth;
+&nbsp;	private final String name;
+&nbsp;	private final ValidationTuple tuple;
+&nbsp;	private final PlanNode planNode;
+&nbsp;	private final String id;
+&nbsp;	private final String message;
+&nbsp;
+&nbsp;	LogStatement(int depth, String name, ValidationTuple tuple, PlanNode planNode, String id, String message) {
+&nbsp;		this.depth = depth;
+&nbsp;		this.name = name;
+&nbsp;		this.tuple = tuple;
+&nbsp;		assert tuple != null;
+&nbsp;		this.planNode = planNode;
+&nbsp;		this.id = id;
+&nbsp;		this.message = message;
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getDepth() {
+&nbsp;		return depth;
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getName() {
+&nbsp;		return name;
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple getTuple() {
+&nbsp;		return tuple;
+&nbsp;	}
+&nbsp;
+&nbsp;	public PlanNode getPlanNode() {
+&nbsp;		return planNode;
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getId() {
+&nbsp;		return id;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+&nbsp;
+&nbsp;		return StringUtils.leftPad(id, 14) + &quot;\t&quot;
+&nbsp;				+ leadingSpace(depth) + name
+&nbsp;				+ &quot;:  &quot; + tuple
+&nbsp;				+ &quot; :  &quot; + planNode.toString()
+&nbsp;				+ (message != null ? &quot; :  &quot; + message : &quot;&quot;);
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String leadingSpace(int depth) {
+&nbsp;		StringBuilder builder = new StringBuilder();
+&nbsp;		for (int i = depth; i &gt; 0; i--) {
+&nbsp;			builder.append(&quot;  &quot;);
+&nbsp;		}
+&nbsp;		return builder.toString();
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,917 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SP</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: SP (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SP</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/144)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;/**
+&nbsp; * @version 1.4.0
+&nbsp; */
+<b class="nc">&nbsp;public class SP {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp An RDF Schema to syntactically represent SPARQL queries (including SPARQL UPDATE) as RDF
+&nbsp;	 * triples.
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://spinrdf.org/sp#&quot;;
+&nbsp;
+&nbsp;	public static final String PREFIX = &quot;sp&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Path The base class of SPARQL property path expressions. Paths are used by sp:TriplePath
+&nbsp;	 * triple paths.
+&nbsp;	 */
+&nbsp;	public static final IRI PATH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#SystemClass An &quot;artificial&quot; root class that groups all SP classes. This makes them look
+&nbsp;	 * much less overwhelming in UI tools. Typical end users don&#39;t need to see those classes anyway.
+&nbsp;	 */
+&nbsp;	public static final IRI SYSTEM_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Asc Marker to indicate ascending order.
+&nbsp;	 */
+&nbsp;	public static final IRI ASC_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#OrderByCondition An abstract base class for ascending or descending order conditions.
+&nbsp;	 * Instances of this class (typically bnodes) must have a value for expression to point to the actual values.
+&nbsp;	 */
+&nbsp;	public static final IRI ORDER_BY_CONDITION_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Sum Represents sum aggregations, e.g. SELECT SUM(?varName)...
+&nbsp;	 */
+&nbsp;	public static final IRI SUM_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Aggregation Base class of aggregation types (not part of the SPARQL 1.0 standard but
+&nbsp;	 * supported by ARQ and other engines).
+&nbsp;	 */
+&nbsp;	public static final IRI AGGREGATION_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Union A UNION group.
+&nbsp;	 */
+&nbsp;	public static final IRI UNION_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#ElementGroup Abstract base class of group patterns.
+&nbsp;	 */
+&nbsp;	public static final IRI ELEMENT_GROUP_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#TriplePattern A triple pattern used in the body of a query.
+&nbsp;	 */
+&nbsp;	public static final IRI TRIPLE_PATTERN_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Element An abstract base class for all pattern elements.
+&nbsp;	 */
+&nbsp;	public static final IRI ELEMENT_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Triple A base class for TriplePattern and TripleTemplate. This basically specifies that
+&nbsp;	 * subject, predicate and object must be present.
+&nbsp;	 */
+&nbsp;	public static final IRI TRIPLE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Load A LOAD Update operation. The document to load is specified using sp:document, and the
+&nbsp;	 * (optional) target graph using sp:into.
+&nbsp;	 */
+&nbsp;	public static final IRI LOAD_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Update Abstract base class to group the various SPARQL UPDATE commands.
+&nbsp;	 */
+&nbsp;	public static final IRI UPDATE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#DeleteData An Update operation to delete specific triples. The graph triples are
+&nbsp;	 * represented using sp:data, which points to an rdf:List of sp:Triples or sp:NamedGraphs.
+&nbsp;	 */
+&nbsp;	public static final IRI DELETE_DATA_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Desc Marker to indicate descending order.
+&nbsp;	 */
+&nbsp;	public static final IRI DESC_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#TripleTemplate A prototypical triple used as template in the head of a Construct query. May
+&nbsp;	 * contain variables.
+&nbsp;	 */
+&nbsp;	public static final IRI TRIPLE_TEMPLATE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Max Represents MAX aggregations.
+&nbsp;	 */
+&nbsp;	public static final IRI MAX_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Insert Deprecated - use sp:Modify instead. Represents a INSERT INTO (part of SPARQL UPDATE
+&nbsp;	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+&nbsp;	 * sp:insertPattern. The WHERE clause is represented using sp:where.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI INSERT_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Modify Represents a MODIFY (part of SPARQL UPDATE language). The graph IRIs are stored in
+&nbsp;	 * sp:graphIRI. The template patterns are stored in sp:deletePattern and sp:insertPattern. The WHERE clause is
+&nbsp;	 * represented using sp:where.
+&nbsp;	 */
+&nbsp;	public static final IRI MODIFY_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Insert Deprecated - use sp:Modify instead. Represents a INSERT INTO (part of SPARQL UPDATE
+&nbsp;	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+&nbsp;	 * sp:insertPattern. The WHERE clause is represented using sp:where.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI Insert;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Avg Represents AVG aggregations.
+&nbsp;	 */
+&nbsp;	public static final IRI AVG_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#TriplePath Similar to a TriplePattern, but with a path expression as its predicate. For
+&nbsp;	 * example, this can be used to express transitive sub-class relationships (?subClass rdfs:subClassOf* ?superClass).
+&nbsp;	 */
+&nbsp;	public static final IRI TRIPLE_PATH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Tuple Abstract base class for things that have subject and object.
+&nbsp;	 */
+&nbsp;	public static final IRI TUPLE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Let Deprecated: use sp:Bind instead. A variable assignment (LET (?&lt;varName&gt; :=
+&nbsp;	 * &lt;expression&gt;)). Not part of the SPARQL 1.0 standard, but (for example) ARQ.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LET_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Bind A BIND element.
+&nbsp;	 */
+&nbsp;	public static final IRI BIND_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Let Deprecated: use sp:Bind instead. A variable assignment (LET (?&lt;varName&gt; :=
+&nbsp;	 * &lt;expression&gt;)). Not part of the SPARQL 1.0 standard, but (for example) ARQ.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI Let;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#ElementList A list of Elements. This class is never instantiated directly as SPIN will use
+&nbsp;	 * plain rdf:Lists to store element lists.
+&nbsp;	 */
+&nbsp;	public static final IRI ELEMENT_LIST_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#SubQuery A nested SELECT query inside of an element list. The query is stored in sp:query.
+&nbsp;	 */
+&nbsp;	public static final IRI SUB_QUERY_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Delete Deprecated - use sp:Modify instead. Represents a DELETE FROM (part of SPARQL UPDATE
+&nbsp;	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+&nbsp;	 * sp:deletePattern. The WHERE clause is represented using sp:where.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI DELETE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Delete Deprecated - use sp:Modify instead. Represents a DELETE FROM (part of SPARQL UPDATE
+&nbsp;	 * language). The graph IRIs are stored in sp:graphIRI. The template patterns to delete are stored in
+&nbsp;	 * sp:deletePattern. The WHERE clause is represented using sp:where.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI Delete;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Min Represents MIN aggregations.
+&nbsp;	 */
+&nbsp;	public static final IRI MIN_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Optional An optional element in a query.
+&nbsp;	 */
+&nbsp;	public static final IRI OPTIONAL_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#AltPath An alternative path with the union of sp:path1 and sp:path2.
+&nbsp;	 */
+&nbsp;	public static final IRI ALT_PATH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Count Counts the number of times a variable is used. The variable is stored in the variable
+&nbsp;	 * property. This might be left blank to indicate COUNT(*).
+&nbsp;	 */
+&nbsp;	public static final IRI COUNT_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#ReversePath A path with reversed direction.
+&nbsp;	 */
+&nbsp;	public static final IRI REVERSE_PATH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Construct A CONSTRUCT-type query that can be used to construct new triples from template
+&nbsp;	 * triples (head) that use variable bindings from the match patterns (body).
+&nbsp;	 */
+&nbsp;	public static final IRI CONSTRUCT_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Query Abstract base class of the various types of supported queries. Common to all types of
+&nbsp;	 * queries is that they can have a body (&quot;WHERE clause&quot;).
+&nbsp;	 */
+&nbsp;	public static final IRI QUERY_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Variable A variable mentioned in a Triple or expression. Variables are often blank nodes
+&nbsp;	 * with the variable name stored in ts:name. Variables can also be supplied with a IRI in which case the system will
+&nbsp;	 * attempt to reuse the same variable instance across multiple query definitions.
+&nbsp;	 */
+&nbsp;	public static final IRI VARIABLE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Ask An ASK query that returns true if the condition in the body is met by at least one
+&nbsp;	 * result set.
+&nbsp;	 */
+&nbsp;	public static final IRI ASK_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#ModPath A modified path such as rdfs:subClassOf*.
+&nbsp;	 */
+&nbsp;	public static final IRI MOD_PATH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Create An Update operation that creates a new empty graph with a name specified by
+&nbsp;	 * sp:graphIRI. May have sp:silent set to true.
+&nbsp;	 */
+&nbsp;	public static final IRI CREATE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#NamedGraph A named Graph element such as GRAPH &lt;IRI&gt; {...}.
+&nbsp;	 */
+&nbsp;	public static final IRI NAMED_GRAPH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Command A shared superclass for sp:Query and sp:Update that can be used to specify that the
+&nbsp;	 * range of property can be either one.
+&nbsp;	 */
+&nbsp;	public static final IRI COMMAND_CLASS;
+&nbsp;
+&nbsp;	public static final IRI REVERSE_LINK_PATH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#NotExists A NOT EXISTS element group (ARQ only).
+&nbsp;	 */
+&nbsp;	public static final IRI NOT_EXISTS_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Drop An Update operation that removes a specified graph from the Graph Store. Must specify
+&nbsp;	 * the graph using sp:graphIRI, or sp:default, sp:named or sp:all. May have the SILENT flag, encoded using
+&nbsp;	 * sp:silent.
+&nbsp;	 */
+&nbsp;	public static final IRI DROP_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#InsertData An Update operation to insert specific triples. The graph triples are
+&nbsp;	 * represented using sp:data, which points to an rdf:List of sp:Triples or sp:NamedGraphs.
+&nbsp;	 */
+&nbsp;	public static final IRI INSERT_DATA_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#DeleteWhere An Update operation where the triples matched by the WHERE clause (sp:where)
+&nbsp;	 * will be the triples deleted.
+&nbsp;	 */
+&nbsp;	public static final IRI DELETE_WHERE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Service A SERVICE call that matches a nested sub-pattern against a SPARQL end point
+&nbsp;	 * specified by a IRI.
+&nbsp;	 */
+&nbsp;	public static final IRI SERVICE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Select A SELECT-type query that returns variable bindings as its result.
+&nbsp;	 */
+&nbsp;	public static final IRI SELECT_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Filter A constraint element that evaluates a given expression to true or false.
+&nbsp;	 */
+&nbsp;	public static final IRI FILTER_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Minus A MINUS element group.
+&nbsp;	 */
+&nbsp;	public static final IRI MINUS_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Clear An Update operation that removes all triples from a specified graph. Must specify the
+&nbsp;	 * graph using sp:graphIRI, or sp:default, sp:named or sp:all. May have the SILENT flag, encoded using sp:silent.
+&nbsp;	 */
+&nbsp;	public static final IRI CLEAR_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#Describe A DESCRIBE-type Query.
+&nbsp;	 */
+&nbsp;	public static final IRI DESCRIBE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#SeqPath A sequence of multiple paths.
+&nbsp;	 */
+&nbsp;	public static final IRI SEQ_PATH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#arg5 The fifth argument of a function call. Further arguments are not common in SPARQL,
+&nbsp;	 * therefore no sp:arg6, etc are defined here. However, they can be created if needed.
+&nbsp;	 */
+&nbsp;	public static final IRI ARG5_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#arg Abstract superproperty for the enumerated arg1, arg2 etc.
+&nbsp;	 */
+&nbsp;	public static final IRI ARG_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#path1 The first child path of a property path. Used by sp:AltPath and sp:SeqPath.
+&nbsp;	 */
+&nbsp;	public static final IRI PATH1_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#systemProperty An abstract base proprerty that groups together the SP system properties.
+&nbsp;	 * Users typically don&#39;t need to see them anyway.
+&nbsp;	 */
+&nbsp;	public static final IRI SYSTEM_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#arg1 The first argument of a function call.
+&nbsp;	 */
+&nbsp;	public static final IRI ARG1_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#default Used in DROP and CLEAR.
+&nbsp;	 */
+&nbsp;	public static final IRI DEFAULT_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#object An RDF Node or Variable describing the object of a triple.
+&nbsp;	 */
+&nbsp;	public static final IRI OBJECT_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#graphNameNode The name (IRI or Variable) of a NamedGraph.
+&nbsp;	 */
+&nbsp;	public static final IRI GRAPH_NAME_NODE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#varName The name of a Variable.
+&nbsp;	 */
+&nbsp;	public static final IRI VAR_NAME_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#named Used in DROP and CLEAR.
+&nbsp;	 */
+&nbsp;	public static final IRI NAMED_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#as Points to a Variable used in an AS statement such as COUNT aggregates.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI AS_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#distinct A marker property to indicate that a Select query is of type SELECT DISTINCT.
+&nbsp;	 */
+&nbsp;	public static final IRI DISTINCT_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#path2 The second child path of a property path. Used by sp:AltPath and sp:SeqPath.
+&nbsp;	 */
+&nbsp;	public static final IRI PATH2_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#orderBy Links a query with an ORDER BY clause where the values are rdf:List containing
+&nbsp;	 * OrderByConditions or expressions. While the domain of this property is sp:Query, only Describe and Select queries
+&nbsp;	 * can have values of it.
+&nbsp;	 */
+&nbsp;	public static final IRI ORDER_BY_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#variable The variable of a Bind element.
+&nbsp;	 */
+&nbsp;	public static final IRI VARIABLE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#arg4 The forth argument of a function call.
+&nbsp;	 */
+&nbsp;	public static final IRI ARG4_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI SILENT_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#having Points from a SELECT query to a list of HAVING expressions.
+&nbsp;	 */
+&nbsp;	public static final IRI HAVING_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#query Links a SubQuery resource with the nested Query.
+&nbsp;	 */
+&nbsp;	public static final IRI QUERY_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#groupBy Points from a Query to the list of GROUP BY expressions.
+&nbsp;	 */
+&nbsp;	public static final IRI GROUP_BY_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#graphIRI Points to graph names (IRIs) in various sp:Update operations.
+&nbsp;	 */
+&nbsp;	public static final IRI GRAPH_IRI_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#limit The LIMIT solution modifier of a Query.
+&nbsp;	 */
+&nbsp;	public static final IRI LIMIT_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI USING_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#templates Points to a list of TripleTemplates that form the head of a Construct query.
+&nbsp;	 */
+&nbsp;	public static final IRI TEMPLATES_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#resultNodes Contains the result nodes (IRI resources or Variables) of a Describe query.
+&nbsp;	 */
+&nbsp;	public static final IRI RESULT_NODES_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI USING_NAMED_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI DATA_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#arg3 The third argument of a function call.
+&nbsp;	 */
+&nbsp;	public static final IRI ARG3_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#reduced A property with true to indicate that a Select query has a REDUCED flag.
+&nbsp;	 */
+&nbsp;	public static final IRI REDUCED_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#subPath The child path of a property path expression. This is used by ReversePath and
+&nbsp;	 * ModPath.
+&nbsp;	 */
+&nbsp;	public static final IRI SUB_PATH_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#into The (optional) target of a LOAD Update operation.
+&nbsp;	 */
+&nbsp;	public static final IRI INTO_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI WITH_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#serviceURI Used by sp:Service to specify the IRI of the SPARQL end point to invoke. Must
+&nbsp;	 * point to a IRI node.
+&nbsp;	 */
+&nbsp;	public static final IRI SERVICE_URI_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#document The IRI of the document to load using a LOAD Update operation.
+&nbsp;	 */
+&nbsp;	public static final IRI DOCUMENT_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#where The WHERE clause of a Query.
+&nbsp;	 */
+&nbsp;	public static final IRI WHERE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#resultVariables An rdf:List of variables that are returned by a Select query.
+&nbsp;	 */
+&nbsp;	public static final IRI RESULT_VARIABLES_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#text Can be attached to sp:Queries to store a textual representation of the query. This can
+&nbsp;	 * be useful for tools that do not have a complete SPIN Syntax parser available.
+&nbsp;	 */
+&nbsp;	public static final IRI TEXT_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#path Points from a TriplePath to its path.
+&nbsp;	 */
+&nbsp;	public static final IRI PATH_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI MOD_MAX_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#predicate A resource or Variable describing the predicate of a triple.
+&nbsp;	 */
+&nbsp;	public static final IRI PREDICATE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#elements Points to an ElementList, for example in an Optional element.
+&nbsp;	 */
+&nbsp;	public static final IRI ELEMENTS_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI NODE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#fromNamed Specifies a named RDF Dataset used by a Query (FROM NAMED syntax in SPARQL).
+&nbsp;	 * Values of this property must be IRI resources.
+&nbsp;	 */
+&nbsp;	public static final IRI FROM_NAMED_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#arg2 The second argument of a function call.
+&nbsp;	 */
+&nbsp;	public static final IRI ARG2_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#subject A resource or Variable describing the subject of a triple.
+&nbsp;	 */
+&nbsp;	public static final IRI SUBJECT_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#expression Points to an expression, for example in a Filter or Assignment.
+&nbsp;	 */
+&nbsp;	public static final IRI EXPRESSION_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#deletePattern Points to a list of sp:TripleTemplates and sp:NamedGraphs in a modify
+&nbsp;	 * operation.
+&nbsp;	 */
+&nbsp;	public static final IRI DELETE_PATTERN_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#all Used in DROP and CLEAR.
+&nbsp;	 */
+&nbsp;	public static final IRI ALL_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#offset The OFFSET solution modifier of a Query.
+&nbsp;	 */
+&nbsp;	public static final IRI OFFSET_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#from Specifies an RDF Dataset used by a Query (FROM syntax in SPARQL). Values of this
+&nbsp;	 * property must be IRI resources.
+&nbsp;	 */
+&nbsp;	public static final IRI FROM_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI MOD_MIN_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/sp#insertPattern Points to a list of sp:TripleTemplates or sp:NamedGraphs in a modify command.
+&nbsp;	 */
+&nbsp;	public static final IRI INSERT_PATTERN_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI VALUES_CLASS;
+&nbsp;
+&nbsp;	public static final IRI BINDINGS_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI VAR_NAMES_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI UNDEF;
+&nbsp;
+&nbsp;	public static final IRI GROUP_CONCAT_CLASS;
+&nbsp;
+&nbsp;	public static final IRI SAMPLE_CLASS;
+&nbsp;
+&nbsp;	// &quot;The SPIN RDF Syntax provides standard URIs for the built-in functions
+&nbsp;	// and operators of the SPARQL language.
+&nbsp;	// For example, sp:gt represents the &gt; operator.&quot;
+&nbsp;	public static final IRI AND;
+&nbsp;
+&nbsp;	public static final IRI OR;
+&nbsp;
+&nbsp;	public static final IRI ADD;
+&nbsp;
+&nbsp;	public static final IRI SUB;
+&nbsp;
+&nbsp;	public static final IRI MUL;
+&nbsp;
+&nbsp;	public static final IRI DIVIDE;
+&nbsp;
+&nbsp;	public static final IRI EQ;
+&nbsp;
+&nbsp;	public static final IRI NE;
+&nbsp;
+&nbsp;	public static final IRI LT;
+&nbsp;
+&nbsp;	public static final IRI LE;
+&nbsp;
+&nbsp;	public static final IRI GE;
+&nbsp;
+&nbsp;	public static final IRI GT;
+&nbsp;
+&nbsp;	public static final IRI NOT;
+&nbsp;
+&nbsp;	public static final IRI EXISTS;
+&nbsp;
+&nbsp;	public static final IRI NOT_EXISTS;
+&nbsp;
+&nbsp;	public static final IRI BOUND;
+&nbsp;
+&nbsp;	public static final IRI IF;
+&nbsp;
+&nbsp;	public static final IRI COALESCE;
+&nbsp;
+&nbsp;	public static final IRI IS_IRI;
+&nbsp;
+&nbsp;	public static final IRI IS_URI;
+&nbsp;
+&nbsp;	public static final IRI IS_BLANK;
+&nbsp;
+&nbsp;	public static final IRI IS_LITERAL;
+&nbsp;
+&nbsp;	public static final IRI IS_NUMERIC;
+&nbsp;
+&nbsp;	public static final IRI STR;
+&nbsp;
+&nbsp;	public static final IRI LANG;
+&nbsp;
+&nbsp;	public static final IRI DATATYPE;
+&nbsp;
+&nbsp;	public static final IRI BNODE;
+&nbsp;
+&nbsp;	public static final IRI REGEX;
+&nbsp;
+&nbsp;	public static final IRI IRI;
+&nbsp;
+&nbsp;	public static final IRI URI;
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		PATH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Path&quot;);</b>
+<b class="nc">&nbsp;		SYSTEM_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;SystemClass&quot;);</b>
+<b class="nc">&nbsp;		ASC_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Asc&quot;);</b>
+<b class="nc">&nbsp;		ORDER_BY_CONDITION_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;OrderByCondition&quot;);</b>
+<b class="nc">&nbsp;		SUM_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Sum&quot;);</b>
+<b class="nc">&nbsp;		AGGREGATION_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Aggregation&quot;);</b>
+<b class="nc">&nbsp;		UNION_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Union&quot;);</b>
+<b class="nc">&nbsp;		ELEMENT_GROUP_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;ElementGroup&quot;);</b>
+<b class="nc">&nbsp;		TRIPLE_PATTERN_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;TriplePattern&quot;);</b>
+<b class="nc">&nbsp;		ELEMENT_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Element&quot;);</b>
+<b class="nc">&nbsp;		TRIPLE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Triple&quot;);</b>
+<b class="nc">&nbsp;		LOAD_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Load&quot;);</b>
+<b class="nc">&nbsp;		UPDATE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Update&quot;);</b>
+<b class="nc">&nbsp;		DELETE_DATA_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;DeleteData&quot;);</b>
+<b class="nc">&nbsp;		DESC_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Desc&quot;);</b>
+<b class="nc">&nbsp;		TRIPLE_TEMPLATE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;TripleTemplate&quot;);</b>
+<b class="nc">&nbsp;		MAX_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Max&quot;);</b>
+<b class="nc">&nbsp;		INSERT_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Insert&quot;);</b>
+<b class="nc">&nbsp;		Insert = INSERT_CLASS;</b>
+<b class="nc">&nbsp;		MODIFY_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Modify&quot;);</b>
+<b class="nc">&nbsp;		AVG_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Avg&quot;);</b>
+<b class="nc">&nbsp;		TRIPLE_PATH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;TriplePath&quot;);</b>
+<b class="nc">&nbsp;		TUPLE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Tuple&quot;);</b>
+<b class="nc">&nbsp;		LET_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Let&quot;);</b>
+<b class="nc">&nbsp;		BIND_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Bind&quot;);</b>
+<b class="nc">&nbsp;		Let = LET_CLASS;</b>
+<b class="nc">&nbsp;		ELEMENT_LIST_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;ElementList&quot;);</b>
+<b class="nc">&nbsp;		SUB_QUERY_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;SubQuery&quot;);</b>
+<b class="nc">&nbsp;		DELETE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Delete&quot;);</b>
+<b class="nc">&nbsp;		MIN_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Min&quot;);</b>
+<b class="nc">&nbsp;		OPTIONAL_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Optional&quot;);</b>
+<b class="nc">&nbsp;		Delete = DELETE_CLASS;</b>
+<b class="nc">&nbsp;		ALT_PATH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;AltPath&quot;);</b>
+<b class="nc">&nbsp;		COUNT_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Count&quot;);</b>
+<b class="nc">&nbsp;		REVERSE_PATH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;ReversePath&quot;);</b>
+<b class="nc">&nbsp;		CONSTRUCT_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Construct&quot;);</b>
+<b class="nc">&nbsp;		QUERY_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Query&quot;);</b>
+<b class="nc">&nbsp;		VARIABLE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Variable&quot;);</b>
+<b class="nc">&nbsp;		ASK_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Ask&quot;);</b>
+<b class="nc">&nbsp;		MOD_PATH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;ModPath&quot;);</b>
+<b class="nc">&nbsp;		CREATE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Create&quot;);</b>
+<b class="nc">&nbsp;		NAMED_GRAPH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;NamedGraph&quot;);</b>
+<b class="nc">&nbsp;		COMMAND_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Command&quot;);</b>
+<b class="nc">&nbsp;		REVERSE_LINK_PATH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;ReverseLinkPath&quot;);</b>
+<b class="nc">&nbsp;		NOT_EXISTS_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;NotExists&quot;);</b>
+<b class="nc">&nbsp;		DROP_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Drop&quot;);</b>
+<b class="nc">&nbsp;		INSERT_DATA_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;InsertData&quot;);</b>
+<b class="nc">&nbsp;		DELETE_WHERE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;DeleteWhere&quot;);</b>
+<b class="nc">&nbsp;		SERVICE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Service&quot;);</b>
+<b class="nc">&nbsp;		SELECT_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Select&quot;);</b>
+<b class="nc">&nbsp;		FILTER_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Filter&quot;);</b>
+<b class="nc">&nbsp;		MINUS_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Minus&quot;);</b>
+<b class="nc">&nbsp;		CLEAR_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Clear&quot;);</b>
+<b class="nc">&nbsp;		DESCRIBE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Describe&quot;);</b>
+<b class="nc">&nbsp;		SEQ_PATH_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;SeqPath&quot;);</b>
+<b class="nc">&nbsp;		ARG5_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;arg5&quot;);</b>
+<b class="nc">&nbsp;		ARG_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;arg&quot;);</b>
+<b class="nc">&nbsp;		PATH1_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;path1&quot;);</b>
+<b class="nc">&nbsp;		SYSTEM_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;systemProperty&quot;);</b>
+<b class="nc">&nbsp;		ARG1_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;arg1&quot;);</b>
+<b class="nc">&nbsp;		DEFAULT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;default&quot;);</b>
+<b class="nc">&nbsp;		OBJECT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;object&quot;);</b>
+<b class="nc">&nbsp;		GRAPH_NAME_NODE_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;graphNameNode&quot;);</b>
+<b class="nc">&nbsp;		VAR_NAME_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;varName&quot;);</b>
+<b class="nc">&nbsp;		NAMED_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;named&quot;);</b>
+<b class="nc">&nbsp;		AS_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;as&quot;);</b>
+<b class="nc">&nbsp;		DISTINCT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;distinct&quot;);</b>
+<b class="nc">&nbsp;		PATH2_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;path2&quot;);</b>
+<b class="nc">&nbsp;		ORDER_BY_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;orderBy&quot;);</b>
+<b class="nc">&nbsp;		VARIABLE_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;variable&quot;);</b>
+<b class="nc">&nbsp;		ARG4_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;arg4&quot;);</b>
+<b class="nc">&nbsp;		SILENT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;silent&quot;);</b>
+<b class="nc">&nbsp;		HAVING_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;having&quot;);</b>
+<b class="nc">&nbsp;		QUERY_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;query&quot;);</b>
+<b class="nc">&nbsp;		GROUP_BY_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;groupBy&quot;);</b>
+<b class="nc">&nbsp;		GRAPH_IRI_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;graphIRI&quot;);</b>
+<b class="nc">&nbsp;		LIMIT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;limit&quot;);</b>
+<b class="nc">&nbsp;		USING_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;using&quot;);</b>
+<b class="nc">&nbsp;		TEMPLATES_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;templates&quot;);</b>
+<b class="nc">&nbsp;		RESULT_NODES_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;resultNodes&quot;);</b>
+<b class="nc">&nbsp;		USING_NAMED_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;usingNamed&quot;);</b>
+<b class="nc">&nbsp;		DATA_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;data&quot;);</b>
+<b class="nc">&nbsp;		ARG3_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;arg3&quot;);</b>
+<b class="nc">&nbsp;		REDUCED_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;reduced&quot;);</b>
+<b class="nc">&nbsp;		SUB_PATH_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;subPath&quot;);</b>
+<b class="nc">&nbsp;		INTO_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;into&quot;);</b>
+<b class="nc">&nbsp;		WITH_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;with&quot;);</b>
+<b class="nc">&nbsp;		SERVICE_URI_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;serviceURI&quot;);</b>
+<b class="nc">&nbsp;		DOCUMENT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;document&quot;);</b>
+<b class="nc">&nbsp;		WHERE_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;where&quot;);</b>
+<b class="nc">&nbsp;		RESULT_VARIABLES_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;resultVariables&quot;);</b>
+<b class="nc">&nbsp;		TEXT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;text&quot;);</b>
+<b class="nc">&nbsp;		PATH_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;path&quot;);</b>
+<b class="nc">&nbsp;		MOD_MAX_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;modMax&quot;);</b>
+<b class="nc">&nbsp;		PREDICATE_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;predicate&quot;);</b>
+<b class="nc">&nbsp;		ELEMENTS_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;elements&quot;);</b>
+<b class="nc">&nbsp;		NODE_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;node&quot;);</b>
+<b class="nc">&nbsp;		FROM_NAMED_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;fromNamed&quot;);</b>
+<b class="nc">&nbsp;		ARG2_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;arg2&quot;);</b>
+<b class="nc">&nbsp;		SUBJECT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;subject&quot;);</b>
+<b class="nc">&nbsp;		EXPRESSION_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;expression&quot;);</b>
+<b class="nc">&nbsp;		DELETE_PATTERN_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;deletePattern&quot;);</b>
+<b class="nc">&nbsp;		ALL_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;all&quot;);</b>
+<b class="nc">&nbsp;		OFFSET_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;offset&quot;);</b>
+<b class="nc">&nbsp;		FROM_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;from&quot;);</b>
+<b class="nc">&nbsp;		MOD_MIN_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;modMin&quot;);</b>
+<b class="nc">&nbsp;		INSERT_PATTERN_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;insertPattern&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		VALUES_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Values&quot;);</b>
+<b class="nc">&nbsp;		BINDINGS_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;bindings&quot;);</b>
+<b class="nc">&nbsp;		VAR_NAMES_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;varNames&quot;);</b>
+<b class="nc">&nbsp;		UNDEF = Vocabularies.createIRI(NAMESPACE, &quot;undef&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		GROUP_CONCAT_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;GroupConcat&quot;);</b>
+<b class="nc">&nbsp;		SAMPLE_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;Sample&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		AND = Vocabularies.createIRI(NAMESPACE, &quot;and&quot;);</b>
+<b class="nc">&nbsp;		OR = Vocabularies.createIRI(NAMESPACE, &quot;or&quot;);</b>
+<b class="nc">&nbsp;		ADD = Vocabularies.createIRI(NAMESPACE, &quot;add&quot;);</b>
+<b class="nc">&nbsp;		SUB = Vocabularies.createIRI(NAMESPACE, &quot;sub&quot;);</b>
+<b class="nc">&nbsp;		MUL = Vocabularies.createIRI(NAMESPACE, &quot;mul&quot;);</b>
+<b class="nc">&nbsp;		DIVIDE = Vocabularies.createIRI(NAMESPACE, &quot;divide&quot;);</b>
+<b class="nc">&nbsp;		EQ = Vocabularies.createIRI(NAMESPACE, &quot;eq&quot;);</b>
+<b class="nc">&nbsp;		NE = Vocabularies.createIRI(NAMESPACE, &quot;ne&quot;);</b>
+<b class="nc">&nbsp;		LT = Vocabularies.createIRI(NAMESPACE, &quot;lt&quot;);</b>
+<b class="nc">&nbsp;		LE = Vocabularies.createIRI(NAMESPACE, &quot;le&quot;);</b>
+<b class="nc">&nbsp;		GE = Vocabularies.createIRI(NAMESPACE, &quot;ge&quot;);</b>
+<b class="nc">&nbsp;		GT = Vocabularies.createIRI(NAMESPACE, &quot;gt&quot;);</b>
+<b class="nc">&nbsp;		NOT = Vocabularies.createIRI(NAMESPACE, &quot;not&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		EXISTS = Vocabularies.createIRI(NAMESPACE, &quot;exists&quot;);</b>
+<b class="nc">&nbsp;		NOT_EXISTS = Vocabularies.createIRI(NAMESPACE, &quot;notExists&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		BOUND = Vocabularies.createIRI(NAMESPACE, &quot;bound&quot;);</b>
+<b class="nc">&nbsp;		IF = Vocabularies.createIRI(NAMESPACE, &quot;if&quot;);</b>
+<b class="nc">&nbsp;		COALESCE = Vocabularies.createIRI(NAMESPACE, &quot;coalesce&quot;);</b>
+<b class="nc">&nbsp;		IS_IRI = Vocabularies.createIRI(NAMESPACE, &quot;isIRI&quot;);</b>
+<b class="nc">&nbsp;		IS_URI = Vocabularies.createIRI(NAMESPACE, &quot;isURI&quot;);</b>
+<b class="nc">&nbsp;		IS_BLANK = Vocabularies.createIRI(NAMESPACE, &quot;isBlank&quot;);</b>
+<b class="nc">&nbsp;		IS_LITERAL = Vocabularies.createIRI(NAMESPACE, &quot;isLiteral&quot;);</b>
+<b class="nc">&nbsp;		IS_NUMERIC = Vocabularies.createIRI(NAMESPACE, &quot;isNumeric&quot;);</b>
+<b class="nc">&nbsp;		STR = Vocabularies.createIRI(NAMESPACE, &quot;str&quot;);</b>
+<b class="nc">&nbsp;		LANG = Vocabularies.createIRI(NAMESPACE, &quot;lang&quot;);</b>
+<b class="nc">&nbsp;		DATATYPE = Vocabularies.createIRI(NAMESPACE, &quot;datatype&quot;);</b>
+<b class="nc">&nbsp;		IRI = Vocabularies.createIRI(NAMESPACE, &quot;iri&quot;);</b>
+<b class="nc">&nbsp;		URI = Vocabularies.createIRI(NAMESPACE, &quot;uri&quot;);</b>
+<b class="nc">&nbsp;		BNODE = Vocabularies.createIRI(NAMESPACE, &quot;bnode&quot;);</b>
+<b class="nc">&nbsp;		REGEX = Vocabularies.createIRI(NAMESPACE, &quot;regex&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

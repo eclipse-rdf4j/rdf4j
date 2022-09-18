@@ -1,0 +1,971 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ContextAwareConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.contextaware</a>
+</div>
+
+<h1>Coverage Summary for Class: ContextAwareConnection (org.eclipse.rdf4j.repository.contextaware)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ContextAwareConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/69)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/156)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/208)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ContextAwareConnection$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ContextAwareConnection$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/160)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/216)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.contextaware;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.net.URL;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.repository.util.RDFInserter;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Allows contexts to be specified at the connection level or the method level.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public class ContextAwareConnection extends RepositoryConnectionWrapper {
+&nbsp;
+<b class="nc">&nbsp;	private static final IRI[] ALL_CONTEXTS = new IRI[0];</b>
+&nbsp;
+&nbsp;	private final ContextAwareConnection next;
+&nbsp;
+<b class="nc">&nbsp;	private boolean includeInferred = true;</b>
+&nbsp;
+&nbsp;	private int maxQueryTime;
+&nbsp;
+<b class="nc">&nbsp;	private QueryLanguage ql = QueryLanguage.SPARQL;</b>
+&nbsp;
+&nbsp;	private String baseURI;
+&nbsp;
+<b class="nc">&nbsp;	private IRI[] readContexts = ALL_CONTEXTS;</b>
+&nbsp;
+<b class="nc">&nbsp;	private IRI[] addContexts = ALL_CONTEXTS;</b>
+&nbsp;
+<b class="nc">&nbsp;	private IRI[] removeContexts = ALL_CONTEXTS;</b>
+&nbsp;
+<b class="nc">&nbsp;	private IRI[] archiveContexts = ALL_CONTEXTS;</b>
+&nbsp;
+<b class="nc">&nbsp;	private IRI insertContext = null;</b>
+&nbsp;
+&nbsp;	public ContextAwareConnection(Repository repository) throws RepositoryException {
+<b class="nc">&nbsp;		this(repository, repository.getConnection());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ContextAwareConnection(RepositoryConnection connection) throws RepositoryException {
+<b class="nc">&nbsp;		this(connection.getRepository(), connection);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ContextAwareConnection(Repository repository, RepositoryConnection connection) throws RepositoryException {
+<b class="nc">&nbsp;		super(repository, connection);</b>
+<b class="nc">&nbsp;		ContextAwareConnection next = null;</b>
+<b class="nc">&nbsp;		RepositoryConnection up = connection;</b>
+<b class="nc">&nbsp;		while (up instanceof RepositoryConnectionWrapper) {</b>
+<b class="nc">&nbsp;			if (up instanceof ContextAwareConnection) {</b>
+<b class="nc">&nbsp;				next = (ContextAwareConnection) up;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				up = ((RepositoryConnectionWrapper) up).getDelegate();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		this.next = next;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean isDelegatingRemove() throws RepositoryException {
+<b class="nc">&nbsp;		return getArchiveContexts().length == 0 &amp;&amp; getRemoveContexts().length &lt; 2;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * if false, no inferred statements are considered; if true, inferred statements are considered if available
+&nbsp;	 */
+&nbsp;	public boolean isIncludeInferred() {
+<b class="nc">&nbsp;		return includeInferred;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * if false, no inferred statements are considered; if true, inferred statements are considered if available
+&nbsp;	 */
+&nbsp;	public void setIncludeInferred(boolean includeInferred) {
+<b class="nc">&nbsp;		this.includeInferred = includeInferred;</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setIncludeInferred(includeInferred);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getMaxQueryTime() {
+<b class="nc">&nbsp;		return maxQueryTime;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setMaxQueryTime(int maxQueryTime) {
+<b class="nc">&nbsp;		this.maxQueryTime = maxQueryTime;</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setMaxQueryTime(maxQueryTime);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public QueryLanguage getQueryLanguage() {
+<b class="nc">&nbsp;		return ql;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setQueryLanguage(QueryLanguage ql) {
+<b class="nc">&nbsp;		this.ql = ql;</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setQueryLanguage(ql);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the default baseURI.
+&nbsp;	 */
+&nbsp;	public String getBaseURI() {
+<b class="nc">&nbsp;		return baseURI;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param baseURI The default baseURI to set.
+&nbsp;	 */
+&nbsp;	public void setBaseURI(String baseURI) {
+<b class="nc">&nbsp;		this.baseURI = baseURI;</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setBaseURI(baseURI);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default context(s) to get the data from. Note that this parameter is a vararg and as such is optional. If no
+&nbsp;	 * contexts are supplied the method operates on the entire repository.
+&nbsp;	 */
+&nbsp;	public IRI[] getReadContexts() {
+<b class="nc">&nbsp;		return readContexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default context(s) to get the data from. Note that this parameter is a vararg and as such is optional. If no
+&nbsp;	 * contexts are supplied the method operates on the entire repository.
+&nbsp;	 */
+&nbsp;	public void setReadContexts(IRI... readContexts) {
+<b class="nc">&nbsp;		this.readContexts = readContexts;</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setReadContexts(readContexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The contexts to add the statements to. Note that this parameter is a vararg and as such is optional. If no
+&nbsp;	 * contexts are specified, each statement is added to any context specified in the statement, or if the statement
+&nbsp;	 * contains no context, it is added without a context. If one or more contexts are specified each statement is added
+&nbsp;	 * to these contexts, ignoring any context information in the statement itself.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public IRI[] getAddContexts() {
+<b class="nc">&nbsp;		if (isNilContext(addContexts)) {</b>
+<b class="nc">&nbsp;			return new IRI[] { getInsertContext() };</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return addContexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The contexts to add the statements to. Note that this parameter is a vararg and as such is optional. If no
+&nbsp;	 * contexts are specified, each statement is added to any context specified in the statement, or if the statement
+&nbsp;	 * contains no context, it is added without a context. If one or more contexts are specified each statement is added
+&nbsp;	 * to these contexts, ignoring any context information in the statement itself.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public void setAddContexts(IRI... addContexts) {
+<b class="nc">&nbsp;		this.addContexts = addContexts;</b>
+<b class="nc">&nbsp;		if (isNilContext(addContexts)) {</b>
+<b class="nc">&nbsp;			this.insertContext = null;</b>
+<b class="nc">&nbsp;		} else if (addContexts.length == 1) {</b>
+<b class="nc">&nbsp;			this.insertContext = addContexts[0];</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setAddContexts(addContexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The context(s) to remove the data from. Note that this parameter is a vararg and as such is optional. If no
+&nbsp;	 * contexts are supplied the method operates on the contexts associated with the statement itself, and if no context
+&nbsp;	 * is associated with the statement, on the entire repository.
+&nbsp;	 */
+&nbsp;	public IRI[] getRemoveContexts() {
+<b class="nc">&nbsp;		return removeContexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The context(s) to remove the data from. Note that this parameter is a vararg and as such is optional. If no
+&nbsp;	 * contexts are supplied the method operates on the contexts associated with the statement itself, and if no context
+&nbsp;	 * is associated with the statement, on the entire repository.
+&nbsp;	 */
+&nbsp;	public void setRemoveContexts(IRI... removeContexts) {
+<b class="nc">&nbsp;		this.removeContexts = removeContexts;</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setRemoveContexts(removeContexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Before Statements are removed, they are first copied to these contexts.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public IRI[] getArchiveContexts() {
+<b class="nc">&nbsp;		return archiveContexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Before Statements are removed, they are first copied to these contexts.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public void setArchiveContexts(IRI... archiveContexts) {
+<b class="nc">&nbsp;		this.archiveContexts = archiveContexts;</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setArchiveContexts(archiveContexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default context to add the statements to. For INSERT/add operations Each statement is added to any context
+&nbsp;	 * specified in the statement, or if the statement contains no context, it is added with the context specified here.
+&nbsp;	 */
+&nbsp;	public IRI getInsertContext() {
+<b class="nc">&nbsp;		return insertContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default context to add the statements to. For INSERT/add operations Each statement is added to any context
+&nbsp;	 * specified in the statement, or if the statement contains no context, it is added with the context specified here.
+&nbsp;	 */
+&nbsp;	public void setInsertContext(IRI insertContext) {
+<b class="nc">&nbsp;		this.insertContext = insertContext;</b>
+<b class="nc">&nbsp;		this.addContexts = new IRI[] { insertContext };</b>
+<b class="nc">&nbsp;		if (next != null) {</b>
+<b class="nc">&nbsp;			next.setInsertContext(insertContext);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void add(File file, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(file, getBaseURI(), dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(file, getBaseURI(), dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(file, baseURI, dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(file, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void add(InputStream in, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(in, getBaseURI(), dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(in, getBaseURI(), dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(in, baseURI, dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(in, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Iterable&lt;? extends Statement&gt; statements, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isNilContext(contexts)) {</b>
+<b class="nc">&nbsp;			add(new CloseableIteratorIteration&lt;&gt;(statements.iterator()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(statements, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;E extends Exception&gt; void add(Iteration&lt;? extends Statement, E&gt; statementIter, Resource... contexts)
+&nbsp;			throws RepositoryException, E {
+<b class="nc">&nbsp;		final IRI insertContext = getInsertContext();</b>
+<b class="nc">&nbsp;		if (isNilContext(contexts)) {</b>
+<b class="nc">&nbsp;			super.add(new ConvertingIteration&lt;Statement, Statement, E&gt;(statementIter) {</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				protected Statement convert(Statement st) {
+<b class="nc">&nbsp;					if (st.getContext() == null) {</b>
+<b class="nc">&nbsp;						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),</b>
+&nbsp;								insertContext);
+&nbsp;					}
+<b class="nc">&nbsp;					return st;</b>
+&nbsp;				}
+&nbsp;			});
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(statementIter, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void add(Reader reader, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(reader, getBaseURI(), dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(reader, getBaseURI(), dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(reader, baseURI, dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(reader, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isNilContext(contexts)) {</b>
+<b class="nc">&nbsp;			super.add(subject, predicate, object, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(subject, predicate, object, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; st.getContext() == null) {</b>
+<b class="nc">&nbsp;			super.add(st, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(st, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void add(URL url, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(url, getBaseURI(), dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(url, getBaseURI(), dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (isNilContext(contexts) &amp;&amp; !dataFormat.supportsContexts()) {</b>
+<b class="nc">&nbsp;			super.add(url, baseURI, dataFormat, getAddContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(url, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			super.clear(getRemoveContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.clear(contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void export(RDFHandler handler, Resource... contexts) throws RepositoryException, RDFHandlerException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			super.export(handler, getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.export(handler, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Exports all statements with a specific subject, predicate and/or object from the repository, optionally from the
+&nbsp;	 * specified contexts.
+&nbsp;	 *
+&nbsp;	 * @param subj    The subject, or null if the subject doesn&#39;t matter.
+&nbsp;	 * @param pred    The predicate, or null if the predicate doesn&#39;t matter.
+&nbsp;	 * @param obj     The object, or null if the object doesn&#39;t matter.
+&nbsp;	 * @param handler The handler that will handle the RDF data.
+&nbsp;	 * @throws RDFHandlerException If the handler encounters an unrecoverable error.
+&nbsp;	 * @see #getReadContexts()
+&nbsp;	 * @see #isIncludeInferred()
+&nbsp;	 */
+&nbsp;	public void exportStatements(Resource subj, IRI pred, Value obj, RDFHandler handler, Resource... contexts)
+&nbsp;			throws RepositoryException, RDFHandlerException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			super.exportStatements(subj, pred, obj, isIncludeInferred(), handler, getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.exportStatements(subj, pred, obj, isIncludeInferred(), handler, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+&nbsp;			Resource... contexts) throws RepositoryException, RDFHandlerException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			super.exportStatements(subj, pred, obj, includeInferred, handler, getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.exportStatements(subj, pred, obj, includeInferred, handler, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all statements with a specific subject, predicate and/or object from the repository. The result is
+&nbsp;	 * optionally restricted to the specified set of named contexts.
+&nbsp;	 *
+&nbsp;	 * @param subj A Resource specifying the subject, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred A URI specifying the predicate, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj  A Value specifying the object, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @return The statements matching the specified pattern. The result object is a {@link RepositoryResult} object, a
+&nbsp;	 *         lazy Iterator-like object containing {@link Statement}s and optionally throwing a
+&nbsp;	 *         {@link RepositoryException} when an error when a problem occurs during retrieval.
+&nbsp;	 * @see #getReadContexts()
+&nbsp;	 * @see #isIncludeInferred()
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Statement&gt; getStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			return super.getStatements(subj, pred, obj, isIncludeInferred(), getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.getStatements(subj, pred, obj, isIncludeInferred(), contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Statement&gt; getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
+&nbsp;			Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			return super.getStatements(subj, pred, obj, includeInferred, getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.getStatements(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			return super.hasStatement(subj, pred, obj, includeInferred, getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.hasStatement(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts) &amp;&amp; st.getContext() == null) {</b>
+<b class="nc">&nbsp;			return super.hasStatement(st, includeInferred, getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.hasStatement(st, includeInferred, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the repository contains statements with a specific subject, predicate and/or object, optionally in
+&nbsp;	 * the specified contexts.
+&nbsp;	 *
+&nbsp;	 * @param subj A Resource specifying the subject, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred A URI specifying the predicate, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj  A Value specifying the object, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @return true If a matching statement is in the repository in the specified context, false otherwise.
+&nbsp;	 * @see #getReadContexts()
+&nbsp;	 * @see #isIncludeInferred()
+&nbsp;	 */
+&nbsp;	public boolean hasStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			return super.hasStatement(subj, pred, obj, isIncludeInferred(), getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.hasStatement(subj, pred, obj, isIncludeInferred(), contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the repository contains the specified statement, optionally in the specified contexts.
+&nbsp;	 *
+&nbsp;	 * @param st The statement to look for. Context information in the statement is ignored.
+&nbsp;	 * @return true If the repository contains the specified statement, false otherwise.
+&nbsp;	 * @see #getReadContexts()
+&nbsp;	 * @see #isIncludeInferred()
+&nbsp;	 */
+&nbsp;	public boolean hasStatement(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts) &amp;&amp; st.getContext() == null) {</b>
+<b class="nc">&nbsp;			return super.hasStatement(st, isIncludeInferred(), getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.hasStatement(st, isIncludeInferred(), contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery prepareGraphQuery(String query) throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareGraphQuery(getQueryLanguage(), query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Query prepareQuery(String query) throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareQuery(getQueryLanguage(), query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery prepareTupleQuery(String query) throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareTupleQuery(getQueryLanguage(), query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(String query) throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareUpdate(getQueryLanguage(), query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareGraphQuery(ql, query, getBaseURI());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Query prepareQuery(QueryLanguage ql, String query) throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareQuery(ql, query, getBaseURI());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareTupleQuery(ql, query, getBaseURI());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareBooleanQuery(ql, query, getBaseURI());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(QueryLanguage ql, String query) throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return prepareUpdate(ql, query, getBaseURI());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return initQuery(super.prepareGraphQuery(ql, query, baseURI));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return initQuery(super.prepareQuery(ql, query, baseURI));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return initQuery(super.prepareTupleQuery(ql, query, baseURI));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return initQuery(super.prepareBooleanQuery(ql, query, baseURI));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = getBaseURI();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return initOperation(super.prepareUpdate(ql, update, baseURI));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(Iterable&lt;? extends Statement&gt; statements, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			remove(new CloseableIteratorIteration&lt;&gt;(statements.iterator()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(statements, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the supplied statements from a specific context in this repository, ignoring any context information
+&nbsp;	 * carried by the statements themselves.
+&nbsp;	 *
+&nbsp;	 * @param statementIter The statements to remove. In case the iterator is a {@link CloseableIteration}, it will be
+&nbsp;	 *                      closed before this method returns.
+&nbsp;	 * @throws RepositoryException If the statements could not be removed from the repository, for example because the
+&nbsp;	 *                             repository is not writable.
+&nbsp;	 * @see #getRemoveContexts()
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public &lt;E extends Exception&gt; void remove(Iteration&lt;? extends Statement, E&gt; statementIter, Resource... contexts)
+&nbsp;			throws RepositoryException, E {
+<b class="nc">&nbsp;		final IRI[] removeContexts = getRemoveContexts();</b>
+<b class="nc">&nbsp;		if (isAllContext(contexts) &amp;&amp; removeContexts.length == 1) {</b>
+<b class="nc">&nbsp;			super.remove(new ConvertingIteration&lt;Statement, Statement, E&gt;(statementIter) {</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				protected Statement convert(Statement st) {
+<b class="nc">&nbsp;					if (st.getContext() == null) {</b>
+<b class="nc">&nbsp;						return getValueFactory().createStatement(st.getSubject(), st.getPredicate(), st.getObject(),</b>
+&nbsp;								removeContexts[0]);
+&nbsp;					}
+<b class="nc">&nbsp;					return st;</b>
+&nbsp;				}
+&nbsp;			});
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(statementIter, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the statement with the specified subject, predicate and object from the repository, optionally restricted
+&nbsp;	 * to the specified contexts.
+&nbsp;	 *
+&nbsp;	 * @param subject   The statement&#39;s subject.
+&nbsp;	 * @param predicate The statement&#39;s predicate.
+&nbsp;	 * @param object    The statement&#39;s object.
+&nbsp;	 * @throws RepositoryException If the statement could not be removed from the repository, for example because the
+&nbsp;	 *                             repository is not writable.
+&nbsp;	 * @see #getRemoveContexts()
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			super.remove(subject, predicate, object, getRemoveContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(subject, predicate, object, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the supplied statement from the specified contexts in the repository.
+&nbsp;	 *
+&nbsp;	 * @param st The statement to remove.
+&nbsp;	 * @throws RepositoryException If the statement could not be removed from the repository, for example because the
+&nbsp;	 *                             repository is not writable.
+&nbsp;	 * @see #getRemoveContexts()
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void remove(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts) &amp;&amp; st.getContext() == null) {</b>
+<b class="nc">&nbsp;			super.remove(st, getRemoveContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(st, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the number of (explicit) statements that are in the specified contexts in this repository.
+&nbsp;	 *
+&nbsp;	 * @return The number of explicit statements from the specified contexts in this repository.
+&nbsp;	 * @see #getReadContexts()
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public long size(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			return super.size(getReadContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.size(contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		IRI[] archiveContexts = getArchiveContexts();</b>
+<b class="nc">&nbsp;		if (archiveContexts.length &gt; 0) {</b>
+<b class="nc">&nbsp;			RDFHandler handler = new RDFInserter(getDelegate());</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				getDelegate().exportStatements(subject, predicate, object, true, handler, archiveContexts);</b>
+<b class="nc">&nbsp;			} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				if (e.getCause() instanceof RepositoryException) {</b>
+<b class="nc">&nbsp;					throw (RepositoryException) e.getCause();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throw new AssertionError(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (isAllContext(contexts)) {</b>
+<b class="nc">&nbsp;			getDelegate().remove(subject, predicate, object, getRemoveContexts());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			getDelegate().remove(subject, predicate, object, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;O extends Query&gt; O initQuery(O query) {
+<b class="nc">&nbsp;		initOperation(query);</b>
+<b class="nc">&nbsp;		query.setMaxQueryTime(getMaxQueryTime());</b>
+<b class="nc">&nbsp;		return query;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;O extends Operation&gt; O initOperation(O op) {
+<b class="nc">&nbsp;		IRI[] readContexts = getReadContexts();</b>
+<b class="nc">&nbsp;		IRI[] removeContexts = getRemoveContexts();</b>
+<b class="nc">&nbsp;		IRI insertContext = getInsertContext();</b>
+<b class="nc">&nbsp;		if (readContexts.length &gt; 0 || removeContexts.length &gt; 0 || insertContext != null) {</b>
+<b class="nc">&nbsp;			SimpleDataset ds = new SimpleDataset();</b>
+<b class="nc">&nbsp;			for (IRI graph : readContexts) {</b>
+<b class="nc">&nbsp;				ds.addDefaultGraph(graph);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			for (IRI graph : removeContexts) {</b>
+<b class="nc">&nbsp;				ds.addDefaultRemoveGraph(graph);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			ds.setDefaultInsertGraph(insertContext);</b>
+<b class="nc">&nbsp;			op.setDataset(ds);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		op.setIncludeInferred(isIncludeInferred());</b>
+&nbsp;
+<b class="nc">&nbsp;		return op;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isNilContext(Resource[] contexts) {
+<b class="nc">&nbsp;		return isAllContext(contexts) || contexts.length == 1 &amp;&amp; contexts[0] == null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isAllContext(Resource[] contexts) {
+<b class="nc">&nbsp;		return contexts == null || contexts.length == 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

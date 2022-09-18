@@ -1,0 +1,254 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SolrSearchDocument</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.solr</a>
+</div>
+
+<h1>Coverage Summary for Class: SolrSearchDocument (org.eclipse.rdf4j.sail.solr)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SolrSearchDocument</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.solr;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.solr.common.SolrDocument;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchDocument;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchFields;
+&nbsp;
+&nbsp;public class SolrSearchDocument implements SearchDocument {
+&nbsp;
+&nbsp;	private final SolrDocument doc;
+&nbsp;
+&nbsp;	public SolrSearchDocument() {
+<b class="nc">&nbsp;		this(new SolrDocument());</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public SolrSearchDocument(SolrDocument doc) {</b>
+<b class="nc">&nbsp;		this.doc = doc;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SolrSearchDocument(String id, String resourceId, String context) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		doc.put(SearchFields.ID_FIELD_NAME, id);</b>
+<b class="nc">&nbsp;		doc.put(SearchFields.URI_FIELD_NAME, resourceId);</b>
+<b class="nc">&nbsp;		if (context != null) {</b>
+<b class="nc">&nbsp;			doc.put(SearchFields.CONTEXT_FIELD_NAME, context);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public SolrDocument getDocument() {
+<b class="nc">&nbsp;		return doc;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return (String) doc.get(SearchFields.ID_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getResource() {
+<b class="nc">&nbsp;		return (String) doc.get(SearchFields.URI_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getContext() {
+<b class="nc">&nbsp;		return (String) doc.get(SearchFields.CONTEXT_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getPropertyNames() {
+<b class="nc">&nbsp;		return SolrIndex.getPropertyFields(doc.keySet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addProperty(String name) {
+&nbsp;		// don&#39;t need to do anything
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addProperty(String name, String text) {
+<b class="nc">&nbsp;		addField(name, text, doc);</b>
+<b class="nc">&nbsp;		addField(SearchFields.TEXT_FIELD_NAME, text, doc);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addGeoProperty(String name, String text) {
+<b class="nc">&nbsp;		addField(name, text, doc);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasProperty(String name, String value) {
+<b class="nc">&nbsp;		List&lt;String&gt; fieldValues = asStringList(doc.get(name));</b>
+<b class="nc">&nbsp;		if (fieldValues != null) {</b>
+<b class="nc">&nbsp;			for (String fieldValue : fieldValues) {</b>
+<b class="nc">&nbsp;				if (value.equals(fieldValue)) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getProperty(String name) {
+<b class="nc">&nbsp;		return asStringList(doc.get(name));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void addField(String name, String value, Map&lt;String, Object&gt; document) {
+<b class="nc">&nbsp;		Object oldValue = document.get(name);</b>
+&nbsp;		Object newValue;
+<b class="nc">&nbsp;		if (oldValue != null) {</b>
+<b class="nc">&nbsp;			List&lt;String&gt; newList = makeModifiable(asStringList(oldValue));</b>
+<b class="nc">&nbsp;			newList.add(value);</b>
+<b class="nc">&nbsp;			newValue = newList;</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			newValue = value;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		document.put(name, newValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static List&lt;String&gt; makeModifiable(List&lt;String&gt; l) {
+&nbsp;		List&lt;String&gt; modList;
+<b class="nc">&nbsp;		if (!(l instanceof ArrayList&lt;?&gt;)) {</b>
+<b class="nc">&nbsp;			modList = new ArrayList&lt;&gt;(l.size() + 1);</b>
+<b class="nc">&nbsp;			modList.addAll(l);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			modList = l;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return modList;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	private static List&lt;String&gt; asStringList(Object value) {
+&nbsp;		List&lt;String&gt; l;
+<b class="nc">&nbsp;		if (value == null) {</b>
+<b class="nc">&nbsp;			l = null;</b>
+<b class="nc">&nbsp;		} else if (value instanceof List&lt;?&gt;) {</b>
+<b class="nc">&nbsp;			l = (List&lt;String&gt;) value;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			l = Collections.singletonList((String) value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return l;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

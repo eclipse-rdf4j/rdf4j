@@ -1,0 +1,192 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ElasticsearchSpatialSupport</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.elasticsearch</a>
+</div>
+
+<h1>Coverage Summary for Class: ElasticsearchSpatialSupport (org.eclipse.rdf4j.sail.elasticsearch)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ElasticsearchSpatialSupport</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ElasticsearchSpatialSupport$DefaultElasticsearchSpatialSupport</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.elasticsearch;
+&nbsp;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.elasticsearch.common.geo.builders.ShapeBuilder;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;
+&nbsp;/**
+&nbsp; * This class will try to load a subclass of itself called
+&nbsp; * &quot;org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer&quot;. This is not provided, and is primarily
+&nbsp; * intended as a way to inject JTS support. If this fails a fall-back is used that doesn&#39;t support any shapes.
+&nbsp; */
+<b class="nc">&nbsp;abstract class ElasticsearchSpatialSupport {</b>
+&nbsp;
+&nbsp;	private static final ElasticsearchSpatialSupport support;
+&nbsp;
+&nbsp;	static {
+&nbsp;		ElasticsearchSpatialSupport spatialSupport;
+&nbsp;		try {
+<b class="nc">&nbsp;			Class&lt;?&gt; cls = Class.forName(&quot;org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchSpatialSupportInitializer&quot;,</b>
+<b class="nc">&nbsp;					true, Thread.currentThread().getContextClassLoader());</b>
+<b class="nc">&nbsp;			spatialSupport = (ElasticsearchSpatialSupport) cls.newInstance();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			spatialSupport = new DefaultElasticsearchSpatialSupport();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		support = spatialSupport;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static ElasticsearchSpatialSupport getSpatialSupport() {
+<b class="nc">&nbsp;		return support;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract ShapeBuilder toShapeBuilder(Shape s);
+&nbsp;
+&nbsp;	protected abstract Map&lt;String, Object&gt; toGeoJSON(Shape s);
+&nbsp;
+<b class="nc">&nbsp;	private static final class DefaultElasticsearchSpatialSupport extends ElasticsearchSpatialSupport {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected ShapeBuilder toShapeBuilder(Shape s) {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(</b>
+&nbsp;					&quot;This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: &quot;
+<b class="nc">&nbsp;							+ s.getClass().getName());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected Map&lt;String, Object&gt; toGeoJSON(Shape s) {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(</b>
+&nbsp;					&quot;This shape is not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS: &quot;
+<b class="nc">&nbsp;							+ s.getClass().getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

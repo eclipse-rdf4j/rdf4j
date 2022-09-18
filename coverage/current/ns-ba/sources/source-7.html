@@ -1,0 +1,231 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ElasticsearchQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.elasticsearch</a>
+</div>
+
+<h1>Coverage Summary for Class: ElasticsearchQuery (org.eclipse.rdf4j.sail.elasticsearch)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ElasticsearchQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ElasticsearchQuery$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.elasticsearch;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.DocumentScore;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchFields;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchQuery;
+&nbsp;import org.elasticsearch.action.search.SearchRequestBuilder;
+&nbsp;import org.elasticsearch.index.query.QueryBuilder;
+&nbsp;import org.elasticsearch.search.SearchHit;
+&nbsp;import org.elasticsearch.search.SearchHits;
+&nbsp;import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
+&nbsp;
+&nbsp;import com.google.common.base.Function;
+&nbsp;import com.google.common.collect.Iterables;
+&nbsp;
+&nbsp;/**
+&nbsp; * To be removed, no longer used.
+&nbsp; */
+&nbsp;@Deprecated
+&nbsp;public class ElasticsearchQuery implements SearchQuery {
+&nbsp;
+&nbsp;	private final SearchRequestBuilder request;
+&nbsp;
+&nbsp;	private final QueryBuilder qb;
+&nbsp;
+&nbsp;	private final ElasticsearchIndex index;
+&nbsp;
+<b class="nc">&nbsp;	public ElasticsearchQuery(SearchRequestBuilder request, QueryBuilder qb, ElasticsearchIndex index) {</b>
+<b class="nc">&nbsp;		this.request = request;</b>
+<b class="nc">&nbsp;		this.qb = qb;</b>
+<b class="nc">&nbsp;		this.index = index;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterable&lt;? extends DocumentScore&gt; query(Resource resource) throws IOException {
+&nbsp;		SearchHits hits;
+<b class="nc">&nbsp;		if (resource != null) {</b>
+<b class="nc">&nbsp;			hits = index.search(resource, request, qb);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			hits = index.search(request, qb);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Iterables.transform(hits, new Function&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public DocumentScore apply(SearchHit hit) {
+<b class="nc">&nbsp;				return new ElasticsearchDocumentScore(hit, null);</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Highlights the given field or all fields if null.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void highlight(IRI property) {
+<b class="nc">&nbsp;		String field = (property != null)</b>
+<b class="nc">&nbsp;				? ElasticsearchIndex.toPropertyFieldName(SearchFields.getPropertyField(property))</b>
+<b class="nc">&nbsp;				: ElasticsearchIndex.ALL_PROPERTY_FIELDS;</b>
+<b class="nc">&nbsp;		HighlightBuilder hb = new HighlightBuilder();</b>
+<b class="nc">&nbsp;		hb.field(field);</b>
+<b class="nc">&nbsp;		hb.preTags(SearchFields.HIGHLIGHTER_PRE_TAG);</b>
+<b class="nc">&nbsp;		hb.postTags(SearchFields.HIGHLIGHTER_POST_TAG);</b>
+&nbsp;		// Elastic Search doesn&#39;t really have the same support for fragments as Lucene.
+&nbsp;		// So, we have to get back the whole highlighted value (comma-separated if it is a list)
+&nbsp;		// and then post-process it into fragments ourselves.
+<b class="nc">&nbsp;		hb.numOfFragments(0);</b>
+<b class="nc">&nbsp;		request.highlighter(hb);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

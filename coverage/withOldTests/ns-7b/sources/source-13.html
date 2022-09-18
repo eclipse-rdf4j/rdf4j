@@ -1,0 +1,386 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > WildcardProjectionProcessor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: WildcardProjectionProcessor (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">WildcardProjectionProcessor</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (2/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    88.9%
+  </span>
+  <span class="absValue">
+    (16/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.7%
+  </span>
+  <span class="absValue">
+    (36/43)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">WildcardProjectionProcessor$QueryVariableCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (7/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (4/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    78.3%
+  </span>
+  <span class="absValue">
+    (18/23)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">WildcardProjectionProcessor$SelectClauseCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    92.3%
+  </span>
+  <span class="absValue">
+    (12/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    76.9%
+  </span>
+  <span class="absValue">
+    (20/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.1%
+  </span>
+  <span class="absValue">
+    (59/71)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelect;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelectQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTWhereClause;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilderTreeConstants;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Processes &#39;wildcard&#39; projections, making them explicit by adding the appropriate variable nodes to them.
+&nbsp; *
+&nbsp; * @author arjohn
+&nbsp; * @author Jeen Broekstra
+&nbsp; *
+&nbsp; * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+&nbsp; *             warning from one release to the next.
+&nbsp; */
+&nbsp;@Deprecated
+<b class="nc">&nbsp;public class WildcardProjectionProcessor extends AbstractASTVisitor {</b>
+&nbsp;
+&nbsp;	public static void process(ASTOperationContainer container) throws MalformedQueryException {
+&nbsp;
+<b class="fc">&nbsp;		ASTOperation operation = container.getOperation();</b>
+&nbsp;
+&nbsp;		// scan for nested SELECT clauses in the operation&#39;s WHERE clause
+<b class="pc">&nbsp;		if (operation != null) {</b>
+<b class="fc">&nbsp;			ASTWhereClause whereClause = operation.getWhereClause();</b>
+&nbsp;
+&nbsp;			// DESCRIBE queries and certain update operations can be without a WHERE clause
+<b class="fc">&nbsp;			if (whereClause != null) {</b>
+<b class="fc">&nbsp;				SelectClauseCollector collector = new SelectClauseCollector();</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					whereClause.jjtAccept(collector, null);</b>
+&nbsp;
+<b class="fc">&nbsp;					Set&lt;ASTSelect&gt; selectClauses = collector.getSelectClauses();</b>
+&nbsp;
+<b class="fc">&nbsp;					for (ASTSelect selectClause : selectClauses) {</b>
+<b class="fc">&nbsp;						if (selectClause.isWildcard()) {</b>
+<b class="fc">&nbsp;							ASTSelectQuery q = (ASTSelectQuery) selectClause.jjtGetParent();</b>
+&nbsp;
+<b class="fc">&nbsp;							addQueryVars(q.getWhereClause(), selectClause);</b>
+<b class="fc">&nbsp;							selectClause.setWildcard(false);</b>
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;				} catch (VisitorException e) {</b>
+<b class="nc">&nbsp;					throw new MalformedQueryException(e);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (operation instanceof ASTSelectQuery) {</b>
+&nbsp;			// check for wildcard in upper SELECT query
+&nbsp;
+<b class="fc">&nbsp;			ASTSelectQuery selectQuery = (ASTSelectQuery) operation;</b>
+<b class="fc">&nbsp;			ASTSelect selectClause = selectQuery.getSelect();</b>
+<b class="fc">&nbsp;			if (selectClause.isWildcard()) {</b>
+<b class="fc">&nbsp;				addQueryVars(selectQuery.getWhereClause(), selectClause);</b>
+<b class="fc">&nbsp;				selectClause.setWildcard(false);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		} else if (operation instanceof ASTDescribeQuery) {</b>
+&nbsp;			// check for possible wildcard in DESCRIBE query
+<b class="fc">&nbsp;			ASTDescribeQuery describeQuery = (ASTDescribeQuery) operation;</b>
+<b class="fc">&nbsp;			ASTDescribe describeClause = describeQuery.getDescribe();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (describeClause.isWildcard()) {</b>
+<b class="nc">&nbsp;				addQueryVars(describeQuery.getWhereClause(), describeClause);</b>
+<b class="nc">&nbsp;				describeClause.setWildcard(false);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void addQueryVars(ASTWhereClause queryBody, Node wildcardNode) throws MalformedQueryException {
+<b class="fc">&nbsp;		QueryVariableCollector visitor = new QueryVariableCollector();</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;			// Collect variable names from query
+<b class="fc">&nbsp;			queryBody.jjtAccept(visitor, null);</b>
+&nbsp;
+&nbsp;			// Adds ASTVar nodes to the ASTProjectionElem nodes and to the parent
+<b class="fc">&nbsp;			for (String varName : visitor.getVariableNames()) {</b>
+<b class="fc">&nbsp;				ASTVar varNode = new ASTVar(SyntaxTreeBuilderTreeConstants.JJTVAR);</b>
+<b class="fc">&nbsp;				ASTProjectionElem projectionElemNode = new ASTProjectionElem(</b>
+&nbsp;						SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
+&nbsp;
+<b class="fc">&nbsp;				varNode.setName(varName);</b>
+<b class="fc">&nbsp;				projectionElemNode.jjtAppendChild(varNode);</b>
+<b class="fc">&nbsp;				varNode.jjtSetParent(projectionElemNode);</b>
+&nbsp;
+<b class="fc">&nbsp;				wildcardNode.jjtAppendChild(projectionElemNode);</b>
+<b class="fc">&nbsp;				projectionElemNode.jjtSetParent(wildcardNode);</b>
+&nbsp;
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (VisitorException e) {</b>
+<b class="nc">&nbsp;			throw new MalformedQueryException(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------------------------*
+&nbsp;	 * Inner class QueryVariableCollector *
+&nbsp;	 *------------------------------------*/
+&nbsp;
+<b class="fc">&nbsp;	private static class QueryVariableCollector extends AbstractASTVisitor {</b>
+&nbsp;
+<b class="fc">&nbsp;		private final Set&lt;String&gt; variableNames = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		public Set&lt;String&gt; getVariableNames() {
+<b class="fc">&nbsp;			return variableNames;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTSelectQuery node, Object data) throws VisitorException {
+&nbsp;			// stop visitor from processing body of sub-select, only add variables
+&nbsp;			// from the projection
+<b class="fc">&nbsp;			return visit(node.getSelect(), data);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTProjectionElem node, Object data) throws VisitorException {
+&nbsp;			// only include the actual alias from a projection element in a
+&nbsp;			// subselect, not any variables used as
+&nbsp;			// input to a function
+<b class="fc">&nbsp;			String alias = node.getAlias();</b>
+<b class="pc">&nbsp;			if (alias != null) {</b>
+<b class="nc">&nbsp;				variableNames.add(alias);</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return super.visit(node, data);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTBind node, Object data) throws VisitorException {
+&nbsp;			// only include the actual alias from a BIND
+&nbsp;			// exception: in case of ASTTRipleRef include its vars
+<b class="fc">&nbsp;			Node first = node.jjtGetChild(0);</b>
+<b class="pc">&nbsp;			if (first instanceof ASTTripleRef) {</b>
+<b class="nc">&nbsp;				ASTTripleRef triple = (ASTTripleRef) first;</b>
+<b class="nc">&nbsp;				super.visit(triple, data);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			Node aliasNode = node.jjtGetChild(1);</b>
+<b class="fc">&nbsp;			String alias = ((ASTVar) aliasNode).getName();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (alias != null) {</b>
+<b class="fc">&nbsp;				variableNames.add(alias);</b>
+<b class="fc">&nbsp;				return null;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return super.visit(node, data);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTConstraint node, Object data) throws VisitorException {
+&nbsp;			// ignore variables in filter expressions
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTVar node, Object data) throws VisitorException {
+<b class="pc">&nbsp;			if (!node.isAnonymous()) {</b>
+<b class="fc">&nbsp;				variableNames.add(node.getName());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return super.visit(node, data);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------------------------*
+&nbsp;	 * Inner class SelectClauseCollector  *
+&nbsp;	 *------------------------------------*/
+&nbsp;
+<b class="fc">&nbsp;	private static class SelectClauseCollector extends AbstractASTVisitor {</b>
+&nbsp;
+<b class="fc">&nbsp;		private final Set&lt;ASTSelect&gt; selectClauses = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		public Set&lt;ASTSelect&gt; getSelectClauses() {
+<b class="fc">&nbsp;			return selectClauses;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTSelect node, Object data) throws VisitorException {
+<b class="fc">&nbsp;			selectClauses.add(node);</b>
+<b class="fc">&nbsp;			return super.visit(node, data);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

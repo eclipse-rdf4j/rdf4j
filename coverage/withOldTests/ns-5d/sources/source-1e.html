@@ -1,0 +1,121 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Dataset</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query</a>
+</div>
+
+<h1>Coverage Summary for Class: Dataset (org.eclipse.rdf4j.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">Dataset</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;/**
+&nbsp; * Represents a dataset against which operations can be evaluated. A dataset consists of a default graph for read and
+&nbsp; * using operations, which is the &lt;a href=&quot;http://www.w3.org/TR/rdf-mt/#defmerge&quot;&gt;RDF merge&lt;/a&gt; of one or more graphs, a
+&nbsp; * set of named graphs, and a single update graph for INSERT and DELETE. See
+&nbsp; * &lt;a href=&quot;http://www.w3.org/TR/rdf-sparql-query/#rdfDataset&quot;&gt;SPARQL Query Language for RDF&lt;/a&gt; for more info.
+&nbsp; *
+&nbsp; * @author Simon Schenk
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public interface Dataset {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the default remove graph URIs of this dataset. An empty set indicates the the store&#39;s default behaviour
+&nbsp;	 * should be used, if not otherwise indicated in the operation.
+&nbsp;	 */
+&nbsp;	Set&lt;IRI&gt; getDefaultRemoveGraphs();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the default insert graph URI of this dataset. An null value indicates that the store&#39;s default behaviour
+&nbsp;	 * should be used, if not otherwise indicated in the operation.
+&nbsp;	 */
+&nbsp;	IRI getDefaultInsertGraph();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the default graph URIs of this dataset. An empty default graph set and a non-empty named graph set indicates
+&nbsp;	 * that the default graph is an empty graph. However, if both the default graph set and the named graph set are
+&nbsp;	 * empty, that indicates that the store&#39;s default behaviour should be used.
+&nbsp;	 */
+&nbsp;	Set&lt;IRI&gt; getDefaultGraphs();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the named graph URIs of this dataset. An empty named graph set and a non-empty default graph set indicates
+&nbsp;	 * that there are no named graphs. However, if both the default graph set and the named graph set are empty, that
+&nbsp;	 * indicates that the store&#39;s default behaviour should be used.
+&nbsp;	 */
+&nbsp;	Set&lt;IRI&gt; getNamedGraphs();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

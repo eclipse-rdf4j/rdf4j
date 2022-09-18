@@ -1,0 +1,1296 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BTree</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.btree</a>
+</div>
+
+<h1>Coverage Summary for Class: BTree (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BTree</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/152)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/371)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">BTree$InsertResult</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">BTree$PathSegment</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/156)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/385)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.btree;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.PrintStream;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.nio.channels.FileChannel;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.List;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;import java.util.concurrent.locks.ReentrantReadWriteLock;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+&nbsp;import org.eclipse.rdf4j.common.io.NioFile;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Implementation of an on-disk B-Tree using the &lt;var&gt;java.nio&lt;/var&gt; classes that are available in JDK 1.4 and newer.
+&nbsp; * Documentation about B-Trees can be found on-line at the following URLs:
+&nbsp; * &lt;ul&gt;
+&nbsp; * &lt;li&gt;http://cis.stvincent.edu/swd/btree/btree.html&lt;/li&gt;,
+&nbsp; * &lt;li&gt;http://bluerwhite.org/btree/&lt;/li&gt;, and
+&nbsp; * &lt;li&gt;http://semaphorecorp.com/btp/algo.html&lt;/li&gt;.
+&nbsp; * &lt;/ul&gt;
+&nbsp; * The first reference was used to implement this class.
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Enrico Minack
+&nbsp; */
+<b class="nc">&nbsp;public class BTree implements Closeable {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Magic number &quot;BTree File&quot; to detect whether the file is actually a BTree file. The first three bytes of the file
+&nbsp;	 * should be equal to this magic number. Note: this header has only been introduced in Sesame 2.3. The old &quot;header&quot;
+&nbsp;	 * can be recognized using {@link BTree#OLD_MAGIC_NUMBER}.
+&nbsp;	 */
+<b class="nc">&nbsp;	static final byte[] MAGIC_NUMBER = new byte[] { &#39;b&#39;, &#39;t&#39;, &#39;f&#39; };</b>
+&nbsp;
+<b class="nc">&nbsp;	static final byte[] OLD_MAGIC_NUMBER = new byte[] { 0, 0, 0 };</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The file format version number, stored as the fourth byte in BTree files.
+&nbsp;	 */
+&nbsp;	static final byte FILE_FORMAT_VERSION = 1;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The length of the header field.
+&nbsp;	 */
+&nbsp;	static final int HEADER_LENGTH = 16;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(BTree.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The BTree file, accessed using java.nio-channels.
+&nbsp;	 */
+&nbsp;	final NioFile nioFile;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether file writes should be forced to disk using {@link FileChannel#force(boolean)}.
+&nbsp;	 */
+&nbsp;	private final boolean forceSync;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Object used to determine whether one value is lower, equal or greater than another value. This determines the
+&nbsp;	 * order of values in the BTree.
+&nbsp;	 */
+&nbsp;	final RecordComparator comparator;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A read/write lock that is used to prevent changes to the BTree while readers are active in order to prevent
+&nbsp;	 * concurrency issues.
+&nbsp;	 */
+<b class="nc">&nbsp;	final ReentrantReadWriteLock btreeLock = new ReentrantReadWriteLock();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final ConcurrentNodeCache nodeCache = new ConcurrentNodeCache(id -&gt; {</b>
+<b class="nc">&nbsp;		Node node = new Node(id, this);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			node.read();</b>
+<b class="nc">&nbsp;		} catch (IOException exc) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Error reading B-tree node&quot;, exc);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return node;</b>
+&nbsp;	});
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Info about allocated and unused nodes in the file
+&nbsp;	 */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * List of allocated nodes.
+&nbsp;	 */
+&nbsp;	private final AllocatedNodesList allocatedNodesList;
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * BTree parameters
+&nbsp;	 */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The block size to use for calculating BTree node size. For optimal performance, the specified block size should
+&nbsp;	 * be equal to the file system&#39;s block size.
+&nbsp;	 */
+&nbsp;	final int blockSize;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The size of the values (byte arrays) in this BTree.
+&nbsp;	 */
+&nbsp;	final int valueSize;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The size of a slot storing a node ID and a value. Value derived from valueSize.
+&nbsp;	 */
+&nbsp;	final int slotSize;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The maximum number of outgoing branches for a node. Value derived from blockSize and slotSize.
+&nbsp;	 */
+&nbsp;	final int branchFactor;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The minimum number of values for a node (except for the root). Value derived from branchFactor.
+&nbsp;	 */
+&nbsp;	final int minValueCount;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The size of a node in bytes. Value derived from branchFactor and slotSize.
+&nbsp;	 */
+&nbsp;	final int nodeSize;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The ID of the root node, &lt;var&gt;0&lt;/var&gt; to indicate that there is no root node (i.e. the BTree is empty).
+&nbsp;	 */
+&nbsp;	private volatile int rootNodeID;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The depth of this BTree (the cache variable), &lt; 0 indicating it is unknown, 0 for an empty BTree, 1 for a BTree
+&nbsp;	 * with just a root node, and so on.
+&nbsp;	 */
+<b class="nc">&nbsp;	private volatile int height = -1;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether this BTree has been closed.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final AtomicBoolean closed = new AtomicBoolean(false);</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BTree that uses an instance of &lt;var&gt;DefaultRecordComparator&lt;/var&gt; to compare values.
+&nbsp;	 *
+&nbsp;	 * @param dataDir        The directory for the BTree data.
+&nbsp;	 * @param filenamePrefix The prefix for all files used by this BTree.
+&nbsp;	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+&nbsp;	 *                       size of a block in the used file system.
+&nbsp;	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+&nbsp;	 * @throws IOException In case the initialization of the B-Tree file failed.
+&nbsp;	 * @see DefaultRecordComparator
+&nbsp;	 */
+&nbsp;	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize) throws IOException {
+<b class="nc">&nbsp;		this(dataDir, filenamePrefix, blockSize, valueSize, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BTree that uses an instance of &lt;var&gt;DefaultRecordComparator&lt;/var&gt; to compare values.
+&nbsp;	 *
+&nbsp;	 * @param dataDir        The directory for the BTree data.
+&nbsp;	 * @param filenamePrefix The prefix for all files used by this BTree.
+&nbsp;	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+&nbsp;	 *                       size of a block in the used file system.
+&nbsp;	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+&nbsp;	 * @param forceSync      Flag indicating whether updates should be synced to disk forcefully by calling
+&nbsp;	 *                       {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
+&nbsp;	 * @throws IOException In case the initialization of the B-Tree file failed.
+&nbsp;	 * @see DefaultRecordComparator
+&nbsp;	 */
+&nbsp;	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, boolean forceSync)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		this(dataDir, filenamePrefix, blockSize, valueSize, new DefaultRecordComparator(), forceSync);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BTree that uses the supplied &lt;var&gt;RecordComparator&lt;/var&gt; to compare the values that are or will be
+&nbsp;	 * stored in the B-Tree.
+&nbsp;	 *
+&nbsp;	 * @param dataDir        The directory for the BTree data.
+&nbsp;	 * @param filenamePrefix The prefix for all files used by this BTree.
+&nbsp;	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+&nbsp;	 *                       size of a block in the used file system.
+&nbsp;	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+&nbsp;	 * @param comparator     The &lt;var&gt;RecordComparator&lt;/var&gt; to use for determining whether one value is smaller, larger
+&nbsp;	 *                       or equal to another.
+&nbsp;	 * @throws IOException In case the initialization of the B-Tree file failed.
+&nbsp;	 */
+&nbsp;	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, RecordComparator comparator)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		this(dataDir, filenamePrefix, blockSize, valueSize, comparator, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BTree that uses the supplied &lt;var&gt;RecordComparator&lt;/var&gt; to compare the values that are or will be
+&nbsp;	 * stored in the B-Tree.
+&nbsp;	 *
+&nbsp;	 * @param dataDir        The directory for the BTree data.
+&nbsp;	 * @param filenamePrefix The prefix for all files used by this BTree.
+&nbsp;	 * @param blockSize      The size (in bytes) of a file block for a single node. Ideally, the size specified is the
+&nbsp;	 *                       size of a block in the used file system.
+&nbsp;	 * @param valueSize      The size (in bytes) of the fixed-length values that are or will be stored in the B-Tree.
+&nbsp;	 * @param comparator     The &lt;var&gt;RecordComparator&lt;/var&gt; to use for determining whether one value is smaller, larger
+&nbsp;	 *                       or equal to another.
+&nbsp;	 * @param forceSync      Flag indicating whether updates should be synced to disk forcefully by calling
+&nbsp;	 *                       {@link FileChannel#force(boolean)}. This may have a severe impact on write performance.
+&nbsp;	 * @throws IOException In case the initialization of the B-Tree file failed.
+&nbsp;	 */
+&nbsp;	public BTree(File dataDir, String filenamePrefix, int blockSize, int valueSize, RecordComparator comparator,
+<b class="nc">&nbsp;			boolean forceSync) throws IOException {</b>
+<b class="nc">&nbsp;		if (dataDir == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;dataDir must not be null&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (filenamePrefix == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;filenamePrefix must not be null&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (blockSize &lt; HEADER_LENGTH) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;block size must be at least &quot; + HEADER_LENGTH + &quot; bytes&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (valueSize &lt;= 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;value size must be larger than 0&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (blockSize &lt; 3 * valueSize + 20) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;block size to small; must at least be able to store three values&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (comparator == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;comparator muts not be null&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		File file = new File(dataDir, filenamePrefix + &quot;.dat&quot;);</b>
+<b class="nc">&nbsp;		this.nioFile = new NioFile(file);</b>
+<b class="nc">&nbsp;		this.comparator = comparator;</b>
+<b class="nc">&nbsp;		this.forceSync = forceSync;</b>
+&nbsp;
+<b class="nc">&nbsp;		File allocFile = new File(dataDir, filenamePrefix + &quot;.alloc&quot;);</b>
+<b class="nc">&nbsp;		allocatedNodesList = new AllocatedNodesList(allocFile, this, forceSync);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (nioFile.size() == 0L) {</b>
+&nbsp;			// Empty file, initialize it with the specified parameters
+<b class="nc">&nbsp;			this.blockSize = blockSize;</b>
+<b class="nc">&nbsp;			this.valueSize = valueSize;</b>
+<b class="nc">&nbsp;			this.rootNodeID = 0;</b>
+<b class="nc">&nbsp;			this.height = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			writeFileHeader();</b>
+&nbsp;
+&nbsp;			// sync();
+&nbsp;		} else {
+&nbsp;			// Read parameters from file
+<b class="nc">&nbsp;			ByteBuffer buf = ByteBuffer.allocate(HEADER_LENGTH);</b>
+<b class="nc">&nbsp;			nioFile.read(buf, 0L);</b>
+&nbsp;
+<b class="nc">&nbsp;			buf.rewind();</b>
+&nbsp;
+<b class="nc">&nbsp;			byte[] magicNumber = new byte[MAGIC_NUMBER.length];</b>
+<b class="nc">&nbsp;			buf.get(magicNumber);</b>
+<b class="nc">&nbsp;			byte version = buf.get();</b>
+<b class="nc">&nbsp;			this.blockSize = buf.getInt();</b>
+<b class="nc">&nbsp;			this.valueSize = buf.getInt();</b>
+<b class="nc">&nbsp;			this.rootNodeID = buf.getInt();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (Arrays.equals(MAGIC_NUMBER, magicNumber)) {</b>
+<b class="nc">&nbsp;				if (version &gt; FILE_FORMAT_VERSION) {</b>
+<b class="nc">&nbsp;					throw new IOException(&quot;Unable to read BTree file &quot; + file + &quot;; it uses a newer file format&quot;);</b>
+<b class="nc">&nbsp;				} else if (version != FILE_FORMAT_VERSION) {</b>
+<b class="nc">&nbsp;					throw new IOException(</b>
+&nbsp;							&quot;Unable to read BTree file &quot; + file + &quot;; invalid file format version: &quot; + version);
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (Arrays.equals(OLD_MAGIC_NUMBER, magicNumber)) {</b>
+<b class="nc">&nbsp;				if (version != 1) {</b>
+<b class="nc">&nbsp;					throw new IOException(</b>
+&nbsp;							&quot;Unable to read BTree file &quot; + file + &quot;; invalid file format version: &quot; + version);
+&nbsp;				}
+&nbsp;				// Write new magic number to file
+<b class="nc">&nbsp;				logger.info(&quot;Updating file header for btree file &#39;{}&#39;&quot;, file.getAbsolutePath());</b>
+<b class="nc">&nbsp;				writeFileHeader();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IOException(&quot;File doesn&#39;t contain (compatible) BTree data: &quot; + file);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Verify that the value sizes match
+<b class="nc">&nbsp;			if (this.valueSize != valueSize) {</b>
+<b class="nc">&nbsp;				throw new IOException(&quot;Specified value size (&quot; + valueSize</b>
+&nbsp;						+ &quot;) is different from what is stored on disk (&quot; + this.valueSize + &quot;) in &quot; + file);
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Calculate derived properties
+<b class="nc">&nbsp;		slotSize = 4 + this.valueSize;</b>
+<b class="nc">&nbsp;		branchFactor = 1 + (this.blockSize - 8) / slotSize;</b>
+&nbsp;		// bf=30 --&gt; mvc=14; bf=29 --&gt; mvc=14
+<b class="nc">&nbsp;		minValueCount = (branchFactor - 1) / 2;</b>
+<b class="nc">&nbsp;		nodeSize = 8 + (branchFactor - 1) * slotSize;</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;blockSize=&quot; + this.blockSize);
+&nbsp;		// System.out.println(&quot;valueSize=&quot; + this.valueSize);
+&nbsp;		// System.out.println(&quot;slotSize=&quot; + this.slotSize);
+&nbsp;		// System.out.println(&quot;branchFactor=&quot; + this.branchFactor);
+&nbsp;		// System.out.println(&quot;minimum value count=&quot; + this.minValueCount);
+&nbsp;		// System.out.println(&quot;nodeSize=&quot; + this.nodeSize);
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the file that this BTree operates on.
+&nbsp;	 */
+&nbsp;	public File getFile() {
+<b class="nc">&nbsp;		return nioFile.getFile();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the BTree and then deletes its data files.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operation was successful.
+&nbsp;	 */
+&nbsp;	public boolean delete() throws IOException {
+<b class="nc">&nbsp;		if (closed.compareAndSet(false, true)) {</b>
+<b class="nc">&nbsp;			close(false);</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean success = allocatedNodesList.delete();</b>
+<b class="nc">&nbsp;			success &amp;= nioFile.delete();</b>
+<b class="nc">&nbsp;			return success;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes will be synchronized
+&nbsp;	 * to disk before closing. Once the B-Tree has been closed, it can no longer be used.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void close() throws IOException {
+<b class="nc">&nbsp;		if (closed.compareAndSet(false, true)) {</b>
+<b class="nc">&nbsp;			close(true);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes any opened files and release any resources used by this B-Tree. Any pending changes are optionally
+&nbsp;	 * synchronized to disk before closing. Once the B-Tree has been closed, it can no longer be used.
+&nbsp;	 *
+&nbsp;	 * @param syncChanges Flag indicating whether pending changes should be synchronized to disk.
+&nbsp;	 */
+&nbsp;	private void close(boolean syncChanges) throws IOException {
+<b class="nc">&nbsp;		btreeLock.writeLock().lock();</b>
+&nbsp;		try {
+&nbsp;			try {
+<b class="nc">&nbsp;				if (syncChanges) {</b>
+<b class="nc">&nbsp;					sync();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				try {</b>
+<b class="nc">&nbsp;					nodeCache.clear();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="nc">&nbsp;						nioFile.close();</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						allocatedNodesList.close(syncChanges);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			btreeLock.writeLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes any changes that are cached in memory to disk.
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void sync() throws IOException {
+<b class="nc">&nbsp;		btreeLock.readLock().lock();</b>
+&nbsp;		try {
+&nbsp;			// Write any changed nodes that still reside in the cache to disk
+<b class="nc">&nbsp;			nodeCache.flush();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (forceSync) {</b>
+<b class="nc">&nbsp;				nioFile.force(false);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			allocatedNodesList.sync();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			btreeLock.readLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the value that matches the specified key.
+&nbsp;	 *
+&nbsp;	 * @param key A value that is equal to the value that should be retrieved, at least as far as the RecordComparator
+&nbsp;	 *            of this BTree is concerned.
+&nbsp;	 * @return The value matching the key, or &lt;var&gt;null&lt;/var&gt; if no such value could be found.
+&nbsp;	 */
+&nbsp;	public byte[] get(byte[] key) throws IOException {
+<b class="nc">&nbsp;		btreeLock.readLock().lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			Node node = readRootNode();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (node == null) {</b>
+&nbsp;				// Empty BTree
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			while (true) {
+<b class="nc">&nbsp;				int valueIdx = node.search(key);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (valueIdx &gt;= 0) {</b>
+&nbsp;					// Return matching value
+<b class="nc">&nbsp;					byte[] result = node.getValue(valueIdx);</b>
+<b class="nc">&nbsp;					node.release();</b>
+<b class="nc">&nbsp;					return result;</b>
+<b class="nc">&nbsp;				} else if (!node.isLeaf()) {</b>
+&nbsp;					// Returned index references the first value that is larger than
+&nbsp;					// the key, search the child node just left of it (==same index).
+<b class="nc">&nbsp;					Node childNode = node.getChildNode(-valueIdx - 1);</b>
+<b class="nc">&nbsp;					node.release();</b>
+<b class="nc">&nbsp;					node = childNode;</b>
+<b class="nc">&nbsp;				} else {</b>
+&nbsp;					// value not found
+<b class="nc">&nbsp;					node.release();</b>
+<b class="nc">&nbsp;					return null;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			btreeLock.readLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an iterator that iterates over all values in this B-Tree.
+&nbsp;	 */
+&nbsp;	public RecordIterator iterateAll() {
+<b class="nc">&nbsp;		return new RangeIterator(this, null, null, null, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an iterator that iterates over all values between minValue and maxValue, inclusive.
+&nbsp;	 */
+&nbsp;	public RecordIterator iterateRange(byte[] minValue, byte[] maxValue) {
+<b class="nc">&nbsp;		return new RangeIterator(this, null, null, minValue, maxValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an iterator that iterates over all values and returns the values that match the supplied searchKey after
+&nbsp;	 * searchMask has been applied to the value.
+&nbsp;	 */
+&nbsp;	public RecordIterator iterateValues(byte[] searchKey, byte[] searchMask) {
+<b class="nc">&nbsp;		return new RangeIterator(this, searchKey, searchMask, null, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an iterator that iterates over all values between minValue and maxValue (inclusive) and returns the
+&nbsp;	 * values that match the supplied searchKey after searchMask has been applied to the value.
+&nbsp;	 */
+&nbsp;	public RecordIterator iterateRangedValues(byte[] searchKey, byte[] searchMask, byte[] minValue, byte[] maxValue) {
+<b class="nc">&nbsp;		return new RangeIterator(this, searchKey, searchMask, minValue, maxValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an estimate for the number of values stored in this BTree.
+&nbsp;	 */
+&nbsp;	public long getValueCountEstimate() throws IOException {
+<b class="nc">&nbsp;		int allocatedNodesCount = allocatedNodesList.getNodeCount();</b>
+&nbsp;
+&nbsp;		// Assume fill factor of 50%
+<b class="nc">&nbsp;		return (long) (allocatedNodesCount * (branchFactor - 1) * 0.5);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gives an estimate of the number of values between &lt;var&gt;minValue&lt;/var&gt; and &lt;var&gt;maxValue&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param minValue the lower bound of the range.
+&nbsp;	 * @param maxValue the upper bound of the range,
+&nbsp;	 * @return an estimate of the number of values in the specified range.
+&nbsp;	 */
+&nbsp;	public long getValueCountEstimate(byte[] minValue, byte[] maxValue) throws IOException {
+<b class="nc">&nbsp;		assert minValue != null : &quot;minValue must not be null&quot;;</b>
+<b class="nc">&nbsp;		assert maxValue != null : &quot;maxValue must not be null&quot;;</b>
+&nbsp;
+&nbsp;		List&lt;PathSegment&gt; minValuePath, maxValuePath;
+&nbsp;
+<b class="nc">&nbsp;		btreeLock.readLock().lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			minValuePath = getPath(minValue);</b>
+<b class="nc">&nbsp;			maxValuePath = getPath(maxValue);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			btreeLock.readLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return getValueCountEstimate(minValuePath, maxValuePath);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private List&lt;PathSegment&gt; getPath(byte[] key) throws IOException {
+<b class="nc">&nbsp;		assert key != null : &quot;key must not be null&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;PathSegment&gt; path = new ArrayList&lt;&gt;(height());</b>
+&nbsp;
+<b class="nc">&nbsp;		Node currentNode = readRootNode();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (currentNode != null) {</b>
+&nbsp;			while (true) {
+<b class="nc">&nbsp;				int keyIndex = currentNode.search(key);</b>
+&nbsp;
+<b class="nc">&nbsp;				path.add(new PathSegment(keyIndex, currentNode.getValueCount()));</b>
+&nbsp;
+<b class="nc">&nbsp;				if (keyIndex &gt;= 0 || currentNode.isLeaf()) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				Node childNode = currentNode.getChildNode(-keyIndex - 1);</b>
+<b class="nc">&nbsp;				currentNode.release();</b>
+<b class="nc">&nbsp;				currentNode = childNode;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			currentNode.release();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return path;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class PathSegment {
+&nbsp;
+&nbsp;		public final int valueIndex;
+&nbsp;
+&nbsp;		public final int valueCount;
+&nbsp;
+<b class="nc">&nbsp;		public PathSegment(int valueIndex, int valueCount) {</b>
+<b class="nc">&nbsp;			this.valueIndex = valueIndex;</b>
+<b class="nc">&nbsp;			this.valueCount = valueCount;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public int getMinValueIndex() {
+<b class="nc">&nbsp;			if (valueIndex &lt; 0) {</b>
+<b class="nc">&nbsp;				return -valueIndex - 1;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return valueIndex;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public int getMaxValueIndex() {
+<b class="nc">&nbsp;			if (valueIndex &lt; 0) {</b>
+<b class="nc">&nbsp;				return -valueIndex - 2;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return valueIndex;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return valueIndex + &quot;:&quot; + valueCount;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private long getValueCountEstimate(List&lt;PathSegment&gt; minValuePath, List&lt;PathSegment&gt; maxValuePath)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		int commonListSize = Math.min(minValuePath.size(), maxValuePath.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (commonListSize == 0) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		PathSegment minNode = null, maxNode = null;</b>
+&nbsp;
+&nbsp;		// Find node depth where the paths start to diverge
+<b class="nc">&nbsp;		int splitIdx = 0;</b>
+<b class="nc">&nbsp;		for (; splitIdx &lt; commonListSize; splitIdx++) {</b>
+<b class="nc">&nbsp;			minNode = minValuePath.get(splitIdx);</b>
+<b class="nc">&nbsp;			maxNode = maxValuePath.get(splitIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (minNode.valueIndex != maxNode.valueIndex) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (splitIdx &gt;= commonListSize) {</b>
+&nbsp;			// range does not span multiple values/child nodes
+<b class="nc">&nbsp;			return minNode.valueIndex &gt;= 0 ? 1 : 0;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int minValueIndex = minNode.getMinValueIndex();</b>
+<b class="nc">&nbsp;		int maxValueIndex = maxNode.getMaxValueIndex();</b>
+&nbsp;
+&nbsp;		// Estimate number of values in child nodes that fall entirely in the
+&nbsp;		// range
+<b class="nc">&nbsp;		long valueCount = (maxValueIndex - minValueIndex) * getTreeSizeEstimate(splitIdx + 2);</b>
+&nbsp;
+&nbsp;		// Add number of values that are in the split node
+<b class="nc">&nbsp;		valueCount += (maxValueIndex - minValueIndex + 1);</b>
+&nbsp;
+&nbsp;		// Add values from left-most child node
+<b class="nc">&nbsp;		for (int i = splitIdx + 1; i &lt; minValuePath.size(); i++) {</b>
+<b class="nc">&nbsp;			PathSegment ps = minValuePath.get(i);</b>
+<b class="nc">&nbsp;			minValueIndex = ps.getMinValueIndex();</b>
+&nbsp;
+<b class="nc">&nbsp;			valueCount += (ps.valueCount - minValueIndex);</b>
+<b class="nc">&nbsp;			valueCount += (ps.valueCount - minValueIndex) * getTreeSizeEstimate(i + 2);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Add values from right-most child node
+<b class="nc">&nbsp;		for (int i = splitIdx + 1; i &lt; maxValuePath.size(); i++) {</b>
+<b class="nc">&nbsp;			PathSegment ps = maxValuePath.get(i);</b>
+<b class="nc">&nbsp;			maxValueIndex = ps.getMaxValueIndex();</b>
+&nbsp;
+<b class="nc">&nbsp;			valueCount += maxValueIndex + 1;</b>
+<b class="nc">&nbsp;			valueCount += (maxValueIndex + 1) * getTreeSizeEstimate(i + 2);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return valueCount;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Estimates the number of values contained by a averagely filled node node at the specified &lt;var&gt;nodeDepth&lt;/var&gt;
+&nbsp;	 * (the root is at depth 1).
+&nbsp;	 */
+&nbsp;	private long getTreeSizeEstimate(int nodeDepth) throws IOException {
+&nbsp;		// Assume fill factor of 50%
+<b class="nc">&nbsp;		int fanOut = this.branchFactor / 2;</b>
+&nbsp;
+<b class="nc">&nbsp;		long valueCount = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = height() - nodeDepth; i &gt;= 0; i--) {</b>
+&nbsp;			// valueCount += (long)Math.pow(fanOut, i);
+&nbsp;
+&nbsp;			// equivalent but faster:
+<b class="nc">&nbsp;			valueCount += 1;</b>
+<b class="nc">&nbsp;			valueCount *= fanOut;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return valueCount;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int height() throws IOException {
+&nbsp;		// if the depth is cached, return that value
+<b class="nc">&nbsp;		if (height &gt;= 0) {</b>
+<b class="nc">&nbsp;			return height;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int nodeDepth = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		Node currentNode = readRootNode();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (currentNode != null) {</b>
+<b class="nc">&nbsp;			nodeDepth = 1;</b>
+&nbsp;
+<b class="nc">&nbsp;			while (!currentNode.isLeaf()) {</b>
+<b class="nc">&nbsp;				Node childNode = currentNode.getChildNode(0);</b>
+<b class="nc">&nbsp;				currentNode.release();</b>
+<b class="nc">&nbsp;				currentNode = childNode;</b>
+&nbsp;
+<b class="nc">&nbsp;				nodeDepth++;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			currentNode.release();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		height = nodeDepth;</b>
+&nbsp;
+<b class="nc">&nbsp;		return height;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Inserts the supplied value into the B-Tree. In case an equal value is already present in the B-Tree this value is
+&nbsp;	 * overwritten with the new value and the old value is returned by this method.
+&nbsp;	 *
+&nbsp;	 * @param value The value to insert into the B-Tree.
+&nbsp;	 * @return The old value that was replaced, if any.
+&nbsp;	 * @throws IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public byte[] insert(byte[] value) throws IOException {
+<b class="nc">&nbsp;		btreeLock.writeLock().lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			Node rootNode = readRootNode();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (rootNode == null) {</b>
+&nbsp;				// Empty B-Tree, create a root node
+<b class="nc">&nbsp;				rootNode = createNewNode();</b>
+<b class="nc">&nbsp;				rootNodeID = rootNode.getID();</b>
+<b class="nc">&nbsp;				writeFileHeader();</b>
+<b class="nc">&nbsp;				height = 1;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			InsertResult insertResult = insertInTree(value, 0, rootNode);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (insertResult.overflowValue != null) {</b>
+&nbsp;				// Root node overflowed, create a new root node and insert overflow
+&nbsp;				// value-nodeID pair in it
+<b class="nc">&nbsp;				Node newRootNode = createNewNode();</b>
+<b class="nc">&nbsp;				newRootNode.setChildNodeID(0, rootNode.getID());</b>
+<b class="nc">&nbsp;				newRootNode.insertValueNodeIDPair(0, insertResult.overflowValue, insertResult.overflowNodeID);</b>
+&nbsp;
+<b class="nc">&nbsp;				rootNodeID = newRootNode.getID();</b>
+<b class="nc">&nbsp;				writeFileHeader();</b>
+<b class="nc">&nbsp;				newRootNode.release();</b>
+&nbsp;
+&nbsp;				// update the cached depth of this BTree
+<b class="nc">&nbsp;				if (height &gt;= 0) {</b>
+<b class="nc">&nbsp;					height++;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			rootNode.release();</b>
+&nbsp;
+<b class="nc">&nbsp;			return insertResult.oldValue;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			btreeLock.writeLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private InsertResult insertInTree(byte[] value, int nodeID, Node node) throws IOException {
+&nbsp;		InsertResult insertResult;
+&nbsp;
+&nbsp;		// Search value in node
+<b class="nc">&nbsp;		int valueIdx = node.search(value);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (valueIdx &gt;= 0) {</b>
+&nbsp;			// Found an equal value, replace it
+<b class="nc">&nbsp;			insertResult = new InsertResult();</b>
+<b class="nc">&nbsp;			insertResult.oldValue = node.getValue(valueIdx);</b>
+&nbsp;
+&nbsp;			// Do not replace the value if it&#39;s identical to the old
+&nbsp;			// value to prevent possibly unnecessary disk writes
+<b class="nc">&nbsp;			if (!Arrays.equals(value, insertResult.oldValue)) {</b>
+<b class="nc">&nbsp;				node.setValue(valueIdx, value);</b>
+&nbsp;			}
+&nbsp;		} else {
+&nbsp;			// valueIdx references the first value that is larger than the key
+<b class="nc">&nbsp;			valueIdx = -valueIdx - 1;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (node.isLeaf()) {</b>
+&nbsp;				// Leaf node, insert value here
+<b class="nc">&nbsp;				insertResult = insertInNode(value, nodeID, valueIdx, node);</b>
+&nbsp;			} else {
+&nbsp;				// Not a leaf node, insert value in the child node just left of
+&nbsp;				// the found value (==same index)
+<b class="nc">&nbsp;				Node childNode = node.getChildNode(valueIdx);</b>
+<b class="nc">&nbsp;				insertResult = insertInTree(value, nodeID, childNode);</b>
+<b class="nc">&nbsp;				childNode.release();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (insertResult.overflowValue != null) {</b>
+&nbsp;					// Child node overflowed, insert overflow in this node
+<b class="nc">&nbsp;					byte[] oldValue = insertResult.oldValue;</b>
+<b class="nc">&nbsp;					insertResult = insertInNode(insertResult.overflowValue, insertResult.overflowNodeID, valueIdx,</b>
+&nbsp;							node);
+<b class="nc">&nbsp;					insertResult.oldValue = oldValue;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return insertResult;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private InsertResult insertInNode(byte[] value, int nodeID, int valueIdx, Node node) throws IOException {
+<b class="nc">&nbsp;		InsertResult insertResult = new InsertResult();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (node.isFull()) {</b>
+&nbsp;			// Leaf node is full and needs to be split
+<b class="nc">&nbsp;			Node newNode = createNewNode();</b>
+<b class="nc">&nbsp;			insertResult.overflowValue = node.splitAndInsert(value, nodeID, valueIdx, newNode);</b>
+<b class="nc">&nbsp;			insertResult.overflowNodeID = newNode.getID();</b>
+<b class="nc">&nbsp;			newNode.release();</b>
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// Leaf node is not full, simply add the value to it
+<b class="nc">&nbsp;			node.insertValueNodeIDPair(valueIdx, value, nodeID);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return insertResult;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * struct-like class used to represent the result of an insert operation.
+&nbsp;	 */
+<b class="nc">&nbsp;	private static class InsertResult {</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * The old value that has been replaced by the insertion of a new value.
+&nbsp;		 */
+<b class="nc">&nbsp;		byte[] oldValue = null;</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * The value that was removed from a child node due to overflow.
+&nbsp;		 */
+<b class="nc">&nbsp;		byte[] overflowValue = null;</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * The nodeID to the right of &#39;overflowValue&#39; that was removed from a child node due to overflow.
+&nbsp;		 */
+<b class="nc">&nbsp;		int overflowNodeID = 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the value that matches the specified key from the B-Tree.
+&nbsp;	 *
+&nbsp;	 * @param key A key that matches the value that should be removed from the B-Tree.
+&nbsp;	 * @return The value that was removed from the B-Tree, or &lt;var&gt;null&lt;/var&gt; if no matching value was found.
+&nbsp;	 * @throws IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public byte[] remove(byte[] key) throws IOException {
+<b class="nc">&nbsp;		btreeLock.writeLock().lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			byte[] result = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			Node rootNode = readRootNode();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (rootNode != null) {</b>
+<b class="nc">&nbsp;				result = removeFromTree(key, rootNode);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (rootNode.isEmpty()) {</b>
+&nbsp;					// Root node has become empty as a result of the removal
+<b class="nc">&nbsp;					if (rootNode.isLeaf()) {</b>
+&nbsp;						// Nothing&#39;s left
+<b class="nc">&nbsp;						rootNodeID = 0;</b>
+&nbsp;					} else {
+&nbsp;						// Collapse B-Tree one level
+<b class="nc">&nbsp;						rootNodeID = rootNode.getChildNodeID(0);</b>
+<b class="nc">&nbsp;						rootNode.setChildNodeID(0, 0);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					// Write new root node ID to file header
+<b class="nc">&nbsp;					writeFileHeader();</b>
+&nbsp;
+<b class="nc">&nbsp;					if (height &gt;= 0) {</b>
+<b class="nc">&nbsp;						height--;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				rootNode.release();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			btreeLock.writeLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the value that matches the specified key from the tree starting at the specified node and returns the
+&nbsp;	 * removed value.
+&nbsp;	 *
+&nbsp;	 * @param key  A key that matches the value that should be removed from the B-Tree.
+&nbsp;	 * @param node The root of the (sub) tree.
+&nbsp;	 * @return The value that was removed from the B-Tree, or &lt;var&gt;null&lt;/var&gt; if no matching value was found.
+&nbsp;	 * @throws IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	private byte[] removeFromTree(byte[] key, Node node) throws IOException {
+<b class="nc">&nbsp;		byte[] value = null;</b>
+&nbsp;
+&nbsp;		// Search key
+<b class="nc">&nbsp;		int valueIdx = node.search(key);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (valueIdx &gt;= 0) {</b>
+&nbsp;			// Found matching value in this node, remove it
+<b class="nc">&nbsp;			if (node.isLeaf()) {</b>
+<b class="nc">&nbsp;				value = node.removeValueRight(valueIdx);</b>
+&nbsp;			} else {
+&nbsp;				// Replace the matching value with the largest value from the left
+&nbsp;				// child node
+<b class="nc">&nbsp;				value = node.getValue(valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;				Node leftChildNode = node.getChildNode(valueIdx);</b>
+<b class="nc">&nbsp;				byte[] largestValue = removeLargestValueFromTree(leftChildNode);</b>
+&nbsp;
+<b class="nc">&nbsp;				node.setValue(valueIdx, largestValue);</b>
+&nbsp;
+<b class="nc">&nbsp;				balanceChildNode(node, leftChildNode, valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;				leftChildNode.release();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} else if (!node.isLeaf()) {</b>
+&nbsp;			// Recurse into left child node
+<b class="nc">&nbsp;			valueIdx = -valueIdx - 1;</b>
+<b class="nc">&nbsp;			Node childNode = node.getChildNode(valueIdx);</b>
+<b class="nc">&nbsp;			value = removeFromTree(key, childNode);</b>
+&nbsp;
+<b class="nc">&nbsp;			balanceChildNode(node, childNode, valueIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;			childNode.release();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the largest value from the tree starting at the specified node and returns the removed value.
+&nbsp;	 *
+&nbsp;	 * @param node The root of the (sub) tree.
+&nbsp;	 * @return The value that was removed from the B-Tree.
+&nbsp;	 * @throws IOException              If an I/O error occurred.
+&nbsp;	 * @throws IllegalArgumentException If the supplied node is an empty leaf node
+&nbsp;	 */
+&nbsp;	private byte[] removeLargestValueFromTree(Node node) throws IOException {
+<b class="nc">&nbsp;		int nodeValueCount = node.getValueCount();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (node.isLeaf()) {</b>
+<b class="nc">&nbsp;			if (node.isEmpty()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Trying to remove largest value from an empty node in &quot; + getFile());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return node.removeValueRight(nodeValueCount - 1);</b>
+&nbsp;		} else {
+&nbsp;			// Recurse into right-most child node
+<b class="nc">&nbsp;			Node childNode = node.getChildNode(nodeValueCount);</b>
+<b class="nc">&nbsp;			byte[] value = removeLargestValueFromTree(childNode);</b>
+<b class="nc">&nbsp;			balanceChildNode(node, childNode, nodeValueCount);</b>
+<b class="nc">&nbsp;			childNode.release();</b>
+<b class="nc">&nbsp;			return value;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void balanceChildNode(Node parentNode, Node childNode, int childIdx) throws IOException {
+<b class="nc">&nbsp;		if (childNode.getValueCount() &lt; minValueCount) {</b>
+&nbsp;			// Child node contains too few values, try to borrow one from its right
+&nbsp;			// sibling
+<b class="nc">&nbsp;			Node rightSibling = (childIdx &lt; parentNode.getValueCount()) ? parentNode.getChildNode(childIdx + 1) : null;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (rightSibling != null &amp;&amp; rightSibling.getValueCount() &gt; minValueCount) {</b>
+&nbsp;				// Right sibling has enough values to give one up
+<b class="nc">&nbsp;				parentNode.rotateLeft(childIdx, childNode, rightSibling);</b>
+&nbsp;			} else {
+&nbsp;				// Right sibling does not have enough values to give one up, try its
+&nbsp;				// left sibling
+<b class="nc">&nbsp;				Node leftSibling = (childIdx &gt; 0) ? parentNode.getChildNode(childIdx - 1) : null;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (leftSibling != null &amp;&amp; leftSibling.getValueCount() &gt; minValueCount) {</b>
+&nbsp;					// Left sibling has enough values to give one up
+<b class="nc">&nbsp;					parentNode.rotateRight(childIdx, leftSibling, childNode);</b>
+&nbsp;				} else {
+&nbsp;					// Both siblings contain the minimum amount of values,
+&nbsp;					// merge the child node with its left or right sibling
+<b class="nc">&nbsp;					if (leftSibling != null) {</b>
+<b class="nc">&nbsp;						leftSibling.mergeWithRightSibling(parentNode.removeValueRight(childIdx - 1), childNode);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						childNode.mergeWithRightSibling(parentNode.removeValueRight(childIdx), rightSibling);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (leftSibling != null) {</b>
+<b class="nc">&nbsp;					leftSibling.release();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (rightSibling != null) {</b>
+<b class="nc">&nbsp;				rightSibling.release();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all values from the B-Tree.
+&nbsp;	 *
+&nbsp;	 * @throws IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public void clear() throws IOException {
+<b class="nc">&nbsp;		btreeLock.writeLock().lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			nodeCache.clear();</b>
+<b class="nc">&nbsp;			nioFile.truncate(HEADER_LENGTH);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (rootNodeID != 0) {</b>
+<b class="nc">&nbsp;				rootNodeID = 0;</b>
+<b class="nc">&nbsp;				writeFileHeader();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			allocatedNodesList.clear();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			btreeLock.writeLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Node createNewNode() throws IOException {
+<b class="nc">&nbsp;		int newNodeID = allocatedNodesList.allocateNode();</b>
+&nbsp;
+<b class="nc">&nbsp;		Node node = new Node(newNodeID, this);</b>
+<b class="nc">&nbsp;		node.use();</b>
+&nbsp;
+<b class="nc">&nbsp;		nodeCache.put(node);</b>
+&nbsp;
+<b class="nc">&nbsp;		return node;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Node readRootNode() throws IOException {
+<b class="nc">&nbsp;		if (rootNodeID &gt; 0) {</b>
+<b class="nc">&nbsp;			return readNode(rootNodeID);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Node readNode(int id) throws IOException {
+<b class="nc">&nbsp;		if (id &lt;= 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;id must be larger than 0, is: &quot; + id + &quot; in &quot; + getFile());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return nodeCache.readAndUse(id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void releaseNode(Node node) throws IOException {
+&nbsp;		// Note: this method is called by Node.release()
+&nbsp;		// This method should not be called directly (to prevent concurrency issues)!!!
+&nbsp;
+<b class="nc">&nbsp;		if (node.isEmpty() &amp;&amp; node.isLeaf() &amp;&amp; nodeCache.discardEmptyUnused(node.getID())) {</b>
+&nbsp;			// allow the discarded node ID to be reused
+<b class="nc">&nbsp;			synchronized (allocatedNodesList) {</b>
+<b class="nc">&nbsp;				allocatedNodesList.freeNode(node.getID());</b>
+&nbsp;
+<b class="nc">&nbsp;				int maxNodeID = allocatedNodesList.getMaxNodeID();</b>
+<b class="nc">&nbsp;				if (node.getID() &gt; maxNodeID) {</b>
+&nbsp;					// Shrink file
+<b class="nc">&nbsp;					nioFile.truncate(nodeID2offset(maxNodeID) + nodeSize);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			nodeCache.release(node, forceSync);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeFileHeader() throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.allocate(HEADER_LENGTH);</b>
+<b class="nc">&nbsp;		buf.put(MAGIC_NUMBER);</b>
+<b class="nc">&nbsp;		buf.put(FILE_FORMAT_VERSION);</b>
+<b class="nc">&nbsp;		buf.putInt(blockSize);</b>
+<b class="nc">&nbsp;		buf.putInt(valueSize);</b>
+<b class="nc">&nbsp;		buf.putInt(rootNodeID);</b>
+&nbsp;
+<b class="nc">&nbsp;		buf.rewind();</b>
+&nbsp;
+<b class="nc">&nbsp;		nioFile.write(buf, 0L);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	long nodeID2offset(int id) {
+<b class="nc">&nbsp;		return (long) blockSize * id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int offset2nodeID(long offset) {
+<b class="nc">&nbsp;		return (int) (offset / blockSize);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void print(PrintStream out) throws IOException {
+<b class="nc">&nbsp;		out.println(&quot;---contents of BTree file---&quot;);</b>
+<b class="nc">&nbsp;		out.println(&quot;Stored parameters:&quot;);</b>
+<b class="nc">&nbsp;		out.println(&quot;block size   = &quot; + blockSize);</b>
+<b class="nc">&nbsp;		out.println(&quot;value size   = &quot; + valueSize);</b>
+<b class="nc">&nbsp;		out.println(&quot;root node ID = &quot; + rootNodeID);</b>
+<b class="nc">&nbsp;		out.println();</b>
+<b class="nc">&nbsp;		out.println(&quot;Derived parameters:&quot;);</b>
+<b class="nc">&nbsp;		out.println(&quot;slot size       = &quot; + slotSize);</b>
+<b class="nc">&nbsp;		out.println(&quot;branch factor   = &quot; + branchFactor);</b>
+<b class="nc">&nbsp;		out.println(&quot;min value count = &quot; + minValueCount);</b>
+<b class="nc">&nbsp;		out.println(&quot;node size       = &quot; + nodeSize);</b>
+<b class="nc">&nbsp;		out.println();</b>
+&nbsp;
+<b class="nc">&nbsp;		int nodeCount = 0;</b>
+<b class="nc">&nbsp;		int valueCount = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.allocate(nodeSize);</b>
+<b class="nc">&nbsp;		for (long offset = blockSize; offset &lt; nioFile.size(); offset += blockSize) {</b>
+<b class="nc">&nbsp;			nioFile.read(buf, offset);</b>
+<b class="nc">&nbsp;			buf.rewind();</b>
+&nbsp;
+<b class="nc">&nbsp;			int nodeID = offset2nodeID(offset);</b>
+<b class="nc">&nbsp;			int count = buf.getInt();</b>
+<b class="nc">&nbsp;			nodeCount++;</b>
+<b class="nc">&nbsp;			valueCount += count;</b>
+<b class="nc">&nbsp;			out.print(&quot;node &quot; + nodeID + &quot;: &quot;);</b>
+<b class="nc">&nbsp;			out.print(&quot;count=&quot; + count + &quot; &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			byte[] value = new byte[valueSize];</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; i &lt; count; i++) {</b>
+&nbsp;				// node ID
+<b class="nc">&nbsp;				out.print(buf.getInt());</b>
+&nbsp;
+&nbsp;				// value
+<b class="nc">&nbsp;				buf.get(value);</b>
+<b class="nc">&nbsp;				out.print(&quot;[&quot; + ByteArrayUtil.toHexString(value) + &quot;]&quot;);</b>
+&nbsp;				// out.print(&quot;[&quot;+new String(value)+&quot;]&quot;);
+&nbsp;			}
+&nbsp;
+&nbsp;			// last node ID
+<b class="nc">&nbsp;			out.println(buf.getInt());</b>
+&nbsp;
+<b class="nc">&nbsp;			buf.clear();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		out.println(&quot;#nodes          = &quot; + nodeCount);</b>
+<b class="nc">&nbsp;		out.println(&quot;#values         = &quot; + valueCount);</b>
+<b class="nc">&nbsp;		out.println(&quot;---end of BTree file---&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

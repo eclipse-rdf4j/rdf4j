@@ -1,0 +1,172 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryResultHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryResultHandler (org.eclipse.rdf4j.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">QueryResultHandler</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;/**
+&nbsp; * The super class of all handlers for processing query results.
+&nbsp; * &lt;p&gt;
+&nbsp; * This interface contains methods for optionally processing both boolean and tuple results sets simultaneously, but
+&nbsp; * there are no guarantees that an implementation will be able to process these values together. If a method is not
+&nbsp; * supported then an {@link UnsupportedOperationException} will be thrown to indicate this failure. This failure may be
+&nbsp; * prevented by checking for whether the class implements {@link BooleanQueryResultHandler} or
+&nbsp; * {@link TupleQueryResultHandler}, for boolean and tuple results support respectively.
+&nbsp; * &lt;p&gt;
+&nbsp; * If both boolean and tuple results are supported but they are not able to to be processed simultaneously, then a
+&nbsp; * checked exception, either {@link BooleanQueryResultHandlerException} or {@link TupleQueryResultHandlerException},
+&nbsp; * will be thrown to indicate this failure when the relevant methods are called.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public interface QueryResultHandler {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles the specified boolean value.
+&nbsp;	 *
+&nbsp;	 * @param value The boolean value to handle.
+&nbsp;	 * @throws QueryResultHandlerException   If there was an error during the handling of this value. This exception may
+&nbsp;	 *                                       be thrown if the {@link #startQueryResult(List)},
+&nbsp;	 *                                       {@link #handleSolution(BindingSet)} or {@link #endQueryResult()} methods
+&nbsp;	 *                                       were called before this method was called, and the handler cannot process
+&nbsp;	 *                                       both boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException If this method is not supported
+&nbsp;	 */
+&nbsp;	void handleBoolean(boolean value) throws QueryResultHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles the links elements which are present in SPARQL Results JSON and SPARQL Results XML documents in the
+&nbsp;	 * header.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * NOTE: If the format does not support links, it must silently ignore a call to this method.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An accumulating handler should accumulate these links.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-results-json/#select-link&quot;&gt;&quot;link&quot;&lt;/a&gt;
+&nbsp;	 * @param linkUrls The URLs of the links to handle.
+&nbsp;	 * @throws QueryResultHandlerException If there was an error handling the set of link URLs. This error is not thrown
+&nbsp;	 *                                     in cases where links are not supported.
+&nbsp;	 */
+&nbsp;	void handleLinks(List&lt;String&gt; linkUrls) throws QueryResultHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates the start of a sequence of Solutions. The supplied bindingNames are an indication of the values that
+&nbsp;	 * are in the Solutions. For example, a SPARQL query like &lt;var&gt;select ?X ?Y where { ?X ?P ?Y } &lt;/var&gt; will have
+&nbsp;	 * binding names &lt;var&gt;X&lt;/var&gt; and &lt;var&gt;Y&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param bindingNames An ordered set of binding names.
+&nbsp;	 * @throws TupleQueryResultHandlerException If there was an error during the starting of the query result handler.
+&nbsp;	 *                                          This exception may be thrown if the {@link #handleBoolean(boolean)}
+&nbsp;	 *                                          method was called before this method and the handler cannot process both
+&nbsp;	 *                                          boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException    If this method is not supported
+&nbsp;	 * @throws IllegalStateException            If the {@link #handleSolution(BindingSet)} or {@link #endQueryResult()}
+&nbsp;	 *                                          methods were called before this method and the handler cannot process
+&nbsp;	 *                                          multiple sets of tuple results simultaneously.
+&nbsp;	 */
+&nbsp;	void startQueryResult(List&lt;String&gt; bindingNames) throws TupleQueryResultHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates the end of a sequence of solutions.
+&nbsp;	 *
+&nbsp;	 * @throws TupleQueryResultHandlerException If there was an error during the ending of the query result handler.
+&nbsp;	 *                                          This exception may be thrown if the {@link #handleBoolean(boolean)}
+&nbsp;	 *                                          method was called before this method and the handler cannot process both
+&nbsp;	 *                                          boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException    If this method is not supported
+&nbsp;	 * @throws IllegalStateException            If the {@link #endQueryResult()} was previously called for this handler
+&nbsp;	 *                                          or {@link #startQueryResult(List)} was NOT called before this method.
+&nbsp;	 */
+&nbsp;	void endQueryResult() throws TupleQueryResultHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles a solution.
+&nbsp;	 *
+&nbsp;	 * @param bindingSet A single set of tuple results, with binding names bound to values. Each of the binding names in
+&nbsp;	 *                   the solution must have previously been registered with the {@link #startQueryResult(List)}
+&nbsp;	 *                   method.
+&nbsp;	 * @throws TupleQueryResultHandlerException If there was an error during the handling of the query solution. This
+&nbsp;	 *                                          exception may be thrown if the {@link #handleBoolean(boolean)} method
+&nbsp;	 *                                          was called before this method and the handler cannot process both
+&nbsp;	 *                                          boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException    If this method is not supported
+&nbsp;	 * @throws IllegalStateException            If the {@link #endQueryResult()} method was called before this method or
+&nbsp;	 *                                          {@link #startQueryResult(List)} was NOT called before this method.
+&nbsp;	 */
+&nbsp;	void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

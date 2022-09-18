@@ -1,0 +1,200 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RFC3066LanguageHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.languages</a>
+</div>
+
+<h1>Coverage Summary for Class: RFC3066LanguageHandler (org.eclipse.rdf4j.rio.languages)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RFC3066LanguageHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40%
+  </span>
+  <span class="absValue">
+    (2/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    18.8%
+  </span>
+  <span class="absValue">
+    (3/16)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.languages;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.LiteralUtilException;
+&nbsp;import org.eclipse.rdf4j.rio.LanguageHandler;
+&nbsp;
+&nbsp;/**
+&nbsp; * A language handler that can verify RFC3066 formatted language tags.
+&nbsp; * &lt;p&gt;
+&nbsp; * This language handler normalises language tags to lower-case if
+&nbsp; * {@link #normalizeLanguage(String, String, ValueFactory)} is used.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.ietf.org/rfc/rfc3066.txt&quot;&gt;RFC 3066&lt;/a&gt;
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class RFC3066LanguageHandler implements LanguageHandler {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Language tag is RFC3066-conformant if it matches this regex: [a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*
+&nbsp;	 */
+<b class="fc">&nbsp;	protected final Pattern matcher = Pattern.compile(&quot;[a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default constructor.
+&nbsp;	 */
+<b class="fc">&nbsp;	public RFC3066LanguageHandler() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isRecognizedLanguage(String languageTag) {
+<b class="nc">&nbsp;		Objects.requireNonNull(languageTag, &quot;Language tag cannot be null&quot;);</b>
+&nbsp;
+&nbsp;		// language tag is RFC3066-conformant if it matches this regex:
+&nbsp;		// [a-zA-Z]{1,8}(-[a-zA-Z0-9]{1,8})*
+<b class="nc">&nbsp;		boolean result = matcher.matcher(languageTag).matches();</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean verifyLanguage(String literalValue, String languageTag) throws LiteralUtilException {
+<b class="nc">&nbsp;		Objects.requireNonNull(languageTag, &quot;Language tag cannot be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(literalValue, &quot;Literal value cannot be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isRecognizedLanguage(languageTag)) {</b>
+&nbsp;			// Language tag syntax already checked in isRecognizedLanguage
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new LiteralUtilException(&quot;Could not verify RFC3066 language tag&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
+&nbsp;			throws LiteralUtilException {
+<b class="nc">&nbsp;		Objects.requireNonNull(languageTag, &quot;Language tag cannot be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(literalValue, &quot;Literal value cannot be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isRecognizedLanguage(languageTag)) {</b>
+<b class="nc">&nbsp;			return valueFactory.createLiteral(literalValue, languageTag.toLowerCase().intern());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new LiteralUtilException(&quot;Could not normalize RFC3066 language tag&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getKey() {
+<b class="fc">&nbsp;		return LanguageHandler.RFC3066;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

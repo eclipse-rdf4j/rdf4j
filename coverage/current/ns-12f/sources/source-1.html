@@ -1,0 +1,207 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CacheFilter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.proxy</a>
+</div>
+
+<h1>Coverage Summary for Class: CacheFilter (org.eclipse.rdf4j.workbench.proxy)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CacheFilter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.proxy;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import javax.servlet.Filter;
+&nbsp;import javax.servlet.FilterChain;
+&nbsp;import javax.servlet.FilterConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.ServletRequest;
+&nbsp;import javax.servlet.ServletResponse;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Resource cache expiry filter for Tomcat 6, based on code authored by Saket Kumar.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://bit.ly/tomcat-6-caching&quot;&gt;Enable Caching in Tomcat 6&lt;/a&gt;
+&nbsp; * @author Dale Visser
+&nbsp; */
+<b class="nc">&nbsp;public class CacheFilter implements Filter {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger LOGGER = LoggerFactory.getLogger(CacheFilter.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * HTTP header key for controlling caching of resources.
+&nbsp;	 */
+&nbsp;	private final static String CACHE_CONTROL = &quot;Cache-Control&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maximum allowed expiry lifetime in seconds, set to one year according to the advice in RFC 2616.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.ietf.org/rfc/rfc2616.txt&quot;&gt;RFC 2616: HTTP/1.1&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public final static long MAX_EXPIRY = (365 * 24 + 6) * 60 * 60;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Minimum allowed expiry lifetime, zero, which corresponds to not caching at all.
+&nbsp;	 */
+&nbsp;	public final static long MIN_EXPIRY = 0;
+&nbsp;
+<b class="nc">&nbsp;	private Long expiry = null;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a maximum expiry Cache-Control header applicable to the client and to intermediate caching servers.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+&nbsp;			throws IOException, ServletException {
+<b class="nc">&nbsp;		if (null != expiry) {</b>
+<b class="nc">&nbsp;			((HttpServletResponse) res).setHeader(CACHE_CONTROL, &quot;max-age=&quot; + expiry + &quot;, public&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		chain.doFilter(req, res);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the Cache-Control configuration parameter as a long integer, and set the filter expiry value, modulo the
+&nbsp;	 * minimum and maximum expiry constraints. If the configuration parameter is not present, or not a valid long
+&nbsp;	 * integer value, then no Cache-Control headers will be applied by the filter.
+&nbsp;	 *
+&nbsp;	 * @see #MIN_EXPIRY
+&nbsp;	 * @see #MAX_EXPIRY
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void init(FilterConfig config) throws ServletException {
+&nbsp;		try {
+<b class="nc">&nbsp;			expiry = Math.min(Math.max(MIN_EXPIRY, Long.parseLong(config.getInitParameter(CACHE_CONTROL))), MAX_EXPIRY);</b>
+<b class="nc">&nbsp;		} catch (NumberFormatException nfe) {</b>
+<b class="nc">&nbsp;			LOGGER.warn(&quot;Failed to parse &quot; + CACHE_CONTROL + &quot; value.&quot;, nfe);</b>
+<b class="nc">&nbsp;			expiry = null;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Make stored references available for garbage collection.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void destroy() {
+<b class="nc">&nbsp;		expiry = null;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

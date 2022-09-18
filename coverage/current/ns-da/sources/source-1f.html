@@ -1,0 +1,437 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SimpleAbstractConstraintComponent</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents</a>
+</div>
+
+<h1>Coverage Summary for Class: SimpleAbstractConstraintComponent (org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SimpleAbstractConstraintComponent</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/113)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.AllTargetsPlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedPlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterPlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.InnerJoin;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.targets.TargetChain;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public abstract class SimpleAbstractConstraintComponent extends AbstractConstraintComponent {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SimpleAbstractConstraintComponent.class);</b>
+&nbsp;
+&nbsp;	private Resource id;
+&nbsp;	TargetChain targetChain;
+&nbsp;
+<b class="nc">&nbsp;	public SimpleAbstractConstraintComponent(Resource id) {</b>
+<b class="nc">&nbsp;		this.id = id;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public SimpleAbstractConstraintComponent() {</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource getId() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TargetChain getTargetChain() {
+<b class="nc">&nbsp;		return targetChain;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTargetChain(TargetChain targetChain) {
+<b class="nc">&nbsp;		this.targetChain = targetChain;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope) {
+&nbsp;
+<b class="nc">&nbsp;		boolean negatePlan = false;</b>
+<b class="nc">&nbsp;		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();</b>
+&nbsp;
+<b class="nc">&nbsp;		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(scope,</b>
+<b class="nc">&nbsp;				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);</b>
+<b class="nc">&nbsp;		Optional&lt;Path&gt; path = targetChain.getPath();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (overrideTargetNode != null) {</b>
+<b class="nc">&nbsp;			return getPlanNodeForOverrideTargetNode(connectionsGroup, validationSettings, overrideTargetNode, scope,</b>
+&nbsp;					negatePlan, stableRandomVariableProvider, effectiveTarget, path);
+<b class="nc">&nbsp;		} else if (scope == Scope.nodeShape) {</b>
+<b class="nc">&nbsp;			return effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,</b>
+<b class="nc">&nbsp;					p -&gt; getFilterAttacherWithNegation(negatePlan, p));</b>
+&nbsp;		} else {
+&nbsp;
+<b class="nc">&nbsp;			PlanNode invalidValuesDirectOnPath = path.get()</b>
+<b class="nc">&nbsp;					.getAdded(connectionsGroup, validationSettings.getDataGraph(),</b>
+<b class="nc">&nbsp;							planNode -&gt; getFilterAttacherWithNegation(negatePlan, planNode));</b>
+&nbsp;
+<b class="nc">&nbsp;			PlanNode addedTargets = effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(),</b>
+&nbsp;					scope, false, null);
+&nbsp;
+<b class="nc">&nbsp;			InnerJoin innerJoin = new InnerJoin(addedTargets, invalidValuesDirectOnPath);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (connectionsGroup.getStats().wasEmptyBeforeTransaction()) {</b>
+<b class="nc">&nbsp;				return innerJoin.getJoined(UnBufferedPlanNode.class);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				PlanNode top = innerJoin.getJoined(BufferedPlanNode.class);</b>
+&nbsp;
+&nbsp;				// tuples from invalidValuesDirectOnPath that didn&#39;t match a target from addedTargets
+<b class="nc">&nbsp;				PlanNode discardedRight = innerJoin.getDiscardedRight(BufferedPlanNode.class);</b>
+&nbsp;
+<b class="nc">&nbsp;				PlanNode typeFilterPlan = effectiveTarget.getTargetFilter(connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), discardedRight);</b>
+&nbsp;
+<b class="nc">&nbsp;				typeFilterPlan = effectiveTarget.extend(typeFilterPlan, connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(),</b>
+&nbsp;						scope,
+&nbsp;						EffectiveTarget.Extend.left, true, null);
+&nbsp;
+<b class="nc">&nbsp;				top = UnionNode.getInstance(top, typeFilterPlan);</b>
+&nbsp;
+<b class="nc">&nbsp;				PlanNode bulkedExternalInnerJoin = new BulkedExternalInnerJoin(</b>
+<b class="nc">&nbsp;						effectiveTarget.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,</b>
+&nbsp;								null),
+<b class="nc">&nbsp;						connectionsGroup.getBaseConnection(),</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(),</b>
+<b class="nc">&nbsp;						path.get()</b>
+<b class="nc">&nbsp;								.getTargetQueryFragment(new StatementMatcher.Variable(&quot;a&quot;),</b>
+&nbsp;										new StatementMatcher.Variable(&quot;c&quot;),
+<b class="nc">&nbsp;										connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;										stableRandomVariableProvider),
+<b class="nc">&nbsp;						connectionsGroup.hasPreviousStateConnection(),</b>
+<b class="nc">&nbsp;						connectionsGroup.getPreviousStateConnection(),</b>
+<b class="nc">&nbsp;						b -&gt; new ValidationTuple(b.getValue(&quot;a&quot;), b.getValue(&quot;c&quot;), scope, true,</b>
+<b class="nc">&nbsp;								validationSettings.getDataGraph()));</b>
+&nbsp;
+<b class="nc">&nbsp;				top = UnionNode.getInstance(top, bulkedExternalInnerJoin);</b>
+&nbsp;
+<b class="nc">&nbsp;				return getFilterAttacherWithNegation(negatePlan, top);</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private PlanNode getPlanNodeForOverrideTargetNode(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode, Scope scope, boolean negatePlan,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider, EffectiveTarget effectiveTarget,
+&nbsp;			Optional&lt;Path&gt; path) {
+&nbsp;		PlanNode planNode;
+&nbsp;
+<b class="nc">&nbsp;		if (scope == Scope.nodeShape) {</b>
+<b class="nc">&nbsp;			PlanNode overrideTargetPlanNode = overrideTargetNode.getPlanNode();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {</b>
+<b class="nc">&nbsp;				PlanNode allTargets = effectiveTarget.getAllTargets(connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), scope);</b>
+<b class="nc">&nbsp;				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);</b>
+&nbsp;
+<b class="nc">&nbsp;				return Unique.getInstance(allTargets, true);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), scope,</b>
+&nbsp;						EffectiveTarget.Extend.right,
+&nbsp;						false,
+<b class="nc">&nbsp;						p -&gt; getFilterAttacherWithNegation(negatePlan, p)</b>
+&nbsp;				);
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			PlanNode overrideTargetPlanNode = overrideTargetNode.getPlanNode();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (overrideTargetPlanNode instanceof AllTargetsPlanNode) {</b>
+&nbsp;				// We are cheating a bit here by retrieving all the targets and values at the same time by
+&nbsp;				// pretending to be in node shape scope and then shifting the results back to property shape scope
+<b class="nc">&nbsp;				PlanNode allTargets = targetChain</b>
+<b class="nc">&nbsp;						.getEffectiveTarget(Scope.nodeShape,</b>
+<b class="nc">&nbsp;								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)</b>
+<b class="nc">&nbsp;						.getAllTargets(connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape);</b>
+<b class="nc">&nbsp;				allTargets = new ShiftToPropertyShape(allTargets);</b>
+&nbsp;
+<b class="nc">&nbsp;				allTargets = getFilterAttacherWithNegation(negatePlan, allTargets);</b>
+&nbsp;
+<b class="nc">&nbsp;				return Unique.getInstance(allTargets, true);</b>
+&nbsp;
+&nbsp;			} else {
+&nbsp;
+<b class="nc">&nbsp;				overrideTargetPlanNode = effectiveTarget.extend(overrideTargetPlanNode, connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), scope,</b>
+&nbsp;						EffectiveTarget.Extend.right, false, null);
+&nbsp;
+<b class="nc">&nbsp;				planNode = new BulkedExternalInnerJoin(overrideTargetPlanNode,</b>
+<b class="nc">&nbsp;						connectionsGroup.getBaseConnection(),</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), path.get()</b>
+<b class="nc">&nbsp;								.getTargetQueryFragment(new StatementMatcher.Variable(&quot;a&quot;),</b>
+&nbsp;										new StatementMatcher.Variable(&quot;c&quot;),
+<b class="nc">&nbsp;										connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),</b>
+&nbsp;						false, null,
+<b class="nc">&nbsp;						BulkedExternalInnerJoin.getMapper(&quot;a&quot;, &quot;c&quot;, scope, validationSettings.getDataGraph())</b>
+&nbsp;				);
+<b class="nc">&nbsp;				planNode = connectionsGroup.getCachedNodeFor(planNode);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return getFilterAttacherWithNegation(negatePlan, planNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+&nbsp;
+<b class="nc">&nbsp;		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();</b>
+&nbsp;
+<b class="nc">&nbsp;		EffectiveTarget effectiveTarget = targetChain.getEffectiveTarget(scope,</b>
+<b class="nc">&nbsp;				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);</b>
+<b class="nc">&nbsp;		String query = effectiveTarget.getQuery(false);</b>
+&nbsp;
+&nbsp;		StatementMatcher.Variable value;
+&nbsp;
+<b class="nc">&nbsp;		if (scope == Scope.nodeShape) {</b>
+&nbsp;
+<b class="nc">&nbsp;			value = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			query += getSparqlFilter(negatePlan, effectiveTarget.getTargetVar(), stableRandomVariableProvider);</b>
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			value = StatementMatcher.Variable.VALUE;</b>
+&nbsp;
+<b class="nc">&nbsp;			String pathQuery = targetChain.getPath()</b>
+<b class="nc">&nbsp;					.map(p -&gt; p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,</b>
+<b class="nc">&nbsp;							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))</b>
+<b class="nc">&nbsp;					.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;			query += pathQuery;</b>
+<b class="nc">&nbsp;			query += getSparqlFilter(negatePlan, value, stableRandomVariableProvider);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		List&lt;StatementMatcher.Variable&gt; allTargetVariables = effectiveTarget.getAllTargetVariables();</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getSparqlFilter(boolean negatePlan, StatementMatcher.Variable variable,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+&nbsp;		// We use BIND and COALESCE because the filter expression could cause an error and the SHACL spec implicitly
+&nbsp;		// says that values that cause errors are in violation of the constraint.
+&nbsp;
+<b class="nc">&nbsp;		assert !negatePlan : &quot;This code has not been tested with negated plans! Should be still coalesce to true?&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		String tempVar = stableRandomVariableProvider.next().asSparqlVariable();</b>
+&nbsp;
+<b class="nc">&nbsp;		return String.join(&quot;\n&quot;,</b>
+<b class="nc">&nbsp;				&quot;BIND((&quot; + getSparqlFilterExpression(variable.getName(), negatePlan) + &quot;) as &quot; + tempVar + &quot;)&quot;,</b>
+&nbsp;				&quot;FILTER(COALESCE(&quot; + tempVar + &quot;, true))&quot;
+&nbsp;		);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Simple constraints need only implement this method to support SPARQL based validation. The returned filter body
+&nbsp;	 * should evaluate to true for values that fail validation, unless negated==true. If the filter condition throws an
+&nbsp;	 * error (a SPARQL runtime error, not Java error) then the error will be caught and coalesced to `true`.
+&nbsp;	 *
+&nbsp;	 * @param varName
+&nbsp;	 * @param negated
+&nbsp;	 * @return a string that is the body of a SPARQL filter
+&nbsp;	 */
+&nbsp;	abstract String getSparqlFilterExpression(String varName, boolean negated);
+&nbsp;
+&nbsp;	private PlanNode getFilterAttacherWithNegation(boolean negatePlan, PlanNode allTargets) {
+<b class="nc">&nbsp;		if (negatePlan) {</b>
+<b class="nc">&nbsp;			allTargets = getFilterAttacher().apply(allTargets).getTrueNode(UnBufferedPlanNode.class);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			allTargets = getFilterAttacher().apply(allTargets).getFalseNode(UnBufferedPlanNode.class);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return allTargets;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
+<b class="nc">&nbsp;		return ValidationApproach.Transactional;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationApproach getOptimalBulkValidationApproach() {
+<b class="nc">&nbsp;		return ValidationApproach.SPARQL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SourceConstraintComponent getConstraintComponent() {
+<b class="nc">&nbsp;		throw new ShaclUnsupportedException(this.getClass().getSimpleName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	abstract Function&lt;PlanNode, FilterPlanNode&gt; getFilterAttacher();
+&nbsp;
+&nbsp;	String literalToString(Literal literal) {
+<b class="nc">&nbsp;		IRI datatype = (literal).getDatatype();</b>
+<b class="nc">&nbsp;		if (datatype == null) {</b>
+<b class="nc">&nbsp;			return &quot;\&quot;&quot; + literal.stringValue() + &quot;\&quot;&quot;;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if ((literal).getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;			return &quot;\&quot;&quot; + literal.stringValue() + &quot;\&quot;@&quot; + (literal).getLanguage().get();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return &quot;\&quot;&quot; + literal.stringValue() + &quot;\&quot;^^&lt;&quot; + datatype.stringValue() + &quot;&gt;&quot;;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+<b class="nc">&nbsp;		if (scope == Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			PlanNode allTargetsPlan = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);</b>
+&nbsp;
+<b class="nc">&nbsp;			return Unique.getInstance(new ShiftToPropertyShape(allTargetsPlan), true);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return EmptyNode.getInstance();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

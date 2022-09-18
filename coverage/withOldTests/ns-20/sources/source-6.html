@@ -1,0 +1,269 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NavigationXmlParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.webapp.navigation</a>
+</div>
+
+<h1>Coverage Summary for Class: NavigationXmlParser (org.eclipse.rdf4j.common.webapp.navigation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NavigationXmlParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/75)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.webapp.navigation;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.net.URL;
+&nbsp;
+&nbsp;import javax.xml.xpath.XPath;
+&nbsp;import javax.xml.xpath.XPathConstants;
+&nbsp;import javax.xml.xpath.XPathExpressionException;
+&nbsp;import javax.xml.xpath.XPathFactory;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.xml.DocumentUtil;
+&nbsp;import org.w3c.dom.Document;
+&nbsp;import org.w3c.dom.Node;
+&nbsp;import org.w3c.dom.NodeList;
+&nbsp;
+&nbsp;/**
+&nbsp; * XPath-based parser for NavigationModel configuration files.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+<b class="nc">&nbsp;public class NavigationXmlParser {</b>
+&nbsp;
+<b class="nc">&nbsp;	private final XPath xpath = XPathFactory.newInstance().newXPath();</b>
+&nbsp;
+&nbsp;	public NavigationModel parse(URL navigationXml) {
+<b class="nc">&nbsp;		NavigationModel result = new NavigationModel();</b>
+<b class="nc">&nbsp;		parseInto(result, navigationXml);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void parseInto(NavigationModel result, URL navigationXml) {
+&nbsp;		try {
+<b class="nc">&nbsp;			Document document = DocumentUtil.getDocument(navigationXml);</b>
+<b class="nc">&nbsp;			Node rootNode = (Node) xpath.evaluate(&quot;/navigation&quot;, document, XPathConstants.NODE);</b>
+<b class="nc">&nbsp;			fillModel(result, rootNode);</b>
+<b class="nc">&nbsp;		} catch (IOException | XPathExpressionException e) {</b>
+<b class="nc">&nbsp;			e.printStackTrace();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void fillModel(NavigationModel result, Node modelNode) throws XPathExpressionException {
+<b class="nc">&nbsp;		String id = xpath.evaluate(&quot;@id&quot;, modelNode);</b>
+<b class="nc">&nbsp;		result.setId(id);</b>
+&nbsp;
+<b class="nc">&nbsp;		String pathPrefix = xpath.evaluate(&quot;path-prefix&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(pathPrefix)) {</b>
+<b class="nc">&nbsp;			result.setPathPrefix(pathPrefix);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String pathSeparator = xpath.evaluate(&quot;path-separator&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(pathSeparator)) {</b>
+<b class="nc">&nbsp;			result.setPathSeparator(pathSeparator);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String iconPrefix = xpath.evaluate(&quot;icon-prefix&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(iconPrefix)) {</b>
+<b class="nc">&nbsp;			result.setIconPrefix(iconPrefix);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String iconSeparator = xpath.evaluate(&quot;icon-separator&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(iconSeparator)) {</b>
+<b class="nc">&nbsp;			result.setIconSeparator(iconSeparator);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String iconSuffix = xpath.evaluate(&quot;icon-suffix&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(iconSuffix)) {</b>
+<b class="nc">&nbsp;			result.setIconSuffix(iconSuffix);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String i18nPrefix = xpath.evaluate(&quot;i18n-prefix&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(i18nPrefix)) {</b>
+<b class="nc">&nbsp;			result.setI18nPrefix(i18nPrefix);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String i18nSeparator = xpath.evaluate(&quot;i18n-separator&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(i18nSeparator)) {</b>
+<b class="nc">&nbsp;			result.setI18nSeparator(i18nSeparator);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String i18nSuffix = xpath.evaluate(&quot;i18n-suffix&quot;, modelNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(i18nSuffix)) {</b>
+<b class="nc">&nbsp;			result.setI18nSuffix(i18nSuffix);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		setAttributes(result, modelNode);</b>
+&nbsp;
+<b class="nc">&nbsp;		setGroupsAndViews(result, modelNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setAttributes(NavigationNode navNode, Node xmlNode) throws XPathExpressionException {
+<b class="nc">&nbsp;		boolean hidden = getBooleanAttribute(xpath.evaluate(&quot;@hidden&quot;, xmlNode), false);</b>
+<b class="nc">&nbsp;		navNode.setHidden(hidden);</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean enabled = getBooleanAttribute(xpath.evaluate(&quot;@enabled&quot;, xmlNode), true);</b>
+<b class="nc">&nbsp;		navNode.setEnabled(enabled);</b>
+&nbsp;
+<b class="nc">&nbsp;		String path = xpath.evaluate(&quot;path&quot;, xmlNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(path)) {</b>
+<b class="nc">&nbsp;			navNode.setPath(path);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String icon = xpath.evaluate(&quot;icon&quot;, xmlNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(icon)) {</b>
+<b class="nc">&nbsp;			navNode.setIcon(icon);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String i18n = xpath.evaluate(&quot;i18n&quot;, xmlNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(i18n)) {</b>
+<b class="nc">&nbsp;			navNode.setI18n(i18n);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String viewSuffix = xpath.evaluate(&quot;view-suffix&quot;, xmlNode);</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(viewSuffix)) {</b>
+<b class="nc">&nbsp;			navNode.setViewSuffix(viewSuffix);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setGroupsAndViews(Group parent, Node xmlNode) throws XPathExpressionException {
+<b class="nc">&nbsp;		NodeList groupList = (NodeList) xpath.evaluate(&quot;group&quot;, xmlNode, XPathConstants.NODESET);</b>
+<b class="nc">&nbsp;		int groupCount = groupList.getLength();</b>
+<b class="nc">&nbsp;		for (int groupIndex = 0; groupIndex &lt; groupCount; groupIndex++) {</b>
+<b class="nc">&nbsp;			Node groupNode = groupList.item(groupIndex);</b>
+&nbsp;
+<b class="nc">&nbsp;			Group group = new Group(xpath.evaluate(&quot;@id&quot;, groupNode));</b>
+<b class="nc">&nbsp;			parent.addGroup(group);</b>
+<b class="nc">&nbsp;			setAttributes(group, groupNode);</b>
+<b class="nc">&nbsp;			setGroupsAndViews(group, groupNode);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		NodeList viewList = (NodeList) xpath.evaluate(&quot;view&quot;, xmlNode, XPathConstants.NODESET);</b>
+<b class="nc">&nbsp;		int viewCount = viewList.getLength();</b>
+<b class="nc">&nbsp;		for (int viewIndex = 0; viewIndex &lt; viewCount; viewIndex++) {</b>
+<b class="nc">&nbsp;			Node viewNode = viewList.item(viewIndex);</b>
+&nbsp;
+<b class="nc">&nbsp;			View view = new View(xpath.evaluate(&quot;@id&quot;, viewNode));</b>
+<b class="nc">&nbsp;			parent.addView(view);</b>
+<b class="nc">&nbsp;			setAttributes(view, viewNode);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean getBooleanAttribute(String attrValue, boolean defaultValue) {
+<b class="nc">&nbsp;		boolean result = defaultValue;</b>
+<b class="nc">&nbsp;		if (attrValue != null &amp;&amp; !attrValue.trim().isEmpty()) {</b>
+<b class="nc">&nbsp;			result = attrValue.equalsIgnoreCase(&quot;true&quot;) || attrValue.equalsIgnoreCase(&quot;yes&quot;)</b>
+<b class="nc">&nbsp;					|| attrValue.equalsIgnoreCase(&quot;on&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

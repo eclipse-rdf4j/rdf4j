@@ -1,0 +1,225 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DateTimeCast</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.xsd</a>
+</div>
+
+<h1>Coverage Summary for Class: DateTimeCast (org.eclipse.rdf4j.query.algebra.evaluation.function.xsd)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DateTimeCast</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (2/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    4.7%
+  </span>
+  <span class="absValue">
+    (2/43)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
+&nbsp;
+&nbsp;import javax.xml.datatype.DatatypeConstants;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
+&nbsp; * &lt;var&gt;xsd:dateTime&lt;/var&gt;.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class DateTimeCast extends CastFunction {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected IRI getXsdDatatype() {
+<b class="fc">&nbsp;		return XSD.DATETIME;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean isValidForDatatype(String lexicalValue) {
+<b class="nc">&nbsp;		return XMLDatatypeUtil.isValidDateTime(lexicalValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Literal convert(ValueFactory vf, Value value) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal literal = (Literal) value;</b>
+<b class="nc">&nbsp;			IRI datatype = literal.getDatatype();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (datatype.equals(XSD.DATE)) {</b>
+&nbsp;				// If ST is xs:date, then let SYR be eg:convertYearToString(
+&nbsp;				// fn:year-from-date( SV )), let SMO be eg:convertTo2CharString(
+&nbsp;				// fn:month-from-date( SV )), let SDA be eg:convertTo2CharString(
+&nbsp;				// fn:day-from-date( SV )) and let STZ be eg:convertTZtoString(
+&nbsp;				// fn:timezone-from-date( SV )); TV is xs:dateTime( fn:concat(
+&nbsp;				// SYR , &#39;-&#39;, SMO , &#39;-&#39;, SDA , &#39;T00:00:00 &#39;, STZ ) ).
+&nbsp;				try {
+<b class="nc">&nbsp;					XMLGregorianCalendar calValue = literal.calendarValue();</b>
+&nbsp;
+<b class="nc">&nbsp;					int year = calValue.getYear();</b>
+<b class="nc">&nbsp;					int month = calValue.getMonth();</b>
+<b class="nc">&nbsp;					int day = calValue.getDay();</b>
+<b class="nc">&nbsp;					int timezoneOffset = calValue.getTimezone();</b>
+&nbsp;
+<b class="nc">&nbsp;					if (DatatypeConstants.FIELD_UNDEFINED != year &amp;&amp; DatatypeConstants.FIELD_UNDEFINED != month</b>
+&nbsp;							&amp;&amp; DatatypeConstants.FIELD_UNDEFINED != day) {
+<b class="nc">&nbsp;						StringBuilder dtBuilder = new StringBuilder();</b>
+<b class="nc">&nbsp;						dtBuilder.append(year);</b>
+<b class="nc">&nbsp;						dtBuilder.append(&quot;-&quot;);</b>
+<b class="nc">&nbsp;						if (month &lt; 10) {</b>
+<b class="nc">&nbsp;							dtBuilder.append(&quot;0&quot;);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						dtBuilder.append(month);</b>
+<b class="nc">&nbsp;						dtBuilder.append(&quot;-&quot;);</b>
+<b class="nc">&nbsp;						if (day &lt; 10) {</b>
+<b class="nc">&nbsp;							dtBuilder.append(&quot;0&quot;);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						dtBuilder.append(day);</b>
+<b class="nc">&nbsp;						dtBuilder.append(&quot;T00:00:00&quot;);</b>
+<b class="nc">&nbsp;						if (DatatypeConstants.FIELD_UNDEFINED != timezoneOffset) {</b>
+<b class="nc">&nbsp;							int minutes = Math.abs(timezoneOffset);</b>
+<b class="nc">&nbsp;							int hours = minutes / 60;</b>
+<b class="nc">&nbsp;							minutes = minutes - (hours * 60);</b>
+<b class="nc">&nbsp;							if (timezoneOffset &gt; 0) {</b>
+<b class="nc">&nbsp;								dtBuilder.append(&quot;+&quot;);</b>
+&nbsp;							} else {
+<b class="nc">&nbsp;								dtBuilder.append(&quot;-&quot;);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							if (hours &lt; 10) {</b>
+<b class="nc">&nbsp;								dtBuilder.append(&quot;0&quot;);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							dtBuilder.append(hours);</b>
+<b class="nc">&nbsp;							dtBuilder.append(&quot;:&quot;);</b>
+<b class="nc">&nbsp;							if (minutes &lt; 10) {</b>
+<b class="nc">&nbsp;								dtBuilder.append(&quot;0&quot;);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							dtBuilder.append(minutes);</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						return vf.createLiteral(dtBuilder.toString(), XSD.DATETIME);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						throw typeError(literal, null);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw typeError(literal, e);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		throw typeError(value, null);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

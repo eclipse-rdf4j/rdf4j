@@ -1,0 +1,180 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LuceneSailFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene.impl.config</a>
+</div>
+
+<h1>Coverage Summary for Class: LuceneSailFactory (org.eclipse.rdf4j.sail.lucene.impl.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LuceneSailFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene.impl.config;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailConfigException;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailFactory;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailImplConfig;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.config.AbstractLuceneSailConfig;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link SailFactory} that creates {@link LuceneSail}s based on RDF configuration data.
+&nbsp; */
+<b class="nc">&nbsp;public class LuceneSailFactory implements SailFactory {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The type of repositories that are created by this factory.
+&nbsp;	 *
+&nbsp;	 * @see SailFactory#getSailType()
+&nbsp;	 */
+&nbsp;	public static final String SAIL_TYPE = &quot;openrdf:LuceneSail&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the Sail&#39;s type: &lt;var&gt;openrdf:LuceneSail&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String getSailType() {
+<b class="nc">&nbsp;		return SAIL_TYPE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailImplConfig getConfig() {
+<b class="nc">&nbsp;		return new LuceneSailConfig();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Sail getSail(SailImplConfig config) throws SailConfigException {
+<b class="nc">&nbsp;		if (!SAIL_TYPE.equals(config.getType())) {</b>
+<b class="nc">&nbsp;			throw new SailConfigException(&quot;Invalid Sail type: &quot; + config.getType());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		LuceneSail luceneSail = new LuceneSail();</b>
+<b class="nc">&nbsp;		luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, LuceneIndex.class.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (config instanceof AbstractLuceneSailConfig) {</b>
+<b class="nc">&nbsp;			AbstractLuceneSailConfig luceneConfig = (AbstractLuceneSailConfig) config;</b>
+<b class="nc">&nbsp;			luceneSail.setParameter(LuceneSail.LUCENE_DIR_KEY, luceneConfig.getIndexDir());</b>
+<b class="nc">&nbsp;			for (String key : luceneConfig.getParameterNames()) {</b>
+<b class="nc">&nbsp;				luceneSail.setParameter(key, luceneConfig.getParameter(key));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return luceneSail;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

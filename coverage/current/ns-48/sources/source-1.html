@@ -1,0 +1,177 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AddStatementOperation</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.protocol.transaction.operations</a>
+</div>
+
+<h1>Coverage Summary for Class: AddStatementOperation (org.eclipse.rdf4j.http.protocol.transaction.operations)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AddStatementOperation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.protocol.transaction.operations;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Operation to add a statement.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Leo Sauermann
+&nbsp; */
+<b class="nc">&nbsp;public class AddStatementOperation extends StatementOperation implements Serializable {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private static final long serialVersionUID = 7055177153036638975L;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create an AddStatementOperation.
+&nbsp;	 */
+&nbsp;	public AddStatementOperation(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		super(contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;		assert subj != null : &quot;subj must not be null&quot;;</b>
+<b class="nc">&nbsp;		assert pred != null : &quot;pred must not be null&quot;;</b>
+<b class="nc">&nbsp;		assert obj != null : &quot;obj must not be null&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		setSubject(subj);</b>
+<b class="nc">&nbsp;		setPredicate(pred);</b>
+<b class="nc">&nbsp;		setObject(obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(RepositoryConnection con) throws RepositoryException {
+<b class="nc">&nbsp;		con.add(getSubject(), getPredicate(), getObject(), getContexts());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="nc">&nbsp;		if (other instanceof AddStatementOperation) {</b>
+<b class="nc">&nbsp;			return super.equals(other);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

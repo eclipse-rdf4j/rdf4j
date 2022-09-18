@@ -1,0 +1,362 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ActiveTransactionRegistry</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: ActiveTransactionRegistry (org.eclipse.rdf4j.http.server.repository.transaction)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ActiveTransactionRegistry</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/77)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.transaction;
+&nbsp;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.ExecutionException;
+&nbsp;import java.util.concurrent.Executors;
+&nbsp;import java.util.concurrent.ScheduledExecutorService;
+&nbsp;import java.util.concurrent.ScheduledFuture;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.cache.Cache;
+&nbsp;import com.google.common.cache.CacheBuilder;
+&nbsp;import com.google.common.cache.RemovalCause;
+&nbsp;import com.google.common.cache.RemovalNotification;
+&nbsp;
+&nbsp;/**
+&nbsp; * Registry keeping track of active transactions identified by a {@link UUID}.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public enum ActiveTransactionRegistry {</b>
+&nbsp;
+<b class="nc">&nbsp;	INSTANCE;</b>
+&nbsp;
+&nbsp;	private int timeout = DEFAULT_TIMEOUT;
+&nbsp;
+&nbsp;	private final Logger logger = LoggerFactory.getLogger(ActiveTransactionRegistry.class);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction cache
+&nbsp;	 * timeout (in seconds).
+&nbsp;	 *
+&nbsp;	 * @deprecated since 2.3 use {@link Protocol#CACHE_TIMEOUT_PROPERTY}
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final String CACHE_TIMEOUT_PROPERTY = Protocol.TIMEOUT.CACHE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default timeout setting for transaction cache entries (in seconds).
+&nbsp;	 *
+&nbsp;	 * @deprecated since 2.3 use {@link Protocol#DEFAULT_TIMEOUT}
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public final static int DEFAULT_TIMEOUT = Protocol.TIMEOUT.DEFAULT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * primary cache for transactions, accessible via transaction ID. Cache entries are kept until a transaction signals
+&nbsp;	 * it has ended, or until the secondary cache finds an &quot;orphaned&quot; transaction entry.
+&nbsp;	 */
+&nbsp;	private final Cache&lt;UUID, Transaction&gt; primaryCache;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The secondary cache does automatic cleanup of its entries based on the configured timeout. If an expired
+&nbsp;	 * transaction is no longer active, it is considered &quot;orphaned&quot; and discarded from the primary cache.
+&nbsp;	 */
+&nbsp;	private final Cache&lt;UUID, Transaction&gt; secondaryCache;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * a scheduler that routinely cleanup the secondary cache there is no other way to remove stale transactions from
+&nbsp;	 * there if remote clients are gone
+&nbsp;	 */
+&nbsp;	private final ScheduledExecutorService cleaupSecondaryCacheScheduler;
+&nbsp;	private ScheduledFuture&lt;?&gt; cleanupTask;
+&nbsp;
+&nbsp;	private Cache&lt;UUID, Transaction&gt; getSecondaryCache() {
+<b class="nc">&nbsp;		return secondaryCache;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * private constructor.
+&nbsp;	 */
+&nbsp;	ActiveTransactionRegistry() {
+&nbsp;		final String configuredValue = System.getProperty(Protocol.CACHE_TIMEOUT_PROPERTY);
+&nbsp;		if (configuredValue != null) {
+&nbsp;			try {
+&nbsp;				timeout = Integer.parseInt(configuredValue);
+&nbsp;			} catch (NumberFormatException e) {
+&nbsp;				logger.warn(&quot;Expected integer value for property {}. Timeout will default to {} seconds. &quot;,
+&nbsp;						Protocol.CACHE_TIMEOUT_PROPERTY, Protocol.DEFAULT_TIMEOUT);
+&nbsp;			}
+&nbsp;		}
+&nbsp;		primaryCache = CacheBuilder.newBuilder()
+&nbsp;				.removalListener((RemovalNotification&lt;UUID, Transaction&gt; notification) -&gt; {
+<b class="nc">&nbsp;					UUID transactionId = notification.getKey();</b>
+<b class="nc">&nbsp;					Transaction entry = notification.getValue();</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						logger.debug(&quot;primary cache removal txid {}&quot;, transactionId);</b>
+<b class="nc">&nbsp;						entry.close();</b>
+<b class="nc">&nbsp;					} catch (RepositoryException | InterruptedException | ExecutionException e) {</b>
+&nbsp;						// fall through
+<b class="nc">&nbsp;					}</b>
+&nbsp;				})
+&nbsp;				.build();
+&nbsp;
+&nbsp;		secondaryCache = CacheBuilder.newBuilder()
+&nbsp;				.removalListener((RemovalNotification&lt;UUID, Transaction&gt; notification) -&gt; {
+<b class="nc">&nbsp;					logger.debug(&quot;secondary cache removal&quot;);</b>
+<b class="nc">&nbsp;					if (RemovalCause.EXPIRED.equals(notification.getCause())) {</b>
+<b class="nc">&nbsp;						final UUID transactionId = notification.getKey();</b>
+<b class="nc">&nbsp;						final Transaction entry = notification.getValue();</b>
+<b class="nc">&nbsp;						logger.debug(&quot;expired transaction to be removed {}&quot;, transactionId);</b>
+<b class="nc">&nbsp;						synchronized (primaryCache) {</b>
+&nbsp;							// no operation active, we can decommission this entry
+<b class="nc">&nbsp;							primaryCache.invalidate(transactionId);</b>
+<b class="nc">&nbsp;							logger.debug(&quot;deregistered expired transaction {}&quot;, transactionId);</b>
+&nbsp;							try {
+<b class="nc">&nbsp;								logger.debug(&quot;try close() invoked on transaction !!!{}&quot;, transactionId);</b>
+<b class="nc">&nbsp;								entry.close();</b>
+<b class="nc">&nbsp;							} catch (Throwable t) {</b>
+<b class="nc">&nbsp;								logger.debug(&quot;error on close when purging {}&quot;, t.getMessage());</b>
+<b class="nc">&nbsp;							}</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;				})
+&nbsp;				.expireAfterAccess(timeout, TimeUnit.SECONDS)
+&nbsp;				.build();
+&nbsp;		cleaupSecondaryCacheScheduler = Executors.newSingleThreadScheduledExecutor((
+&nbsp;
+&nbsp;				Runnable runnable) -&gt; {
+<b class="nc">&nbsp;			Thread thread = Executors.defaultThreadFactory().newThread(runnable);</b>
+<b class="nc">&nbsp;			thread.setName(&quot;rdf4j-cleanup-stn-scheduler&quot;);</b>
+<b class="nc">&nbsp;			thread.setDaemon(true);</b>
+<b class="nc">&nbsp;			return thread;</b>
+&nbsp;		});
+&nbsp;
+&nbsp;		// timeout + 10% to force cleanup
+&nbsp;		cleanupTask = cleaupSecondaryCacheScheduler.schedule(() -&gt; {
+<b class="nc">&nbsp;			cleanUpSecondaryCache();</b>
+&nbsp;		}, timeout + timeout / 10, TimeUnit.SECONDS);
+&nbsp;		logger.debug(&quot;secondary cache expire time {} seconds&quot;, timeout);
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void cleanUpSecondaryCache() {
+<b class="nc">&nbsp;		synchronized (primaryCache) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;performing secondary cache cleanup. {}&quot;, getSecondaryCache().size());</b>
+<b class="nc">&nbsp;			getSecondaryCache().cleanUp();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		cleanupTask = cleaupSecondaryCacheScheduler.schedule(() -&gt; {</b>
+<b class="nc">&nbsp;			cleanUpSecondaryCache();</b>
+&nbsp;		}, timeout + timeout / 10, TimeUnit.SECONDS);
+&nbsp;	}
+&nbsp;
+&nbsp;	// stops the secondary cache cleanup scheduler. invoked by TransactionController.destroy()
+&nbsp;	public void destroyScheduler() {
+<b class="nc">&nbsp;		if (cleanupTask != null)</b>
+<b class="nc">&nbsp;			cleanupTask.cancel(false);</b>
+<b class="nc">&nbsp;		cleanupTask = null;</b>
+<b class="nc">&nbsp;		cleaupSecondaryCacheScheduler.shutdownNow();</b>
+<b class="nc">&nbsp;		logger.debug(&quot;ActiveTransactionCache destroy invoked!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getTimeout(TimeUnit unit) {
+<b class="nc">&nbsp;		return unit.convert(timeout, TimeUnit.SECONDS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param txn
+&nbsp;	 */
+&nbsp;	public void register(Transaction txn) {
+<b class="nc">&nbsp;		synchronized (primaryCache) {</b>
+<b class="nc">&nbsp;			Transaction existingTxn = primaryCache.getIfPresent(txn.getID());</b>
+<b class="nc">&nbsp;			if (existingTxn == null) {</b>
+<b class="nc">&nbsp;				primaryCache.put(txn.getID(), txn);</b>
+<b class="nc">&nbsp;				secondaryCache.put(txn.getID(), txn);</b>
+<b class="nc">&nbsp;				logger.debug(&quot;registered transaction {} &quot;, txn.getID());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				logger.error(&quot;transaction already registered: {}&quot;, txn.getID());</b>
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;transaction with id &quot; + txn.getID().toString() + &quot; already registered.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Transaction getTransaction(UUID id) {
+<b class="nc">&nbsp;		synchronized (primaryCache) {</b>
+<b class="nc">&nbsp;			Transaction entry = primaryCache.getIfPresent(id);</b>
+<b class="nc">&nbsp;			if (entry == null) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;transaction with id &quot; + id.toString() + &quot; not registered.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			updateSecondaryCache(entry);</b>
+<b class="nc">&nbsp;			return entry;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Resets transaction timeout. If transaction has already timed-out, reinsert the transaction.
+&nbsp;	 *
+&nbsp;	 * @param txn
+&nbsp;	 */
+&nbsp;	public void active(Transaction txn) {
+<b class="nc">&nbsp;		synchronized (primaryCache) {</b>
+<b class="nc">&nbsp;			updateSecondaryCache(txn);</b>
+<b class="nc">&nbsp;			Transaction existingTxn = primaryCache.getIfPresent(txn.getID());</b>
+<b class="nc">&nbsp;			if (existingTxn == null) {</b>
+&nbsp;				// reinstate transaction that timed-out too soon
+<b class="nc">&nbsp;				primaryCache.put(txn.getID(), txn);</b>
+<b class="nc">&nbsp;				logger.debug(&quot;reinstated transaction {} &quot;, txn.getID());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param transaction
+&nbsp;	 */
+&nbsp;	public void deregister(Transaction transaction) {
+&nbsp;
+<b class="nc">&nbsp;		synchronized (primaryCache) {</b>
+<b class="nc">&nbsp;			Transaction entry = primaryCache.getIfPresent(transaction.getID());</b>
+<b class="nc">&nbsp;			if (entry == null) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(</b>
+<b class="nc">&nbsp;						&quot;transaction with id &quot; + transaction.getID().toString() + &quot; not registered.&quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				primaryCache.invalidate(transaction.getID());</b>
+<b class="nc">&nbsp;				secondaryCache.invalidate(transaction.getID());</b>
+<b class="nc">&nbsp;				logger.debug(&quot;deregistered transaction {}&quot;, transaction.getID());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the given transaction entry is still in the secondary cache (resetting its last access time in the
+&nbsp;	 * process) and if not reinserts it.
+&nbsp;	 *
+&nbsp;	 * @param transaction the transaction to check
+&nbsp;	 */
+&nbsp;	private void updateSecondaryCache(final Transaction transaction) {
+&nbsp;		try {
+<b class="nc">&nbsp;			secondaryCache.get(transaction.getID(), () -&gt; transaction);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;secondary cache update transaction {}&quot;, transaction.getID());</b>
+<b class="nc">&nbsp;		} catch (ExecutionException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,184 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > WritePrefReadWriteLockManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks</a>
+</div>
+
+<h1>Coverage Summary for Class: WritePrefReadWriteLockManager (org.eclipse.rdf4j.common.concurrent.locks)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">WritePrefReadWriteLockManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks;
+&nbsp;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
+&nbsp;
+&nbsp;/**
+&nbsp; * A read/write lock manager with writer preference.
+&nbsp; *
+&nbsp; * @author Håvard M. Ottestad
+&nbsp; */
+&nbsp;public class WritePrefReadWriteLockManager extends AbstractReadWriteLockManager {
+&nbsp;
+&nbsp;	public WritePrefReadWriteLockManager() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public WritePrefReadWriteLockManager(boolean trackLocks) {
+<b class="nc">&nbsp;		super(trackLocks);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public WritePrefReadWriteLockManager(boolean trackLocks, int waitToCollect) {
+<b class="nc">&nbsp;		super(trackLocks, waitToCollect);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public WritePrefReadWriteLockManager(String alias, LockDiagnostics... lockDiagnostics) {
+<b class="nc">&nbsp;		super(alias, lockDiagnostics);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public WritePrefReadWriteLockManager(String alias, int waitToCollect, LockDiagnostics... lockDiagnostics) {
+<b class="nc">&nbsp;		super(alias, waitToCollect, lockDiagnostics);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	int getWriterPreference() {
+<b class="nc">&nbsp;		return 1000;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	ReadLock createReadLockInner() throws InterruptedException {
+<b class="nc">&nbsp;		while (stampedLock.isWriteLocked()) {</b>
+<b class="nc">&nbsp;			spinWaitAtReadLock();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		while (true) {
+<b class="nc">&nbsp;			readersLocked.increment();</b>
+<b class="nc">&nbsp;			if (!stampedLock.isWriteLocked()) {</b>
+&nbsp;				// Everything is good! We have acquired a read-lock and there are no active writers.
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			} else {
+&nbsp;				// Release our read lock so we don&#39;t block any writers.
+<b class="nc">&nbsp;				readersUnlocked.increment();</b>
+<b class="nc">&nbsp;				spinWaitAtReadLock();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new ReadLock(readersUnlocked);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

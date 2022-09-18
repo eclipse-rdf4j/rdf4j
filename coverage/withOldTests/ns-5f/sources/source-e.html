@@ -1,0 +1,101 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFStarTripleSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFStarTripleSource (org.eclipse.rdf4j.query.algebra.evaluation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">RDFStarTripleSource</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;public interface RDFStarTripleSource extends TripleSource {
+&nbsp;	/**
+&nbsp;	 * Gets all Triple nodes that have a specific subject, predicate and/or object. All three parameters may be null to
+&nbsp;	 * indicate wildcards.
+&nbsp;	 *
+&nbsp;	 * @param subj A Resource specifying the triple&#39;s subject, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred A URI specifying the triple&#39;s predicate, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj  A Value specifying the triple&#39;s object, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @return An iterator over the relevant triples.
+&nbsp;	 * @throws QueryEvaluationException If the rdf star triple source failed to get the statements.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;? extends Triple, QueryEvaluationException&gt; getRdfStarTriples(Resource subj, IRI pred,
+&nbsp;			Value obj) throws QueryEvaluationException;
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

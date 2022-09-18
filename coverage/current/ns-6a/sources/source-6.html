@@ -1,0 +1,199 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StrAfter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.string</a>
+</div>
+
+<h1>Coverage Summary for Class: StrAfter (org.eclipse.rdf4j.query.algebra.evaluation.function.string)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StrAfter</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    78.6%
+  </span>
+  <span class="absValue">
+    (11/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    92.9%
+  </span>
+  <span class="absValue">
+    (26/28)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FN;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+&nbsp;
+&nbsp;/**
+&nbsp; * The SPARQL built-in {@link Function} STRAFTER, as defined in
+&nbsp; * &lt;a href=&quot;https://www.w3.org/TR/sparql11-query/#func-strafter&quot;&gt;SPARQL Query Language for RDF&lt;/a&gt;.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class StrAfter implements Function {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getURI() {
+<b class="fc">&nbsp;		return FN.SUBSTRING_AFTER.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+<b class="pc">&nbsp;		if (args.length != 2) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Incorrect number of arguments for STRAFTER: &quot; + args.length);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Value leftArg = args[0];</b>
+<b class="fc">&nbsp;		Value rightArg = args[1];</b>
+&nbsp;
+<b class="pc">&nbsp;		if (leftArg instanceof Literal &amp;&amp; rightArg instanceof Literal) {</b>
+<b class="fc">&nbsp;			Literal leftLit = (Literal) leftArg;</b>
+<b class="fc">&nbsp;			Literal rightLit = (Literal) rightArg;</b>
+&nbsp;
+<b class="fc">&nbsp;			if (QueryEvaluationUtility.compatibleArguments(leftLit, rightLit)) {</b>
+<b class="fc">&nbsp;				String lexicalValue = leftLit.getLabel();</b>
+<b class="fc">&nbsp;				String substring = rightLit.getLabel();</b>
+&nbsp;
+<b class="fc">&nbsp;				Optional&lt;String&gt; leftLanguage = leftLit.getLanguage();</b>
+<b class="fc">&nbsp;				IRI leftDt = leftLit.getDatatype();</b>
+&nbsp;
+<b class="fc">&nbsp;				int index = lexicalValue.indexOf(substring);</b>
+&nbsp;
+<b class="fc">&nbsp;				String substringAfter = &quot;&quot;;</b>
+<b class="fc">&nbsp;				if (index &gt; -1) {</b>
+<b class="fc">&nbsp;					index += substring.length() - 1;</b>
+<b class="fc">&nbsp;					substringAfter = lexicalValue.substring(index + 1, lexicalValue.length());</b>
+&nbsp;				} else {
+&nbsp;					// no match, return empty string with no language or datatype
+<b class="fc">&nbsp;					leftLanguage = Optional.empty();</b>
+<b class="fc">&nbsp;					leftDt = null;</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				if (leftLanguage.isPresent()) {</b>
+<b class="fc">&nbsp;					return valueFactory.createLiteral(substringAfter, leftLanguage.get());</b>
+<b class="fc">&nbsp;				} else if (leftDt != null) {</b>
+<b class="fc">&nbsp;					return valueFactory.createLiteral(substringAfter, leftDt);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return valueFactory.createLiteral(substringAfter);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="fc">&nbsp;				throw new ValueExprEvaluationException(</b>
+&nbsp;						&quot;incompatible operands for STRAFTER: &quot; + leftArg + &quot;, &quot; + rightArg);
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;incompatible operands for STRAFTER: &quot; + leftArg + &quot;, &quot; + rightArg);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

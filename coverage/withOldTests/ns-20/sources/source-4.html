@@ -1,0 +1,366 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NavigationModel</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.webapp.navigation</a>
+</div>
+
+<h1>Coverage Summary for Class: NavigationModel (org.eclipse.rdf4j.common.webapp.navigation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NavigationModel</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.webapp.navigation;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ResourceUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * NavigationModel represents the navigation structure of a web application. A model consists of groups and views.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class NavigationModel extends Group {
+&nbsp;
+&nbsp;	public static final String NAVIGATION_MODEL_KEY = &quot;navigation-model&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_PATH_PREFIX = &quot;/&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_PATH_SEPARATOR = &quot;/&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_VIEW_SUFFIX = &quot;.view&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_ICON_PREFIX = &quot;/images/icons/&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_ICON_SEPARATOR = &quot;_&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_ICON_SUFFIX = &quot;.png&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_I18N_PREFIX = &quot;&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_I18N_SEPARATOR = &quot;.&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_I18N_SUFFIX = &quot;.title&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private List&lt;String&gt; navigationModelLocations = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private String pathPrefix;
+&nbsp;
+&nbsp;	private String pathSeparator;
+&nbsp;
+&nbsp;	private String iconPrefix;
+&nbsp;
+&nbsp;	private String iconSeparator;
+&nbsp;
+&nbsp;	private String iconSuffix;
+&nbsp;
+&nbsp;	private String i18nPrefix;
+&nbsp;
+&nbsp;	private String i18nSeparator;
+&nbsp;
+&nbsp;	private String i18nSuffix;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a new, anonymous, empty NavigationModel
+&nbsp;	 */
+&nbsp;	public NavigationModel() {
+<b class="nc">&nbsp;		super(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a new emtpy NavigationModel with the specified ID.
+&nbsp;	 *
+&nbsp;	 * @param id the ID of the NavigationModel
+&nbsp;	 */
+&nbsp;	public NavigationModel(String id) {
+<b class="nc">&nbsp;		super(id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getPathPrefix() {
+<b class="nc">&nbsp;		if (pathPrefix == null) {</b>
+<b class="nc">&nbsp;			setPathPrefix(DEFAULT_PATH_PREFIX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return pathPrefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPathPrefix(String pathPrefix) {
+<b class="nc">&nbsp;		this.pathPrefix = pathPrefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getPathSeparator() {
+<b class="nc">&nbsp;		if (pathSeparator == null) {</b>
+<b class="nc">&nbsp;			setPathSeparator(DEFAULT_PATH_SEPARATOR);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return pathSeparator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPathSeparator(String pathSeparator) {
+<b class="nc">&nbsp;		this.pathSeparator = pathSeparator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getIconPrefix() {
+<b class="nc">&nbsp;		if (iconPrefix == null) {</b>
+<b class="nc">&nbsp;			setIconPrefix(DEFAULT_ICON_PREFIX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return iconPrefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setIconPrefix(String iconPrefix) {
+<b class="nc">&nbsp;		this.iconPrefix = iconPrefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getIconSeparator() {
+<b class="nc">&nbsp;		if (iconSeparator == null) {</b>
+<b class="nc">&nbsp;			setIconSeparator(DEFAULT_ICON_SEPARATOR);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return iconSeparator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setIconSeparator(String iconSeparator) {
+<b class="nc">&nbsp;		this.iconSeparator = iconSeparator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getIconSuffix() {
+<b class="nc">&nbsp;		if (iconSuffix == null) {</b>
+<b class="nc">&nbsp;			setIconSuffix(DEFAULT_ICON_SUFFIX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return iconSuffix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setIconSuffix(String iconSuffix) {
+<b class="nc">&nbsp;		this.iconSuffix = iconSuffix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getI18nPrefix() {
+<b class="nc">&nbsp;		if (i18nPrefix == null) {</b>
+<b class="nc">&nbsp;			setI18nPrefix(DEFAULT_I18N_PREFIX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return i18nPrefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setI18nPrefix(String i18nPrefix) {
+<b class="nc">&nbsp;		this.i18nPrefix = i18nPrefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getI18nSeparator() {
+<b class="nc">&nbsp;		if (i18nSeparator == null) {</b>
+<b class="nc">&nbsp;			setI18nSeparator(DEFAULT_I18N_SEPARATOR);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return i18nSeparator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setI18nSeparator(String i18nSeparator) {
+<b class="nc">&nbsp;		this.i18nSeparator = i18nSeparator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getI18nSuffix() {
+<b class="nc">&nbsp;		if (i18nSuffix == null) {</b>
+<b class="nc">&nbsp;			setI18nSuffix(DEFAULT_I18N_SUFFIX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return i18nSuffix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setI18nSuffix(String i18nSuffix) {
+<b class="nc">&nbsp;		this.i18nSuffix = i18nSuffix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getViewSuffix() {
+<b class="nc">&nbsp;		if (viewSuffix == null) {</b>
+<b class="nc">&nbsp;			setViewSuffix(DEFAULT_VIEW_SUFFIX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return viewSuffix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Find the view with the specified name in the NavigationModel.
+&nbsp;	 *
+&nbsp;	 * @param viewName the name of the view, specified as a /-separated hierarchy of groups, where the part after the
+&nbsp;	 *                 last / is interpreted as the name of the view itself.
+&nbsp;	 * @return the view, or null if no view matching the specified name could be found
+&nbsp;	 */
+&nbsp;	public View findView(String viewName) {
+&nbsp;		View result;
+&nbsp;
+<b class="nc">&nbsp;		int prefixLength = getPathPrefix().length();</b>
+<b class="nc">&nbsp;		viewName = viewName.substring(prefixLength);</b>
+<b class="nc">&nbsp;		result = findViewInternal(viewName);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add another NavigationModel to this one. This is done by adding all groups and view from the other model to this
+&nbsp;	 * one.
+&nbsp;	 *
+&nbsp;	 * @param other the model to add to this one.
+&nbsp;	 */
+&nbsp;	public void addModel(NavigationModel other) {
+<b class="nc">&nbsp;		for (Group group : other.getGroups()) {</b>
+<b class="nc">&nbsp;			addGroup(group);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		for (View view : other.getViews()) {</b>
+<b class="nc">&nbsp;			addView(view);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the locations of the navigation model resources to be used in the construction of this model. Calling this
+&nbsp;	 * method will cause this NavigationModel to be initialized.
+&nbsp;	 *
+&nbsp;	 * @param navigationModelLocations a list of resource names
+&nbsp;	 */
+&nbsp;	public void setNavigationModels(List&lt;String&gt; navigationModelLocations) {
+<b class="nc">&nbsp;		this.navigationModelLocations = navigationModelLocations;</b>
+<b class="nc">&nbsp;		createNavigationModel();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void createNavigationModel() {
+<b class="nc">&nbsp;		boolean first = true;</b>
+<b class="nc">&nbsp;		for (String navigationModelLocation : navigationModelLocations) {</b>
+<b class="nc">&nbsp;			NavigationXmlParser parser = new NavigationXmlParser();</b>
+<b class="nc">&nbsp;			if (first) {</b>
+<b class="nc">&nbsp;				parser.parseInto(this, ResourceUtil.getURL(navigationModelLocation));</b>
+<b class="nc">&nbsp;				first = false;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				addModel(parser.parse(ResourceUtil.getURL(navigationModelLocation)));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object clone() {
+<b class="nc">&nbsp;		NavigationModel result = new NavigationModel(getId());</b>
+<b class="nc">&nbsp;		copyCommonAttributes(result);</b>
+<b class="nc">&nbsp;		copyGroupsAndViews(result);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

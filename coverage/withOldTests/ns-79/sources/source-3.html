@@ -1,0 +1,223 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ParsedGraphQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser</a>
+</div>
+
+<h1>Coverage Summary for Class: ParsedGraphQuery (org.eclipse.rdf4j.query.parser)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ParsedGraphQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.9%
+  </span>
+  <span class="absValue">
+    (3/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    41.7%
+  </span>
+  <span class="absValue">
+    (5/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser;
+&nbsp;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;
+&nbsp;/**
+&nbsp; * A query forumalated in the OpenRDF query algebra that produces an RDF graph (a set of statements) as its result.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class ParsedGraphQuery extends ParsedQuery {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private Map&lt;String, String&gt; queryNamespaces;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph query. To complete this query, a tuple expression needs to be supplied to it using
+&nbsp;	 * {@link #setTupleExpr(TupleExpr)}.
+&nbsp;	 */
+&nbsp;	public ParsedGraphQuery() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph query. To complete this query, a tuple expression needs to be supplied to it using
+&nbsp;	 * {@link #setTupleExpr(TupleExpr)}.
+&nbsp;	 *
+&nbsp;	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
+&nbsp;	 *                   the query.
+&nbsp;	 */
+&nbsp;	public ParsedGraphQuery(Map&lt;String, String&gt; namespaces) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		queryNamespaces = namespaces;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph query for the supplied tuple expression.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr A tuple expression representing the query, formulated in Sail Query Model objects.
+&nbsp;	 */
+&nbsp;	public ParsedGraphQuery(TupleExpr tupleExpr) {
+<b class="nc">&nbsp;		super(tupleExpr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph query for the supplied tuple expression.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr A tuple expression representing the query, formulated in Sail Query Model objects.
+&nbsp;	 */
+&nbsp;	public ParsedGraphQuery(String sourceString, TupleExpr tupleExpr) {
+<b class="fc">&nbsp;		super(sourceString, tupleExpr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph query.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr  A tuple expression representing the query, formulated in Sail Query Model objects.
+&nbsp;	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
+&nbsp;	 *                   the query.
+&nbsp;	 */
+&nbsp;	public ParsedGraphQuery(TupleExpr tupleExpr, Map&lt;String, String&gt; namespaces) {
+<b class="nc">&nbsp;		this(tupleExpr);</b>
+<b class="nc">&nbsp;		queryNamespaces = namespaces;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph query.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr  A tuple expression representing the query, formulated in Sail Query Model objects.
+&nbsp;	 * @param namespaces A mapping of namespace prefixes to namespace names representing the namespaces that are used in
+&nbsp;	 *                   the query.
+&nbsp;	 */
+&nbsp;	public ParsedGraphQuery(String sourceString, TupleExpr tupleExpr, Map&lt;String, String&gt; namespaces) {
+<b class="fc">&nbsp;		this(sourceString, tupleExpr);</b>
+<b class="fc">&nbsp;		queryNamespaces = namespaces;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public Map&lt;String, String&gt; getQueryNamespaces() {
+<b class="pc">&nbsp;		if (queryNamespaces != null) {</b>
+<b class="fc">&nbsp;			return queryNamespaces;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return Collections.emptyMap();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

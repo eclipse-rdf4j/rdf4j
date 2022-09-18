@@ -1,0 +1,885 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MonotonicTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.repository.optimistic</a>
+</div>
+
+<h1>Coverage Summary for Class: MonotonicTest (org.eclipse.rdf4j.testsuite.repository.optimistic)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MonotonicTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/505)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.repository.optimistic;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.AfterClass;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.BeforeClass;
+&nbsp;import org.junit.Test;
+&nbsp;
+<b class="nc">&nbsp;public class MonotonicTest {</b>
+&nbsp;
+&nbsp;	@BeforeClass
+&nbsp;	public static void setUpClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterClass
+&nbsp;	public static void afterClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;false&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Repository repo;
+&nbsp;
+&nbsp;	private RepositoryConnection a;
+&nbsp;
+&nbsp;	private RepositoryConnection b;
+&nbsp;
+<b class="nc">&nbsp;	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;</b>
+&nbsp;
+<b class="nc">&nbsp;	private final String NS = &quot;http://rdf.example.org/&quot;;</b>
+&nbsp;
+&nbsp;	private ValueFactory lf;
+&nbsp;
+&nbsp;	private IRI PAINTER;
+&nbsp;
+&nbsp;	private IRI PAINTS;
+&nbsp;
+&nbsp;	private IRI PAINTING;
+&nbsp;
+&nbsp;	private IRI YEAR;
+&nbsp;
+&nbsp;	private IRI PERIOD;
+&nbsp;
+&nbsp;	private IRI PICASSO;
+&nbsp;
+&nbsp;	private IRI REMBRANDT;
+&nbsp;
+&nbsp;	private IRI GUERNICA;
+&nbsp;
+&nbsp;	private IRI JACQUELINE;
+&nbsp;
+&nbsp;	private IRI NIGHTWATCH;
+&nbsp;
+&nbsp;	private IRI ARTEMISIA;
+&nbsp;
+&nbsp;	private IRI DANAE;
+&nbsp;
+&nbsp;	private IRI JACOB;
+&nbsp;
+&nbsp;	private IRI ANATOMY;
+&nbsp;
+&nbsp;	private IRI BELSHAZZAR;
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		repo = OptimisticIsolationTest.getEmptyInitializedRepository(MonotonicTest.class);</b>
+<b class="nc">&nbsp;		lf = repo.getValueFactory();</b>
+<b class="nc">&nbsp;		ValueFactory uf = repo.getValueFactory();</b>
+<b class="nc">&nbsp;		PAINTER = uf.createIRI(NS, &quot;Painter&quot;);</b>
+<b class="nc">&nbsp;		PAINTS = uf.createIRI(NS, &quot;paints&quot;);</b>
+<b class="nc">&nbsp;		PAINTING = uf.createIRI(NS, &quot;Painting&quot;);</b>
+<b class="nc">&nbsp;		YEAR = uf.createIRI(NS, &quot;year&quot;);</b>
+<b class="nc">&nbsp;		PERIOD = uf.createIRI(NS, &quot;period&quot;);</b>
+<b class="nc">&nbsp;		PICASSO = uf.createIRI(NS, &quot;picasso&quot;);</b>
+<b class="nc">&nbsp;		REMBRANDT = uf.createIRI(NS, &quot;rembrandt&quot;);</b>
+<b class="nc">&nbsp;		GUERNICA = uf.createIRI(NS, &quot;guernica&quot;);</b>
+<b class="nc">&nbsp;		JACQUELINE = uf.createIRI(NS, &quot;jacqueline&quot;);</b>
+<b class="nc">&nbsp;		NIGHTWATCH = uf.createIRI(NS, &quot;nightwatch&quot;);</b>
+<b class="nc">&nbsp;		ARTEMISIA = uf.createIRI(NS, &quot;artemisia&quot;);</b>
+<b class="nc">&nbsp;		DANAE = uf.createIRI(NS, &quot;danaë&quot;);</b>
+<b class="nc">&nbsp;		JACOB = uf.createIRI(NS, &quot;jacob&quot;);</b>
+<b class="nc">&nbsp;		ANATOMY = uf.createIRI(NS, &quot;anatomy&quot;);</b>
+<b class="nc">&nbsp;		BELSHAZZAR = uf.createIRI(NS, &quot;belshazzar&quot;);</b>
+<b class="nc">&nbsp;		a = repo.getConnection();</b>
+<b class="nc">&nbsp;		b = repo.getConnection();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws Exception {
+&nbsp;		try {
+<b class="nc">&nbsp;			a.close();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				b.close();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				repo.shutDown();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_independentPattern() throws Exception {
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		assertEquals(1, size(a, PICASSO, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		assertEquals(1, size(b, REMBRANDT, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(2, size(a, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safePattern() throws Exception {
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_afterPattern() throws Exception {
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_afterInsertDataPattern() throws Exception {
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.prepareUpdate(QueryLanguage.SPARQL, &quot;INSERT DATA { &lt;picasso&gt; a &lt;Painter&gt; }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL, &quot;INSERT DATA { &lt;rembrandt&gt; a &lt;Painter&gt; }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		assertEquals(1, size(a, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedPattern() throws Exception {
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		assertEquals(1, size(b, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(2, size(b, null, RDF.TYPE, PAINTER, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeQuery() throws Exception {
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO is *not* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b, &quot;SELECT ?painting &quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting }&quot;);</b>
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(9, size(a, null, null, null, false));</b>
+<b class="nc">&nbsp;		assertEquals(9, size(b, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeInsert() throws Exception {
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO is *not* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+<b class="nc">&nbsp;				&quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(9, size(a, null, null, null, false));</b>
+<b class="nc">&nbsp;		assertEquals(9, size(b, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b, &quot;SELECT ?painting &quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting }&quot;);</b>
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(b, REMBRANDT, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+<b class="nc">&nbsp;				&quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(b, REMBRANDT, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b, &quot;SELECT ?painting &quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting }&quot;);</b>
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+<b class="nc">&nbsp;				&quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(a, null, RDF.TYPE, PAINTING, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeOptionalQuery() throws Exception {
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO is *not* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b,</b>
+&nbsp;				&quot;SELECT ?painting &quot; + &quot;WHERE { ?painter a &lt;Painter&gt; &quot; + &quot;OPTIONAL { ?painter &lt;paints&gt; ?painting } }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			if (painting != null) {</b>
+<b class="nc">&nbsp;				b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(9, size(a, null, null, null, false));</b>
+<b class="nc">&nbsp;		assertEquals(9, size(b, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeOptionalInsert() throws Exception {
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO is *not* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL, &quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { ?painter a &lt;Painter&gt; &quot;</b>
+<b class="nc">&nbsp;				+ &quot;OPTIONAL { ?painter &lt;paints&gt; ?painting } }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(9, size(a, null, null, null, false));</b>
+<b class="nc">&nbsp;		assertEquals(9, size(b, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeOptionalQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b,</b>
+&nbsp;				&quot;SELECT ?painting &quot; + &quot;WHERE { ?painter a &lt;Painter&gt; &quot; + &quot;OPTIONAL { ?painter &lt;paints&gt; ?painting } }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			if (painting != null) {</b>
+<b class="nc">&nbsp;				b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(b, REMBRANDT, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(10, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeOptionalInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL, &quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { ?painter a &lt;Painter&gt; &quot;</b>
+<b class="nc">&nbsp;				+ &quot;OPTIONAL { ?painter &lt;paints&gt; ?painting } }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(3, size(b, REMBRANDT, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(10, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedOptionalQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b,</b>
+&nbsp;				&quot;SELECT ?painting &quot; + &quot;WHERE { ?painter a &lt;Painter&gt; &quot; + &quot;OPTIONAL { ?painter &lt;paints&gt; ?painting } }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			if (painting != null) {</b>
+<b class="nc">&nbsp;				b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(10, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedOptionalInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+&nbsp;		// PICASSO *is* a known PAINTER
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL, &quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { ?painter a &lt;Painter&gt; &quot;</b>
+<b class="nc">&nbsp;				+ &quot;OPTIONAL { ?painter &lt;paints&gt; ?painting } }&quot;, NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(10, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeFilterQuery() throws Exception {
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b,</b>
+&nbsp;				&quot;SELECT ?painting &quot; + &quot;WHERE { ?painter a &lt;Painter&gt;; &lt;paints&gt; ?painting &quot;
+&nbsp;						+ &quot;FILTER  regex(str(?painter), \&quot;rem\&quot;, \&quot;i\&quot;) }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(10, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeFilterInsert() throws Exception {
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { ?painter a &lt;Painter&gt;; &lt;paints&gt; ?painting &quot;
+&nbsp;						+ &quot;FILTER  regex(str(?painter), \&quot;rem\&quot;, \&quot;i\&quot;) }&quot;,
+<b class="nc">&nbsp;				NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(10, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeOptionalFilterQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(GUERNICA, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		a.add(JACQUELINE, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b, &quot;SELECT ?painting &quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting &quot;</b>
+&nbsp;				+ &quot;OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }&quot;);
+<b class="nc">&nbsp;		assertEquals(5, result.size());</b>
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			if (painting != null) {</b>
+<b class="nc">&nbsp;				b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(12, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeOptionalFilterInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(GUERNICA, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		a.add(JACQUELINE, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting &quot;
+&nbsp;						+ &quot;OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }&quot;,
+<b class="nc">&nbsp;				NS).execute();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(12, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedOptionalFilterQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(GUERNICA, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		a.add(JACQUELINE, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b, &quot;SELECT ?painting &quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting &quot;</b>
+&nbsp;				+ &quot;OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			if (painting != null) {</b>
+<b class="nc">&nbsp;				b.add((Resource) painting, RDF.TYPE, PAINTING);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, RDF.TYPE, PAINTING, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(12, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedOptionalFilterInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, GUERNICA);</b>
+<b class="nc">&nbsp;		a.add(PICASSO, PAINTS, JACQUELINE);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		b.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		a.add(GUERNICA, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		a.add(JACQUELINE, RDF.TYPE, PAINTING);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;INSERT { ?painting a &lt;Painting&gt; }\n&quot; + &quot;WHERE { [a &lt;Painter&gt;] &lt;paints&gt; ?painting &quot;
+&nbsp;						+ &quot;OPTIONAL { ?painting a ?type  } FILTER (!bound(?type)) }&quot;,
+<b class="nc">&nbsp;				NS).execute();</b>
+<b class="nc">&nbsp;		assertEquals(5, size(b, null, RDF.TYPE, PAINTING, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(12, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeRangeQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, JACOB);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ANATOMY);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, BELSHAZZAR);</b>
+<b class="nc">&nbsp;		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));</b>
+<b class="nc">&nbsp;		a.add(ARTEMISIA, YEAR, lf.createLiteral(1634));</b>
+<b class="nc">&nbsp;		a.add(DANAE, YEAR, lf.createLiteral(1636));</b>
+<b class="nc">&nbsp;		a.add(JACOB, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.add(ANATOMY, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b,</b>
+&nbsp;				&quot;SELECT ?painting &quot; + &quot;WHERE { &lt;rembrandt&gt; &lt;paints&gt; ?painting . ?painting &lt;year&gt; ?year &quot;
+&nbsp;						+ &quot;FILTER  (1631 &lt;= ?year &amp;&amp; ?year &lt;= 1635) }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			b.add((Resource) painting, PERIOD, lf.createLiteral(&quot;First Amsterdam period&quot;));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(17, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_safeRangeInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, JACOB);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ANATOMY);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, BELSHAZZAR);</b>
+<b class="nc">&nbsp;		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));</b>
+<b class="nc">&nbsp;		a.add(ARTEMISIA, YEAR, lf.createLiteral(1634));</b>
+<b class="nc">&nbsp;		a.add(DANAE, YEAR, lf.createLiteral(1636));</b>
+<b class="nc">&nbsp;		a.add(JACOB, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.add(ANATOMY, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;INSERT { ?painting &lt;period&gt; \&quot;First Amsterdam period\&quot; }\n&quot;
+&nbsp;						+ &quot;WHERE { &lt;rembrandt&gt; &lt;paints&gt; ?painting . ?painting &lt;year&gt; ?year &quot;
+&nbsp;						+ &quot;FILTER  (1631 &lt;= ?year &amp;&amp; ?year &lt;= 1635) }&quot;,
+<b class="nc">&nbsp;				NS).execute();</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(17, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeRangeQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, JACOB);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ANATOMY);</b>
+<b class="nc">&nbsp;		a.add(ARTEMISIA, YEAR, lf.createLiteral(1634));</b>
+<b class="nc">&nbsp;		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));</b>
+<b class="nc">&nbsp;		a.add(DANAE, YEAR, lf.createLiteral(1636));</b>
+<b class="nc">&nbsp;		a.add(JACOB, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.add(ANATOMY, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b,</b>
+&nbsp;				&quot;SELECT ?painting &quot; + &quot;WHERE { &lt;rembrandt&gt; &lt;paints&gt; ?painting . ?painting &lt;year&gt; ?year &quot;
+&nbsp;						+ &quot;FILTER  (1631 &lt;= ?year &amp;&amp; ?year &lt;= 1635) }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			b.add((Resource) painting, PERIOD, lf.createLiteral(&quot;First Amsterdam period&quot;));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, BELSHAZZAR);</b>
+<b class="nc">&nbsp;		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(2, size(b, ARTEMISIA, null, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(16, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_mergeRangeInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, JACOB);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ANATOMY);</b>
+<b class="nc">&nbsp;		a.add(ARTEMISIA, YEAR, lf.createLiteral(1634));</b>
+<b class="nc">&nbsp;		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));</b>
+<b class="nc">&nbsp;		a.add(DANAE, YEAR, lf.createLiteral(1636));</b>
+<b class="nc">&nbsp;		a.add(JACOB, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.add(ANATOMY, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;INSERT { ?painting &lt;period&gt; \&quot;First Amsterdam period\&quot; }\n&quot;
+&nbsp;						+ &quot;WHERE { &lt;rembrandt&gt; &lt;paints&gt; ?painting . ?painting &lt;year&gt; ?year &quot;
+&nbsp;						+ &quot;FILTER  (1631 &lt;= ?year &amp;&amp; ?year &lt;= 1635) }&quot;,
+<b class="nc">&nbsp;				NS).execute();</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, BELSHAZZAR);</b>
+<b class="nc">&nbsp;		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(2, size(b, ARTEMISIA, null, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(16, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedRangeQuery() throws Exception {
+<b class="nc">&nbsp;		a.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, JACOB);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ANATOMY);</b>
+<b class="nc">&nbsp;		a.add(ARTEMISIA, YEAR, lf.createLiteral(1634));</b>
+<b class="nc">&nbsp;		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));</b>
+<b class="nc">&nbsp;		a.add(DANAE, YEAR, lf.createLiteral(1636));</b>
+<b class="nc">&nbsp;		a.add(JACOB, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.add(ANATOMY, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; result = eval(&quot;painting&quot;, b,</b>
+&nbsp;				&quot;SELECT ?painting &quot; + &quot;WHERE { &lt;rembrandt&gt; &lt;paints&gt; ?painting . ?painting &lt;year&gt; ?year &quot;
+&nbsp;						+ &quot;FILTER  (1631 &lt;= ?year &amp;&amp; ?year &lt;= 1635) }&quot;);
+<b class="nc">&nbsp;		for (Value painting : result) {</b>
+<b class="nc">&nbsp;			b.add((Resource) painting, PERIOD, lf.createLiteral(&quot;First Amsterdam period&quot;));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, BELSHAZZAR);</b>
+<b class="nc">&nbsp;		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(6, size(b, REMBRANDT, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(16, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test_changedRangeInsert() throws Exception {
+<b class="nc">&nbsp;		a.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, NIGHTWATCH);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ARTEMISIA);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, DANAE);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, JACOB);</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, ANATOMY);</b>
+<b class="nc">&nbsp;		a.add(ARTEMISIA, YEAR, lf.createLiteral(1634));</b>
+<b class="nc">&nbsp;		a.add(NIGHTWATCH, YEAR, lf.createLiteral(1642));</b>
+<b class="nc">&nbsp;		a.add(DANAE, YEAR, lf.createLiteral(1636));</b>
+<b class="nc">&nbsp;		a.add(JACOB, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.add(ANATOMY, YEAR, lf.createLiteral(1632));</b>
+<b class="nc">&nbsp;		a.begin(level);</b>
+<b class="nc">&nbsp;		b.begin(level);</b>
+<b class="nc">&nbsp;		b.prepareUpdate(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;INSERT { ?painting &lt;period&gt; \&quot;First Amsterdam period\&quot; }\n&quot;
+&nbsp;						+ &quot;WHERE { &lt;rembrandt&gt; &lt;paints&gt; ?painting . ?painting &lt;year&gt; ?year &quot;
+&nbsp;						+ &quot;FILTER  (1631 &lt;= ?year &amp;&amp; ?year &lt;= 1635) }&quot;,
+<b class="nc">&nbsp;				NS).execute();</b>
+<b class="nc">&nbsp;		a.add(REMBRANDT, PAINTS, BELSHAZZAR);</b>
+<b class="nc">&nbsp;		a.add(BELSHAZZAR, YEAR, lf.createLiteral(1635));</b>
+<b class="nc">&nbsp;		a.commit();</b>
+<b class="nc">&nbsp;		assertEquals(6, size(b, REMBRANDT, PAINTS, null, false));</b>
+<b class="nc">&nbsp;		b.commit();</b>
+<b class="nc">&nbsp;		assertEquals(16, size(a, null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int size(RepositoryConnection con, Resource subj, IRI pred, Value obj, boolean inf, Resource... ctx)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		return QueryResults.asList(con.getStatements(subj, pred, obj, inf, ctx)).size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private List&lt;Value&gt; eval(String var, RepositoryConnection con, String qry) throws Exception {
+<b class="nc">&nbsp;		try (TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, qry, NS).evaluate()) {</b>
+<b class="nc">&nbsp;			List&lt;Value&gt; list = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			while (result.hasNext()) {</b>
+<b class="nc">&nbsp;				list.add(result.next().getValue(var));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return list;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

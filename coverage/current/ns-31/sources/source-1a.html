@@ -1,0 +1,126 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementTupleExpr</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementTupleExpr (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">StatementTupleExpr</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface for any expression that can be evaluated
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; * @see StatementSourcePattern
+&nbsp; * @see ExclusiveStatement
+&nbsp; * @see ExclusiveGroup
+&nbsp; */
+&nbsp;public interface StatementTupleExpr extends FedXTupleExpr {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the id of this expr
+&nbsp;	 */
+&nbsp;	String getId();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return a list of sources that are relevant for evaluation of this expression
+&nbsp;	 */
+&nbsp;	List&lt;StatementSource&gt; getStatementSources();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * returns true iff this statement has free variables in the presence of the specified binding set
+&nbsp;	 *
+&nbsp;	 * @param binding
+&nbsp;	 * @return whether the statement has free vars
+&nbsp;	 */
+&nbsp;	boolean hasFreeVarsFor(BindingSet binding);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate this expression using the provided bindings
+&nbsp;	 *
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the result iteration
+&nbsp;	 *
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings)
+&nbsp;			throws QueryEvaluationException;
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

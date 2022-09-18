@@ -1,0 +1,399 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLRepository</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLRepository (org.eclipse.rdf4j.repository.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLRepository</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sparql;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+&nbsp;import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.base.AbstractRepository;
+&nbsp;
+&nbsp;/**
+&nbsp; * A proxy class to access any SPARQL 1.1 endpoint.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public class SPARQLRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating if quad mode is enabled in newly created {@link SPARQLConnection}s.
+&nbsp;	 *
+&nbsp;	 * @see #enableQuadMode(boolean)
+&nbsp;	 */
+<b class="nc">&nbsp;	private boolean quadMode = false;</b>
+&nbsp;	/**
+&nbsp;	 * The HTTP client that takes care of the client-server communication.
+&nbsp;	 */
+&nbsp;	private volatile HttpClientSessionManager client;
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private volatile SharedHttpClientSessionManager dependentClient;
+&nbsp;
+&nbsp;	private String username;
+&nbsp;
+&nbsp;	private String password;
+&nbsp;
+&nbsp;	private final String queryEndpointUrl;
+&nbsp;
+&nbsp;	private final String updateEndpointUrl;
+&nbsp;
+<b class="nc">&nbsp;	private volatile Map&lt;String, String&gt; additionalHttpHeaders = Collections.emptyMap();</b>
+&nbsp;
+&nbsp;	private Boolean passThroughEnabled;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new SPARQLRepository using the supplied endpoint URL for queries and updates.
+&nbsp;	 *
+&nbsp;	 * @param endpointUrl a SPARQL endpoint URL. May not be null.
+&nbsp;	 */
+&nbsp;	public SPARQLRepository(String endpointUrl) {
+<b class="nc">&nbsp;		this(endpointUrl, endpointUrl);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new SPARQLRepository using the supplied query endpoint URL for queries, and the supplied update endpoint
+&nbsp;	 * URL for updates.
+&nbsp;	 *
+&nbsp;	 * @param queryEndpointUrl  a SPARQL endpoint URL for queries. May not be null.
+&nbsp;	 * @param updateEndpointUrl a SPARQL endpoint URL for updates. May not be null.
+&nbsp;	 * @throws IllegalArgumentException if one of the supplied endpoint URLs is null.
+&nbsp;	 */
+<b class="nc">&nbsp;	public SPARQLRepository(String queryEndpointUrl, String updateEndpointUrl) {</b>
+<b class="nc">&nbsp;		if (queryEndpointUrl == null || updateEndpointUrl == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;endpoint URL may not be null.&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.queryEndpointUrl = queryEndpointUrl;</b>
+<b class="nc">&nbsp;		this.updateEndpointUrl = updateEndpointUrl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClientSessionManager getHttpClientSessionManager() {
+<b class="nc">&nbsp;		HttpClientSessionManager result = client;</b>
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				result = client;</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+<b class="nc">&nbsp;					result = client = dependentClient = new SharedHttpClientSessionManager();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClientSessionManager(HttpClientSessionManager client) {
+<b class="nc">&nbsp;		synchronized (this) {</b>
+<b class="nc">&nbsp;			this.client = client;</b>
+&nbsp;			// If they set a client, we need to check whether we need to shutdown any existing dependentClient
+<b class="nc">&nbsp;			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;</b>
+<b class="nc">&nbsp;			dependentClient = null;</b>
+<b class="nc">&nbsp;			if (toCloseDependentClient != null) {</b>
+<b class="nc">&nbsp;				toCloseDependentClient.shutDown();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final HttpClient getHttpClient() {
+<b class="nc">&nbsp;		return getHttpClientSessionManager().getHttpClient();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient httpClient) {
+<b class="nc">&nbsp;		SharedHttpClientSessionManager toSetDependentClient = dependentClient;</b>
+<b class="nc">&nbsp;		if (toSetDependentClient == null) {</b>
+<b class="nc">&nbsp;			getHttpClientSessionManager();</b>
+<b class="nc">&nbsp;			toSetDependentClient = dependentClient;</b>
+&nbsp;		}
+&nbsp;		// The strange lifecycle results in the possibility that the
+&nbsp;		// dependentClient will be null due to a call to setSesameClient, so add
+&nbsp;		// a null guard here for that possibility
+<b class="nc">&nbsp;		if (toSetDependentClient != null) {</b>
+<b class="nc">&nbsp;			toSetDependentClient.setHttpClient(httpClient);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link SPARQLProtocolSession} object. The life-cycle of this is per-connection.
+&nbsp;	 *
+&nbsp;	 * @return a SPARQLProtocolSession object.
+&nbsp;	 */
+&nbsp;	protected SPARQLProtocolSession createSPARQLProtocolSession() {
+<b class="nc">&nbsp;		SPARQLProtocolSession session = getHttpClientSessionManager().createSPARQLProtocolSession(queryEndpointUrl,</b>
+&nbsp;				updateEndpointUrl);
+<b class="nc">&nbsp;		session.setValueFactory(getValueFactory());</b>
+<b class="nc">&nbsp;		session.setAdditionalHttpHeaders(additionalHttpHeaders);</b>
+<b class="nc">&nbsp;		if (username != null) {</b>
+<b class="nc">&nbsp;			session.setUsernameAndPassword(username, password);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getPassThroughEnabled() != null) {</b>
+<b class="nc">&nbsp;			session.setPassThroughEnabled(getPassThroughEnabled());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return session;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated use {@link #createSPARQLProtocolSession()} instead
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	protected SPARQLProtocolSession createHTTPClient() {
+<b class="nc">&nbsp;		return createSPARQLProtocolSession();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryConnection getConnection() throws RepositoryException {
+<b class="nc">&nbsp;		if (!isInitialized()) {</b>
+<b class="nc">&nbsp;			init();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new SPARQLConnection(this, createSPARQLProtocolSession(), quadMode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public File getDataDir() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;		return SimpleValueFactory.getInstance();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void initializeInternal() throws RepositoryException {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isWritable() throws RepositoryException {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataDir(File dataDir) {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the username and password to use for authenticating with the remote repository.
+&nbsp;	 *
+&nbsp;	 * @param username the username. Setting this to null will disable authentication.
+&nbsp;	 * @param password the password. Setting this to null will disable authentication.
+&nbsp;	 */
+&nbsp;	public void setUsernameAndPassword(final String username, final String password) {
+<b class="nc">&nbsp;		this.username = username;</b>
+<b class="nc">&nbsp;		this.password = password;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void shutDownInternal() throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			SharedHttpClientSessionManager toCloseDependentClient = dependentClient;</b>
+<b class="nc">&nbsp;			dependentClient = null;</b>
+<b class="nc">&nbsp;			if (toCloseDependentClient != null) {</b>
+<b class="nc">&nbsp;				toCloseDependentClient.shutDown();</b>
+&nbsp;			}
+&nbsp;		} finally {
+&nbsp;			// remove reference but do not shut down, client may be shared by
+&nbsp;			// other repos.
+<b class="nc">&nbsp;			client = null;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return queryEndpointUrl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the additional HTTP headers which will be used
+&nbsp;	 *
+&nbsp;	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
+&nbsp;	 */
+&nbsp;	public Map&lt;String, String&gt; getAdditionalHttpHeaders() {
+<b class="nc">&nbsp;		return Collections.unmodifiableMap(additionalHttpHeaders);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
+&nbsp;	 * unusual server configurations. This will only take effect on connections subsequently returned by
+&nbsp;	 * {@link #getConnection()}.
+&nbsp;	 *
+&nbsp;	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
+&nbsp;	 */
+&nbsp;	public void setAdditionalHttpHeaders(Map&lt;String, String&gt; additionalHttpHeaders) {
+<b class="nc">&nbsp;		if (additionalHttpHeaders == null) {</b>
+<b class="nc">&nbsp;			this.additionalHttpHeaders = Collections.emptyMap();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.additionalHttpHeaders = additionalHttpHeaders;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Activate quad mode for this {@link SPARQLRepository}, i.e. for retrieval of statements also retrieve the graph.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note: the setting is only applied in newly created {@link SPARQLConnection}s as the setting is an immutable
+&nbsp;	 * configuration of a connection instance.
+&nbsp;	 *
+&nbsp;	 * @param flag flag to enable or disable the quad mode
+&nbsp;	 * @see SPARQLConnection#getStatements(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.URI,
+&nbsp;	 *      org.eclipse.rdf4j.model.Value, boolean, org.eclipse.rdf4j.model.Resource...)
+&nbsp;	 */
+&nbsp;	public void enableQuadMode(boolean flag) {
+<b class="nc">&nbsp;		this.quadMode = flag;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the passThroughEnabled setting to be used for any newly created {@link RepositoryConnection}s.
+&nbsp;	 *
+&nbsp;	 * @return the passThroughEnabled setting. May be &lt;code&gt;null&lt;/code&gt; if not explicitly configured.
+&nbsp;	 *
+&nbsp;	 * @see SPARQLProtocolSession#isPassThroughEnabled()
+&nbsp;	 */
+&nbsp;	public Boolean getPassThroughEnabled() {
+<b class="nc">&nbsp;		return passThroughEnabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the passThroughEnabled configuration. Changing this will influence behavior of any new
+&nbsp;	 * {@link RepositoryConnection}s, but not of existing ones.
+&nbsp;	 *
+&nbsp;	 * @param passThroughEnabled the passThroughEnabled to set
+&nbsp;	 * @see SPARQLProtocolSession#setPassThroughEnabled()
+&nbsp;	 */
+&nbsp;	public void setPassThroughEnabled(Boolean passThroughEnabled) {
+<b class="nc">&nbsp;		this.passThroughEnabled = passThroughEnabled;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

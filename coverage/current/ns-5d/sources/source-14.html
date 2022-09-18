@@ -1,0 +1,127 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Binding</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query</a>
+</div>
+
+<h1>Coverage Summary for Class: Binding (org.eclipse.rdf4j.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">Binding</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;
+&nbsp;/**
+&nbsp; * A named value binding.
+&nbsp; */
+&nbsp;public interface Binding extends Serializable {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the name of the binding (e.g. the variable name).
+&nbsp;	 *
+&nbsp;	 * @return The name of the binding.
+&nbsp;	 */
+&nbsp;	String getName();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the value of the binding. The returned value is never equal to &lt;var&gt;null&lt;/var&gt;, such a &quot;binding&quot; is
+&nbsp;	 * considered to be unbound.
+&nbsp;	 *
+&nbsp;	 * @return The value of the binding, never &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	Value getValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares a binding object to another object.
+&nbsp;	 *
+&nbsp;	 * @param o The object to compare this binding to.
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the other object is an instance of {@link Binding} and both their names and values are
+&nbsp;	 *         equal, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	boolean equals(Object o);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The hash code of a binding is defined as the bit-wise XOR of the hash codes of its name and value:
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * name.hashCode() &amp;circ; value.hashCode()
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * .
+&nbsp;	 *
+&nbsp;	 * @return A hash code for the binding.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	int hashCode();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

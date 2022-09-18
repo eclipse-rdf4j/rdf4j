@@ -1,0 +1,350 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueueIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iteration</a>
+</div>
+
+<h1>Coverage Summary for Class: QueueIteration (org.eclipse.rdf4j.common.iteration)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueueIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.iteration;
+&nbsp;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.util.Queue;
+&nbsp;import java.util.concurrent.ArrayBlockingQueue;
+&nbsp;import java.util.concurrent.BlockingQueue;
+&nbsp;import java.util.concurrent.ConcurrentLinkedQueue;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;/**
+&nbsp; * Makes working with a queue easier by adding the methods {@link #done()} and {@link #toss(Exception)} and after
+&nbsp; * converting the Exception to the required type using {@link #convert(Exception)}.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="nc">&nbsp;@Deprecated(since = &quot;4.1.0&quot;)</b>
+&nbsp;public abstract class QueueIteration&lt;E, T extends Exception&gt; extends LookAheadIteration&lt;E, T&gt; {
+&nbsp;
+<b class="nc">&nbsp;	private final AtomicBoolean done = new AtomicBoolean(false);</b>
+&nbsp;
+&nbsp;	private final BlockingQueue&lt;E&gt; queue;
+&nbsp;
+<b class="nc">&nbsp;	private final E afterLast = createAfterLast();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Queue&lt;Exception&gt; exceptions = new ConcurrentLinkedQueue&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an &lt;var&gt;QueueIteration&lt;/var&gt; with the given (fixed) capacity and default access policy.
+&nbsp;	 *
+&nbsp;	 * @param capacity the capacity of this queue
+&nbsp;	 */
+&nbsp;	protected QueueIteration(int capacity) {
+<b class="nc">&nbsp;		this(capacity, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an &lt;var&gt;QueueIteration&lt;/var&gt; with the given (fixed) capacity and default access policy.
+&nbsp;	 *
+&nbsp;	 * @param capacity the capacity of this queue
+&nbsp;	 * @deprecated WeakReference is no longer supported as a way to automatically close this iteration. The recommended
+&nbsp;	 *             approach to automatically closing an iteration on garbage collection is to use a
+&nbsp;	 *             {@link java.lang.ref.Cleaner}.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;, forRemoval = true)
+&nbsp;	protected QueueIteration(int capacity, WeakReference&lt;?&gt; callerRef) {
+<b class="nc">&nbsp;		this(capacity, false, callerRef);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an &lt;var&gt;QueueIteration&lt;/var&gt; with the given (fixed) capacity and the specified access policy.
+&nbsp;	 *
+&nbsp;	 * @param capacity the capacity of this queue
+&nbsp;	 * @param fair     if &lt;var&gt;true&lt;/var&gt; then queue accesses for threads blocked on insertion or removal, are processed
+&nbsp;	 *                 in FIFO order; if &lt;var&gt;false&lt;/var&gt; the access order is unspecified.
+&nbsp;	 * @deprecated WeakReference is no longer supported as a way to automatically close this iteration. The recommended
+&nbsp;	 *             approach to automatically closing an iteration on garbage collection is to use a
+&nbsp;	 *             {@link java.lang.ref.Cleaner}.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;, forRemoval = true)
+&nbsp;	protected QueueIteration(int capacity, boolean fair, WeakReference&lt;?&gt; callerRef) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		assert callerRef == null;</b>
+<b class="nc">&nbsp;		this.queue = new ArrayBlockingQueue&lt;&gt;(capacity, fair);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an &lt;var&gt;QueueIteration&lt;/var&gt; with the given (fixed) capacity and the specified access policy.
+&nbsp;	 *
+&nbsp;	 * @param capacity the capacity of this queue
+&nbsp;	 * @param fair     if &lt;var&gt;true&lt;/var&gt; then queue accesses for threads blocked on insertion or removal, are processed
+&nbsp;	 *                 in FIFO order; if &lt;var&gt;false&lt;/var&gt; the access order is unspecified.
+&nbsp;	 */
+&nbsp;	protected QueueIteration(int capacity, boolean fair) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.queue = new ArrayBlockingQueue&lt;&gt;(capacity, fair);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an &lt;var&gt;QueueIteration&lt;/var&gt; with the given {@link BlockingQueue} as its backing queue.&lt;br&gt;
+&nbsp;	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
+&nbsp;	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
+&nbsp;	 *
+&nbsp;	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
+&nbsp;	 *              implementation for this cursor.
+&nbsp;	 * @deprecated WeakReference is no longer supported as a way to automatically close this iteration. The recommended
+&nbsp;	 *             approach to automatically closing an iteration on garbage collection is to use a
+&nbsp;	 *             {@link java.lang.ref.Cleaner}.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;, forRemoval = true)
+<b class="nc">&nbsp;	protected QueueIteration(BlockingQueue&lt;E&gt; queue, WeakReference&lt;?&gt; callerRef) {</b>
+<b class="nc">&nbsp;		assert callerRef == null;</b>
+<b class="nc">&nbsp;		this.queue = queue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an &lt;var&gt;QueueIteration&lt;/var&gt; with the given {@link BlockingQueue} as its backing queue.&lt;br&gt;
+&nbsp;	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
+&nbsp;	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
+&nbsp;	 *
+&nbsp;	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
+&nbsp;	 *              implementation for this cursor.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected QueueIteration(BlockingQueue&lt;E&gt; queue) {</b>
+<b class="nc">&nbsp;		this.queue = queue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an exception from the underlying iteration to an exception of type &lt;var&gt;X&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	protected abstract T convert(Exception e);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The next time {@link #next()} is called this exception will be thrown. If it is not a QueryEvaluationException or
+&nbsp;	 * RuntimeException it will be wrapped in a QueryEvaluationException.
+&nbsp;	 */
+&nbsp;	public void toss(Exception exception) {
+<b class="nc">&nbsp;		exceptions.add(exception);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds another item to the queue, blocking while the queue is full.
+&nbsp;	 */
+&nbsp;	public void put(E item) throws InterruptedException, T {
+&nbsp;		try {
+<b class="nc">&nbsp;			while (!isClosed() &amp;&amp; !done.get() &amp;&amp; !Thread.currentThread().isInterrupted()</b>
+<b class="nc">&nbsp;					&amp;&amp; !queue.offer(item, 1, TimeUnit.SECONDS)) {</b>
+&nbsp;				// No body, just iterating regularly through the loop conditions to respond to state changes without a
+&nbsp;				// full busy-wait loop
+&nbsp;			}
+&nbsp;			// Proactively close if interruption didn&#39;t propagate an exception to the catch clause below
+<b class="nc">&nbsp;			if (done.get() || Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;				close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			close();</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates the method {@link #put(Object)} will not be called in the queue anymore.
+&nbsp;	 */
+&nbsp;	public void done() {
+&nbsp;		// Lazily set here, and then come back in handleClose and use set if necessary
+<b class="nc">&nbsp;		done.lazySet(true);</b>
+<b class="nc">&nbsp;		boolean offer = queue.offer(afterLast);</b>
+<b class="nc">&nbsp;		if (!offer) {</b>
+&nbsp;			// TODO: Log inability to add sentinel at debug level
+&nbsp;			// The sentinel is forced onto the queue during the close method
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the next item in the queue, which may be &lt;var&gt;null&lt;/var&gt;, or throws an exception.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public E getNextElement() throws T {
+<b class="nc">&nbsp;		if (isClosed()) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			checkException();</b>
+&nbsp;			E take;
+<b class="nc">&nbsp;			if (done.get()) {</b>
+<b class="nc">&nbsp;				take = queue.poll();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				take = queue.take();</b>
+<b class="nc">&nbsp;				if (done.get()) {</b>
+<b class="nc">&nbsp;					done(); // in case the queue was full before</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (isAfterLast(take)) {</b>
+<b class="nc">&nbsp;				done(); // put afterLast back for others</b>
+<b class="nc">&nbsp;				checkException();</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			checkException();</b>
+<b class="nc">&nbsp;			return take;</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			checkException();</b>
+<b class="nc">&nbsp;			close();</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleClose() throws T {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			done.set(true);</b>
+&nbsp;			do {
+<b class="nc">&nbsp;				queue.clear(); // ensure extra room is available</b>
+<b class="nc">&nbsp;			} while (!queue.offer(afterLast));</b>
+<b class="nc">&nbsp;			checkException();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void checkException() throws T {
+<b class="nc">&nbsp;		while (!exceptions.isEmpty()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				close();</b>
+<b class="nc">&nbsp;				throw exceptions.remove();</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				if (e instanceof InterruptedException || Thread.interrupted()) {</b>
+<b class="nc">&nbsp;					Thread.currentThread().interrupt();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw convert(e);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isAfterLast(E take) {
+<b class="nc">&nbsp;		return take == null || take == afterLast;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	private E createAfterLast() {
+<b class="nc">&nbsp;		return (E) new Object();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

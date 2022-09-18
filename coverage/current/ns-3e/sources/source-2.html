@@ -1,0 +1,212 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXDataset</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.structures</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXDataset (org.eclipse.rdf4j.federated.structures)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXDataset</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.structures;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;
+&nbsp;/**
+&nbsp; * Abstraction of a {@link Dataset} to provide additional information for the evaluation of a query.
+&nbsp; * &lt;p&gt;
+&nbsp; * Can be used to define the endpoints against which a given query shall be executed.
+&nbsp; * &lt;/p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * Example
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * TupleQuery tq = ...;
+&nbsp; * FedXDataset ds = new FedXDataset(tq.getDataset);
+&nbsp; * ds.addEndpoint(&quot;myEndpoint&quot;);
+&nbsp; * ds.addEndpoint(&quot;otherEndpoint&quot;);
+&nbsp; * tq.setDataset(ds)
+&nbsp; * TupleQueryResult res = tq.evaluate()
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FedXDataset implements Dataset {
+&nbsp;
+&nbsp;	protected final Dataset delegate;
+&nbsp;
+<b class="nc">&nbsp;	protected Set&lt;String&gt; endpoints = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	public FedXDataset(Dataset delegate) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addEndpoint(String endpointId) {
+<b class="nc">&nbsp;		endpoints.add(endpointId);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addEndpoints(Collection&lt;String&gt; endpointIDs) {
+<b class="nc">&nbsp;		endpoints.addAll(endpointIDs);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;String&gt; getEndpoints() {
+<b class="nc">&nbsp;		return Collections.unmodifiableSet(endpoints);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;IRI&gt; getDefaultGraphs() {
+<b class="nc">&nbsp;		if (delegate == null) {</b>
+<b class="nc">&nbsp;			return Collections.emptySet();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return delegate.getDefaultGraphs();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI getDefaultInsertGraph() {
+<b class="nc">&nbsp;		if (delegate == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return delegate.getDefaultInsertGraph();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;IRI&gt; getDefaultRemoveGraphs() {
+<b class="nc">&nbsp;		if (delegate == null) {</b>
+<b class="nc">&nbsp;			return Collections.emptySet();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return delegate.getDefaultRemoveGraphs();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;IRI&gt; getNamedGraphs() {
+<b class="nc">&nbsp;		if (delegate == null) {</b>
+<b class="nc">&nbsp;			return Collections.emptySet();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return delegate.getNamedGraphs();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

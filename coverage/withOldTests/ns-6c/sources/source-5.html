@@ -1,0 +1,183 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DecimalCast</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.xsd</a>
+</div>
+
+<h1>Coverage Summary for Class: DecimalCast (org.eclipse.rdf4j.query.algebra.evaluation.function.xsd)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DecimalCast</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (2/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    12.5%
+  </span>
+  <span class="absValue">
+    (2/16)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link org.eclipse.rdf4j.query.algebra.evaluation.function.Function} that tries to cast its argument to an
+&nbsp; * &lt;var&gt;xsd:decimal&lt;/var&gt;.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class DecimalCast extends CastFunction {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal literal = (Literal) value;</b>
+<b class="nc">&nbsp;			IRI datatype = literal.getDatatype();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (XMLDatatypeUtil.isNumericDatatype(datatype)) {</b>
+&nbsp;				// FIXME: floats and doubles must be processed separately, see
+&nbsp;				// http://www.w3.org/TR/xpath-functions/#casting-from-primitive-to-primitive
+&nbsp;				try {
+<b class="nc">&nbsp;					BigDecimal decimalValue = literal.decimalValue();</b>
+<b class="nc">&nbsp;					return valueFactory.createLiteral(decimalValue.toPlainString(), XSD.DECIMAL);</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw typeError(literal, e);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (datatype.equals(XSD.BOOLEAN)) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					return valueFactory.createLiteral(literal.booleanValue() ? &quot;1.0&quot; : &quot;0.0&quot;, XSD.DECIMAL);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw typeError(literal, e);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw typeError(value, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected IRI getXsdDatatype() {
+<b class="fc">&nbsp;		return XSD.DECIMAL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean isValidForDatatype(String lexicalValue) {
+<b class="nc">&nbsp;		return XMLDatatypeUtil.isValidDecimal(lexicalValue);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

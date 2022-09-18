@@ -1,0 +1,246 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ProxyRepositoryServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.proxy</a>
+</div>
+
+<h1>Coverage Summary for Class: ProxyRepositoryServlet (org.eclipse.rdf4j.workbench.proxy)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ProxyRepositoryServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/55)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.proxy;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.workbench.RepositoryServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.base.AbstractRepositoryServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
+&nbsp;import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
+&nbsp;
+<b class="nc">&nbsp;public class ProxyRepositoryServlet extends AbstractRepositoryServlet {</b>
+&nbsp;
+&nbsp;	private static final String HEADER_IFMODSINCE = &quot;If-Modified-Since&quot;;
+&nbsp;
+&nbsp;	private static final String HEADER_LASTMOD = &quot;Last-Modified&quot;;
+&nbsp;
+&nbsp;	private static final String DEFAULT_PATH_PARAM = &quot;default-command&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;String, RepositoryServlet&gt; servlets = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private long lastModified;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	public void init(ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		super.init(config);</b>
+<b class="nc">&nbsp;		lastModified = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;		if (config.getInitParameter(DEFAULT_PATH_PARAM) == null) {</b>
+<b class="nc">&nbsp;			throw new MissingInitParameterException(DEFAULT_PATH_PARAM);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Enumeration&lt;String&gt; names = config.getInitParameterNames();</b>
+<b class="nc">&nbsp;		while (names.hasMoreElements()) {</b>
+<b class="nc">&nbsp;			String path = names.nextElement();</b>
+<b class="nc">&nbsp;			if (path.startsWith(&quot;/&quot;)) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					servlets.put(path, createServlet(path));</b>
+<b class="nc">&nbsp;				} catch (InstantiationException | IllegalAccessException | ClassNotFoundException e) {</b>
+<b class="nc">&nbsp;					throw new ServletException(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() {
+<b class="nc">&nbsp;		for (RepositoryServlet servlet : servlets.values()) {</b>
+<b class="nc">&nbsp;			servlet.destroy();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void resetCache() {
+<b class="nc">&nbsp;		lastModified = System.currentTimeMillis();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+<b class="nc">&nbsp;		if (isCachable(req)) {</b>
+<b class="nc">&nbsp;			long ifModifiedSince = req.getDateHeader(HEADER_IFMODSINCE);</b>
+<b class="nc">&nbsp;			if (ifModifiedSince &lt; lastModified) {</b>
+<b class="nc">&nbsp;				resp.setDateHeader(HEADER_LASTMOD, lastModified);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				resp.setStatus(HttpServletResponse.SC_NOT_MODIFIED);</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		String pathInfo = req.getPathInfo();</b>
+<b class="nc">&nbsp;		if (pathInfo == null) {</b>
+<b class="nc">&nbsp;			String defaultPath = config.getInitParameter(DEFAULT_PATH_PARAM);</b>
+<b class="nc">&nbsp;			resp.sendRedirect(req.getRequestURI() + defaultPath);</b>
+<b class="nc">&nbsp;		} else if (&quot;/&quot;.equals(pathInfo)) {</b>
+<b class="nc">&nbsp;			String defaultPath = config.getInitParameter(DEFAULT_PATH_PARAM);</b>
+<b class="nc">&nbsp;			resp.sendRedirect(req.getRequestURI() + defaultPath.substring(1));</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			RepositoryServlet servlet = servlets.get(pathInfo);</b>
+<b class="nc">&nbsp;			if (servlet == null) {</b>
+<b class="nc">&nbsp;				throw new BadRequestException(&quot;Unconfigured path: &quot; + pathInfo);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			DynamicHttpRequest hreq = new DynamicHttpRequest(req);</b>
+<b class="nc">&nbsp;			hreq.setServletPath(hreq.getServletPath() + hreq.getPathInfo());</b>
+<b class="nc">&nbsp;			hreq.setPathInfo(null);</b>
+<b class="nc">&nbsp;			servlet.service(hreq, resp);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (&quot;POST&quot;.equals(req.getMethod())) {</b>
+<b class="nc">&nbsp;			lastModified = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;		} else if (lastModified % 1000 != 0) {</b>
+<b class="nc">&nbsp;			long modified = System.currentTimeMillis() / 1000 * 1000;</b>
+<b class="nc">&nbsp;			if (lastModified &lt; modified) {</b>
+<b class="nc">&nbsp;				lastModified = modified;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isCachable(HttpServletRequest req) {
+<b class="nc">&nbsp;		if (!&quot;GET&quot;.equals(req.getMethod())) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;		// MSIE does not cache different url parameters separately
+<b class="nc">&nbsp;		return req.getRequestURL().toString().indexOf(&#39;;&#39;) &lt; 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private RepositoryServlet createServlet(String path)
+&nbsp;			throws ClassNotFoundException, InstantiationException, IllegalAccessException, ServletException {
+<b class="nc">&nbsp;		Class&lt;?&gt; klass = Class.forName(config.getInitParameter(path));</b>
+<b class="nc">&nbsp;		RepositoryServlet servlet = (RepositoryServlet) klass.newInstance();</b>
+<b class="nc">&nbsp;		servlet.setRepositoryManager(manager);</b>
+<b class="nc">&nbsp;		servlet.setRepositoryInfo(info);</b>
+<b class="nc">&nbsp;		servlet.setRepository(repository);</b>
+<b class="nc">&nbsp;		servlet.init(new BasicServletConfig(path, config));</b>
+<b class="nc">&nbsp;		return servlet;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

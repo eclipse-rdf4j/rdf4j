@@ -1,0 +1,241 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractFederatedServiceResolver</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.federation</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractFederatedServiceResolver (org.eclipse.rdf4j.query.algebra.evaluation.federation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractFederatedServiceResolver</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.9%
+  </span>
+  <span class="absValue">
+    (3/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    10%
+  </span>
+  <span class="absValue">
+    (1/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    21.2%
+  </span>
+  <span class="absValue">
+    (7/33)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.federation;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link FederatedServiceResolver} which takes care for lifecycle management of produced
+&nbsp; * {@link FederatedService}s.
+&nbsp; * &lt;p&gt;
+&nbsp; * Specific implementation can implement {@link #createService(String)}.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+<b class="fc">&nbsp;public abstract class AbstractFederatedServiceResolver implements FederatedServiceResolver {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Map service URL to the corresponding initialized {@link FederatedService}
+&nbsp;	 */
+<b class="fc">&nbsp;	protected Map&lt;String, FederatedService&gt; endpointToService = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Register the specified service to evaluate SERVICE expressions for the given url.
+&nbsp;	 *
+&nbsp;	 * @param serviceUrl
+&nbsp;	 * @param service
+&nbsp;	 */
+&nbsp;	public void registerService(String serviceUrl, FederatedService service) {
+<b class="nc">&nbsp;		synchronized (endpointToService) {</b>
+<b class="nc">&nbsp;			endpointToService.put(serviceUrl, service);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Unregister a service registered to serviceURl
+&nbsp;	 *
+&nbsp;	 * @param serviceUrl
+&nbsp;	 */
+&nbsp;	public void unregisterService(String serviceUrl) {
+&nbsp;		FederatedService service;
+<b class="nc">&nbsp;		synchronized (endpointToService) {</b>
+<b class="nc">&nbsp;			service = endpointToService.remove(serviceUrl);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (service != null &amp;&amp; service.isInitialized()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				service.shutdown();</b>
+<b class="nc">&nbsp;			} catch (QueryEvaluationException e) {</b>
+&nbsp;				// TODO issue a warning, otherwise ignore
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there is no service registered for
+&nbsp;	 * serviceUrl, a new {@link FederatedService} is created and registered.
+&nbsp;	 *
+&nbsp;	 * @param serviceUrl locator for the federation service
+&nbsp;	 * @return the {@link FederatedService}, created fresh if necessary
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+&nbsp;		FederatedService service;
+<b class="nc">&nbsp;		synchronized (endpointToService) {</b>
+<b class="nc">&nbsp;			service = endpointToService.get(serviceUrl);</b>
+<b class="nc">&nbsp;			if (service == null) {</b>
+<b class="nc">&nbsp;				service = createService(serviceUrl);</b>
+<b class="nc">&nbsp;				endpointToService.put(serviceUrl, service);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (!service.isInitialized()) {</b>
+<b class="nc">&nbsp;			service.initialize();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return service;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verify if a registered {@link FederatedService} exists for the given serviceUrul.
+&nbsp;	 *
+&nbsp;	 * @param serviceUrl locator for the federation service.
+&nbsp;	 * @return {@code true} iff the FederatedService has been registered, {@code false} otherwise.
+&nbsp;	 */
+&nbsp;	public boolean hasService(String serviceUrl) {
+<b class="nc">&nbsp;		synchronized (endpointToService) {</b>
+<b class="nc">&nbsp;			return endpointToService.containsKey(serviceUrl);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new {@link FederatedService} for the given serviceUrl. This method is invoked, if no
+&nbsp;	 * {@link FederatedService} has been created yet for the serviceUrl.
+&nbsp;	 *
+&nbsp;	 * @param serviceUrl the service IRI
+&nbsp;	 * @return a non-null {@link FederatedService}
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	protected abstract FederatedService createService(String serviceUrl) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	public void unregisterAll() {
+<b class="fc">&nbsp;		synchronized (endpointToService) {</b>
+<b class="pc">&nbsp;			for (FederatedService service : endpointToService.values()) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					service.shutdown();</b>
+<b class="nc">&nbsp;				} catch (QueryEvaluationException e) {</b>
+&nbsp;					// TODO issue a warning, otherwise ignore
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="fc">&nbsp;			endpointToService.clear();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void shutDown() {
+<b class="fc">&nbsp;		unregisterAll();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

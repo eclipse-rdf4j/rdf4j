@@ -1,0 +1,571 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LmdbStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lmdb</a>
+</div>
+
+<h1>Coverage Summary for Class: LmdbStore (org.eclipse.rdf4j.sail.lmdb)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LmdbStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/105)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LmdbStore$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">LmdbStore$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/114)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lmdb;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.concurrent.locks.ReentrantLock;
+&nbsp;
+&nbsp;import org.apache.commons.io.FileUtils;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
+&nbsp;import org.eclipse.rdf4j.common.io.MavenUtil;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailSource;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailStore;
+&nbsp;import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SAIL implementation using LMDB for storing and querying its data.
+&nbsp; *
+&nbsp; * @implNote the LMDB store is is in an experimental state: its existence, signature or behavior may change without
+&nbsp; *           warning from one release to the next.
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;public class LmdbStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(LmdbStore.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private static final String VERSION = MavenUtil.loadVersion(&quot;org.eclipse.rdf4j&quot;, &quot;rdf4j-sail-lmdb&quot;, &quot;devel&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specifies which triple indexes this lmdb store must use.
+&nbsp;	 */
+&nbsp;	private final LmdbStoreConfig config;
+&nbsp;
+&nbsp;	private SailStore store;
+&nbsp;
+&nbsp;	private LmdbSailStore backingStore;
+&nbsp;
+&nbsp;	// used to decide if store is writable, is true if the store was writable during initialization
+&nbsp;	private boolean isWritable;
+&nbsp;
+&nbsp;	// indicates if a datadir is temporary (i.e. will be deleted on shutdown)
+<b class="nc">&nbsp;	private boolean isTmpDatadir = false;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Data directory lock.
+&nbsp;	 */
+&nbsp;	private volatile Lock dirLock;
+&nbsp;
+&nbsp;	private EvaluationStrategyFactory evalStratFactory;
+&nbsp;
+&nbsp;	/** independent life cycle */
+&nbsp;	private FederatedServiceResolver serviceResolver;
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private SPARQLServiceResolver dependentServiceResolver;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Lock manager used to prevent concurrent {@link #getTransactionLock(IsolationLevel)} calls.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final ReentrantLock txnLockManager = new ReentrantLock();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Holds locks for all isolated transactions.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final LockManager isolatedLockManager = new LockManager(debugEnabled());</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Holds locks for all {@link IsolationLevels#NONE} isolation transactions.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final LockManager disabledIsolationLockManager = new LockManager(debugEnabled());</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new LmdbStore with default settings.
+&nbsp;	 */
+&nbsp;	public LmdbStore() {
+<b class="nc">&nbsp;		this(new LmdbStoreConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new LmdbStore.
+&nbsp;	 */
+&nbsp;	public LmdbStore(LmdbStoreConfig config) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.config = config;</b>
+<b class="nc">&nbsp;		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,</b>
+&nbsp;				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+<b class="nc">&nbsp;		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);</b>
+<b class="nc">&nbsp;		EvaluationStrategyFactory evalStrategyFactory = config.getEvaluationStrategyFactory();</b>
+<b class="nc">&nbsp;		if (evalStrategyFactory != null) {</b>
+<b class="nc">&nbsp;			setEvaluationStrategyFactory(evalStrategyFactory);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new LmdbStore with default settings.
+&nbsp;	 */
+&nbsp;	public LmdbStore(File dataDir) {
+<b class="nc">&nbsp;		this(dataDir, new LmdbStoreConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStore(File dataDir, LmdbStoreConfig config) {
+<b class="nc">&nbsp;		this(config);</b>
+<b class="nc">&nbsp;		setDataDir(dataDir);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataDir(File dataDir) {
+<b class="nc">&nbsp;		super.setDataDir(dataDir);</b>
+<b class="nc">&nbsp;		isTmpDatadir = (dataDir == null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the {@link EvaluationStrategy}.
+&nbsp;	 */
+&nbsp;	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
+<b class="nc">&nbsp;		if (evalStratFactory == null) {</b>
+<b class="nc">&nbsp;			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());</b>
+<b class="nc">&nbsp;		evalStratFactory.setTrackResultSize(isTrackResultSize());</b>
+<b class="nc">&nbsp;		return evalStratFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the {@link EvaluationStrategy} to use.
+&nbsp;	 */
+&nbsp;	public synchronized void setEvaluationStrategyFactory(EvaluationStrategyFactory factory) {
+<b class="nc">&nbsp;		evalStratFactory = factory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the SERVICE resolver.
+&nbsp;	 */
+&nbsp;	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
+<b class="nc">&nbsp;		if (serviceResolver == null) {</b>
+<b class="nc">&nbsp;			if (dependentServiceResolver == null) {</b>
+<b class="nc">&nbsp;				dependentServiceResolver = new SPARQLServiceResolver();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			setFederatedServiceResolver(dependentServiceResolver);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return serviceResolver;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
+&nbsp;	 * this instance is.
+&nbsp;	 *
+&nbsp;	 * @param resolver The SERVICE resolver to set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+<b class="nc">&nbsp;		this.serviceResolver = resolver;</b>
+<b class="nc">&nbsp;		if (resolver != null &amp;&amp; evalStratFactory instanceof FederatedServiceResolverClient) {</b>
+<b class="nc">&nbsp;			((FederatedServiceResolverClient) evalStratFactory).setFederatedServiceResolver(resolver);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initializes this LmdbStore.
+&nbsp;	 *
+&nbsp;	 * @exception SailException If this LmdbStore could not be initialized using the parameters that have been set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void initializeInternal() throws SailException {
+<b class="nc">&nbsp;		logger.debug(&quot;Initializing LmdbStore...&quot;);</b>
+&nbsp;
+&nbsp;		// Check initialization parameters
+<b class="nc">&nbsp;		File dataDir = getDataDir();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (dataDir == null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				setDataDir(Files.createTempDirectory(&quot;rdf4j-lmdb-tmp&quot;).toFile());</b>
+<b class="nc">&nbsp;				isTmpDatadir = true;</b>
+<b class="nc">&nbsp;			} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;				throw new SailException(&quot;Temp data dir could not be created&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			dataDir = getDataDir();</b>
+<b class="nc">&nbsp;		} else if (!dataDir.exists()) {</b>
+<b class="nc">&nbsp;			boolean success = dataDir.mkdirs();</b>
+<b class="nc">&nbsp;			if (!success) {</b>
+<b class="nc">&nbsp;				throw new SailException(&quot;Unable to create data directory: &quot; + dataDir);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (!dataDir.isDirectory()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;The specified path does not denote a directory: &quot; + dataDir);</b>
+<b class="nc">&nbsp;		} else if (!dataDir.canRead()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Not allowed to read from the specified directory: &quot; + dataDir);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// try to lock the directory or fail
+<b class="nc">&nbsp;		dirLock = new DirectoryLockManager(dataDir).lockOrFail();</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;Data dir is &quot; + dataDir);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			File versionFile = new File(dataDir, &quot;lmdbrdf.ver&quot;);</b>
+<b class="nc">&nbsp;			String version = versionFile.exists() ? FileUtils.readFileToString(versionFile, StandardCharsets.UTF_8)</b>
+<b class="nc">&nbsp;					: null;</b>
+<b class="nc">&nbsp;			if (!VERSION.equals(version) &amp;&amp; upgradeStore(dataDir, version)) {</b>
+<b class="nc">&nbsp;				FileUtils.writeStringToFile(versionFile, VERSION, StandardCharsets.UTF_8);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			backingStore = new LmdbSailStore(dataDir, config);</b>
+<b class="nc">&nbsp;			this.store = new SnapshotSailStore(backingStore, () -&gt; new MemoryOverflowModel() {</b>
+&nbsp;				@Override
+&nbsp;				protected SailStore createSailStore(File dataDir) throws IOException, SailException {
+&nbsp;					// Model can&#39;t fit into memory, use another LmdbSailStore to store delta
+<b class="nc">&nbsp;					return new LmdbSailStore(dataDir, config);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}) {</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public SailSource getExplicitSailSource() {
+<b class="nc">&nbsp;					if (isIsolationDisabled()) {</b>
+&nbsp;						// no isolation, use LmdbSailStore directly
+<b class="nc">&nbsp;						return backingStore.getExplicitSailSource();</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return super.getExplicitSailSource();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public SailSource getInferredSailSource() {
+<b class="nc">&nbsp;					if (isIsolationDisabled()) {</b>
+&nbsp;						// no isolation, use LmdbSailStore directly
+<b class="nc">&nbsp;						return backingStore.getInferredSailSource();</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return super.getInferredSailSource();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			};
+<b class="nc">&nbsp;		} catch (Throwable e) {</b>
+&nbsp;			// LmdbStore initialization failed, release any allocated files
+<b class="nc">&nbsp;			dirLock.release();</b>
+&nbsp;
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		isWritable = getDataDir().canWrite();</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;LmdbStore initialized&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void shutDownInternal() throws SailException {
+<b class="nc">&nbsp;		logger.debug(&quot;Shutting down LmdbStore...&quot;);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			store.close();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			dirLock.release();</b>
+<b class="nc">&nbsp;			if (dependentServiceResolver != null) {</b>
+<b class="nc">&nbsp;				dependentServiceResolver.shutDown();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isTmpDatadir) {</b>
+<b class="nc">&nbsp;			File dataDir = getDataDir();</b>
+<b class="nc">&nbsp;			if (dataDir != null) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					Files.walk(dataDir.toPath())</b>
+<b class="nc">&nbsp;							.map(Path::toFile)</b>
+<b class="nc">&nbsp;							.sorted(Comparator.reverseOrder()) // delete files before directory</b>
+<b class="nc">&nbsp;							.forEach(File::delete);</b>
+<b class="nc">&nbsp;				} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Could not delete temp file &quot; + dataDir);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		logger.debug(&quot;LmdbStore shut down&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() throws SailException {
+<b class="nc">&nbsp;		super.shutDown();</b>
+&nbsp;		// edge case when re-initialize after shutdown
+<b class="nc">&nbsp;		if (isTmpDatadir) {</b>
+<b class="nc">&nbsp;			setDataDir(null);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isWritable() {
+<b class="nc">&nbsp;		return isWritable;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected NotifyingSailConnection getConnectionInternal() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			return new LmdbStoreConnection(this);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;		return store.getValueFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This call will block when {@link IsolationLevels#NONE} is provided when there are active transactions with a
+&nbsp;	 * higher isolation and block when a higher isolation is provided when there are active transactions with
+&nbsp;	 * {@link IsolationLevels#NONE} isolation. Store is either exclusively in {@link IsolationLevels#NONE} isolation
+&nbsp;	 * with potentially zero or more transactions, or exclusively in higher isolation mode with potentially zero or more
+&nbsp;	 * transactions.
+&nbsp;	 *
+&nbsp;	 * @param level indicating desired mode {@link IsolationLevels#NONE} or higher
+&nbsp;	 * @return Lock used to prevent Store from switching isolation modes
+&nbsp;	 * @throws SailException
+&nbsp;	 */
+&nbsp;	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
+<b class="nc">&nbsp;		txnLockManager.lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (IsolationLevels.NONE.isCompatibleWith(level)) {</b>
+&nbsp;				// make sure no isolated transaction are active
+<b class="nc">&nbsp;				isolatedLockManager.waitForActiveLocks();</b>
+&nbsp;				// mark isolation as disabled
+<b class="nc">&nbsp;				return disabledIsolationLockManager.createLock(level.toString());</b>
+&nbsp;			} else {
+&nbsp;				// make sure isolation is not disabled
+<b class="nc">&nbsp;				disabledIsolationLockManager.waitForActiveLocks();</b>
+&nbsp;				// mark isolated transaction as active
+<b class="nc">&nbsp;				return isolatedLockManager.createLock(level.toString());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			txnLockManager.unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if any {@link IsolationLevels#NONE} isolation transactions are active.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if at least one transaction has direct access to the indexes
+&nbsp;	 */
+&nbsp;	boolean isIsolationDisabled() {
+<b class="nc">&nbsp;		return disabledIsolationLockManager.isActiveLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	SailStore getSailStore() {
+<b class="nc">&nbsp;		return store;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	LmdbSailStore getBackingStore() {
+<b class="nc">&nbsp;		return backingStore;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean upgradeStore(File dataDir, String version) throws IOException, SailException {
+&nbsp;		// nothing to do, just update version number
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

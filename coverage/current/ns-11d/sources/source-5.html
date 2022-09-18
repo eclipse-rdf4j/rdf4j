@@ -1,0 +1,331 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFSchemaRepositoryConnectionTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFSchemaRepositoryConnectionTest (org.eclipse.rdf4j.testsuite.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFSchemaRepositoryConnectionTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.repository;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertFalse;
+&nbsp;import static org.junit.Assert.assertTrue;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FOAF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;import org.junit.Test;
+&nbsp;import org.junit.runner.RunWith;
+&nbsp;import org.junit.runners.Parameterized;
+&nbsp;import org.junit.runners.Parameterized.Parameters;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author jeen
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;@RunWith(Parameterized.class)
+&nbsp;public abstract class RDFSchemaRepositoryConnectionTest extends RepositoryConnectionTest {
+&nbsp;
+&nbsp;	@Parameters(name = &quot;{0}&quot;)
+&nbsp;	public static final IsolationLevel[] parametersREAD_COMMITTED() {
+<b class="nc">&nbsp;		return new IsolationLevel[] { IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,</b>
+&nbsp;				IsolationLevels.SNAPSHOT_READ,
+&nbsp;				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE };
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI woman;
+&nbsp;
+&nbsp;	private IRI man;
+&nbsp;
+&nbsp;	public RDFSchemaRepositoryConnectionTest(IsolationLevel level) {
+<b class="nc">&nbsp;		super(level);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		super.setUp();</b>
+&nbsp;
+<b class="nc">&nbsp;		woman = vf.createIRI(&quot;http://example.org/Woman&quot;);</b>
+<b class="nc">&nbsp;		man = vf.createIRI(&quot;http://example.org/Man&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDomainInference() throws Exception {
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.add(name, RDFS.DOMAIN, FOAF.PERSON);</b>
+<b class="nc">&nbsp;		testCon.add(bob, name, nameBob);</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(bob, RDF.TYPE, FOAF.PERSON, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSubClassInference() throws Exception {
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);</b>
+<b class="nc">&nbsp;		testCon.add(man, RDFS.SUBCLASSOF, FOAF.PERSON);</b>
+<b class="nc">&nbsp;		testCon.add(alice, RDF.TYPE, woman);</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(alice, RDF.TYPE, FOAF.PERSON, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	/**
+&nbsp;	 * See https://github.com/eclipse/rdf4j/issues/1685
+&nbsp;	 */
+&nbsp;	public void testSubClassInferenceAfterRemoval() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		IRI mother = vf.createIRI(&quot;http://example.org/Mother&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.add(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT);</b>
+<b class="nc">&nbsp;		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);</b>
+<b class="nc">&nbsp;		testCon.add(mother, RDFS.SUBCLASSOF, woman);</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(mother, RDFS.SUBCLASSOF, FOAF.AGENT, true));</b>
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(woman, RDFS.SUBCLASSOF, FOAF.AGENT, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.remove(mother, RDFS.SUBCLASSOF, woman);</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(testCon.hasStatement(mother, RDFS.SUBCLASSOF, FOAF.AGENT, true));</b>
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(woman, RDFS.SUBCLASSOF, FOAF.AGENT, true));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMakeExplicit() throws Exception {
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.add(woman, RDFS.SUBCLASSOF, FOAF.PERSON);</b>
+<b class="nc">&nbsp;		testCon.add(alice, RDF.TYPE, woman);</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(alice, RDF.TYPE, FOAF.PERSON, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.add(alice, RDF.TYPE, FOAF.PERSON);</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(alice, RDF.TYPE, FOAF.PERSON, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testExplicitFlag() throws Exception {
+<b class="nc">&nbsp;		RepositoryResult&lt;Statement&gt; result = testCon.getStatements(RDF.TYPE, RDF.TYPE, null, true);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			assertTrue(&quot;result should not be empty&quot;, result.hasNext());</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			result.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		result = testCon.getStatements(RDF.TYPE, RDF.TYPE, null, false);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			assertFalse(&quot;result should be empty&quot;, result.hasNext());</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			result.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInferencerUpdates() throws Exception {
+<b class="nc">&nbsp;		testCon.begin(IsolationLevels.READ_COMMITTED);</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.add(bob, name, nameBob);</b>
+<b class="nc">&nbsp;		testCon.remove(bob, name, nameBob);</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInferencerQueryDuringTransaction() throws Exception {
+<b class="nc">&nbsp;		testCon.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.add(bob, name, nameBob);</b>
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInferencerTransactionIsolation() throws Exception {
+<b class="nc">&nbsp;		if (IsolationLevels.NONE.isCompatibleWith(level)) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.add(bob, name, nameBob);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));</b>
+<b class="nc">&nbsp;		assertFalse(testCon2.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));</b>
+<b class="nc">&nbsp;		assertTrue(testCon2.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testContextStatementsNotDuplicated() throws Exception {
+<b class="nc">&nbsp;		testCon.add(bob, RDF.TYPE, FOAF.PERSON, RDF.FIRST);</b>
+&nbsp;
+&nbsp;		// TODO this test currently assumes that inferred triples are added to the null context. If we extend
+&nbsp;		// the reasoner to support usage of other contexts, this will have to be amended.
+<b class="nc">&nbsp;		assertTrue(&quot;inferred triple should have been added to null context&quot;,</b>
+<b class="nc">&nbsp;				testCon.hasStatement(bob, RDF.TYPE, RDFS.RESOURCE, true, (Resource) null));</b>
+&nbsp;
+&nbsp;// It used to expected behaviour that all inferred statements be added to the null context except those that already existed in some other context. There is no longer a check for if an inferred statement exists in other contexts.
+&nbsp;//		assertFalse(&quot;input triple should not have been re-added as inferred&quot;,
+&nbsp;//				testCon.hasStatement(bob, RDF.TYPE, FOAF.PERSON, true, (Resource) null));
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testContextStatementsNotDuplicated2() throws Exception {
+<b class="nc">&nbsp;		testCon.add(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, RDF.FIRST);</b>
+<b class="nc">&nbsp;		testCon.add(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, RDF.FIRST);</b>
+&nbsp;
+&nbsp;		// TODO this test currently assumes that inferred triples are added to the null context. If we extend
+&nbsp;		// the reasoner to support usage of other contexts, this will have to be amended.
+<b class="nc">&nbsp;		assertTrue(&quot;inferred triple should have been added to null context&quot;,</b>
+<b class="nc">&nbsp;				testCon.hasStatement(FOAF.AGENT, RDF.TYPE, RDFS.CLASS, true, (Resource) null));</b>
+&nbsp;		// It used to expected behaviour that all inferred statements be added to the null context except those that
+&nbsp;		// already existed in some other context. There is no longer a check for if an inferred statement exists in
+&nbsp;		// other contexts.
+&nbsp;		// assertFalse(&quot;input triple should not have been re-added as inferred&quot;, testCon.hasStatement(FOAF.PERSON,
+&nbsp;		// RDF.TYPE, RDFS.CLASS, true, (Resource) null));
+&nbsp;		// assertFalse(&quot;input triple should not have been re-added as inferred&quot;, testCon.hasStatement(FOAF.PERSON,
+&nbsp;		// RDFS.SUBCLASSOF, FOAF.AGENT, true, (Resource) null));
+<b class="nc">&nbsp;		assertTrue(&quot;input triple should be explicitly present&quot;,</b>
+<b class="nc">&nbsp;				testCon.hasStatement(FOAF.PERSON, RDFS.SUBCLASSOF, FOAF.AGENT, false));</b>
+<b class="nc">&nbsp;		assertTrue(&quot;input triple should be explicitly present&quot;,</b>
+<b class="nc">&nbsp;				testCon.hasStatement(FOAF.PERSON, RDF.TYPE, RDFS.CLASS, false));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

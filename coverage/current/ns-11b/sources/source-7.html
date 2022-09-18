@@ -1,0 +1,467 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQL11SyntaxTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQL11SyntaxTest (org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQL11SyntaxTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/129)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SPARQL11SyntaxTest$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SPARQL11SyntaxTest$Factory</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/138)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
+&nbsp;
+&nbsp;import java.io.BufferedOutputStream;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.net.JarURLConnection;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.List;
+&nbsp;import java.util.jar.JarEntry;
+&nbsp;import java.util.jar.JarFile;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.FileUtil;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DeleteData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.InsertData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.repository.sail.helpers.SailUpdateExecutor;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import junit.framework.Test;
+&nbsp;import junit.framework.TestCase;
+&nbsp;import junit.framework.TestResult;
+&nbsp;import junit.framework.TestSuite;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SPARQL 1.1 syntax test, created by reading in a W3C working-group style manifest.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @deprecated since 3.3.0 Use {@link SPARQL11SyntaxComplianceTest} instead.
+&nbsp; */
+&nbsp;@Deprecated
+&nbsp;public abstract class SPARQL11SyntaxTest extends TestCase {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SPARQL11SyntaxTest.class);</b>
+&nbsp;
+&nbsp;	private static final String SUBMANIFEST_QUERY, TESTCASE_QUERY;
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(512);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;PREFIX mf: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;PREFIX qt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;SELECT ?subManifest &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;WHERE { [] mf:include [ rdf:rest*/rdf:first ?subManifest ] . } &quot;);</b>
+<b class="nc">&nbsp;		SUBMANIFEST_QUERY = sb.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.setLength(0);</b>
+<b class="nc">&nbsp;		sb.append(&quot;PREFIX mf: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;PREFIX qt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;PREFIX dawgt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#&gt; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;SELECT ?TestURI ?Name ?Action ?Type &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;WHERE { [] rdf:first ?TestURI. &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;        ?TestURI a ?Type ; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;                 mf:name ?Name ;&quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;                 mf:action ?Action ;&quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot;                 dawgt:approval dawgt:Approved . &quot;);</b>
+<b class="nc">&nbsp;		sb.append(</b>
+&nbsp;				&quot;        FILTER(?Type IN (mf:PositiveSyntaxTest11, mf:NegativeSyntaxTest11, mf:PositiveUpdateSyntaxTest11, mf:NegativeUpdateSyntaxTest11)) &quot;);
+<b class="nc">&nbsp;		sb.append(&quot; } &quot;);</b>
+<b class="nc">&nbsp;		TESTCASE_QUERY = sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	protected final String testURI;
+&nbsp;
+&nbsp;	protected final String queryFileURL;
+&nbsp;
+&nbsp;	protected final boolean positiveTest;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public SPARQL11SyntaxTest(String testURI, String name, String queryFileURL, boolean positiveTest) {
+<b class="nc">&nbsp;		super(name);</b>
+<b class="nc">&nbsp;		this.testURI = testURI;</b>
+<b class="nc">&nbsp;		this.queryFileURL = queryFileURL;</b>
+<b class="nc">&nbsp;		this.positiveTest = positiveTest;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void runTest() throws Exception {
+<b class="nc">&nbsp;		InputStream stream = new URL(queryFileURL).openStream();</b>
+<b class="nc">&nbsp;		String query = IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));</b>
+<b class="nc">&nbsp;		stream.close();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			ParsedOperation operation = parseOperation(query, queryFileURL);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!positiveTest) {</b>
+<b class="nc">&nbsp;				boolean dataBlockUpdate = false;</b>
+<b class="nc">&nbsp;				if (operation instanceof ParsedUpdate) {</b>
+<b class="nc">&nbsp;					for (UpdateExpr updateExpr : ((ParsedUpdate) operation).getUpdateExprs()) {</b>
+<b class="nc">&nbsp;						if (updateExpr instanceof InsertData || updateExpr instanceof DeleteData) {</b>
+&nbsp;							// parsing for these operation happens during actual
+&nbsp;							// execution, so try and execute.
+<b class="nc">&nbsp;							dataBlockUpdate = true;</b>
+&nbsp;
+<b class="nc">&nbsp;							MemoryStore store = new MemoryStore();</b>
+<b class="nc">&nbsp;							store.init();</b>
+<b class="nc">&nbsp;							NotifyingSailConnection conn = store.getConnection();</b>
+&nbsp;							try {
+<b class="nc">&nbsp;								conn.begin();</b>
+<b class="nc">&nbsp;								SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(), null);</b>
+<b class="nc">&nbsp;								exec.executeUpdate(updateExpr, null, null, true, -1);</b>
+<b class="nc">&nbsp;								conn.rollback();</b>
+<b class="nc">&nbsp;								fail(&quot;Negative test case should have failed to parse&quot;);</b>
+<b class="nc">&nbsp;							} catch (SailException e) {</b>
+<b class="nc">&nbsp;								if (!(e.getCause() instanceof RDFParseException)) {</b>
+<b class="nc">&nbsp;									logger.error(&quot;unexpected error in negative test case&quot;, e);</b>
+<b class="nc">&nbsp;									fail(&quot;unexpected error in negative test case&quot;);</b>
+&nbsp;								}
+&nbsp;								// fall through - a parse exception is expected for a
+&nbsp;								// negative test case
+<b class="nc">&nbsp;								conn.rollback();</b>
+&nbsp;							} finally {
+<b class="nc">&nbsp;								conn.close();</b>
+<b class="nc">&nbsp;							}</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (!dataBlockUpdate) {</b>
+<b class="nc">&nbsp;					fail(&quot;Negative test case should have failed to parse&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			if (positiveTest) {</b>
+<b class="nc">&nbsp;				e.printStackTrace();</b>
+<b class="nc">&nbsp;				fail(&quot;Positive test case failed: &quot; + e.getMessage());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract ParsedOperation parseOperation(String operation, String fileURL) throws MalformedQueryException;
+&nbsp;
+&nbsp;	public static Test suite() throws Exception {
+<b class="nc">&nbsp;		return new TestSuite();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public interface Factory {
+&nbsp;
+&nbsp;		SPARQL11SyntaxTest createSPARQLSyntaxTest(String testURI, String testName, String testAction,
+&nbsp;				boolean positiveTest);
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Test suite(Factory factory, boolean useRemote) throws Exception {
+&nbsp;		// manifest of W3C Data Access Working Group SPARQL syntax tests
+&nbsp;		final File tmpDir;
+&nbsp;		String host;
+<b class="nc">&nbsp;		if (useRemote) {</b>
+<b class="nc">&nbsp;			host = &quot;http://www.w3.org/2009/sparql/docs/tests/data-sparql11/&quot;;</b>
+<b class="nc">&nbsp;			tmpDir = null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			URL url = SPARQL11SyntaxTest.class.getResource(&quot;/testcases-sparql-1.1-w3c/&quot;);</b>
+<b class="nc">&nbsp;			if (&quot;jar&quot;.equals(url.getProtocol())) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					tmpDir = Files.createTempDirectory(&quot;sparql-syntax&quot;).toFile();</b>
+<b class="nc">&nbsp;					JarURLConnection con = (JarURLConnection) url.openConnection();</b>
+<b class="nc">&nbsp;					JarFile jar = con.getJarFile();</b>
+<b class="nc">&nbsp;					Enumeration&lt;JarEntry&gt; entries = jar.entries();</b>
+<b class="nc">&nbsp;					while (entries.hasMoreElements()) {</b>
+<b class="nc">&nbsp;						JarEntry file = entries.nextElement();</b>
+<b class="nc">&nbsp;						File f = new File(tmpDir + File.separator + file.getName());</b>
+<b class="nc">&nbsp;						if (file.isDirectory()) {</b>
+<b class="nc">&nbsp;							f.mkdir();</b>
+<b class="nc">&nbsp;							continue;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						InputStream is = jar.getInputStream(file);</b>
+<b class="nc">&nbsp;						try (OutputStream fos = new BufferedOutputStream(new FileOutputStream(f))) {</b>
+<b class="nc">&nbsp;							while (is.available() &gt; 0) {</b>
+<b class="nc">&nbsp;								fos.write(is.read());</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;						is.close();</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					File localFile = new File(tmpDir, con.getEntryName());</b>
+<b class="nc">&nbsp;					host = localFile.toURI().toURL().toString();</b>
+<b class="nc">&nbsp;				} catch (IOException e) {</b>
+<b class="nc">&nbsp;					throw new AssertionError(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				host = url.toString();</b>
+<b class="nc">&nbsp;				tmpDir = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String manifestFile = host + &quot;manifest-all.ttl&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		TestSuite suite = new TestSuite() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void run(TestResult result) {
+&nbsp;				try {
+<b class="nc">&nbsp;					super.run(result);</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					if (tmpDir != null) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							FileUtil.deleteDir(tmpDir);</b>
+<b class="nc">&nbsp;						} catch (IOException e) {</b>
+<b class="nc">&nbsp;							System.err.println(</b>
+<b class="nc">&nbsp;									&quot;Unable to clean up temporary directory &#39;&quot; + tmpDir + &quot;&#39;: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;		// Read manifest and create declared test cases
+<b class="nc">&nbsp;		Repository manifestRep = new SailRepository(new MemoryStore());</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = manifestRep.getConnection()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;Loading manifest data&quot;);</b>
+<b class="nc">&nbsp;			URL manifest = new URL(manifestFile);</b>
+<b class="nc">&nbsp;			SPARQL11ManifestTest.addTurtle(con, manifest, manifestFile);</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.info(&quot;Searching for sub-manifests&quot;);</b>
+<b class="nc">&nbsp;			List&lt;String&gt; subManifestList = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleQueryResult subManifests = con.prepareTupleQuery(QueryLanguage.SPARQL, SUBMANIFEST_QUERY).evaluate();</b>
+<b class="nc">&nbsp;			while (subManifests.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindings = subManifests.next();</b>
+<b class="nc">&nbsp;				subManifestList.add(bindings.getValue(&quot;subManifest&quot;).toString());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			subManifests.close();</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.info(&quot;Found {} sub-manifests&quot;, subManifestList.size());</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String subManifest : subManifestList) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;Loading sub manifest {}&quot;, subManifest);</b>
+<b class="nc">&nbsp;				con.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;				URL subManifestURL = new URL(subManifest);</b>
+<b class="nc">&nbsp;				SPARQL11ManifestTest.addTurtle(con, subManifestURL, subManifest);</b>
+&nbsp;
+<b class="nc">&nbsp;				TestSuite subSuite = new TestSuite(subManifest.substring(host.length()));</b>
+&nbsp;
+<b class="nc">&nbsp;				logger.info(&quot;Creating test cases for {}&quot;, subManifest);</b>
+<b class="nc">&nbsp;				TupleQueryResult tests = con.prepareTupleQuery(QueryLanguage.SPARQL, TESTCASE_QUERY).evaluate();</b>
+<b class="nc">&nbsp;				while (tests.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = tests.next();</b>
+&nbsp;
+<b class="nc">&nbsp;					String testURI = bindingSet.getValue(&quot;TestURI&quot;).toString();</b>
+<b class="nc">&nbsp;					String testName = bindingSet.getValue(&quot;Name&quot;).toString();</b>
+<b class="nc">&nbsp;					String testAction = bindingSet.getValue(&quot;Action&quot;).toString();</b>
+&nbsp;
+<b class="nc">&nbsp;					String type = bindingSet.getValue(&quot;Type&quot;).toString();</b>
+<b class="nc">&nbsp;					boolean positiveTest = type</b>
+<b class="nc">&nbsp;							.equals(&quot;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveSyntaxTest11&quot;)</b>
+<b class="nc">&nbsp;							|| type.equals(</b>
+&nbsp;									&quot;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#PositiveUpdateSyntaxTest11&quot;);
+&nbsp;
+<b class="nc">&nbsp;					subSuite.addTest(factory.createSPARQLSyntaxTest(testURI, testName, testAction, positiveTest));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				tests.close();</b>
+&nbsp;
+<b class="nc">&nbsp;				suite.addTest(subSuite);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		manifestRep.shutDown();</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.info(&quot;Added {} tests to suite &quot;, suite.countTestCases());</b>
+<b class="nc">&nbsp;		return suite;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,200 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DynamicHttpRequest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.util</a>
+</div>
+
+<h1>Coverage Summary for Class: DynamicHttpRequest (org.eclipse.rdf4j.workbench.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DynamicHttpRequest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.util;
+&nbsp;
+&nbsp;import java.util.Locale;
+&nbsp;
+&nbsp;import javax.servlet.ServletRequest;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletRequestWrapper;
+&nbsp;
+&nbsp;public class DynamicHttpRequest extends HttpServletRequestWrapper {
+&nbsp;
+&nbsp;	private String contextPath;
+&nbsp;
+&nbsp;	private String method;
+&nbsp;
+&nbsp;	private String pathInfo;
+&nbsp;
+&nbsp;	private String queryString;
+&nbsp;
+&nbsp;	private String servletPath;
+&nbsp;
+&nbsp;	private Locale locale;
+&nbsp;
+&nbsp;	public DynamicHttpRequest(ServletRequest request) {
+<b class="nc">&nbsp;		super((HttpServletRequest) request);</b>
+<b class="nc">&nbsp;		contextPath = super.getContextPath();</b>
+<b class="nc">&nbsp;		method = super.getMethod();</b>
+<b class="nc">&nbsp;		pathInfo = super.getPathInfo();</b>
+<b class="nc">&nbsp;		queryString = super.getQueryString();</b>
+<b class="nc">&nbsp;		servletPath = super.getServletPath();</b>
+<b class="nc">&nbsp;		locale = super.getLocale();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getContextPath() {
+<b class="nc">&nbsp;		return contextPath;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setContextPath(String contextPath) {
+<b class="nc">&nbsp;		this.contextPath = contextPath;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getMethod() {
+<b class="nc">&nbsp;		return method;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setMethod(String method) {
+<b class="nc">&nbsp;		this.method = method;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getPathInfo() {
+<b class="nc">&nbsp;		return pathInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPathInfo(String pathInfo) {
+<b class="nc">&nbsp;		this.pathInfo = pathInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		return queryString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setQueryString(String queryString) {
+<b class="nc">&nbsp;		this.queryString = queryString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getServletPath() {
+<b class="nc">&nbsp;		return servletPath;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setServletPath(String servletPath) {
+<b class="nc">&nbsp;		this.servletPath = servletPath;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Locale getLocale() {
+<b class="nc">&nbsp;		return locale;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setLocale(Locale locale) {
+<b class="nc">&nbsp;		this.locale = locale;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

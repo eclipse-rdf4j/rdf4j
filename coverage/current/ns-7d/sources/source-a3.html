@@ -1,0 +1,238 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > UnicodeEscapeStream</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql.ast</a>
+</div>
+
+<h1>Coverage Summary for Class: UnicodeEscapeStream (org.eclipse.rdf4j.query.parser.sparql.ast)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">UnicodeEscapeStream</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (2/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    18.8%
+  </span>
+  <span class="absValue">
+    (6/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    19.3%
+  </span>
+  <span class="absValue">
+    (11/57)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2017 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql.ast;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.Reader;
+&nbsp;import java.io.StringReader;
+&nbsp;
+&nbsp;public class UnicodeEscapeStream extends JavaCharStream {
+&nbsp;
+&nbsp;	public UnicodeEscapeStream(String string, int tabSize) {
+<b class="fc">&nbsp;		super(new StringReader(string), 1, 1, string.length());</b>
+<b class="fc">&nbsp;		setTabSize(tabSize);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UnicodeEscapeStream(Reader dstream, int tabSize) {
+<b class="nc">&nbsp;		super(dstream);</b>
+<b class="nc">&nbsp;		setTabSize(tabSize);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public char readChar() throws IOException {
+<b class="fc">&nbsp;		if (inBuf &gt; 0) {</b>
+<b class="fc">&nbsp;			--inBuf;</b>
+&nbsp;
+<b class="fc">&nbsp;			if (++bufpos == bufsize) {</b>
+<b class="fc">&nbsp;				bufpos = 0;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return buffer[bufpos];</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		char c;
+&nbsp;
+<b class="pc">&nbsp;		if (++bufpos == available) {</b>
+<b class="nc">&nbsp;			AdjustBuffSize();</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if ((buffer[bufpos] = c = ReadByte()) == &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;			UpdateLineColumn(c);</b>
+&nbsp;
+<b class="nc">&nbsp;			int backSlashCnt = 1;</b>
+&nbsp;
+&nbsp;			for (;;) // Read all the backslashes
+&nbsp;			{
+<b class="nc">&nbsp;				if (++bufpos == available) {</b>
+<b class="nc">&nbsp;					AdjustBuffSize();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					if ((buffer[bufpos] = c = ReadByte()) != &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;						UpdateLineColumn(c);</b>
+&nbsp;						// found a non-backslash char.
+<b class="nc">&nbsp;						if ((c == &#39;u&#39; || c == &#39;U&#39;) &amp;&amp; ((backSlashCnt &amp; 1) == 1)) {</b>
+<b class="nc">&nbsp;							if (--bufpos &lt; 0) {</b>
+<b class="nc">&nbsp;								bufpos = bufsize - 1;</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							break;</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						backup(backSlashCnt);</b>
+<b class="nc">&nbsp;						return &#39;\\&#39;;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (java.io.IOException e) {</b>
+&nbsp;					// We are returning one backslash so we should only backup (count-1)
+<b class="nc">&nbsp;					if (backSlashCnt &gt; 1) {</b>
+<b class="nc">&nbsp;						backup(backSlashCnt - 1);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					return &#39;\\&#39;;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				UpdateLineColumn(c);</b>
+<b class="nc">&nbsp;				backSlashCnt++;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Here, we have seen an odd number of backslash&#39;s followed by a &#39;u&#39;
+&nbsp;			try {
+<b class="nc">&nbsp;				if (c == &#39;u&#39;) {</b>
+<b class="nc">&nbsp;					buffer[bufpos] = c = (char) (hexval(ReadByte()) &lt;&lt; 12 | hexval(ReadByte()) &lt;&lt; 8</b>
+<b class="nc">&nbsp;							| hexval(ReadByte()) &lt;&lt; 4 | hexval(ReadByte()));</b>
+<b class="nc">&nbsp;					column += 4;</b>
+<b class="nc">&nbsp;				} else if (c == &#39;U&#39;) {</b>
+<b class="nc">&nbsp;					String hex = new String(new char[] { ReadByte(), ReadByte(), ReadByte(), ReadByte(), ReadByte(),</b>
+<b class="nc">&nbsp;							ReadByte(), ReadByte(), ReadByte() });</b>
+<b class="nc">&nbsp;					int cp = Integer.parseInt(hex, 16);</b>
+<b class="nc">&nbsp;					char[] chrs = Character.toChars(cp); // length of 1 or 2</b>
+<b class="nc">&nbsp;					buffer[bufpos] = c = chrs[0];</b>
+<b class="nc">&nbsp;					if (chrs.length &gt; 1) {</b>
+<b class="nc">&nbsp;						if (++bufpos == available) {</b>
+<b class="nc">&nbsp;							AdjustBuffSize();</b>
+&nbsp;						}
+<b class="nc">&nbsp;						buffer[bufpos] = chrs[1];</b>
+<b class="nc">&nbsp;						UpdateLineColumn(c);</b>
+<b class="nc">&nbsp;						backup(1);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					column += hex.length();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (java.io.IOException | IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				throw new Error(&quot;Invalid escape character at line &quot; + line + &quot; column &quot; + column + &quot;.&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (backSlashCnt == 1) {</b>
+<b class="nc">&nbsp;				return c;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				backup(backSlashCnt - 1);</b>
+<b class="nc">&nbsp;				return &#39;\\&#39;;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="fc">&nbsp;			UpdateLineColumn(c);</b>
+<b class="fc">&nbsp;			return c;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,257 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractQueryResultParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractQueryResultParser (org.eclipse.rdf4j.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractQueryResultParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (6/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    59.1%
+  </span>
+  <span class="absValue">
+    (13/22)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.rio.ParseErrorListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParseLocationListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link QueryResultParser}s offering common functionality for query result parsers.
+&nbsp; */
+&nbsp;public abstract class AbstractQueryResultParser implements QueryResultParser {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The {@link ValueFactory} to use for creating RDF model objects.
+&nbsp;	 */
+&nbsp;	protected ValueFactory valueFactory;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The {@link QueryResultHandler} that will handle the parsed query results.
+&nbsp;	 */
+&nbsp;	protected QueryResultHandler handler;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A collection of configuration options for this parser.
+&nbsp;	 */
+&nbsp;	private ParserConfig parserConfig;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An optional ParseErrorListener to report parse errors to.
+&nbsp;	 */
+&nbsp;	private ParseErrorListener errListener;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An optional ParseLocationListener to report parse progress in the form of line- and column numbers to.
+&nbsp;	 */
+&nbsp;	private ParseLocationListener locationListener;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new parser base that, by default, will use the global instance of {@link SimpleValueFactory} to create
+&nbsp;	 * Value objects.
+&nbsp;	 */
+&nbsp;	protected AbstractQueryResultParser() {
+<b class="fc">&nbsp;		this(SimpleValueFactory.getInstance());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new parser base that will use the supplied ValueFactory to create Value objects.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected AbstractQueryResultParser(ValueFactory valueFactory) {</b>
+<b class="fc">&nbsp;		setValueFactory(valueFactory);</b>
+<b class="fc">&nbsp;		setParserConfig(new ParserConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryResultParser setValueFactory(ValueFactory valueFactory) {
+<b class="fc">&nbsp;		this.valueFactory = valueFactory;</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryResultParser setQueryResultHandler(QueryResultHandler handler) {
+<b class="pc">&nbsp;		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {</b>
+<b class="fc">&nbsp;			handler = new RDFStarDecodingQueryResultHandler(handler);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		this.handler = handler;</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryResultParser setParserConfig(ParserConfig config) {
+<b class="fc">&nbsp;		this.parserConfig = config;</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ParserConfig getParserConfig() {
+<b class="fc">&nbsp;		return this.parserConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryResultParser setParseErrorListener(ParseErrorListener el) {
+<b class="nc">&nbsp;		errListener = el;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParseErrorListener getParseErrorListener() {
+<b class="nc">&nbsp;		return errListener;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryResultParser setParseLocationListener(ParseLocationListener el) {
+<b class="nc">&nbsp;		locationListener = el;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParseLocationListener getParseLocationListener() {
+<b class="nc">&nbsp;		return locationListener;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Default implementation. Implementing classes may override this to declare their supported settings.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		return Collections.emptyList();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;T&gt; QueryResultParser set(RioSetting&lt;T&gt; setting, T value) {
+<b class="nc">&nbsp;		getParserConfig().set(setting, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

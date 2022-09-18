@@ -1,0 +1,250 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LogReader</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.logging</a>
+</div>
+
+<h1>Coverage Summary for Class: LogReader (org.eclipse.rdf4j.common.logging)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">LogReader</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.logging;
+&nbsp;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import ch.qos.logback.core.Appender;
+&nbsp;
+&nbsp;/**
+&nbsp; * Log reader interface
+&nbsp; */
+&nbsp;public interface LogReader extends Iterator&lt;LogRecord&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize the log reader.
+&nbsp;	 *
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	void init() throws Exception;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Destroy the log reader and release all used resources.
+&nbsp;	 *
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	void destroy() throws Exception;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Logging appender associated with this reader.
+&nbsp;	 *
+&nbsp;	 * @param appender logging appender associated with this reader
+&nbsp;	 */
+&nbsp;	void setAppender(Appender&lt;?&gt; appender);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Logging appender associated with this reader.
+&nbsp;	 *
+&nbsp;	 * @return logging appender associated with this reader.
+&nbsp;	 */
+&nbsp;	Appender&lt;?&gt; getAppender();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Max. number of records returned by this log reader. Zero value (default) indicates no limit.
+&nbsp;	 *
+&nbsp;	 * @param limit max. number of records returned by this log reader.
+&nbsp;	 */
+&nbsp;	void setLimit(int limit);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Max. number of records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @return max. number of records returned by this log reader or zero value if no limit has been set.
+&nbsp;	 */
+&nbsp;	int getLimit();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if more records are available after limit is reached.
+&nbsp;	 *
+&nbsp;	 * @return true if more records are available
+&nbsp;	 */
+&nbsp;	boolean isMoreAvailable();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Index of the first record returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @param offset index of the first record returned by this log reader.
+&nbsp;	 */
+&nbsp;	void setOffset(int offset);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Index of the first record returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @return index of the first record returned by this log reader.
+&nbsp;	 */
+&nbsp;	int getOffset();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test if this LogReader implementation supports level-based records filtering.
+&nbsp;	 *
+&nbsp;	 * @return true if level filtering is supported.
+&nbsp;	 */
+&nbsp;	boolean supportsLevelFilter();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Level of the log records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @param level log level
+&nbsp;	 */
+&nbsp;	void setLevel(LogLevel level);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Level of the log records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @return Level of the log records returned by this log reader or &#39;null&#39; if no level filter has been set.
+&nbsp;	 */
+&nbsp;	LogLevel getLevel();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test if this LogReader implementation supports thread-based records filtering.
+&nbsp;	 *
+&nbsp;	 * @return true if thread filtering is supported.
+&nbsp;	 */
+&nbsp;	boolean supportsThreadFilter();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Thread name of the log records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @param threadname thread name
+&nbsp;	 */
+&nbsp;	void setThread(String threadname);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Thread name of the log records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @return thread name of the log records returned by this log reader or &#39;null&#39; if no thread filter has been set.
+&nbsp;	 */
+&nbsp;	String getThread();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * All available thread names of the log records.
+&nbsp;	 *
+&nbsp;	 * @return a List of thread names of the log records.
+&nbsp;	 */
+&nbsp;	List&lt;String&gt; getThreadNames();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test if this LogReader implementation supports date-based records filtering.
+&nbsp;	 *
+&nbsp;	 * @return true if date filtering is supported
+&nbsp;	 */
+&nbsp;	boolean supportsDateRanges();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Start (earliest) date of the log records returned by this log reader.
+&nbsp;	 */
+&nbsp;	void setStartDate(Date date);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Start (earliest) date of the log records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @return Start date of the log records or &#39;null&#39; if no start date has been set
+&nbsp;	 */
+&nbsp;	Date getStartDate();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * End (latest) date of of the log records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @param date end date
+&nbsp;	 */
+&nbsp;	void setEndDate(Date date);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * End (latest) date of of the log records returned by this log reader.
+&nbsp;	 *
+&nbsp;	 * @return End date of the log records or &#39;null&#39; if no end date has been set
+&nbsp;	 */
+&nbsp;	Date getEndDate();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Min (earliest) available date of the log records.
+&nbsp;	 *
+&nbsp;	 * @return minimum date
+&nbsp;	 */
+&nbsp;	Date getMinDate();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Max (latest) available date of the log records.
+&nbsp;	 *
+&nbsp;	 * @return maximum date
+&nbsp;	 */
+&nbsp;	Date getMaxDate();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

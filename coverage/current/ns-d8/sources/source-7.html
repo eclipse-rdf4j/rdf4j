@@ -1,0 +1,203 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ShaclSailValidationReportHelper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl</a>
+</div>
+
+<h1>Coverage Summary for Class: ShaclSailValidationReportHelper (org.eclipse.rdf4j.sail.shacl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ShaclSailValidationReportHelper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl;
+&nbsp;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.exception.ValidationException;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;@InternalUseOnly
+<b class="nc">&nbsp;public class ShaclSailValidationReportHelper {</b>
+<b class="nc">&nbsp;	private static final WriterConfig WRITER_CONFIG = new WriterConfig();</b>
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		WRITER_CONFIG</b>
+<b class="nc">&nbsp;				.set(BasicWriterSettings.PRETTY_PRINT, true)</b>
+<b class="nc">&nbsp;				.set(BasicWriterSettings.INLINE_BLANK_NODES, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Finds a validation report using {@link #getValidationReport(Throwable)} and returns a {@link String} containing
+&nbsp;	 * the pretty-printed report.
+&nbsp;	 *
+&nbsp;	 * @param t the {@link Throwable} to start searching for a validation report at
+&nbsp;	 * @return an Optional with the pretty-printed report if one is found, empty otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;String&gt; getValidationReportAsString(Throwable t) {
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		printValidationReport(t, baos);</b>
+<b class="nc">&nbsp;		String reportAsString = baos.toString();</b>
+<b class="nc">&nbsp;		if (reportAsString == null || reportAsString.isBlank()) {</b>
+<b class="nc">&nbsp;			return Optional.empty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Optional.of(reportAsString);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Finds a validation report using {@link #getValidationReport(Throwable)} and pretty-prints it to the specified
+&nbsp;	 * output stream.
+&nbsp;	 *
+&nbsp;	 * @param t   the {@link Throwable} to start searching for a validation report at
+&nbsp;	 * @param out the output stream to print to
+&nbsp;	 */
+&nbsp;	public static void printValidationReport(Throwable t, OutputStream out) {
+<b class="nc">&nbsp;		Optional&lt;Model&gt; reportOpt = getValidationReport(t);</b>
+<b class="nc">&nbsp;		if (reportOpt.isPresent()) {</b>
+<b class="nc">&nbsp;			Rio.write(reportOpt.get(), out, RDFFormat.TURTLE, WRITER_CONFIG);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Looks for a {@link ValidationException} starting with the specified throwable and working back through the cause
+&nbsp;	 * references, and returns the validation report as a {@link Model} if one is found.
+&nbsp;	 *
+&nbsp;	 * @param t the {@link Throwable} to start the search at
+&nbsp;	 * @return an optional with the validation report, or empty.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Model&gt; getValidationReport(Throwable t) {
+&nbsp;		Throwable throwable;
+<b class="nc">&nbsp;		for (throwable = t; throwable != null; throwable = throwable.getCause()) {</b>
+<b class="nc">&nbsp;			if (throwable instanceof ValidationException) {</b>
+<b class="nc">&nbsp;				return Optional.ofNullable(((ValidationException) throwable).validationReportAsModel());</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,472 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ControlledWorkerScheduler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.concurrent</a>
+</div>
+
+<h1>Coverage Summary for Class: ControlledWorkerScheduler (org.eclipse.rdf4j.federated.evaluation.concurrent)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ControlledWorkerScheduler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ControlledWorkerScheduler$ControlStatus</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ControlledWorkerScheduler$WorkerRunnable</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/80)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.concurrent;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.concurrent.ExecutorService;
+&nbsp;import java.util.concurrent.Future;
+&nbsp;import java.util.concurrent.LinkedBlockingQueue;
+&nbsp;import java.util.concurrent.ThreadPoolExecutor;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
+&nbsp;import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * ControlledWorkerScheduler is a task scheduler that uses a FIFO queue for managing its process. Each instance has a
+&nbsp; * pool with a fixed number of worker threads. Once notified a worker picks the next task from the queue and executes
+&nbsp; * it. The results is then returned to the controlling instance retrieved from the task.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see ControlledWorkerUnion
+&nbsp; * @see ControlledWorkerJoin
+&nbsp; * @see ControlledWorkerBoundJoin
+&nbsp; */
+<b class="nc">&nbsp;public class ControlledWorkerScheduler&lt;T&gt; implements Scheduler&lt;T&gt;, TaskWrapperAware {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerScheduler.class);</b>
+&nbsp;
+&nbsp;	private final ExecutorService executor;
+&nbsp;
+<b class="nc">&nbsp;	private final LinkedBlockingQueue&lt;Runnable&gt; _taskQueue = new LinkedBlockingQueue&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private final int nWorkers;
+&nbsp;	private final String name;
+&nbsp;	private TaskWrapper taskWrapper;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a new instance with 20 workers.
+&nbsp;	 *
+&nbsp;	 * @deprecated use {@link #ControlledWorkerScheduler(int, String)}. Scheduled to be removed in 4.0
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public ControlledWorkerScheduler() {
+<b class="nc">&nbsp;		this(20, &quot;FedX Worker&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a new instance with the specified number of workers and the given name.
+&nbsp;	 *
+&nbsp;	 * @param nWorkers
+&nbsp;	 * @param name
+&nbsp;	 */
+<b class="nc">&nbsp;	public ControlledWorkerScheduler(int nWorkers, String name) {</b>
+<b class="nc">&nbsp;		this.nWorkers = nWorkers;</b>
+<b class="nc">&nbsp;		this.name = name;</b>
+<b class="nc">&nbsp;		this.executor = createExecutorService();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Schedule the specified parallel task.
+&nbsp;	 *
+&nbsp;	 * @param task the task to schedule
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void schedule(ParallelTask&lt;T&gt; task) {
+<b class="nc">&nbsp;		assert !task.getControl().isFinished();</b>
+<b class="nc">&nbsp;		Runnable runnable = new WorkerRunnable(task);</b>
+&nbsp;
+&nbsp;		// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
+&nbsp;		// default the unmodified runnable is used
+<b class="nc">&nbsp;		if (taskWrapper != null) {</b>
+<b class="nc">&nbsp;			runnable = taskWrapper.wrap(runnable);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			task.getQueryInfo().registerScheduledTask(task);</b>
+<b class="nc">&nbsp;		} catch (Throwable e) {</b>
+<b class="nc">&nbsp;			task.cancel();</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		Future&lt;?&gt; future = executor.submit(runnable);</b>
+&nbsp;
+&nbsp;		// register the future to the task
+<b class="nc">&nbsp;		if (task instanceof ParallelTaskBase&lt;?&gt;) {</b>
+<b class="nc">&nbsp;			((ParallelTaskBase&lt;?&gt;) task).setScheduledFuture(future);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// TODO rejected execution exception?
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Schedule the given tasks and inform about finish using the same lock, i.e. all tasks are scheduled one after the
+&nbsp;	 * other.
+&nbsp;	 *
+&nbsp;	 * @param tasks
+&nbsp;	 * @param control
+&nbsp;	 */
+&nbsp;	public void scheduleAll(List&lt;ParallelTask&lt;T&gt;&gt; tasks, ParallelExecutor&lt;T&gt; control) {
+<b class="nc">&nbsp;		for (ParallelTask&lt;T&gt; task : tasks) {</b>
+<b class="nc">&nbsp;			schedule(task);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getTotalNumberOfWorkers() {
+<b class="nc">&nbsp;		return nWorkers;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getNumberOfTasks() {
+<b class="nc">&nbsp;		return _taskQueue.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ExecutorService createExecutorService() {
+&nbsp;
+<b class="nc">&nbsp;		ThreadPoolExecutor executor = new ThreadPoolExecutor(nWorkers, nWorkers, 60L, TimeUnit.SECONDS, _taskQueue,</b>
+&nbsp;				new NamingThreadFactory(name));
+<b class="nc">&nbsp;		executor.allowCoreThreadTimeOut(true);</b>
+<b class="nc">&nbsp;		return executor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void abort() {
+<b class="nc">&nbsp;		if (!executor.isTerminated()) {</b>
+<b class="nc">&nbsp;			log.info(&quot;Aborting workers of &quot; + name + &quot;.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			executor.shutdownNow();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				executor.awaitTermination(30, TimeUnit.SECONDS);</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;				throw new FedXRuntimeException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void done() {
+&nbsp;		/* not needed here, implementations call informFinish(control) to notify done status */
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleResult(CloseableIteration&lt;T, QueryEvaluationException&gt; res) {
+&nbsp;		/* not needed here since the result is passed directly to the control instance */
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Unsupported Operation for this scheduler.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void informFinish() {
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Unsupported Operation for this scheduler!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Inform this scheduler that the specified control instance will no longer submit tasks.
+&nbsp;	 *
+&nbsp;	 * @param control
+&nbsp;	 */
+&nbsp;	public void informFinish(ParallelExecutor&lt;T&gt; control) {
+&nbsp;
+&nbsp;		// TODO
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isRunning() {
+&nbsp;		/* Note: this scheduler can only determine runtime for a given control instance! */
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Unsupported Operation for this scheduler.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determine if there are still task running or queued for the specified control.
+&nbsp;	 *
+&nbsp;	 * @param control
+&nbsp;	 * @return true, if there are unfinished tasks, false otherwise
+&nbsp;	 */
+&nbsp;	public boolean isRunning(ParallelExecutor&lt;T&gt; control) {
+<b class="nc">&nbsp;		return true; // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void toss(Exception e) {
+&nbsp;		/* not needed here: exceptions are directly tossed to the controlling instance */
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Unsupported Operation for this scheduler.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	class WorkerRunnable implements Runnable {
+&nbsp;
+&nbsp;		private final ParallelTask&lt;T&gt; task;
+&nbsp;
+<b class="nc">&nbsp;		private volatile boolean aborted = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		public WorkerRunnable(ParallelTask&lt;T&gt; task) {</b>
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.task = task;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void run() {
+<b class="nc">&nbsp;			if (aborted) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (Thread.currentThread().isInterrupted()) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			ParallelExecutor&lt;T&gt; taskControl = task.getControl();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (taskControl.isFinished()) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			CloseableIteration&lt;T, QueryEvaluationException&gt; res = null;</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (log.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;					log.trace(&quot;Performing task &quot; + task + &quot; in &quot; + Thread.currentThread().getName());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				res = task.performTask();</b>
+<b class="nc">&nbsp;				taskControl.addResult(res);</b>
+<b class="nc">&nbsp;				if (aborted) {</b>
+<b class="nc">&nbsp;					res.close();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				taskControl.done();</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				if (t instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;					Thread.currentThread().interrupt();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				log.debug(&quot;Exception encountered while evaluating task (&quot; + t.getClass().getSimpleName() + &quot;): &quot;</b>
+<b class="nc">&nbsp;						+ t.getMessage());</b>
+<b class="nc">&nbsp;				taskControl.toss(ExceptionUtil.toException(t));</b>
+&nbsp;
+&nbsp;				// e.g. interrupted
+<b class="nc">&nbsp;				if (res != null) {</b>
+<b class="nc">&nbsp;					res.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				task.cancel();</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		public void abort() {
+<b class="nc">&nbsp;			this.aborted = true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Structure to maintain the status for a given control instance.
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 */
+&nbsp;	protected class ControlStatus {
+&nbsp;		public int waiting;
+&nbsp;		public boolean done;
+&nbsp;
+<b class="nc">&nbsp;		public ControlStatus(int waiting, boolean done) {</b>
+<b class="nc">&nbsp;			this.waiting = waiting;</b>
+<b class="nc">&nbsp;			this.done = done;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutdown() {
+<b class="nc">&nbsp;		executor.shutdown();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			executor.awaitTermination(30, TimeUnit.SECONDS);</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTaskWrapper(TaskWrapper taskWrapper) {
+<b class="nc">&nbsp;		this.taskWrapper = taskWrapper;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

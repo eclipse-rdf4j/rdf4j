@@ -1,0 +1,209 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConcurrentNodeCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.btree</a>
+</div>
+
+<h1>Coverage Summary for Class: ConcurrentNodeCache (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConcurrentNodeCache</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.btree;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.ConcurrentCache;
+&nbsp;
+&nbsp;class ConcurrentNodeCache extends ConcurrentCache&lt;Integer, Node&gt; {
+&nbsp;
+&nbsp;	private final Function&lt;Integer, Node&gt; reader;
+&nbsp;
+<b class="nc">&nbsp;	private static final Consumer&lt;Node&gt; writeNode = node -&gt; {</b>
+<b class="nc">&nbsp;		if (node.dataChanged()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				node.write();</b>
+<b class="nc">&nbsp;			} catch (IOException exc) {</b>
+<b class="nc">&nbsp;				throw new SailException(&quot;Error writing B-tree node&quot;, exc);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	};
+&nbsp;
+&nbsp;	public ConcurrentNodeCache(Function&lt;Integer, Node&gt; reader) {
+<b class="nc">&nbsp;		super(0); // cleanUp, when actually run, will try to completely purge the cache (but retain currently used</b>
+&nbsp;		// nodes)
+<b class="nc">&nbsp;		this.reader = reader;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void flush() {
+<b class="nc">&nbsp;		cache.forEachValue(Long.MAX_VALUE, writeNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void put(Node node) throws IOException {
+<b class="nc">&nbsp;		cache.put(node.getID(), node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Node readAndUse(int id) {
+<b class="nc">&nbsp;		return cache.compute(id, (k, v) -&gt; {</b>
+<b class="nc">&nbsp;			Node node = v == null ? reader.apply(k) : v;</b>
+<b class="nc">&nbsp;			node.use();</b>
+<b class="nc">&nbsp;			return node;</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean discardEmptyUnused(int nodeId) {
+&nbsp;
+<b class="nc">&nbsp;		Node nn = cache.computeIfPresent(nodeId, (k, v) -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;			if (v.getUsageCount() == 0 &amp;&amp; v.isEmpty() &amp;&amp; v.isLeaf()) {</b>
+<b class="nc">&nbsp;				writeNode.accept(v);</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return v;</b>
+&nbsp;			}
+&nbsp;		});
+<b class="nc">&nbsp;		return nn == null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void release(Node node, boolean forceSync) {
+<b class="nc">&nbsp;		if (forceSync) {</b>
+<b class="nc">&nbsp;			writeNode.accept(node);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		cleanUp();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean onEntryRemoval(Integer key) {
+<b class="nc">&nbsp;		Node node = cache.get(key);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (node == null) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (node.getUsageCount() &gt; 0) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writeNode.accept(node);</b>
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

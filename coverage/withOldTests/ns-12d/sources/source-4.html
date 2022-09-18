@@ -1,0 +1,255 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CreateServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.commands</a>
+</div>
+
+<h1>Coverage Summary for Class: CreateServlet (org.eclipse.rdf4j.workbench.commands)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CreateServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.commands;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.StringReader;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfigBuilder;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.config.ConfigTemplate;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+&nbsp;
+<b class="nc">&nbsp;public class CreateServlet extends TransformationServlet {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init(final ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		super.init(config);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * POST requests to this servlet come from the various specific create-* form submissions.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+&nbsp;			throws ServletException {
+&nbsp;		try {
+<b class="nc">&nbsp;			resp.sendRedirect(&quot;../&quot; + createRepositoryConfig(req) + &quot;/summary&quot;);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new ServletException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * GET requests to this servlet come from the Workbench side bar or from create.xsl form submissions.
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+&nbsp;			throws IOException, RepositoryException, QueryResultHandlerException {
+<b class="nc">&nbsp;		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+&nbsp;		boolean federate;
+<b class="nc">&nbsp;		if (req.isParameterPresent(&quot;type&quot;)) {</b>
+<b class="nc">&nbsp;			final String type = req.getTypeParameter();</b>
+<b class="nc">&nbsp;			federate = &quot;federate&quot;.equals(type);</b>
+<b class="nc">&nbsp;			builder.transform(xslPath, &quot;create-&quot; + type + &quot;.xsl&quot;);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			federate = false;</b>
+<b class="nc">&nbsp;			builder.transform(xslPath, &quot;create.xsl&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.start(federate ? new String[] { &quot;id&quot;, &quot;description&quot;, &quot;location&quot; } : new String[] {});</b>
+<b class="nc">&nbsp;		builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;		if (federate) {</b>
+<b class="nc">&nbsp;			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {</b>
+<b class="nc">&nbsp;				String identity = info.getId();</b>
+<b class="nc">&nbsp;				builder.result(identity, info.getDescription(), info.getLocation());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String createRepositoryConfig(final WorkbenchRequest req) throws IOException, RDF4JException {
+<b class="nc">&nbsp;		String type = req.getTypeParameter();</b>
+&nbsp;		String newID;
+<b class="nc">&nbsp;		if (&quot;federate&quot;.equals(type)) {</b>
+<b class="nc">&nbsp;			newID = req.getParameter(&quot;Local repository ID&quot;);</b>
+<b class="nc">&nbsp;			addFederated(newID, req.getParameter(&quot;Repository title&quot;),</b>
+<b class="nc">&nbsp;					Arrays.asList(req.getParameterValues(&quot;memberID&quot;)));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			newID = updateRepositoryConfig(getConfigTemplate(type).render(req.getSingleParameterMap())).getID();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return newID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	RepositoryConfig updateRepositoryConfig(final String configString) throws IOException, RDF4JException {
+<b class="nc">&nbsp;		final Model graph = new LinkedHashModel();</b>
+<b class="nc">&nbsp;		final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());</b>
+<b class="nc">&nbsp;		rdfParser.setRDFHandler(new StatementCollector(graph));</b>
+<b class="nc">&nbsp;		rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource res = Models.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new RepositoryException(&quot;could not find instance of Repository class in config&quot;));</b>
+<b class="nc">&nbsp;		final RepositoryConfig repConfig = RepositoryConfig.create(graph, res);</b>
+<b class="nc">&nbsp;		repConfig.validate();</b>
+<b class="nc">&nbsp;		manager.addRepositoryConfig(repConfig);</b>
+<b class="nc">&nbsp;		return repConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void addFederated(String repositoryId, String repositoryTitle, List&lt;String&gt; memberIds) {
+&nbsp;
+<b class="nc">&nbsp;		RepositoryConfig repoConfig = FedXRepositoryConfigBuilder.create()</b>
+<b class="nc">&nbsp;				.withResolvableEndpoint(memberIds)</b>
+<b class="nc">&nbsp;				.build(repositoryId, repositoryTitle);</b>
+<b class="nc">&nbsp;		repoConfig.validate();</b>
+<b class="nc">&nbsp;		manager.addRepositoryConfig(repoConfig);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static ConfigTemplate getConfigTemplate(final String type) throws IOException {
+<b class="nc">&nbsp;		try (InputStream ttlInput = RepositoryConfig.class.getResourceAsStream(type + &quot;.ttl&quot;)) {</b>
+<b class="nc">&nbsp;			final String template = IOUtil.readString(new InputStreamReader(ttlInput, StandardCharsets.UTF_8));</b>
+<b class="nc">&nbsp;			return new ConfigTemplate(template);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,191 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FilterIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: FilterIterator (org.eclipse.rdf4j.common.iterator)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FilterIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iterator;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A CloseableIterator that wraps another iterator, applying a filter on the objects that are returned. Subclasses must
+&nbsp; * implement the &lt;var&gt;accept&lt;/var&gt; method to indicate which objects should be returned.
+&nbsp; */
+&nbsp;public abstract class FilterIterator&lt;E&gt; implements Iterator&lt;E&gt; {
+&nbsp;
+&nbsp;	private final Iterator&lt;? extends E&gt; filteredIter;
+&nbsp;
+&nbsp;	private E nextElement;
+&nbsp;
+<b class="nc">&nbsp;	protected FilterIterator(Iterator&lt;? extends E&gt; iter) {</b>
+<b class="nc">&nbsp;		this.filteredIter = iter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() {
+<b class="nc">&nbsp;		findNextElement();</b>
+&nbsp;
+<b class="nc">&nbsp;		return nextElement != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public E next() {
+<b class="nc">&nbsp;		findNextElement();</b>
+&nbsp;
+<b class="nc">&nbsp;		E result = nextElement;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (result != null) {</b>
+<b class="nc">&nbsp;			nextElement = null;</b>
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new NoSuchElementException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void findNextElement() {
+<b class="nc">&nbsp;		while (nextElement == null &amp;&amp; filteredIter.hasNext()) {</b>
+<b class="nc">&nbsp;			E candidate = filteredIter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (accept(candidate)) {</b>
+<b class="nc">&nbsp;				nextElement = candidate;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() {
+<b class="nc">&nbsp;		filteredIter.remove();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tests whether or not the specified object should be returned by this iterator. All objects from the wrapped
+&nbsp;	 * iterator pass through this method in the same order as they are coming from the wrapped iterator.
+&nbsp;	 *
+&nbsp;	 * @param object The object to be tested.
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the object should be returned, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @throws X
+&nbsp;	 */
+&nbsp;	protected abstract boolean accept(E object);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

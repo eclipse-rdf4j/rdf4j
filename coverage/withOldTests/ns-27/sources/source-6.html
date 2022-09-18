@@ -1,0 +1,540 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > XMLWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.xml</a>
+</div>
+
+<h1>Coverage Summary for Class: XMLWriter (org.eclipse.rdf4j.common.xml)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">XMLWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/75)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.xml;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Map.Entry;
+&nbsp;
+&nbsp;/**
+&nbsp; * A utility class offering convenience methods for writing XML. This class takes care of character escaping,
+&nbsp; * identation, etc. This class does not verify that the written data is legal XML. It is the callers responsibility to
+&nbsp; * make sure that elements are properly nested, etc.
+&nbsp; * &lt;h3&gt;Example:&lt;/h3&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * To write the following XML:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;lt;?xml version=&#39;1.0&#39; encoding=&#39;UTF-8&#39;?&amp;gt;
+&nbsp; * &amp;lt;xml-doc&amp;gt;
+&nbsp; * &amp;lt;foo a=&quot;1&quot; b=&quot;2&amp;amp;amp;3&quot;/&amp;gt;
+&nbsp; * &amp;lt;bar&amp;gt;Hello World!&amp;lt;/bar&amp;gt;
+&nbsp; * &amp;lt;/xml-doc&amp;gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * One can use the following code:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * XMLWriter xmlWriter = new XMLWriter(myWriter);
+&nbsp; * xmlWriter.setPrettyPrint(true);
+&nbsp; *
+&nbsp; * xmlWriter.startDocument();
+&nbsp; * xmlWriter.startTag(&amp;quot;xml-doc&amp;quot;);
+&nbsp; *
+&nbsp; * xmlWriter.setAttribute(&amp;quot;a&amp;quot;, 1);
+&nbsp; * xmlWriter.setAttribute(&amp;quot;b&amp;quot;, &amp;quot;2&amp;amp;3&amp;quot;);
+&nbsp; * xmlWriter.simpleTag(&amp;quot;foo&amp;quot;);
+&nbsp; *
+&nbsp; * xmlWriter.textTag(&amp;quot;bar&amp;quot;, &amp;quot;Hello World!&amp;quot;);
+&nbsp; *
+&nbsp; * xmlWriter.endTag(&amp;quot;xml-doc&amp;quot;);
+&nbsp; * xmlWriter.endDocument();
+&nbsp; * &lt;/pre&gt;
+&nbsp; */
+&nbsp;public class XMLWriter {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The (platform-dependent) line separator.
+&nbsp;	 */
+<b class="nc">&nbsp;	private static final String LINE_SEPARATOR = System.getProperty(&quot;line.separator&quot;);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The writer to write the XML to.
+&nbsp;	 */
+&nbsp;	private final Writer _writer;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The required character encoding of the written data.
+&nbsp;	 */
+&nbsp;	private String _charEncoding;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the output should be printed pretty, i.e. adding newlines and indentation.
+&nbsp;	 */
+<b class="nc">&nbsp;	private boolean _prettyPrint = false;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The current indentation level, i.e. the number of tabs to indent a start or end tag.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected int _indentLevel = 0;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The string to use for indentation, e.g. a tab or a number of spaces.
+&nbsp;	 */
+<b class="nc">&nbsp;	private String _indentString = &quot;\t&quot;;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A mapping from attribute names to values for the next start tag.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final Map&lt;String, String&gt; _attributes = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new XMLWriter that will write its data to the supplied Writer. Character encoding issues are left to
+&nbsp;	 * the supplier of the Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer The Writer to write the XML to.
+&nbsp;	 */
+<b class="nc">&nbsp;	public XMLWriter(Writer writer) {</b>
+<b class="nc">&nbsp;		_writer = writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new XMLWriter that will write its data to the supplied OutputStream in the default UTF-8 character
+&nbsp;	 * encoding.
+&nbsp;	 *
+&nbsp;	 * @param outputStream The OutputStream to write the XML to.
+&nbsp;	 */
+<b class="nc">&nbsp;	public XMLWriter(OutputStream outputStream) {</b>
+<b class="nc">&nbsp;		_charEncoding = StandardCharsets.UTF_8.name();</b>
+<b class="nc">&nbsp;		_writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new XMLWriter that will write its data to the supplied OutputStream in specified character encoding.
+&nbsp;	 *
+&nbsp;	 * @param outputStream The OutputStream to write the XML to.
+&nbsp;	 */
+<b class="nc">&nbsp;	public XMLWriter(OutputStream outputStream, String charEncoding) throws UnsupportedEncodingException {</b>
+<b class="nc">&nbsp;		_charEncoding = charEncoding;</b>
+<b class="nc">&nbsp;		_writer = new OutputStreamWriter(outputStream, _charEncoding);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enables or disables pretty-printing. If pretty-printing is enabled, the XMLWriter will add newlines and
+&nbsp;	 * indentation to the written data. Pretty-printing is disabled by default.
+&nbsp;	 *
+&nbsp;	 * @param prettyPrint Flag indicating whether pretty-printing should be enabled.
+&nbsp;	 */
+&nbsp;	public void setPrettyPrint(boolean prettyPrint) {
+<b class="nc">&nbsp;		_prettyPrint = prettyPrint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether pretty-printing is enabled.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if pretty-printing is enabled, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean prettyPrintEnabled() {
+<b class="nc">&nbsp;		return _prettyPrint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the writer
+&nbsp;	 */
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return _writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the string that should be used for indentation when pretty-printing is enabled. The default indentation
+&nbsp;	 * string is a tab character.
+&nbsp;	 *
+&nbsp;	 * @param indentString The indentation string, e.g. a tab or a number of spaces.
+&nbsp;	 */
+&nbsp;	public void setIndentString(String indentString) {
+<b class="nc">&nbsp;		_indentString = indentString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the string used for indentation.
+&nbsp;	 *
+&nbsp;	 * @return the indentation string.
+&nbsp;	 */
+&nbsp;	public String getIndentString() {
+<b class="nc">&nbsp;		return _indentString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the XML header for the XML file.
+&nbsp;	 *
+&nbsp;	 * @throws IOException If an I/O error occurs.
+&nbsp;	 */
+&nbsp;	public void startDocument() throws IOException {
+<b class="nc">&nbsp;		_write(&quot;&lt;?xml version=&#39;1.0&#39;&quot;);</b>
+<b class="nc">&nbsp;		if (_charEncoding != null) {</b>
+<b class="nc">&nbsp;			_write(&quot; encoding=&#39;&quot; + _charEncoding + &quot;&#39;&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		_writeLn(&quot;?&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Finishes writing and flushes the OutputStream or Writer that this XMLWriter is writing to.
+&nbsp;	 */
+&nbsp;	public void endDocument() throws IOException {
+<b class="nc">&nbsp;		getWriter().flush();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets an attribute for the next start tag.
+&nbsp;	 *
+&nbsp;	 * @param name  The name of the attribute.
+&nbsp;	 * @param value The value of the attribute.
+&nbsp;	 */
+&nbsp;	public void setAttribute(String name, String value) {
+<b class="nc">&nbsp;		_attributes.put(name, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets an attribute for the next start element.
+&nbsp;	 *
+&nbsp;	 * @param name  The name of the attribute.
+&nbsp;	 * @param value The value of the attribute. The integer value will be transformed to a string using the method
+&nbsp;	 *              &lt;var&gt;String.valueOf(int)&lt;/var&gt;.
+&nbsp;	 * @see java.lang.String#valueOf(int)
+&nbsp;	 */
+&nbsp;	public void setAttribute(String name, int value) {
+<b class="nc">&nbsp;		setAttribute(name, String.valueOf(value));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets an attribute for the next start element.
+&nbsp;	 *
+&nbsp;	 * @param name  The name of the attribute.
+&nbsp;	 * @param value The value of the attribute. The boolean value will be transformed to a string using the method
+&nbsp;	 *              &lt;var&gt;String.valueOf(boolean)&lt;/var&gt;.
+&nbsp;	 * @see java.lang.String#valueOf(boolean)
+&nbsp;	 */
+&nbsp;	public void setAttribute(String name, boolean value) {
+<b class="nc">&nbsp;		setAttribute(name, String.valueOf(value));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a start tag containing the previously set attributes.
+&nbsp;	 *
+&nbsp;	 * @param elName The element name.
+&nbsp;	 * @see #setAttribute(java.lang.String, java.lang.String)
+&nbsp;	 */
+&nbsp;	public void startTag(String elName) throws IOException {
+<b class="nc">&nbsp;		_writeIndent();</b>
+<b class="nc">&nbsp;		_write(&quot;&lt;&quot; + elName);</b>
+<b class="nc">&nbsp;		_writeAtts();</b>
+<b class="nc">&nbsp;		_writeLn(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;		_indentLevel++;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes an end tag.
+&nbsp;	 *
+&nbsp;	 * @param elName The element name.
+&nbsp;	 */
+&nbsp;	public void endTag(String elName) throws IOException {
+<b class="nc">&nbsp;		_indentLevel--;</b>
+<b class="nc">&nbsp;		_writeIndent();</b>
+<b class="nc">&nbsp;		_writeLn(&quot;&lt;/&quot; + elName + &quot;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes an &#39;empty&#39; element, e.g. &lt;var&gt;&amp;lt;foo/&amp;gt;&lt;/var&gt;. The tag will contain any previously set attributes.
+&nbsp;	 *
+&nbsp;	 * @param elName The element name.
+&nbsp;	 * @see #setAttribute(java.lang.String, java.lang.String)
+&nbsp;	 */
+&nbsp;	public void emptyElement(String elName) throws IOException {
+<b class="nc">&nbsp;		_writeIndent();</b>
+<b class="nc">&nbsp;		_write(&quot;&lt;&quot; + elName);</b>
+<b class="nc">&nbsp;		_writeAtts();</b>
+<b class="nc">&nbsp;		_writeLn(&quot;/&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a link to an XSL stylesheet, using &lt;var&gt;&amp;lt;?xml-stylesheet type=&#39;text/xsl&#39; href=&#39;url&#39;?&amp;gt;&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param url The URL of the stylesheet.
+&nbsp;	 */
+&nbsp;	public void writeStylesheet(String url) throws IOException {
+<b class="nc">&nbsp;		_write(&quot;&lt;?xml-stylesheet type=&#39;text/xsl&#39; href=&#39;&quot;);</b>
+<b class="nc">&nbsp;		text(url);</b>
+<b class="nc">&nbsp;		_writeLn(&quot;&#39;?&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a start and end tag with the supplied text between them. The start tag will contain any previously set
+&nbsp;	 * attributes.
+&nbsp;	 *
+&nbsp;	 * @param elName The element name.
+&nbsp;	 * @param text   The text.
+&nbsp;	 * @see #setAttribute(java.lang.String, java.lang.String)
+&nbsp;	 */
+&nbsp;	public void textElement(String elName, String text) throws IOException {
+<b class="nc">&nbsp;		_writeIndent();</b>
+<b class="nc">&nbsp;		_write(&quot;&lt;&quot; + elName);</b>
+<b class="nc">&nbsp;		_writeAtts();</b>
+<b class="nc">&nbsp;		_write(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;		text(text);</b>
+<b class="nc">&nbsp;		_writeLn(&quot;&lt;/&quot; + elName + &quot;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a start and end tag with the supplied text between them, without the usual escape rules. The start tag
+&nbsp;	 * will contain any previously set attributes.
+&nbsp;	 *
+&nbsp;	 * @param elName The element name.
+&nbsp;	 * @param text   The text.
+&nbsp;	 * @see #setAttribute(java.lang.String, java.lang.String)
+&nbsp;	 */
+&nbsp;	public void unescapedTextElement(String elName, String text) throws IOException {
+<b class="nc">&nbsp;		_writeIndent();</b>
+<b class="nc">&nbsp;		_write(&quot;&lt;&quot; + elName);</b>
+<b class="nc">&nbsp;		_writeAtts();</b>
+<b class="nc">&nbsp;		_write(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;		_write(text);</b>
+<b class="nc">&nbsp;		_writeLn(&quot;&lt;/&quot; + elName + &quot;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a start and end tag with the supplied value between them. The start tag will contain any previously set
+&nbsp;	 * attributes.
+&nbsp;	 *
+&nbsp;	 * @param elName The element name.
+&nbsp;	 * @param value  The value. The integer value will be transformed to a string using the method
+&nbsp;	 *               &lt;var&gt;String.valueOf(int)&lt;/var&gt;.
+&nbsp;	 * @see java.lang.String#valueOf(int)
+&nbsp;	 */
+&nbsp;	public void textElement(String elName, int value) throws IOException {
+<b class="nc">&nbsp;		textElement(elName, String.valueOf(value));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a start and end tag with the supplied boolean value between them. The start tag will contain any
+&nbsp;	 * previously set attributes.
+&nbsp;	 *
+&nbsp;	 * @param elName The element name.
+&nbsp;	 * @param value  The boolean value. The integer value will be transformed to a string using the method
+&nbsp;	 *               &lt;var&gt;String.valueOf(boolean)&lt;/var&gt;.
+&nbsp;	 * @see java.lang.String#valueOf(boolean)
+&nbsp;	 */
+&nbsp;	public void textElement(String elName, boolean value) throws IOException {
+<b class="nc">&nbsp;		textElement(elName, String.valueOf(value));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a piece of text.
+&nbsp;	 *
+&nbsp;	 * @param text The text.
+&nbsp;	 */
+&nbsp;	public void text(String text) throws IOException {
+<b class="nc">&nbsp;		_write(XMLUtil.escapeCharacterData(text));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a comment.
+&nbsp;	 *
+&nbsp;	 * @param comment The comment.
+&nbsp;	 */
+&nbsp;	public void comment(String comment) throws IOException {
+<b class="nc">&nbsp;		_writeIndent();</b>
+<b class="nc">&nbsp;		_writeLn(&quot;&lt;!-- &quot; + comment + &quot; --&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes an empty line. A call to this method will be ignored when pretty-printing is disabled.
+&nbsp;	 *
+&nbsp;	 * @see #setPrettyPrint
+&nbsp;	 */
+&nbsp;	public void emptyLine() throws IOException {
+<b class="nc">&nbsp;		_writeLn(&quot;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes any set attributes and clears them afterwards.
+&nbsp;	 */
+&nbsp;	private void _writeAtts() throws IOException {
+<b class="nc">&nbsp;		for (Entry&lt;String, String&gt; entry : _attributes.entrySet()) {</b>
+<b class="nc">&nbsp;			String name = entry.getKey();</b>
+<b class="nc">&nbsp;			String value = entry.getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;			_write(&quot; &quot; + name + &quot;=&#39;&quot;);</b>
+<b class="nc">&nbsp;			if (value != null) {</b>
+<b class="nc">&nbsp;				_write(XMLUtil.escapeSingleQuotedAttValue(value));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			_write(&quot;&#39;&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		_attributes.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a string.
+&nbsp;	 */
+&nbsp;	protected void _write(String s) throws IOException {
+<b class="nc">&nbsp;		getWriter().write(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a string followed by a line-separator. The line-separator is not written when pretty-printing is disabled.
+&nbsp;	 */
+&nbsp;	protected void _writeLn(String s) throws IOException {
+<b class="nc">&nbsp;		_write(s);</b>
+<b class="nc">&nbsp;		if (_prettyPrint) {</b>
+<b class="nc">&nbsp;			_write(LINE_SEPARATOR);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes as much indentation strings as appropriate for the current indentation level. A call to this method is
+&nbsp;	 * ignored when pretty-printing is disabled.
+&nbsp;	 */
+&nbsp;	protected void _writeIndent() throws IOException {
+<b class="nc">&nbsp;		if (_prettyPrint) {</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; _indentLevel; i++) {</b>
+<b class="nc">&nbsp;				_write(_indentString);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

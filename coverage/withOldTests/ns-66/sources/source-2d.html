@@ -1,0 +1,149 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SpatialAlgebra</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SpatialAlgebra (org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">SpatialAlgebra</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
+&nbsp;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;
+&nbsp;public interface SpatialAlgebra {
+&nbsp;
+&nbsp;	Shape buffer(Shape s, double distance);
+&nbsp;
+&nbsp;	Shape convexHull(Shape s);
+&nbsp;
+&nbsp;	Shape boundary(Shape s);
+&nbsp;
+&nbsp;	Shape envelope(Shape s);
+&nbsp;
+&nbsp;	Shape union(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	Shape intersection(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	Shape symDifference(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	Shape difference(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean relate(Shape s1, Shape s2, String intersectionPattern);
+&nbsp;
+&nbsp;	boolean sfEquals(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean sfDisjoint(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean sfIntersects(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean sfTouches(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean sfCrosses(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean sfWithin(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean sfContains(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean sfOverlaps(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehEquals(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehDisjoint(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehMeet(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehOverlap(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehCovers(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehCoveredBy(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehInside(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean ehContains(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8dc(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8ec(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8po(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8tppi(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8tpp(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8ntpp(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8ntppi(Shape s1, Shape s2);
+&nbsp;
+&nbsp;	boolean rcc8eq(Shape s1, Shape s2);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

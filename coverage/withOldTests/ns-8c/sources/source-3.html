@@ -1,0 +1,597 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryConnectionWrapper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.base</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryConnectionWrapper (org.eclipse.rdf4j.repository.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositoryConnectionWrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    27.8%
+  </span>
+  <span class="absValue">
+    (15/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    6.2%
+  </span>
+  <span class="absValue">
+    (3/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    21.5%
+  </span>
+  <span class="absValue">
+    (23/107)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.base;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.net.URL;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.repository.DelegatingRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Delegates all calls to the delegate RepositoryConnection. Conditionally processes add/remove/read to common base
+&nbsp; * method to make them easier to override.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; * @see #isDelegatingAdd()
+&nbsp; * @see #isDelegatingRemove()
+&nbsp; * @see #isDelegatingRead()
+&nbsp; */
+&nbsp;public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
+&nbsp;		implements DelegatingRepositoryConnection {
+&nbsp;
+&nbsp;	private volatile RepositoryConnection delegate;
+&nbsp;
+&nbsp;	public RepositoryConnectionWrapper(Repository repository) {
+<b class="fc">&nbsp;		super(repository);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RepositoryConnectionWrapper(Repository repository, RepositoryConnection delegate) {
+<b class="fc">&nbsp;		this(repository);</b>
+<b class="fc">&nbsp;		setDelegate(delegate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryConnection getDelegate() {
+<b class="fc">&nbsp;		return delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDelegate(RepositoryConnection delegate) {
+<b class="fc">&nbsp;		this.delegate = delegate;</b>
+<b class="fc">&nbsp;		setParserConfig(delegate.getParserConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If false then the following add methods will call {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}.
+&nbsp;	 *
+&nbsp;	 * @see #add(Iterable, Resource...)
+&nbsp;	 * @see #add(Iteration, Resource...)
+&nbsp;	 * @see #add(Statement, Resource...)
+&nbsp;	 * @see #add(File, String, RDFFormat, Resource...)
+&nbsp;	 * @see #add(InputStream, String, RDFFormat, Resource...)
+&nbsp;	 * @see #add(Reader, String, RDFFormat, Resource...)
+&nbsp;	 * @see #add(Resource, IRI, Value, Resource...)
+&nbsp;	 * @see #add(URL, String, RDFFormat, Resource...)
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; to delegate add methods, &lt;code&gt;false&lt;/code&gt; to call
+&nbsp;	 *         {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	protected boolean isDelegatingAdd() throws RepositoryException {
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If false then the following has/export/isEmpty methods will call
+&nbsp;	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}.
+&nbsp;	 *
+&nbsp;	 * @see #exportStatements(Resource, IRI, Value, boolean, RDFHandler, Resource...)
+&nbsp;	 * @see #hasStatement(Statement, boolean, Resource...)
+&nbsp;	 * @see #hasStatement(Resource, IRI, Value, boolean, Resource...)
+&nbsp;	 * @see #isEmpty()
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; to delegate read methods, &lt;code&gt;false&lt;/code&gt; to call
+&nbsp;	 *         {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	protected boolean isDelegatingRead() throws RepositoryException {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If false then the following remove methods will call
+&nbsp;	 * {@link #removeWithoutCommit(Resource, IRI, Value, Resource[])}.
+&nbsp;	 *
+&nbsp;	 * @see #clear(Resource...)
+&nbsp;	 * @see #remove(Iterable, Resource...)
+&nbsp;	 * @see #remove(Iteration, Resource...)
+&nbsp;	 * @see #remove(Statement, Resource...)
+&nbsp;	 * @see #remove(Resource, IRI, Value, Resource...)
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; to delegate remove methods, &lt;code&gt;false&lt;/code&gt; to call
+&nbsp;	 *         {@link #removeWithoutCommit(Resource, IRI, Value, Resource...)}
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	protected boolean isDelegatingRemove() throws RepositoryException {
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setParserConfig(ParserConfig parserConfig) {
+<b class="fc">&nbsp;		super.setParserConfig(parserConfig);</b>
+<b class="pc">&nbsp;		if (getDelegate() != null) {</b>
+<b class="fc">&nbsp;			getDelegate().setParserConfig(parserConfig);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="nc">&nbsp;			getDelegate().add(file, baseURI, dataFormat, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(file, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="nc">&nbsp;			getDelegate().add(in, baseURI, dataFormat, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(in, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Iterable&lt;? extends Statement&gt; statements, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="nc">&nbsp;			getDelegate().add(statements, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(statements, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;E extends Exception&gt; void add(Iteration&lt;? extends Statement, E&gt; statementIter, Resource... contexts)
+&nbsp;			throws RepositoryException, E {
+<b class="nc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="nc">&nbsp;			getDelegate().add(statementIter, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(statementIter, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="nc">&nbsp;			getDelegate().add(reader, baseURI, dataFormat, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(reader, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
+<b class="pc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="fc">&nbsp;			getDelegate().add(subject, predicate, object, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(subject, predicate, object, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="nc">&nbsp;			getDelegate().add(st, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(st, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingAdd()) {</b>
+<b class="nc">&nbsp;			getDelegate().add(url, baseURI, dataFormat, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.add(url, baseURI, dataFormat, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws RepositoryException {
+<b class="pc">&nbsp;		if (isDelegatingRemove()) {</b>
+<b class="fc">&nbsp;			getDelegate().clear(contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.clear(contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws RepositoryException {
+&nbsp;		try {
+<b class="fc">&nbsp;			super.close();</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			getDelegate().close();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void prepare() throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().prepare();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws RepositoryException {
+<b class="fc">&nbsp;		getDelegate().commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+&nbsp;			Resource... contexts) throws RepositoryException, RDFHandlerException {
+<b class="nc">&nbsp;		if (isDelegatingRead()) {</b>
+<b class="nc">&nbsp;			getDelegate().exportStatements(subj, pred, obj, includeInferred, handler, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			exportStatements(getStatements(subj, pred, obj, includeInferred, contexts), handler);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Resource&gt; getContextIDs() throws RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().getContextIDs();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getNamespace(String prefix) throws RepositoryException {
+<b class="fc">&nbsp;		return getDelegate().getNamespace(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Namespace&gt; getNamespaces() throws RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().getNamespaces();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Statement&gt; getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
+&nbsp;			Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().getStatements(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingRead()) {</b>
+<b class="nc">&nbsp;			return getDelegate().hasStatement(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return super.hasStatement(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatement(Statement st, boolean includeInferred, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingRead()) {</b>
+<b class="nc">&nbsp;			return getDelegate().hasStatement(st, includeInferred, contexts);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return super.hasStatement(st, includeInferred, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated since 2.0. Use {@link #isActive()} instead.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	@Deprecated
+&nbsp;	public boolean isAutoCommit() throws RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().isAutoCommit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isActive() throws UnknownTransactionStateException, RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().isActive();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isEmpty() throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingRead()) {</b>
+<b class="nc">&nbsp;			return getDelegate().isEmpty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return super.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isOpen() throws RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().isOpen();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery prepareGraphQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().prepareGraphQuery(ql, query, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Query prepareQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().prepareQuery(ql, query, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery prepareTupleQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().prepareTupleQuery(ql, query, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().prepareBooleanQuery(ql, query, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().prepareUpdate(ql, update, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(Iterable&lt;? extends Statement&gt; statements, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingRemove()) {</b>
+<b class="nc">&nbsp;			getDelegate().remove(statements, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(statements, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;E extends Exception&gt; void remove(Iteration&lt;? extends Statement, E&gt; statementIter, Resource... contexts)
+&nbsp;			throws RepositoryException, E {
+<b class="nc">&nbsp;		if (isDelegatingRemove()) {</b>
+<b class="nc">&nbsp;			getDelegate().remove(statementIter, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(statementIter, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingRemove()) {</b>
+<b class="nc">&nbsp;			getDelegate().remove(subject, predicate, object, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(subject, predicate, object, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (isDelegatingRemove()) {</b>
+<b class="nc">&nbsp;			getDelegate().remove(st, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.remove(st, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeNamespace(String prefix) throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().removeNamespace(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearNamespaces() throws RepositoryException {
+<b class="fc">&nbsp;		getDelegate().clearNamespaces();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().rollback();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated use {@link #begin()} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	@Override
+&nbsp;	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
+<b class="nc">&nbsp;		super.setAutoCommit(autoCommit);</b>
+<b class="nc">&nbsp;		getDelegate().setAutoCommit(autoCommit);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(String prefix, String name) throws RepositoryException {
+<b class="fc">&nbsp;		getDelegate().setNamespace(prefix, name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long size(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().size(contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().add(subject, predicate, object, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().remove(subject, predicate, object, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Exports all statements contained in the supplied statement iterator and all relevant namespace information to the
+&nbsp;	 * supplied RDFHandler.
+&nbsp;	 */
+&nbsp;	protected void exportStatements(RepositoryResult&lt;Statement&gt; stIter, RDFHandler handler)
+&nbsp;			throws RepositoryException, RDFHandlerException {
+<b class="nc">&nbsp;		try (stIter) {</b>
+<b class="nc">&nbsp;			handler.startRDF();</b>
+<b class="nc">&nbsp;			try ( // Export namespace information</b>
+<b class="nc">&nbsp;					RepositoryResult&lt;Namespace&gt; nsIter = getNamespaces()) {</b>
+<b class="nc">&nbsp;				while (nsIter.hasNext()) {</b>
+<b class="nc">&nbsp;					Namespace ns = nsIter.next();</b>
+<b class="nc">&nbsp;					handler.handleNamespace(ns.getPrefix(), ns.getName());</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			// Export statemnts
+<b class="nc">&nbsp;			while (stIter.hasNext()) {</b>
+<b class="nc">&nbsp;				handler.handleStatement(stIter.next());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			handler.endRDF();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws RepositoryException {
+<b class="fc">&nbsp;		getDelegate().begin();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin(IsolationLevel level) throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().begin(level);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin(TransactionSetting... settings) {
+<b class="nc">&nbsp;		getDelegate().begin(settings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setIsolationLevel(IsolationLevel level) throws IllegalStateException {
+<b class="nc">&nbsp;		getDelegate().setIsolationLevel(level);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IsolationLevel getIsolationLevel() {
+<b class="nc">&nbsp;		return getDelegate().getIsolationLevel();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

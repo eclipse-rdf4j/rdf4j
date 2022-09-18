@@ -1,0 +1,684 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LuceneSailConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: LuceneSailConnection (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LuceneSailConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/84)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/184)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LuceneSailConnection$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/100)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/201)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryContext;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.AbstractFederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.QueryContextIteration;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnectionListener;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.evaluation.SailTripleSource;
+&nbsp;import org.eclipse.rdf4j.sail.evaluation.TupleFunctionEvaluationMode;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.AddRemoveOperation;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.ClearContextOperation;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSailBuffer.Operation;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;h2&gt;&lt;a name=&quot;whySailConnectionListener&quot;&gt;Sail Connection Listener instead of implementing add/remove&lt;/a&gt;&lt;/h2&gt; Using
+&nbsp; * SailConnectionListener, see &lt;a href=&quot;#whySailConnectionListener&quot;&gt;above&lt;/a&gt; The LuceneIndex is adapted based on events
+&nbsp; * coming from the wrapped Sail, rather than by overriding the addStatement and removeStatements methods. This approach
+&nbsp; * has two benefits: (1) when the wrapped Sail only reports statements that were not stored before, the LuceneIndex does
+&nbsp; * not have to do the check on the skipped statemements and (2) the method for removing Statements from the Lucene index
+&nbsp; * does not have to take wildcards into account, making its implementation simpler.
+&nbsp; * &lt;h2&gt;Synchronized Methods&lt;/h2&gt; LuceneSailConnection uses a listener to collect removed statements. The listener should
+&nbsp; * not be active during the removal of contexts, as this is not needed (context removal is implemented differently). To
+&nbsp; * realize this, all methods that can do changes are synchronized and during context removal, the listener is disabled.
+&nbsp; * Thus, all methods of this connection that can change data are synchronized.
+&nbsp; * &lt;h2&gt;Evaluating Queries - possible optimizations&lt;/h2&gt; Arjohn has answered this question in the sesame-dev mailinglist
+&nbsp; * on 13.8.2007: &lt;b&gt;Is there a QueryModelNode that can contain a fixed (perhaps very long) list of Query result
+&nbsp; * bindings?&lt;/b&gt; There is currently no such node, but there are two options to get similar behaviour: 1) Include the
+&nbsp; * result bindings as OR-ed constraints in the query model. E.g. if you have a result binding like
+&nbsp; * {{x=1,y=1},{x=2,y=2}}, this translates to the constraints (x=1 and y=1) or (x=2 and y=2). 2) The LuceneSail could
+&nbsp; * iterate over the LuceneQueryResult and supply the various results as query input parameters to the underlying Sail.
+&nbsp; * This is similar to using PreparedStatement&#39;s in JDBC.
+&nbsp; *
+&nbsp; * @author sauermann
+&nbsp; * @author christian.huetter
+&nbsp; */
+&nbsp;public class LuceneSailConnection extends NotifyingSailConnectionWrapper {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(LuceneSailConnection.class);</b>
+&nbsp;
+&nbsp;	private final SearchIndex luceneIndex;
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unused&quot;)
+&nbsp;	private final AbstractFederatedServiceResolver tupleFunctionServiceResolver;
+&nbsp;
+&nbsp;	private final LuceneSail sail;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * the buffer that collects operations
+&nbsp;	 */
+&nbsp;	final private LuceneSailBuffer buffer;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The listener that listens to the underlying connection. It is disabled during clearContext operations.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected final SailConnectionListener connectionListener = new SailConnectionListener() {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void statementAdded(Statement statement) {
+&nbsp;			// we only consider statements that contain literals or type declaration
+<b class="nc">&nbsp;			if (statement.getObject() instanceof Literal) {</b>
+<b class="nc">&nbsp;				statement = sail.mapStatement(statement);</b>
+<b class="nc">&nbsp;				if (statement == null) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;				// we further only index statements where the Literal&#39;s datatype is
+&nbsp;				// accepted
+<b class="nc">&nbsp;				Literal literal = (Literal) statement.getObject();</b>
+<b class="nc">&nbsp;				if (luceneIndex.accept(literal)) {</b>
+<b class="nc">&nbsp;					buffer.add(statement);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (luceneIndex.isTypeStatement(statement)) {</b>
+<b class="nc">&nbsp;				buffer.addTypeStatement(statement, luceneIndex.isIndexedTypeStatement(statement));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void statementRemoved(Statement statement) {
+&nbsp;			// we only consider statements that contain literals or type declaration
+<b class="nc">&nbsp;			if (statement.getObject() instanceof Literal) {</b>
+<b class="nc">&nbsp;				statement = sail.mapStatement(statement);</b>
+<b class="nc">&nbsp;				if (statement == null) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;				// we further only indexed statements where the Literal&#39;s datatype
+&nbsp;				// is accepted
+<b class="nc">&nbsp;				Literal literal = (Literal) statement.getObject();</b>
+<b class="nc">&nbsp;				if (luceneIndex.accept(literal)) {</b>
+<b class="nc">&nbsp;					buffer.remove(statement);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (luceneIndex.isTypeStatement(statement)) {</b>
+<b class="nc">&nbsp;				buffer.removeTypeStatement(statement);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	};
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * To remember if the iterator was already closed and only free resources once
+&nbsp;	 */
+<b class="nc">&nbsp;	private final AtomicBoolean closed = new AtomicBoolean(false);</b>
+&nbsp;
+&nbsp;	public LuceneSailConnection(NotifyingSailConnection wrappedConnection, SearchIndex luceneIndex, LuceneSail sail) {
+<b class="nc">&nbsp;		super(wrappedConnection);</b>
+<b class="nc">&nbsp;		this.luceneIndex = luceneIndex;</b>
+<b class="nc">&nbsp;		this.sail = sail;</b>
+<b class="nc">&nbsp;		this.buffer = new LuceneSailBuffer(luceneIndex.isTypeFilteringEnabled());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.SERVICE) {</b>
+<b class="nc">&nbsp;			FederatedServiceResolver resolver = sail.getFederatedServiceResolver();</b>
+<b class="nc">&nbsp;			if (!(resolver instanceof AbstractFederatedServiceResolver)) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(</b>
+&nbsp;						&quot;SERVICE EvaluationMode requires a FederatedServiceResolver that is an instance of &quot;
+<b class="nc">&nbsp;								+ AbstractFederatedServiceResolver.class.getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			this.tupleFunctionServiceResolver = (AbstractFederatedServiceResolver) resolver;</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			this.tupleFunctionServiceResolver = null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * Using SailConnectionListener, see &lt;a href=&quot;#whySailConnectionListener&quot;&gt;above&lt;/a&gt;
+&nbsp;		 */
+&nbsp;
+<b class="nc">&nbsp;		wrappedConnection.addConnectionListener(connectionListener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		super.addStatement(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws SailException {
+<b class="nc">&nbsp;		if (closed.compareAndSet(false, true)) {</b>
+<b class="nc">&nbsp;			super.close();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	// //////////////////////////////// Methods related to indexing
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void clear(Resource... contexts) throws SailException {
+&nbsp;		// remove the connection listener, this is safe as the changing methods
+&nbsp;		// are synchronized
+&nbsp;		// during the clear(), no other operation can be invoked
+<b class="nc">&nbsp;		getWrappedConnection().removeConnectionListener(connectionListener);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			super.clear(contexts);</b>
+<b class="nc">&nbsp;			buffer.clear(contexts);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			getWrappedConnection().addConnectionListener(connectionListener);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws SailException {
+<b class="nc">&nbsp;		super.begin();</b>
+<b class="nc">&nbsp;		buffer.reset();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			luceneIndex.begin();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws SailException {
+<b class="nc">&nbsp;		super.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;Committing Lucene transaction with {} operations.&quot;, buffer.operations().size());</b>
+&nbsp;		try {
+&nbsp;			// preprocess buffer
+<b class="nc">&nbsp;			buffer.optimize();</b>
+&nbsp;
+&nbsp;			// run operations and remove them from buffer
+<b class="nc">&nbsp;			for (Iterator&lt;Operation&gt; i = buffer.operations().iterator(); i.hasNext();) {</b>
+<b class="nc">&nbsp;				Operation op = i.next();</b>
+<b class="nc">&nbsp;				if (op instanceof LuceneSailBuffer.AddRemoveOperation) {</b>
+<b class="nc">&nbsp;					AddRemoveOperation addremove = (AddRemoveOperation) op;</b>
+&nbsp;					// add/remove in one call
+<b class="nc">&nbsp;					addRemoveStatements(addremove);</b>
+<b class="nc">&nbsp;				} else if (op instanceof LuceneSailBuffer.ClearContextOperation) {</b>
+&nbsp;					// clear context
+<b class="nc">&nbsp;					clearContexts(((ClearContextOperation) op).getContexts());</b>
+<b class="nc">&nbsp;				} else if (op instanceof LuceneSailBuffer.ClearOperation) {</b>
+<b class="nc">&nbsp;					logger.debug(&quot;clearing index...&quot;);</b>
+<b class="nc">&nbsp;					luceneIndex.clear();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new SailException(&quot;Cannot interpret operation &quot; + op + &quot; of type &quot; + op.getClass().getName());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				i.remove();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Committing operations in lucenesail, encountered exception &quot; + e</b>
+<b class="nc">&nbsp;					+ &quot;. Only some operations were stored, &quot; + buffer.operations().size()</b>
+&nbsp;					+ &quot; operations are discarded. Lucene Index is now corrupt.&quot;, e);
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			buffer.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void addRemoveStatements(AddRemoveOperation op) throws IOException, SailException {
+<b class="nc">&nbsp;		luceneIndex.begin();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			completeAddRemoveOperationWithType(op);</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Statement&gt; toAdd = op.getAdded();</b>
+<b class="nc">&nbsp;			Set&lt;Statement&gt; toRemove = op.getRemoved();</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;indexing {}/removing {} statements...&quot;, toAdd.size(), toRemove.size());</b>
+&nbsp;
+<b class="nc">&nbsp;			luceneIndex.addRemoveStatements(toAdd, toRemove);</b>
+<b class="nc">&nbsp;			luceneIndex.commit();</b>
+<b class="nc">&nbsp;		} catch (IOException | SailException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Rolling back&quot;, e);</b>
+<b class="nc">&nbsp;			luceneIndex.rollback();</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void completeAddRemoveOperationWithType(AddRemoveOperation op) throws SailException {
+&nbsp;		// check if required
+<b class="nc">&nbsp;		if (!luceneIndex.isTypeFilteringEnabled()) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TypeBacktraceMode backtraceMode = sail.getIndexBacktraceMode();</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;Statement&gt; toAdd = op.getAdded();</b>
+<b class="nc">&nbsp;		Set&lt;Statement&gt; toRemove = op.getRemoved();</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;Resource, Boolean&gt; typeAdd = op.getTypeAdded();</b>
+<b class="nc">&nbsp;		Set&lt;Resource&gt; typeRemove = op.getTypeRemoved();</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;Resource, Boolean&gt; typeValue = new HashMap&lt;&gt;(typeAdd);</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;IRI, Set&lt;IRI&gt;&gt; mapping = luceneIndex.getIndexedTypeMapping();</b>
+&nbsp;
+&nbsp;		// check for all the add candidates the type of the subject
+<b class="nc">&nbsp;		for (Iterator&lt;Statement&gt; it = toAdd.iterator(); it.hasNext();) {</b>
+<b class="nc">&nbsp;			Statement stmt = it.next();</b>
+&nbsp;
+&nbsp;			// check previously mapped value
+<b class="nc">&nbsp;			Boolean addValue = typeValue.get(stmt.getSubject());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (addValue == null) {</b>
+&nbsp;				// search for it inside the update statement
+<b class="nc">&nbsp;				addValue = typeAdd.get(stmt.getSubject());</b>
+&nbsp;
+<b class="nc">&nbsp;				if (addValue != null) {</b>
+&nbsp;					// store it for future use
+<b class="nc">&nbsp;					typeValue.put(stmt.getSubject(), addValue);</b>
+&nbsp;				} else {
+&nbsp;					// not inside the update statement, searching with the connection
+<b class="nc">&nbsp;					for (IRI predicate : mapping.keySet()) {</b>
+<b class="nc">&nbsp;						Set&lt;IRI&gt; objects = mapping.get(predicate);</b>
+<b class="nc">&nbsp;						try (CloseableIteration&lt;? extends Statement, SailException&gt; statements = getStatements(</b>
+<b class="nc">&nbsp;								stmt.getSubject(),</b>
+&nbsp;								predicate,
+&nbsp;								null,
+&nbsp;								false,
+<b class="nc">&nbsp;								stmt.getContext()</b>
+&nbsp;						)) {
+<b class="nc">&nbsp;							if (statements.hasNext()) {</b>
+<b class="nc">&nbsp;								Value object = statements.next().getObject();</b>
+<b class="nc">&nbsp;								addValue = object.isIRI() &amp;&amp; objects.contains((IRI) object);</b>
+&nbsp;
+<b class="nc">&nbsp;								typeValue.put(stmt.getSubject(), addValue);</b>
+&nbsp;								break;
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// if the value is null, the type triple isn&#39;t in the sail, so we can&#39;t index it
+<b class="nc">&nbsp;			if (addValue == null || !addValue) {</b>
+<b class="nc">&nbsp;				it.remove();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// backtrace previous insert of property and add them to the index
+<b class="nc">&nbsp;		if (backtraceMode.shouldBackTraceInsert()) {</b>
+<b class="nc">&nbsp;			for (Map.Entry&lt;Resource, Boolean&gt; e : typeAdd.entrySet()) {</b>
+<b class="nc">&nbsp;				if (e.getValue()) {</b>
+<b class="nc">&nbsp;					Resource subject = e.getKey();</b>
+<b class="nc">&nbsp;					try (CloseableIteration&lt;? extends Statement, SailException&gt; statements = getStatements(</b>
+&nbsp;							subject, null, null, false
+&nbsp;					)) {
+<b class="nc">&nbsp;						while (statements.hasNext()) {</b>
+<b class="nc">&nbsp;							Statement statement = statements.next();</b>
+<b class="nc">&nbsp;							statement = sail.mapStatement(statement);</b>
+&nbsp;
+<b class="nc">&nbsp;							if (statement == null) {</b>
+<b class="nc">&nbsp;								continue;</b>
+&nbsp;							}
+&nbsp;
+&nbsp;							// add this statement to the Lucene index
+<b class="nc">&nbsp;							toAdd.add(statement);</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// backtrace previous insert of property and delete them from the index
+<b class="nc">&nbsp;		if (backtraceMode.shouldBackTraceDelete()) {</b>
+<b class="nc">&nbsp;			for (Resource subject : typeRemove) {</b>
+<b class="nc">&nbsp;				try (CloseableIteration&lt;? extends Statement, SailException&gt; statements = getStatements(</b>
+&nbsp;						subject, null, null, false
+&nbsp;				)) {
+<b class="nc">&nbsp;					while (statements.hasNext()) {</b>
+<b class="nc">&nbsp;						Statement statement = statements.next();</b>
+<b class="nc">&nbsp;						statement = sail.mapStatement(statement);</b>
+&nbsp;
+<b class="nc">&nbsp;						if (statement == null) {</b>
+<b class="nc">&nbsp;							continue;</b>
+&nbsp;						}
+&nbsp;
+&nbsp;						// add this statement to the Lucene index
+<b class="nc">&nbsp;						toRemove.add(statement);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void clearContexts(Resource... contexts) throws IOException {
+<b class="nc">&nbsp;		logger.debug(&quot;clearing contexts...&quot;);</b>
+<b class="nc">&nbsp;		luceneIndex.begin();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			luceneIndex.clearContexts(contexts);</b>
+<b class="nc">&nbsp;			luceneIndex.commit();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Rolling back&quot;, e);</b>
+<b class="nc">&nbsp;			luceneIndex.rollback();</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// //////////////////////////////// Methods related to querying
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; evaluate(TupleExpr tupleExpr,
+&nbsp;			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+<b class="nc">&nbsp;		QueryContext qctx = new QueryContext();</b>
+<b class="nc">&nbsp;		SearchIndexQueryContextInitializer.init(qctx, luceneIndex);</b>
+&nbsp;
+&nbsp;		final CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; iter;
+<b class="nc">&nbsp;		qctx.begin();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			iter = evaluateInternal(tupleExpr, dataset, bindings, includeInferred);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			qctx.end();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// NB: Iteration methods may do on-demand evaluation hence need to wrap
+&nbsp;		// these too
+<b class="nc">&nbsp;		return new QueryContextIteration(iter, qctx);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; evaluateInternal(TupleExpr tupleExpr,
+&nbsp;			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+&nbsp;		// Don&#39;t modify the original tuple expression
+<b class="nc">&nbsp;		tupleExpr = tupleExpr.clone();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!(tupleExpr instanceof QueryRoot)) {</b>
+&nbsp;			// Add a dummy root node to the tuple expressions to allow the
+&nbsp;			// optimizers to modify the actual root node
+<b class="nc">&nbsp;			tupleExpr = new QueryRoot(tupleExpr);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Inline any externally set bindings, lucene statement patterns can also
+&nbsp;		// use externally bound variables
+<b class="nc">&nbsp;		new BindingAssignerOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;SearchQueryEvaluator&gt; queries = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (SearchQueryInterpreter interpreter : sail.getSearchQueryInterpreters()) {</b>
+<b class="nc">&nbsp;			interpreter.process(tupleExpr, bindings, queries);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// constant optimizer - evaluate lucene queries
+<b class="nc">&nbsp;		if (!queries.isEmpty()) {</b>
+<b class="nc">&nbsp;			evaluateLuceneQueries(queries);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (sail.getEvaluationMode() == TupleFunctionEvaluationMode.TRIPLE_SOURCE) {</b>
+<b class="nc">&nbsp;			ValueFactory vf = sail.getValueFactory();</b>
+<b class="nc">&nbsp;			EvaluationStrategy strategy = new TupleFunctionEvaluationStrategy(</b>
+<b class="nc">&nbsp;					new SailTripleSource(this, includeInferred, vf), dataset, sail.getFederatedServiceResolver(),</b>
+<b class="nc">&nbsp;					sail.getTupleFunctionRegistry());</b>
+&nbsp;
+&nbsp;			// do standard optimizations
+<b class="nc">&nbsp;			new BindingAssignerOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new ConstantOptimizer(strategy).optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new CompareOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new ConjunctiveConstraintSplitterOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new DisjunctiveConstraintOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new SameTermFilterOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new QueryModelNormalizerOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new QueryJoinOptimizer(new TupleFunctionEvaluationStatistics()).optimize(tupleExpr, dataset, bindings);</b>
+&nbsp;			// new SubSelectJoinOptimizer().optimize(tupleExpr, dataset,
+&nbsp;			// bindings);
+<b class="nc">&nbsp;			new IterativeEvaluationOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new FilterOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+<b class="nc">&nbsp;			new OrderLimitOptimizer().optimize(tupleExpr, dataset, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.trace(&quot;Optimized query model:\n{}&quot;, tupleExpr);</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				return strategy.evaluate(tupleExpr, bindings);</b>
+<b class="nc">&nbsp;			} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;				throw new SailException(e);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.evaluate(tupleExpr, dataset, bindings, includeInferred);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the given Lucene queries, generate bindings from the query result, add the bindings to the query tree,
+&nbsp;	 * and remove the Lucene queries from the given query tree.
+&nbsp;	 *
+&nbsp;	 * @param queries
+&nbsp;	 * @throws SailException
+&nbsp;	 */
+&nbsp;	private void evaluateLuceneQueries(Collection&lt;SearchQueryEvaluator&gt; queries) throws SailException {
+&nbsp;		// TODO: optimize lucene queries here
+&nbsp;		// - if they refer to the same subject, merge them into one lucene query
+&nbsp;		// - multiple different property constraints can be put into the lucene
+&nbsp;		// query string (escape colons here)
+&nbsp;
+<b class="nc">&nbsp;		if (closed.get()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Sail has been closed already&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// evaluate queries, generate binding sets, and remove queries
+<b class="nc">&nbsp;		for (SearchQueryEvaluator query : queries) {</b>
+&nbsp;			// evaluate the Lucene query and generate bindings
+<b class="nc">&nbsp;			final Collection&lt;BindingSet&gt; bindingSets = luceneIndex.evaluate(query);</b>
+&nbsp;
+<b class="nc">&nbsp;			final BindingSetAssignment bsa = new BindingSetAssignment();</b>
+&nbsp;
+&nbsp;			// found something?
+<b class="nc">&nbsp;			if (bindingSets != null &amp;&amp; !bindingSets.isEmpty()) {</b>
+<b class="nc">&nbsp;				bsa.setBindingSets(bindingSets);</b>
+<b class="nc">&nbsp;				if (bindingSets instanceof BindingSetCollection) {</b>
+<b class="nc">&nbsp;					bsa.setBindingNames(((BindingSetCollection) bindingSets).getBindingNames());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			query.replaceQueryPatternsWithResults(bsa);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		super.removeStatements(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws SailException {
+<b class="nc">&nbsp;		super.rollback();</b>
+<b class="nc">&nbsp;		buffer.reset();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			luceneIndex.rollback();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

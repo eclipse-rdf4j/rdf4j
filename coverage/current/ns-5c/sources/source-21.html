@@ -1,0 +1,229 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPIF</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: SPIF (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPIF</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;/**
+&nbsp; * http://spinrdf.org/spif#.
+&nbsp; */
+&nbsp;public final class SPIF {
+&nbsp;
+&nbsp;	private SPIF() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * http://spinrdf.org/spif
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://spinrdf.org/spif#&quot;;
+&nbsp;
+&nbsp;	public static final String PREFIX = &quot;spif&quot;;
+&nbsp;
+&nbsp;	public static final IRI MOD_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI PARSE_DATE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI DATE_FORMAT_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI DECIMAL_FORMAT_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI TRIM_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI CURRENT_TIME_MILLIS_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI TIME_MILLIS_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI GENERATE_UUID_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI RANDOM_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI CAST_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI INDEX_OF_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI LAST_INDEX_OF_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI ENCODE_URL_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI DECODE_URL_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI BUILD_STRING_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI BUILD_URI_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI CONVERT_SPIN_RDF_TO_STRING_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI REPLACE_ALL_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI NAME_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI UN_CAMEL_CASE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI IS_VALID_URI_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI HAS_ALL_OBJECTS_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI INVOKE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI CAN_INVOKE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI UPPER_CASE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI LOWER_CASE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI TITLE_CASE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI LOWER_TITLE_CASE_FUNCTION;
+&nbsp;
+&nbsp;	public static final IRI FOR_EACH_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI FOR_PROPERTY;
+&nbsp;
+&nbsp;	public static final IRI SPLIT_PROPERTY;
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		MOD_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;mod&quot;);</b>
+<b class="nc">&nbsp;		PARSE_DATE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;parseDate&quot;);</b>
+<b class="nc">&nbsp;		DATE_FORMAT_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;dateFormat&quot;);</b>
+<b class="nc">&nbsp;		DECIMAL_FORMAT_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;decimalFormat&quot;);</b>
+<b class="nc">&nbsp;		TRIM_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;trim&quot;);</b>
+<b class="nc">&nbsp;		CURRENT_TIME_MILLIS_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;currentTimeMillis&quot;);</b>
+<b class="nc">&nbsp;		TIME_MILLIS_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;timeMillis&quot;);</b>
+<b class="nc">&nbsp;		GENERATE_UUID_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;generateUUID&quot;);</b>
+<b class="nc">&nbsp;		RANDOM_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;random&quot;);</b>
+<b class="nc">&nbsp;		CAST_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;cast&quot;);</b>
+<b class="nc">&nbsp;		INDEX_OF_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;indexOf&quot;);</b>
+<b class="nc">&nbsp;		LAST_INDEX_OF_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;lastIndexOf&quot;);</b>
+<b class="nc">&nbsp;		ENCODE_URL_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;encodeURL&quot;);</b>
+<b class="nc">&nbsp;		DECODE_URL_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;decodeURL&quot;);</b>
+<b class="nc">&nbsp;		BUILD_STRING_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;buildString&quot;);</b>
+<b class="nc">&nbsp;		BUILD_URI_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;buildURI&quot;);</b>
+<b class="nc">&nbsp;		CONVERT_SPIN_RDF_TO_STRING_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;convertSPINRDFToString&quot;);</b>
+<b class="nc">&nbsp;		REPLACE_ALL_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;replaceAll&quot;);</b>
+<b class="nc">&nbsp;		NAME_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;name&quot;);</b>
+<b class="nc">&nbsp;		UN_CAMEL_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;unCamelCase&quot;);</b>
+<b class="nc">&nbsp;		IS_VALID_URI_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;isValidURI&quot;);</b>
+<b class="nc">&nbsp;		HAS_ALL_OBJECTS_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;hasAllObjects&quot;);</b>
+<b class="nc">&nbsp;		INVOKE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;invoke&quot;);</b>
+<b class="nc">&nbsp;		CAN_INVOKE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;canInvoke&quot;);</b>
+<b class="nc">&nbsp;		UPPER_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;upperCase&quot;);</b>
+<b class="nc">&nbsp;		LOWER_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;lowerCase&quot;);</b>
+<b class="nc">&nbsp;		TITLE_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;titleCase&quot;);</b>
+<b class="nc">&nbsp;		LOWER_TITLE_CASE_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;lowerTitleCase&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		FOR_EACH_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;foreach&quot;);</b>
+<b class="nc">&nbsp;		FOR_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;for&quot;);</b>
+<b class="nc">&nbsp;		SPLIT_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;split&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,240 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXBooleanQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.structures</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXBooleanQuery (org.eclipse.rdf4j.federated.structures)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXBooleanQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.structures;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailBooleanQuery;
+&nbsp;
+&nbsp;/**
+&nbsp; * Abstraction of a {@link SailBooleanQuery} which takes care for tracking the
+&nbsp; * {@link FedXRepositoryConnection#BINDING_ORIGINAL_MAX_EXECUTION_TIME} during evaluation.
+&nbsp; *
+&nbsp; * All methods are delegated to the actual {@link SailBooleanQuery}.
+&nbsp; *
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FedXBooleanQuery extends SailBooleanQuery {
+&nbsp;
+&nbsp;	protected final SailBooleanQuery delegate;
+&nbsp;
+&nbsp;	public FedXBooleanQuery(SailBooleanQuery delegate) {
+<b class="nc">&nbsp;		super(delegate.getParsedQuery(), null);</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean evaluate() throws QueryEvaluationException {
+<b class="nc">&nbsp;		FedXUtil.applyQueryBindings(this);</b>
+<b class="nc">&nbsp;		return delegate.evaluate();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * DELEGATE TO ACTUAL SailBooleanQuery
+&nbsp;	 */
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;deprecation&quot;)
+&nbsp;	@Override
+&nbsp;	public void setMaxQueryTime(int maxQueryTime) {
+<b class="nc">&nbsp;		delegate.setMaxQueryTime(maxQueryTime);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;deprecation&quot;)
+&nbsp;	@Override
+&nbsp;	public int getMaxQueryTime() {
+<b class="nc">&nbsp;		return delegate.getMaxQueryTime();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setBinding(String name, Value value) {
+<b class="nc">&nbsp;		delegate.setBinding(name, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ParsedBooleanQuery getParsedQuery() {
+<b class="nc">&nbsp;		return delegate.getParsedQuery();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeBinding(String name) {
+<b class="nc">&nbsp;		delegate.removeBinding(name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearBindings() {
+<b class="nc">&nbsp;		delegate.clearBindings();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return delegate.hashCode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet getBindings() {
+<b class="nc">&nbsp;		return delegate.getBindings();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataset(Dataset dataset) {
+<b class="nc">&nbsp;		delegate.setDataset(dataset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Dataset getDataset() {
+<b class="nc">&nbsp;		return delegate.getDataset();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setIncludeInferred(boolean includeInferred) {
+<b class="nc">&nbsp;		delegate.setIncludeInferred(includeInferred);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Dataset getActiveDataset() {
+<b class="nc">&nbsp;		return delegate.getActiveDataset();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean getIncludeInferred() {
+<b class="nc">&nbsp;		return delegate.getIncludeInferred();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+<b class="nc">&nbsp;		delegate.setMaxExecutionTime(maxExecutionTimeSeconds);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int getMaxExecutionTime() {
+<b class="nc">&nbsp;		return delegate.getMaxExecutionTime();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return delegate.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object obj) {
+<b class="nc">&nbsp;		return delegate.equals(obj);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

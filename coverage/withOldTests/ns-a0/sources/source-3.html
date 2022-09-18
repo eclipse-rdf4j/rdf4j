@@ -1,0 +1,836 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryFederatedService</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sparql.federation</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryFederatedService (org.eclipse.rdf4j.repository.sparql.federation)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositoryFederatedService</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/90)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/181)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RepositoryFederatedService$BatchingServiceIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RepositoryFederatedService$CloseConnectionIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RepositoryFederatedService$FallbackServiceIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/100)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/214)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sparql.federation;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SilentIteration;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.query.InsertBindingSetCursor;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Federated Service wrapping the {@link Repository} to communicate with a SPARQL endpoint.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class RepositoryFederatedService implements FederatedService {
+&nbsp;
+&nbsp;	private static final String ROW_IDX_VAR = &quot;__rowIdx&quot;;
+&nbsp;
+<b class="nc">&nbsp;	final static Logger logger = LoggerFactory.getLogger(RepositoryFederatedService.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A convenience iteration for SERVICE expression which evaluates intermediate results in batches and manages all
+&nbsp;	 * results. Uses {@link JoinExecutorBase} facilities to guarantee correct access to the final results
+&nbsp;	 *
+&nbsp;	 * @author as
+&nbsp;	 */
+&nbsp;	private class BatchingServiceIteration extends JoinExecutorBase&lt;BindingSet&gt; {
+&nbsp;
+&nbsp;		private final int blockSize;
+&nbsp;
+&nbsp;		private final Service service;
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @param inputBindings
+&nbsp;		 * @throws QueryEvaluationException
+&nbsp;		 */
+&nbsp;		public BatchingServiceIteration(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; inputBindings,
+<b class="nc">&nbsp;				int blockSize, Service service) throws QueryEvaluationException {</b>
+<b class="nc">&nbsp;			super(inputBindings, null, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;			this.blockSize = blockSize;</b>
+<b class="nc">&nbsp;			this.service = service;</b>
+<b class="nc">&nbsp;			run();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void handleBindings() throws Exception {
+<b class="nc">&nbsp;			while (!isClosed() &amp;&amp; leftIter.hasNext()) {</b>
+&nbsp;
+<b class="nc">&nbsp;				ArrayList&lt;BindingSet&gt; blockBindings = new ArrayList&lt;&gt;(blockSize);</b>
+<b class="nc">&nbsp;				for (int i = 0; i &lt; blockSize; i++) {</b>
+<b class="nc">&nbsp;					if (!leftIter.hasNext()) {</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					blockBindings.add(leftIter.next());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; materializedIter = new CollectionIteration&lt;&gt;(</b>
+&nbsp;						blockBindings);
+<b class="nc">&nbsp;				addResult(evaluateInternal(service, materializedIter, service.getBaseURI()));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Helper iteration to evaluate a block of {@link BindingSet}s using the simple
+&nbsp;	 * {@link RepositoryFederatedService#select(Service, Set, BindingSet, String)} routine.
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private class FallbackServiceIteration extends JoinExecutorBase&lt;BindingSet&gt; {
+&nbsp;
+&nbsp;		private final Service service;
+&nbsp;		private final List&lt;BindingSet&gt; allBindings;
+&nbsp;		private final String baseUri;
+&nbsp;
+&nbsp;		public FallbackServiceIteration(Service service,
+<b class="nc">&nbsp;				List&lt;BindingSet&gt; allBindings, String baseUri) {</b>
+<b class="nc">&nbsp;			super(null, null, null);</b>
+<b class="nc">&nbsp;			this.service = service;</b>
+<b class="nc">&nbsp;			this.allBindings = allBindings;</b>
+<b class="nc">&nbsp;			this.baseUri = baseUri;</b>
+<b class="nc">&nbsp;			run();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void handleBindings() throws Exception {
+<b class="nc">&nbsp;			Set&lt;String&gt; projectionVars = new HashSet&lt;&gt;(service.getServiceVars());</b>
+<b class="nc">&nbsp;			for (BindingSet b : allBindings) {</b>
+<b class="nc">&nbsp;				addResult(select(service, projectionVars, b, baseUri));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Wrapper iteration which closes a {@link RepositoryConnection} upon {@link #close()}
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private static class CloseConnectionIteration implements CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;		private final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; delegate;
+&nbsp;		private final RepositoryConnection connection;
+&nbsp;
+&nbsp;		private CloseConnectionIteration(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; delegate,
+&nbsp;				RepositoryConnection connection) {
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.delegate = delegate;</b>
+<b class="nc">&nbsp;			this.connection = connection;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.hasNext();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public BindingSet next() throws QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.next();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;			delegate.remove();</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws QueryEvaluationException {
+&nbsp;			try {
+<b class="nc">&nbsp;				delegate.close();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				closeQuietly(connection);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private final Repository rep;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The number of bindings sent in a single subquery in {@link #evaluate(Service, CloseableIteration, String)} If
+&nbsp;	 * blockSize is set to 0, the entire input stream is used as block input the block size effectively determines the
+&nbsp;	 * number of remote requests
+&nbsp;	 */
+<b class="nc">&nbsp;	protected int boundJoinBlockSize = 15;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Whether to use a fresh repository connection for individual queries
+&nbsp;	 */
+<b class="nc">&nbsp;	private boolean useFreshConnection = true;</b>
+&nbsp;
+&nbsp;	// flag indicating whether the repository shall be closed in #shutdown()
+&nbsp;	protected boolean shutDown;
+&nbsp;
+<b class="nc">&nbsp;	private RepositoryConnection managedConn = null;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param repo the repository to be used
+&nbsp;	 */
+&nbsp;	public RepositoryFederatedService(Repository repo) {
+<b class="nc">&nbsp;		this(repo, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param repo     the repository to be used
+&nbsp;	 * @param shutDown a flag indicating whether the repository shall be closed in {@link #shutdown()}
+&nbsp;	 */
+&nbsp;	public RepositoryFederatedService(Repository repo, boolean shutDown) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.rep = repo;</b>
+<b class="nc">&nbsp;		this.shutDown = shutDown;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the provided sparqlQueryString at the initialized {@link Repository} of this {@link FederatedService}.
+&nbsp;	 * Insert bindings into SELECT query and evaluate
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; select(Service service, Set&lt;String&gt; projectionVars,
+&nbsp;			BindingSet bindings, String baseUri) throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		RepositoryConnection conn = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			String sparqlQueryString = service.getSelectQueryString(projectionVars);</b>
+&nbsp;
+<b class="nc">&nbsp;			conn = useFreshConnection ? freshConnection() : getConnection();</b>
+<b class="nc">&nbsp;			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);</b>
+&nbsp;
+<b class="nc">&nbsp;			Iterator&lt;Binding&gt; bIter = bindings.iterator();</b>
+<b class="nc">&nbsp;			while (bIter.hasNext()) {</b>
+<b class="nc">&nbsp;				Binding b = bIter.next();</b>
+<b class="nc">&nbsp;				if (service.getServiceVars().contains(b.getName())) {</b>
+<b class="nc">&nbsp;					query.setBinding(b.getName(), b.getValue());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleQueryResult res = query.evaluate();</b>
+&nbsp;
+&nbsp;			// insert original bindings again
+<b class="nc">&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; result = new InsertBindingSetCursor(res, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				result = new CloseConnectionIteration(result, conn);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (service.isSilent()) {</b>
+<b class="nc">&nbsp;				return new SilentIteration&lt;&gt;(result);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return result;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(</b>
+<b class="nc">&nbsp;					&quot;Repository for endpoint &quot; + rep.toString() + &quot; could not be initialized.&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the provided sparqlQueryString at the initialized {@link Repository} of this {@link FederatedService}.
+&nbsp;	 * Insert bindings, send ask query and return final result
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		RepositoryConnection conn = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			String sparqlQueryString = service.getAskQueryString();</b>
+&nbsp;
+<b class="nc">&nbsp;			conn = useFreshConnection ? freshConnection() : getConnection();</b>
+<b class="nc">&nbsp;			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, sparqlQueryString, baseUri);</b>
+&nbsp;
+<b class="nc">&nbsp;			Iterator&lt;Binding&gt; bIter = bindings.iterator();</b>
+<b class="nc">&nbsp;			while (bIter.hasNext()) {</b>
+<b class="nc">&nbsp;				Binding b = bIter.next();</b>
+<b class="nc">&nbsp;				if (service.getServiceVars().contains(b.getName())) {</b>
+<b class="nc">&nbsp;					query.setBinding(b.getName(), b.getValue());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return query.evaluate();</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(</b>
+<b class="nc">&nbsp;					&quot;Repository for endpoint &quot; + rep.toString() + &quot; could not be initialized.&quot;, e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Service service,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; bindings, String baseUri)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (boundJoinBlockSize &gt; 0) {</b>
+<b class="nc">&nbsp;			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);</b>
+&nbsp;		} else {
+&nbsp;			// if blocksize is 0 (i.e. disabled) the entire iteration is used as
+&nbsp;			// block
+<b class="nc">&nbsp;			return evaluateInternal(service, bindings, service.getBaseURI());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the SPARQL query that can be constructed from the SERVICE node at the initialized {@link Repository} of
+&nbsp;	 * this {@link FederatedService}. Use specified bindings as constraints to the query. Try to evaluate using VALUES
+&nbsp;	 * clause, if this yields an exception fall back to the naive implementation. This method deals with SILENT
+&nbsp;	 * SERVICEs.
+&nbsp;	 */
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateInternal(Service service,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; bindings, String baseUri)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+&nbsp;		// materialize all bindings (to allow for fallback in case of errors)
+&nbsp;		// note that this may be blocking depending on the underlying iterator
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; allBindings = new LinkedList&lt;&gt;();</b>
+<b class="nc">&nbsp;		while (bindings.hasNext()) {</b>
+<b class="nc">&nbsp;			allBindings.add(bindings.next());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (allBindings.isEmpty()) {</b>
+<b class="nc">&nbsp;			return new EmptyIteration&lt;&gt;();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// projection vars
+<b class="nc">&nbsp;		Set&lt;String&gt; projectionVars = new HashSet&lt;&gt;(service.getServiceVars());</b>
+<b class="nc">&nbsp;		projectionVars.removeAll(allBindings.get(0).getBindingNames());</b>
+&nbsp;
+&nbsp;		// below we need to take care for SILENT services
+<b class="nc">&nbsp;		RepositoryConnection conn = null;</b>
+<b class="nc">&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; result = null;</b>
+&nbsp;		try {
+&nbsp;			// fallback to simple evaluation (just a single binding)
+<b class="nc">&nbsp;			if (allBindings.size() == 1) {</b>
+<b class="nc">&nbsp;				result = select(service, projectionVars, allBindings.get(0), baseUri);</b>
+<b class="nc">&nbsp;				result = service.isSilent() ? new SilentIteration(result) : result;</b>
+<b class="nc">&nbsp;				return result;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// To be able to insert the input bindings again later on, we need some
+&nbsp;			// means to identify the row of each binding. hence, we use an
+&nbsp;			// additional
+&nbsp;			// projection variable, which is also passed in the VALUES clause
+&nbsp;			// with the value of the actual row. The value corresponds to the index
+&nbsp;			// of the binding in the index list
+<b class="nc">&nbsp;			projectionVars.add(ROW_IDX_VAR);</b>
+&nbsp;
+<b class="nc">&nbsp;			String queryString = service.getSelectQueryString(projectionVars);</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;String&gt; relevantBindingNames = getRelevantBindingNames(allBindings, service.getServiceVars());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!relevantBindingNames.isEmpty()) {</b>
+&nbsp;				// insert VALUES clause into the query
+<b class="nc">&nbsp;				queryString = insertValuesClause(queryString, buildVALUESClause(allBindings, relevantBindingNames));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			conn = useFreshConnection ? freshConnection() : getConnection();</b>
+<b class="nc">&nbsp;			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString, baseUri);</b>
+&nbsp;			TupleQueryResult res;
+<b class="nc">&nbsp;			query.setMaxExecutionTime(60); // TODO how to retrieve max query value</b>
+&nbsp;			// from actual setting?
+<b class="nc">&nbsp;			res = query.evaluate();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (relevantBindingNames.isEmpty()) {</b>
+<b class="nc">&nbsp;				result = new SPARQLCrossProductIteration(res, allBindings); // cross</b>
+&nbsp;				// product
+&nbsp;			} else {
+<b class="nc">&nbsp;				result = new ServiceJoinConversionIteration(res, allBindings); // common</b>
+&nbsp;				// join
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				result = new CloseConnectionIteration(result, conn);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			result = service.isSilent() ? new SilentIteration(result) : result;</b>
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Iterations.closeCloseable(result);</b>
+<b class="nc">&nbsp;			if (service.isSilent()) {</b>
+<b class="nc">&nbsp;				return new CollectionIteration&lt;&gt;(allBindings);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(</b>
+<b class="nc">&nbsp;					&quot;Repository for endpoint &quot; + rep.toString() + &quot; could not be initialized.&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+&nbsp;			// this exception must not be silenced, bug in our code
+&nbsp;			// =&gt; try a fallback to the simple evaluation
+<b class="nc">&nbsp;			logger.debug(&quot;Encounted malformed query exception: &quot; + e.getMessage()</b>
+&nbsp;					+ &quot;. Falling back to simple SERVICE evaluation.&quot;);
+<b class="nc">&nbsp;			return evaluateInternalFallback(service, allBindings, baseUri);</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Iterations.closeCloseable(result);</b>
+<b class="nc">&nbsp;			if (service.isSilent()) {</b>
+<b class="nc">&nbsp;				return new CollectionIteration&lt;&gt;(allBindings);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;			if (useFreshConnection) {</b>
+<b class="nc">&nbsp;				closeQuietly(conn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Iterations.closeCloseable(result);</b>
+&nbsp;			// suppress special exceptions (e.g. UndeclaredThrowable with wrapped
+&nbsp;			// QueryEval) if silent
+<b class="nc">&nbsp;			if (service.isSilent()) {</b>
+<b class="nc">&nbsp;				return new CollectionIteration&lt;&gt;(allBindings);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the service expression for the given lists of bindings using {@link FallbackServiceIteration}, i.e.
+&nbsp;	 * basically as a simple join without VALUES clause.
+&nbsp;	 *
+&nbsp;	 * @param service     the SERVICE
+&nbsp;	 * @param allBindings all bindings to be processed
+&nbsp;	 * @param baseUri     the base URI
+&nbsp;	 * @return resulting iteration
+&nbsp;	 */
+&nbsp;	private CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateInternalFallback(Service service,
+&nbsp;			List&lt;BindingSet&gt; allBindings, String baseUri) {
+&nbsp;
+<b class="nc">&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res = new FallbackServiceIteration(service,</b>
+&nbsp;				allBindings, baseUri);
+&nbsp;
+<b class="nc">&nbsp;		if (service.isSilent()) {</b>
+<b class="nc">&nbsp;			res = new SilentIteration(res);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the {@link #ROW_IDX_VAR}
+&nbsp;	 * projection if it is not already present.
+&nbsp;	 *
+&nbsp;	 * @param queryString  the SELECT query string from the SERVICE node
+&nbsp;	 * @param valuesClause the constructed VALUES clause
+&nbsp;	 * @return the final String
+&nbsp;	 */
+&nbsp;	protected String insertValuesClause(String queryString, String valuesClause) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(queryString);</b>
+<b class="nc">&nbsp;		if (sb.indexOf(ROW_IDX_VAR) == -1) {</b>
+&nbsp;			// Note: we also explicitly check on &quot;SELECT *&quot;, however, this
+&nbsp;			// check is heuristics based. If the generated query is invalid
+&nbsp;			// after this, the fallback evaluation will jump in
+&nbsp;			// This currently does not cover things like &quot;SELECT *&quot;
+<b class="nc">&nbsp;			if (sb.indexOf(&quot;SELECT * &quot;) == -1) {</b>
+<b class="nc">&nbsp;				sb.insert(sb.indexOf(&quot;SELECT&quot;) + 6, &quot; ?&quot; + ROW_IDX_VAR);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		sb.insert(sb.indexOf(&quot;{&quot;) + 1, &quot; &quot; + valuesClause);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void initialize() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			rep.init();</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isInitialized() {
+<b class="nc">&nbsp;		return rep.isInitialized();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getBoundJoinBlockSize() {
+<b class="nc">&nbsp;		return boundJoinBlockSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param boundJoinBlockSize the bound join block size, 0 to evaluate all in a single request
+&nbsp;	 */
+&nbsp;	public void setBoundJoinBlockSize(int boundJoinBlockSize) {
+<b class="nc">&nbsp;		this.boundJoinBlockSize = boundJoinBlockSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param flag whether to use a fresh {@link RepositoryConnection} for each individual query
+&nbsp;	 */
+&nbsp;	public void setUseFreshConnection(boolean flag) {
+<b class="nc">&nbsp;		this.useFreshConnection = flag;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutdown() throws QueryEvaluationException {
+<b class="nc">&nbsp;		boolean foundException = false;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (managedConn != null) {</b>
+<b class="nc">&nbsp;				managedConn.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			foundException = true;</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+&nbsp;				// shutdown only if desired, e.g. do not
+&nbsp;				// invoke shutDown for managed repositories
+<b class="nc">&nbsp;				if (shutDown) {</b>
+<b class="nc">&nbsp;					rep.shutDown();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+&nbsp;				// Try not to clobber the initial exception that may be more useful
+<b class="nc">&nbsp;				if (!foundException) {</b>
+<b class="nc">&nbsp;					throw new QueryEvaluationException(e);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return a fresh {@link RepositoryConnection} from the configured repository.
+&nbsp;	 *
+&nbsp;	 * @return connection
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	private RepositoryConnection freshConnection() throws RepositoryException {
+<b class="nc">&nbsp;		return rep.getConnection();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a (re-usable) connection. If it is not yet created, open a fresh connection. Note that this connection
+&nbsp;	 * is closed automatically when shutting this service.
+&nbsp;	 *
+&nbsp;	 * @return connection
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	protected synchronized RepositoryConnection getConnection() throws RepositoryException {
+<b class="nc">&nbsp;		if (managedConn == null) {</b>
+<b class="nc">&nbsp;			managedConn = freshConnection();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return managedConn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compute the relevant binding names using the variables occurring in the service expression and the input
+&nbsp;	 * bindings. The idea is find all variables which need to be projected in the subquery, i.e. those that will not be
+&nbsp;	 * bound by an input binding.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the resulting list is empty, the cross product needs to be formed.
+&nbsp;	 *
+&nbsp;	 * @param bindings
+&nbsp;	 * @param serviceVars
+&nbsp;	 * @return the list of relevant bindings (if empty: the cross product needs to be formed)
+&nbsp;	 */
+&nbsp;	private List&lt;String&gt; getRelevantBindingNames(List&lt;BindingSet&gt; bindings, Set&lt;String&gt; serviceVars) {
+&nbsp;
+&nbsp;		// get the bindings variables
+&nbsp;		// TODO CHECK: does the first bindingset give all relevant names
+&nbsp;
+<b class="nc">&nbsp;		List&lt;String&gt; relevantBindingNames = new ArrayList&lt;&gt;(5);</b>
+<b class="nc">&nbsp;		for (String bName : bindings.get(0).getBindingNames()) {</b>
+<b class="nc">&nbsp;			if (serviceVars.contains(bName)) {</b>
+<b class="nc">&nbsp;				relevantBindingNames.add(bName);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return relevantBindingNames;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the VALUES clause for the set of relevant input bindings. The VALUES clause is attached to a subquery
+&nbsp;	 * for block-nested-loop evaluation. Implementation note: we use a special binding to mark the rowIndex of the input
+&nbsp;	 * binding.
+&nbsp;	 *
+&nbsp;	 * @param bindings
+&nbsp;	 * @param relevantBindingNames
+&nbsp;	 * @return a string with the VALUES clause for the given set of relevant input bindings
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	private String buildVALUESClause(List&lt;BindingSet&gt; bindings, List&lt;String&gt; relevantBindingNames)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		sb.append(&quot; VALUES (?__rowIdx&quot;); // __rowIdx: see comment in evaluate()</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String bName : relevantBindingNames) {</b>
+<b class="nc">&nbsp;			sb.append(&quot; ?&quot;).append(bName);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;) { &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		int rowIdx = 0;</b>
+<b class="nc">&nbsp;		for (BindingSet b : bindings) {</b>
+<b class="nc">&nbsp;			sb.append(&quot; (&quot;);</b>
+<b class="nc">&nbsp;			sb.append(&quot;\&quot;&quot;).append(rowIdx++).append(&quot;\&quot; &quot;); // identification of</b>
+&nbsp;			// the row for post
+&nbsp;			// processing
+<b class="nc">&nbsp;			for (String bName : relevantBindingNames) {</b>
+<b class="nc">&nbsp;				QueryStringUtil.appendValueAsString(sb, b.getValue(bName)).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			sb.append(&quot;)&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot; }&quot;);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void closeQuietly(RepositoryConnection conn) {
+<b class="nc">&nbsp;		if (conn == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			conn.close();</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Failed to close connection:&quot; + t.getMessage());</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Details: &quot;, t);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

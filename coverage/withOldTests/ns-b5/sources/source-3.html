@@ -1,0 +1,199 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TurtleStarWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.turtlestar</a>
+</div>
+
+<h1>Coverage Summary for Class: TurtleStarWriter (org.eclipse.rdf4j.rio.turtlestar)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TurtleStarWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.turtlestar;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Writer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.turtle.TurtleWriter;
+&nbsp;
+&nbsp;/**
+&nbsp; * An extension of {@link TurtleWriter} that writes RDF-star documents in the Turtle-star format by including the
+&nbsp; * RDF-star triples.
+&nbsp; *
+&nbsp; * @author Pavel Mihaylov
+&nbsp; */
+&nbsp;public class TurtleStarWriter extends TurtleWriter {
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleStarWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out The OutputStream to write the TurtleStar document to.
+&nbsp;	 */
+&nbsp;	public TurtleStarWriter(OutputStream out) {
+<b class="nc">&nbsp;		super(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleStarWriter that will write to the supplied OutputStream using the supplied base IRI.
+&nbsp;	 *
+&nbsp;	 * @param out     The OutputStream to write the TurtleStar document to.
+&nbsp;	 * @param baseIRI The base IRI to use.
+&nbsp;	 */
+&nbsp;	public TurtleStarWriter(OutputStream out, ParsedIRI baseIRI) {
+<b class="nc">&nbsp;		super(out, baseIRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleStarWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer The Writer to write the TurtleStar document to.
+&nbsp;	 */
+&nbsp;	public TurtleStarWriter(Writer writer) {
+<b class="nc">&nbsp;		super(writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleStarWriter that will write to the supplied Writer using the supplied base IRI.
+&nbsp;	 *
+&nbsp;	 * @param writer  The Writer to write the Turtle document to.
+&nbsp;	 * @param baseIRI The base IRI to use.
+&nbsp;	 */
+&nbsp;	public TurtleStarWriter(Writer writer, ParsedIRI baseIRI) {
+<b class="nc">&nbsp;		super(writer, baseIRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.TURTLESTAR;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean acceptsFileFormat(FileFormat format) {
+&nbsp;		// since Turtle-star is a superset of regular Turtle, this Sink also accepts regular Turtle
+&nbsp;		// serialization
+<b class="nc">&nbsp;		return super.acceptsFileFormat(format) || RDFFormat.TURTLE.equals(format);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
+<b class="nc">&nbsp;		writeTripleRDFStar(triple, canShorten);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

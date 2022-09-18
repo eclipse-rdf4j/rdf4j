@@ -1,0 +1,217 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SpatialSupport</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SpatialSupport (org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SpatialSupport</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SpatialSupport$JtsSpatialSupport</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
+&nbsp;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContext;
+&nbsp;import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
+&nbsp;
+&nbsp;/**
+&nbsp; * This class is responsible for creating the {@link org.locationtech.spatial4j.context.SpatialContext},
+&nbsp; * {@link SpatialAlgebra} and {@link WktWriter} that will be used. It will first try to load a subclass of itself called
+&nbsp; * &quot;org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer&quot; . This is not provided, and
+&nbsp; * is primarily intended as a way to inject custom geospatial support. If this fails then the following fall-backs are
+&nbsp; * used:
+&nbsp; * &lt;ul&gt;
+&nbsp; * &lt;li&gt;it uses the JTS GEO SpatialContext implementation, with added support for polygons.&lt;/li&gt;
+&nbsp; * {@link org.locationtech.spatial4j.context.SpatialContextFactory} . The prefix is stripped from the system property
+&nbsp; * name to form the SpatialContextFactory argument name.&lt;/li&gt;
+&nbsp; * &lt;li&gt;a SpatialAlgebra that does not support any operation.&lt;/li&gt;
+&nbsp; * &lt;li&gt;a WktWriter that only supports points&lt;/li&gt;.
+&nbsp; * &lt;/ul&gt;
+&nbsp; */
+<b class="nc">&nbsp;abstract class SpatialSupport {</b>
+&nbsp;
+&nbsp;	private static final SpatialContext spatialContext;
+&nbsp;
+&nbsp;	private static final SpatialAlgebra spatialAlgebra;
+&nbsp;
+&nbsp;	private static final WktWriter wktWriter;
+&nbsp;
+&nbsp;	static {
+&nbsp;		SpatialSupport support;
+&nbsp;		try {
+<b class="nc">&nbsp;			Class&lt;?&gt; cls = Class.forName(</b>
+&nbsp;					&quot;org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql.SpatialSupportInitializer&quot;, true,
+<b class="nc">&nbsp;					Thread.currentThread().getContextClassLoader());</b>
+<b class="nc">&nbsp;			support = (SpatialSupport) cls.newInstance();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			support = new JtsSpatialSupport();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		spatialContext = support.createSpatialContext();</b>
+<b class="nc">&nbsp;		spatialAlgebra = support.createSpatialAlgebra();</b>
+<b class="nc">&nbsp;		wktWriter = support.createWktWriter();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static SpatialContext getSpatialContext() {
+<b class="nc">&nbsp;		return spatialContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static SpatialAlgebra getSpatialAlgebra() {
+<b class="nc">&nbsp;		return spatialAlgebra;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static WktWriter getWktWriter() {
+<b class="nc">&nbsp;		return wktWriter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract SpatialContext createSpatialContext();
+&nbsp;
+&nbsp;	protected abstract SpatialAlgebra createSpatialAlgebra();
+&nbsp;
+&nbsp;	protected abstract WktWriter createWktWriter();
+&nbsp;
+<b class="nc">&nbsp;	private static final class JtsSpatialSupport extends SpatialSupport {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected JtsSpatialContext createSpatialContext() {
+<b class="nc">&nbsp;			return JtsSpatialContext.GEO;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected JtsSpatialAlgebra createSpatialAlgebra() {
+<b class="nc">&nbsp;			return new JtsSpatialAlgebra((JtsSpatialContext) spatialContext);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected WktWriter createWktWriter() {
+<b class="nc">&nbsp;			return new DefaultWktWriter(spatialContext);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,413 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Iterations</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iteration</a>
+</div>
+
+<h1>Coverage Summary for Class: Iterations (org.eclipse.rdf4j.common.iteration)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Iterations</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    38.9%
+  </span>
+  <span class="absValue">
+    (7/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    20%
+  </span>
+  <span class="absValue">
+    (6/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    30.3%
+  </span>
+  <span class="absValue">
+    (20/66)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iteration;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.Spliterator;
+&nbsp;import java.util.function.Supplier;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;import java.util.stream.StreamSupport;
+&nbsp;
+&nbsp;/**
+&nbsp; * This class consists exclusively of static methods that operate on or return Iterations. It is the
+&nbsp; * Iteration-equivalent of &lt;var&gt;java.util.Collections&lt;/var&gt;.
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+<b class="nc">&nbsp;public class Iterations {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a List containing all elements obtained from the specified iteration.
+&nbsp;	 *
+&nbsp;	 * @param iter the iteration to get the elements from
+&nbsp;	 * @return a List containing all elements obtained from the specified iteration.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;E, X extends Exception&gt; List&lt;E&gt; asList(Iteration&lt;? extends E, X&gt; iter) throws X {
+&nbsp;		// stream.collect is slightly slower than addAll for lists
+<b class="nc">&nbsp;		List&lt;E&gt; list = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// addAll closes the iteration
+<b class="nc">&nbsp;		return addAll(iter, list);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a List containing all elements obtained from the specified iteration.
+&nbsp;	 *
+&nbsp;	 * @param iter the {@link CloseableIteration} to get the elements from
+&nbsp;	 * @return a List containing all elements obtained from the specified iteration.
+&nbsp;	 */
+&nbsp;	public static &lt;E, X extends Exception&gt; List&lt;E&gt; asList(CloseableIteration&lt;? extends E, X&gt; iter) throws X {
+&nbsp;		// stream.collect is slightly slower than addAll for lists
+<b class="fc">&nbsp;		List&lt;E&gt; list = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// addAll closes the iteration
+<b class="fc">&nbsp;		return addAll(iter, list);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a Set containing all elements obtained from the specified iteration.
+&nbsp;	 *
+&nbsp;	 * @param iter the iteration to get the elements from
+&nbsp;	 * @return a Set containing all elements obtained from the specified iteration.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;E, X extends Exception&gt; Set&lt;E&gt; asSet(Iteration&lt;? extends E, X&gt; iter) throws X {
+<b class="pc">&nbsp;		try (Stream&lt;? extends E&gt; stream = iter.stream()) {</b>
+<b class="fc">&nbsp;			return stream.collect(Collectors.toSet());</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a Set containing all elements obtained from the specified iteration.
+&nbsp;	 *
+&nbsp;	 * @param iter the {@link CloseableIteration} to get the elements from
+&nbsp;	 * @return a Set containing all elements obtained from the specified iteration.
+&nbsp;	 */
+&nbsp;	public static &lt;E, X extends Exception&gt; Set&lt;E&gt; asSet(CloseableIteration&lt;? extends E, X&gt; iter) throws X {
+<b class="pc">&nbsp;		try (Stream&lt;? extends E&gt; stream = iter.stream()) {</b>
+<b class="fc">&nbsp;			return stream.collect(Collectors.toSet());</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds all elements from the supplied iteration to the specified collection. If the supplied iteration is an
+&nbsp;	 * instance of {@link CloseableIteration} it is automatically closed after consumption.
+&nbsp;	 *
+&nbsp;	 * @param iter       An iteration containing elements to add to the container. If the iteration is an instance of
+&nbsp;	 *                   {@link CloseableIteration} it is automatically closed after consumption.
+&nbsp;	 * @param collection The collection to add the elements to.
+&nbsp;	 * @return The &lt;var&gt;collection&lt;/var&gt; object that was supplied to this method.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;E, X extends Exception, C extends Collection&lt;E&gt;&gt; C addAll(Iteration&lt;? extends E, X&gt; iter,
+&nbsp;			C collection) throws X {
+&nbsp;		try {
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				collection.add(iter.next());</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			closeCloseable(iter);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return collection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds all elements from the supplied {@link CloseableIteration} to the specified collection then closes the
+&nbsp;	 * {@link CloseableIteration}.
+&nbsp;	 *
+&nbsp;	 * @param iter       A {@link CloseableIteration} containing elements to add to the container.
+&nbsp;	 * @param collection The collection to add the elements to.
+&nbsp;	 * @return The &lt;var&gt;collection&lt;/var&gt; object that was supplied to this method.
+&nbsp;	 */
+&nbsp;	public static &lt;E, X extends Exception, C extends Collection&lt;E&gt;&gt; C addAll(CloseableIteration&lt;? extends E, X&gt; iter,
+&nbsp;			C collection) throws X {
+&nbsp;		try {
+<b class="fc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="fc">&nbsp;				collection.add(iter.next());</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			closeCloseable(iter);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return collection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a sequential {@link Stream} with the supplied {@link Iteration} as its source. If the source iteration is a
+&nbsp;	 * {@link CloseableIteration}, it will be automatically closed by the stream when done. Any checked exceptions
+&nbsp;	 * thrown at any point during stream processing will be propagated wrapped in a {@link RuntimeException}.
+&nbsp;	 *
+&nbsp;	 * @param iteration a source {@link Iteration} for the stream.
+&nbsp;	 * @return a sequential {@link Stream} object which can be used to process the data from the source iteration.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;T&gt; Stream&lt;T&gt; stream(Iteration&lt;T, ? extends Exception&gt; iteration) {
+<b class="nc">&nbsp;		Spliterator&lt;T&gt; spliterator = new IterationSpliterator&lt;&gt;(iteration);</b>
+&nbsp;
+<b class="nc">&nbsp;		return StreamSupport.stream(spliterator, false).onClose(() -&gt; {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				Iterations.closeCloseable(iteration);</b>
+<b class="nc">&nbsp;			} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;					Thread.currentThread().interrupt();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a sequential {@link Stream} with the supplied {@link CloseableIteration} as its source. The source iteration
+&nbsp;	 * will be automatically closed by the stream when done. Any checked exceptions thrown at any point during stream
+&nbsp;	 * processing will be propagated wrapped in a {@link RuntimeException}.
+&nbsp;	 *
+&nbsp;	 * @param iteration a source {@link CloseableIteration} for the stream.
+&nbsp;	 * @return a sequential {@link Stream} object which can be used to process the data from the source iteration.
+&nbsp;	 */
+&nbsp;	public static &lt;T&gt; Stream&lt;T&gt; stream(CloseableIteration&lt;T, ? extends Exception&gt; iteration) {
+<b class="fc">&nbsp;		return StreamSupport</b>
+<b class="fc">&nbsp;				.stream(new CloseableIterationSpliterator&lt;&gt;(iteration), false)</b>
+<b class="fc">&nbsp;				.onClose(() -&gt; {</b>
+&nbsp;					try {
+<b class="fc">&nbsp;						iteration.close();</b>
+<b class="nc">&nbsp;					} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;						throw e;</b>
+<b class="nc">&nbsp;					} catch (Exception e) {</b>
+<b class="nc">&nbsp;						if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;							Thread.currentThread().interrupt();</b>
+&nbsp;						}
+<b class="nc">&nbsp;						throw new RuntimeException(e);</b>
+<b class="fc">&nbsp;					}</b>
+&nbsp;				});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the supplied iteration if it is an instance of {@link CloseableIteration}, otherwise the request is
+&nbsp;	 * ignored.
+&nbsp;	 *
+&nbsp;	 * @param iteration The iteration that should be closed.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;X extends Exception&gt; void closeCloseable(Iteration&lt;?, X&gt; iteration) throws X {
+<b class="fc">&nbsp;		if (iteration instanceof CloseableIteration&lt;?, ?&gt;) {</b>
+<b class="fc">&nbsp;			((CloseableIteration&lt;?, X&gt;) iteration).close();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an iteration to a string by concatenating all of the string representations of objects in the Iteration,
+&nbsp;	 * divided by a separator.
+&nbsp;	 *
+&nbsp;	 * @param iteration An iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
+&nbsp;	 * @param separator The separator to insert between the object strings.
+&nbsp;	 * @return A String representation of the objects provided by the supplied iteration.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;X extends Exception&gt; String toString(Iteration&lt;?, X&gt; iteration, String separator) throws X {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		toString(iteration, separator, sb);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts a {@link CloseableIteration} to a string by concatenating all the string representations of objects in
+&nbsp;	 * the iteration, divided by a separator.
+&nbsp;	 *
+&nbsp;	 * @param iteration A {@link CloseableIteration} over arbitrary objects that are expected to implement
+&nbsp;	 *                  {@link Object#toString()}.
+&nbsp;	 * @param separator The separator to insert between the object strings.
+&nbsp;	 * @return A String representation of the objects provided by the supplied iteration.
+&nbsp;	 */
+&nbsp;	public static &lt;X extends Exception&gt; String toString(CloseableIteration&lt;?, X&gt; iteration, String separator) throws X {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		toString(iteration, separator, sb);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an iteration to a string by concatenating all the string representations of objects in the Iteration,
+&nbsp;	 * divided by a separator.
+&nbsp;	 *
+&nbsp;	 * @param iteration An iteration over arbitrary objects that are expected to implement {@link Object#toString()}.
+&nbsp;	 * @param separator The separator to insert between the object strings.
+&nbsp;	 * @param sb        A StringBuilder to append the iteration string to.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;X extends Exception&gt; void toString(Iteration&lt;?, X&gt; iteration, String separator, StringBuilder sb)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		while (iteration.hasNext()) {</b>
+<b class="nc">&nbsp;			sb.append(iteration.next());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (iteration.hasNext()) {</b>
+<b class="nc">&nbsp;				sb.append(separator);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts a {@link CloseableIteration} to a string by concatenating all the string representations of objects in
+&nbsp;	 * the iteration, divided by a separator.
+&nbsp;	 *
+&nbsp;	 * @param iteration A {@link CloseableIteration} over arbitrary objects that are expected to implement
+&nbsp;	 *                  {@link Object#toString()}.
+&nbsp;	 * @param separator The separator to insert between the object strings.
+&nbsp;	 * @param sb        A StringBuilder to append the iteration string to.
+&nbsp;	 */
+&nbsp;	public static &lt;X extends Exception&gt; void toString(CloseableIteration&lt;?, X&gt; iteration, String separator,
+&nbsp;			StringBuilder sb)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		while (iteration.hasNext()) {</b>
+<b class="nc">&nbsp;			sb.append(iteration.next());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (iteration.hasNext()) {</b>
+<b class="nc">&nbsp;				sb.append(separator);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a Set containing all elements obtained from the specified iteration.
+&nbsp;	 *
+&nbsp;	 * @param iteration the iteration to get the elements from
+&nbsp;	 * @param setMaker  the Supplier that constructs a new set
+&nbsp;	 * @return a Set containing all elements obtained from the specified iteration.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public static &lt;E, X extends Exception&gt; Set&lt;E&gt; asSet(Iteration&lt;? extends E, ? extends X&gt; iteration,
+&nbsp;			Supplier&lt;Set&lt;E&gt;&gt; setMaker) throws X {
+<b class="nc">&nbsp;		Set&lt;E&gt; set = setMaker.get();</b>
+<b class="nc">&nbsp;		while (iteration.hasNext()) {</b>
+<b class="nc">&nbsp;			set.add(iteration.next());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return set;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a Set containing all elements obtained from the specified iteration.
+&nbsp;	 *
+&nbsp;	 * @param iteration the iteration to get the elements from
+&nbsp;	 * @param setMaker  the Supplier that constructs a new set
+&nbsp;	 * @return a Set containing all elements obtained from the specified iteration.
+&nbsp;	 */
+&nbsp;	public static &lt;E, X extends Exception&gt; Set&lt;E&gt; asSet(CloseableIteration&lt;? extends E, ? extends X&gt; iteration,
+&nbsp;			Supplier&lt;Set&lt;E&gt;&gt; setMaker) throws X {
+<b class="nc">&nbsp;		Set&lt;E&gt; set = setMaker.get();</b>
+<b class="nc">&nbsp;		while (iteration.hasNext()) {</b>
+<b class="nc">&nbsp;			set.add(iteration.next());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return set;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

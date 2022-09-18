@@ -1,0 +1,573 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Unique</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: Unique (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Unique</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/35)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Unique$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/68)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/57)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">Unique$TargetAndValueSortIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">Unique$ValidationTupleValueAndActiveTarget</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/120)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/131)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.text.StringEscapeUtils;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.CloseablePeakableIteration;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Håvard Ottestad
+&nbsp; */
+&nbsp;public class Unique implements PlanNode {
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(Unique.class);</b>
+&nbsp;	private final boolean compress;
+&nbsp;	private StackTraceElement[] stackTrace;
+&nbsp;
+&nbsp;	private final PlanNode parent;
+<b class="nc">&nbsp;	private boolean printed = false;</b>
+&nbsp;	private ValidationExecutionLogger validationExecutionLogger;
+&nbsp;
+<b class="nc">&nbsp;	private Unique(PlanNode parent, boolean compress) {</b>
+&nbsp;//		this.stackTrace = Thread.currentThread().getStackTrace();
+<b class="nc">&nbsp;		PlanNode tempParent = PlanNodeHelper.handleSorting(this, parent);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (tempParent instanceof Unique) {</b>
+<b class="nc">&nbsp;			Unique parentUnique = ((Unique) tempParent);</b>
+&nbsp;
+<b class="nc">&nbsp;			tempParent = parentUnique.parent;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!compress) {</b>
+<b class="nc">&nbsp;				compress = parentUnique.compress;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.parent = tempParent;</b>
+<b class="nc">&nbsp;		this.compress = compress;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static PlanNode getInstance(PlanNode parent, boolean compress) {
+<b class="nc">&nbsp;		if (parent == EmptyNode.getInstance()) {</b>
+<b class="nc">&nbsp;			return parent;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new Unique(parent, compress);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator() {
+&nbsp;
+<b class="nc">&nbsp;		return new LoggingCloseableIteration(this, validationExecutionLogger) {</b>
+&nbsp;
+&nbsp;			final CloseablePeakableIteration&lt;? extends ValidationTuple, SailException&gt; parentIterator;
+&nbsp;
+&nbsp;			{
+<b class="nc">&nbsp;				if (compress) {</b>
+<b class="nc">&nbsp;					parentIterator = new CloseablePeakableIteration&lt;&gt;(</b>
+<b class="nc">&nbsp;							new TargetAndValueSortIterator(new CloseablePeakableIteration&lt;&gt;(parent.iterator())));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					parentIterator = new CloseablePeakableIteration&lt;&gt;(parent.iterator());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			Set&lt;ValidationTupleValueAndActiveTarget&gt; targetAndValueDedupeSet;
+&nbsp;
+&nbsp;			boolean propertyShapeWithValue;
+&nbsp;
+&nbsp;			ValidationTuple next;
+&nbsp;			ValidationTuple previous;
+&nbsp;
+&nbsp;			private void calculateNext() {
+<b class="nc">&nbsp;				if (next != null) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				while (next == null &amp;&amp; parentIterator.hasNext()) {</b>
+<b class="nc">&nbsp;					ValidationTuple temp = parentIterator.next();</b>
+&nbsp;
+<b class="nc">&nbsp;					assert !propertyShapeWithValue</b>
+<b class="nc">&nbsp;							|| temp.getScope() == ConstraintComponent.Scope.propertyShape &amp;&amp; temp.hasValue();</b>
+&nbsp;
+<b class="nc">&nbsp;					if (temp.getScope() == ConstraintComponent.Scope.propertyShape &amp;&amp; temp.hasValue()) {</b>
+<b class="nc">&nbsp;						propertyShapeWithValue = true;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (compress) {</b>
+<b class="nc">&nbsp;						Set&lt;ValidationTuple&gt; tuples = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;						if (propertyShapeWithValue) {</b>
+&nbsp;
+<b class="nc">&nbsp;							while (parentIterator.hasNext()</b>
+<b class="nc">&nbsp;									&amp;&amp; parentIterator.peek().getValue().equals(temp.getValue())</b>
+<b class="nc">&nbsp;									&amp;&amp; parentIterator.peek().sameTargetAs(temp)) {</b>
+<b class="nc">&nbsp;								tuples.add(parentIterator.next());</b>
+&nbsp;							}
+&nbsp;						} else {
+<b class="nc">&nbsp;							while (parentIterator.hasNext() &amp;&amp; parentIterator.peek().sameTargetAs(temp)) {</b>
+<b class="nc">&nbsp;								tuples.add(parentIterator.next());</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						if (tuples.isEmpty()) {</b>
+<b class="nc">&nbsp;							next = temp;</b>
+<b class="nc">&nbsp;						} else if (tuples.size() == 1 &amp;&amp; tuples.contains(temp)) {</b>
+<b class="nc">&nbsp;							next = temp;</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							tuples.add(temp);</b>
+<b class="nc">&nbsp;							next = new ValidationTuple(temp, tuples);</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;					} else if (previous == null) {</b>
+<b class="nc">&nbsp;						next = temp;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						if (propertyShapeWithValue) {</b>
+<b class="nc">&nbsp;							if (targetAndValueDedupeSet == null || !previous.sameTargetAs(temp)) {</b>
+<b class="nc">&nbsp;								targetAndValueDedupeSet = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;								if (previous.sameTargetAs(temp)) {</b>
+<b class="nc">&nbsp;									targetAndValueDedupeSet.add(new ValidationTupleValueAndActiveTarget(previous));</b>
+&nbsp;								}
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							if (!targetAndValueDedupeSet.contains(new ValidationTupleValueAndActiveTarget(temp))) {</b>
+<b class="nc">&nbsp;								next = temp;</b>
+<b class="nc">&nbsp;								targetAndValueDedupeSet.add(new ValidationTupleValueAndActiveTarget(next));</b>
+&nbsp;							}
+&nbsp;
+&nbsp;						} else {
+<b class="nc">&nbsp;							if (!(previous.sameTargetAs(temp))) {</b>
+<b class="nc">&nbsp;								next = temp;</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (next != null) {</b>
+<b class="nc">&nbsp;						previous = next;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						if (validationExecutionLogger.isEnabled()) {</b>
+<b class="nc">&nbsp;							validationExecutionLogger.log(depth(),</b>
+<b class="nc">&nbsp;									Unique.this.getClass().getSimpleName() + &quot;:IgnoredNotUnique &quot;, temp, Unique.this,</b>
+<b class="nc">&nbsp;									getId(), stackTrace != null ? stackTrace[2].toString() : null);</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void localClose() throws SailException {
+<b class="nc">&nbsp;				parentIterator.close();</b>
+<b class="nc">&nbsp;				targetAndValueDedupeSet = null;</b>
+<b class="nc">&nbsp;				next = null;</b>
+<b class="nc">&nbsp;				previous = null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected boolean localHasNext() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				return next != null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected ValidationTuple loggingNext() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				assert !(previous != null &amp;&amp; next.compareActiveTarget(previous) &lt; 0);</b>
+&nbsp;
+<b class="nc">&nbsp;				ValidationTuple temp = next;</b>
+<b class="nc">&nbsp;				next = null;</b>
+<b class="nc">&nbsp;				return temp;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int depth() {
+<b class="nc">&nbsp;		return parent.depth() + 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+<b class="nc">&nbsp;		if (printed) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		printed = true;</b>
+<b class="nc">&nbsp;		stringBuilder.append(getId() + &quot; [label=\&quot;&quot; + StringEscapeUtils.escapeJava(this.toString()) + &quot;\&quot;];&quot;)</b>
+<b class="nc">&nbsp;				.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		stringBuilder.append(parent.getId() + &quot; -&gt; &quot; + getId()).append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		parent.getPlanAsGraphvizDot(stringBuilder);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return System.identityHashCode(this) + &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+<b class="nc">&nbsp;		this.validationExecutionLogger = validationExecutionLogger;</b>
+<b class="nc">&nbsp;		parent.receiveLogger(validationExecutionLogger);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean producesSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean requiresSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Unique unique = (Unique) o;</b>
+<b class="nc">&nbsp;		return parent.equals(unique.parent);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(parent);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;Unique{&quot; +</b>
+&nbsp;				&quot;compress=&quot; + compress +
+&nbsp;				&quot;, parent=&quot; + parent +
+&nbsp;				&#39;}&#39;;
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	static class ValidationTupleValueAndActiveTarget {</b>
+&nbsp;
+&nbsp;		private final ValidationTuple validationTuple;
+&nbsp;
+<b class="nc">&nbsp;		public ValidationTupleValueAndActiveTarget(ValidationTuple validationTuple) {</b>
+<b class="nc">&nbsp;			this.validationTuple = validationTuple;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public ValidationTuple getValidationTuple() {
+<b class="nc">&nbsp;			return validationTuple;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean equals(Object o) {
+<b class="nc">&nbsp;			if (this == o) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			ValidationTupleValueAndActiveTarget oValidationTuple = (ValidationTupleValueAndActiveTarget) o;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (validationTuple.hasValue() || oValidationTuple.validationTuple.hasValue()) {</b>
+<b class="nc">&nbsp;				assert validationTuple.hasValue() &amp;&amp; oValidationTuple.validationTuple.hasValue();</b>
+<b class="nc">&nbsp;				return validationTuple.getValue().equals(oValidationTuple.validationTuple.getValue())</b>
+<b class="nc">&nbsp;						&amp;&amp; validationTuple.getActiveTarget().equals(oValidationTuple.validationTuple.getActiveTarget());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return validationTuple.getActiveTarget().equals(oValidationTuple.validationTuple.getActiveTarget());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int hashCode() {
+<b class="nc">&nbsp;			return Objects.hash(validationTuple.getActiveTarget(), validationTuple.getValue());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	static class TargetAndValueSortIterator implements CloseableIteration&lt;ValidationTuple, SailException&gt; {
+&nbsp;
+&nbsp;		private final CloseablePeakableIteration&lt;? extends ValidationTuple, SailException&gt; iterator;
+&nbsp;
+&nbsp;		public TargetAndValueSortIterator(
+<b class="nc">&nbsp;				CloseablePeakableIteration&lt;? extends ValidationTuple, SailException&gt; iterator) {</b>
+<b class="nc">&nbsp;			this.iterator = iterator;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		private Iterator&lt;ValidationTuple&gt; next = Collections.emptyIterator();</b>
+&nbsp;
+&nbsp;		private void calculateNext() {
+<b class="nc">&nbsp;			if (next.hasNext()) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!iterator.hasNext()) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			ArrayList&lt;ValidationTuple&gt; validationTuples = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			ValidationTuple temp = iterator.next();</b>
+<b class="nc">&nbsp;			if (temp.getScope() == ConstraintComponent.Scope.propertyShape &amp;&amp; temp.hasValue()) {</b>
+<b class="nc">&nbsp;				while (iterator.hasNext() &amp;&amp; temp.sameTargetAs(iterator.peek())</b>
+<b class="nc">&nbsp;						&amp;&amp; iterator.peek().getScope() == ConstraintComponent.Scope.propertyShape</b>
+<b class="nc">&nbsp;						&amp;&amp; iterator.peek().hasValue()) {</b>
+<b class="nc">&nbsp;					validationTuples.add(iterator.next());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (validationTuples.isEmpty()) {</b>
+<b class="nc">&nbsp;				next = Collections.singletonList(temp).iterator();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				validationTuples.add(temp);</b>
+&nbsp;
+<b class="nc">&nbsp;				ValueComparator valueComparator = new ValueComparator();</b>
+<b class="nc">&nbsp;				validationTuples.sort((a, b) -&gt; valueComparator.compare(a.getValue(), b.getValue()));</b>
+<b class="nc">&nbsp;				next = validationTuples.iterator();</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws SailException {
+<b class="nc">&nbsp;			iterator.close();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws SailException {
+<b class="nc">&nbsp;			calculateNext();</b>
+<b class="nc">&nbsp;			return next.hasNext();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ValidationTuple next() throws SailException {
+<b class="nc">&nbsp;			calculateNext();</b>
+<b class="nc">&nbsp;			return next.next();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() throws SailException {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

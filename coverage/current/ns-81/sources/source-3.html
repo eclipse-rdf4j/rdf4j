@@ -1,0 +1,170 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLBooleanJSONParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.sparqljson</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLBooleanJSONParser (org.eclipse.rdf4j.query.resultio.sparqljson)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLBooleanJSONParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    20%
+  </span>
+  <span class="absValue">
+    (1/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    14.3%
+  </span>
+  <span class="absValue">
+    (1/7)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.sparqljson;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Parser for SPARQL-1.1 JSON Results Format documents
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-results-json/&quot;&gt;SPARQL 1.1 Query Results JSON Format&lt;/a&gt;
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class SPARQLBooleanJSONParser extends AbstractSPARQLJSONParser implements BooleanQueryResultParser {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default constructor.
+&nbsp;	 */
+&nbsp;	public SPARQLBooleanJSONParser() {
+<b class="fc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a parser with a specific {@link ValueFactory}.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory The factory to use to create values.
+&nbsp;	 */
+&nbsp;	public SPARQLBooleanJSONParser(ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryResultFormat getQueryResultFormat() {
+<b class="nc">&nbsp;		return getBooleanQueryResultFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BooleanQueryResultFormat getBooleanQueryResultFormat() {
+<b class="nc">&nbsp;		return BooleanQueryResultFormat.JSON;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	@Deprecated
+&nbsp;	public boolean parse(InputStream in) throws IOException, QueryResultParseException {
+&nbsp;		try {
+<b class="nc">&nbsp;			return parseQueryResultInternal(in, true, false);</b>
+<b class="nc">&nbsp;		} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;			throw new QueryResultParseException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

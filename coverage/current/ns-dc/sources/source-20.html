@@ -1,0 +1,297 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NonUniqueTargetLang</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: NonUniqueTargetLang (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NonUniqueTargetLang</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.text.StringEscapeUtils;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * This PlanNode takes a stream of Tuples like: (ex:companyA, &quot;Company A&quot;@en). It assumes that the stream is sorted on
+&nbsp; * index 0 (eg. ex:CompanyA). It will cache all non-empty languages from index 1 (eg. &quot;en&quot;) and outputs any tuples where
+&nbsp; * the language has already been seen.
+&nbsp; *
+&nbsp; * If a Value on index 1 has no language because it is a literal without a language or because it is an IRI or BNode,
+&nbsp; * then its language is considered empty and not cached.
+&nbsp; *
+&nbsp; * @author Håvard Ottestad
+&nbsp; */
+&nbsp;public class NonUniqueTargetLang implements PlanNode {
+&nbsp;	PlanNode parent;
+<b class="nc">&nbsp;	private boolean printed = false;</b>
+&nbsp;	private ValidationExecutionLogger validationExecutionLogger;
+&nbsp;
+<b class="nc">&nbsp;	public NonUniqueTargetLang(PlanNode parent) {</b>
+<b class="nc">&nbsp;		this.parent = PlanNodeHelper.handleSorting(this, parent);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator() {
+&nbsp;
+<b class="nc">&nbsp;		return new OnlyNonUnique(parent, validationExecutionLogger);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int depth() {
+<b class="nc">&nbsp;		return parent.depth() + 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+<b class="nc">&nbsp;		if (printed) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		printed = true;</b>
+<b class="nc">&nbsp;		stringBuilder.append(getId() + &quot; [label=\&quot;&quot; + StringEscapeUtils.escapeJava(this.toString()) + &quot;\&quot;];&quot;)</b>
+<b class="nc">&nbsp;				.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		stringBuilder.append(parent.getId() + &quot; -&gt; &quot; + getId()).append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		parent.getPlanAsGraphvizDot(stringBuilder);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;NonUniqueTargetLang&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return System.identityHashCode(this) + &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+<b class="nc">&nbsp;		this.validationExecutionLogger = validationExecutionLogger;</b>
+<b class="nc">&nbsp;		parent.receiveLogger(validationExecutionLogger);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean producesSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean requiresSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		NonUniqueTargetLang that = (NonUniqueTargetLang) o;</b>
+<b class="nc">&nbsp;		return parent.equals(that.parent);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(parent);</b>
+&nbsp;	}
+&nbsp;}
+&nbsp;
+&nbsp;class OnlyNonUnique extends LoggingCloseableIteration {
+&nbsp;
+&nbsp;	private ValidationTuple next;
+&nbsp;	private ValidationTuple previous;
+&nbsp;
+&nbsp;	private Set&lt;String&gt; seenLanguages = new HashSet&lt;&gt;();
+&nbsp;
+&nbsp;	private final CloseableIteration&lt;? extends ValidationTuple, SailException&gt; parentIterator;
+&nbsp;
+&nbsp;	OnlyNonUnique(PlanNode parent, ValidationExecutionLogger validationExecutionLogger) {
+&nbsp;		super(parent, validationExecutionLogger);
+&nbsp;		parentIterator = parent.iterator();
+&nbsp;	}
+&nbsp;
+&nbsp;	private void calculateNext() {
+&nbsp;		if (next != null) {
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		while (next == null &amp;&amp; parentIterator.hasNext()) {
+&nbsp;			next = parentIterator.next();
+&nbsp;
+&nbsp;			if ((previous != null)) {
+&nbsp;				if (!previous.sameTargetAs(next)) {
+&nbsp;					seenLanguages = new HashSet&lt;&gt;();
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			previous = next;
+&nbsp;
+&nbsp;			Value value = next.getValue();
+&nbsp;
+&nbsp;			if (value.isLiteral()) {
+&nbsp;				Optional&lt;String&gt; lang = ((Literal) value).getLanguage();
+&nbsp;
+&nbsp;				if (!lang.isPresent()) {
+&nbsp;					next = null;
+&nbsp;				} else if (!seenLanguages.contains(lang.get())) {
+&nbsp;					seenLanguages.add(lang.get());
+&nbsp;					next = null;
+&nbsp;				}
+&nbsp;
+&nbsp;			} else {
+&nbsp;				next = null;
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void localClose() throws SailException {
+&nbsp;		parentIterator.close();
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean localHasNext() throws SailException {
+&nbsp;		calculateNext();
+&nbsp;		return next != null;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ValidationTuple loggingNext() throws SailException {
+&nbsp;		calculateNext();
+&nbsp;
+&nbsp;		ValidationTuple temp = next;
+&nbsp;		next = null;
+&nbsp;		return temp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

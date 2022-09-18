@@ -1,0 +1,303 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailClosingIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: SailClosingIteration (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailClosingIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (5/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40%
+  </span>
+  <span class="absValue">
+    (8/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (19/38)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailClosingIteration$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (6/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40%
+  </span>
+  <span class="absValue">
+    (8/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (20/40)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import java.lang.reflect.UndeclaredThrowableException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link Iteration} that holds on to a {@link SailClosable} until the Iteration is closed. Upon closing, the
+&nbsp; * underlying Iteration is closed before the lock is released. This iterator closes itself as soon as all elements have
+&nbsp; * been read.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;abstract class SailClosingIteration&lt;T, X extends Exception&gt; extends IterationWrapper&lt;T, X&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
+&nbsp;	 *
+&nbsp;	 * @param iter   The underlying Iteration, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
+&nbsp;	 * @return a {@link CloseableIteration} that closes the given {@link SailClosable}
+&nbsp;	 */
+&nbsp;	public static &lt;E&gt; SailClosingIteration&lt;E, SailException&gt; makeClosable(
+&nbsp;			CloseableIteration&lt;? extends E, SailException&gt; iter, SailClosable... closes) {
+<b class="fc">&nbsp;		return new SailClosingIteration&lt;&gt;(iter, closes) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void handleSailException(SailException e) throws SailException {
+<b class="nc">&nbsp;				throw e;</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The lock to release when the Iteration is closed.
+&nbsp;	 */
+&nbsp;	private final SailClosable[] closes;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link Iteration} that automatically closes the given {@link SailClosable}s.
+&nbsp;	 *
+&nbsp;	 * @param iter   The underlying Iteration, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
+&nbsp;	 */
+&nbsp;	public SailClosingIteration(CloseableIteration&lt;? extends T, X&gt; iter, SailClosable... closes) {
+<b class="fc">&nbsp;		super(iter);</b>
+<b class="fc">&nbsp;		this.closes = closes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() throws X {
+<b class="pc">&nbsp;		if (isClosed()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean result = super.hasNext();</b>
+<b class="fc">&nbsp;		if (!result) {</b>
+<b class="fc">&nbsp;			close();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public T next() throws X {
+<b class="pc">&nbsp;		if (isClosed()) {</b>
+<b class="nc">&nbsp;			throw new NoSuchElementException(&quot;Iteration has been closed&quot;);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="fc">&nbsp;			return super.next();</b>
+<b class="nc">&nbsp;		} catch (NoSuchElementException e) {</b>
+<b class="nc">&nbsp;			close();</b>
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() throws X {
+<b class="nc">&nbsp;		if (isClosed()) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException();</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			super.remove();</b>
+<b class="nc">&nbsp;		} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;			close();</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws X {
+&nbsp;		try {
+<b class="fc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+&nbsp;			// Attempt to call close more often on all SailClosable instances by delaying handling
+<b class="fc">&nbsp;			List&lt;SailException&gt; exceptions = new ArrayList&lt;&gt;();</b>
+<b class="fc">&nbsp;			List&lt;Throwable&gt; extraOrdinaryExceptions = new ArrayList&lt;&gt;();</b>
+<b class="pc">&nbsp;			for (SailClosable closing : closes) {</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					closing.close();</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+<b class="nc">&nbsp;					exceptions.add(e);</b>
+&nbsp;				}
+&nbsp;				// Delay all other exceptions also, but don&#39;t pass them through the handler
+<b class="nc">&nbsp;				catch (Throwable e) {</b>
+<b class="nc">&nbsp;					extraOrdinaryExceptions.add(e);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+<b class="pc">&nbsp;			for (SailException nextException : exceptions) {</b>
+<b class="nc">&nbsp;				handleSailException(nextException);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="pc">&nbsp;			if (!extraOrdinaryExceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;				throw new UndeclaredThrowableException(extraOrdinaryExceptions.get(0));</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handler for exceptions generated by the closure of the {@link SailClosable} array given to this object. &lt;br/&gt;
+&nbsp;	 * This method is called after all of the {@link SailClosable} objects have had close called on them.
+&nbsp;	 *
+&nbsp;	 * @param e The {@link SailException} to handle.
+&nbsp;	 * @throws X Instances of this generic-typed exception in response to the given {@link SailException} if the handler
+&nbsp;	 *           decides to propagate the exception.
+&nbsp;	 */
+&nbsp;	protected abstract void handleSailException(SailException e) throws X;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

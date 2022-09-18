@@ -1,0 +1,287 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > InterceptingRepositoryWrapper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.event.base</a>
+</div>
+
+<h1>Coverage Summary for Class: InterceptingRepositoryWrapper (org.eclipse.rdf4j.repository.event.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">InterceptingRepositoryWrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.event.base;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.CopyOnWriteArraySet;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
+&nbsp;import org.eclipse.rdf4j.repository.event.InterceptingRepository;
+&nbsp;import org.eclipse.rdf4j.repository.event.InterceptingRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.event.RepositoryConnectionInterceptor;
+&nbsp;import org.eclipse.rdf4j.repository.event.RepositoryInterceptor;
+&nbsp;
+&nbsp;/**
+&nbsp; * Wrapper that notifies interceptors of events on Repositories before they happen. Any interceptor can block the
+&nbsp; * operation by returning true from the relevant notification method. To do so will also cause the notification process
+&nbsp; * to stop, i.e. no other interceptors will be notified. The order in which interceptors are notified is unspecified.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; * @see InterceptingRepositoryConnectionWrapper
+&nbsp; */
+&nbsp;public class InterceptingRepositoryWrapper extends RepositoryWrapper implements InterceptingRepository {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private boolean activated;
+&nbsp;
+<b class="nc">&nbsp;	private final Set&lt;RepositoryInterceptor&gt; interceptors = new CopyOnWriteArraySet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Set&lt;RepositoryConnectionInterceptor&gt; conInterceptors = new CopyOnWriteArraySet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public InterceptingRepositoryWrapper() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public InterceptingRepositoryWrapper(Repository delegate) {
+<b class="nc">&nbsp;		super(delegate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registers a &lt;var&gt;RepositoryInterceptor&lt;/var&gt; that will receive notifications of operations that are performed on
+&nbsp;	 * this repository.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void addRepositoryInterceptor(RepositoryInterceptor interceptor) {
+<b class="nc">&nbsp;		interceptors.add(interceptor);</b>
+<b class="nc">&nbsp;		activated = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a registered &lt;var&gt;RepositoryInterceptor&lt;/var&gt; from this repository.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void removeRepositoryInterceptor(RepositoryInterceptor interceptor) {
+<b class="nc">&nbsp;		interceptors.remove(interceptor);</b>
+<b class="nc">&nbsp;		activated = !interceptors.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registers a &lt;var&gt;RepositoryConnectionInterceptor&lt;/var&gt; that will receive notifications of operations that are
+&nbsp;	 * performed on any connections that are created by this repository.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
+<b class="nc">&nbsp;		conInterceptors.add(interceptor);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a registered &lt;var&gt;RepositoryConnectionInterceptor&lt;/var&gt; from this repository.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
+<b class="nc">&nbsp;		conInterceptors.remove(interceptor);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public InterceptingRepositoryConnection getConnection() throws RepositoryException {
+<b class="nc">&nbsp;		RepositoryConnection conn = getDelegate().getConnection();</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			boolean denied = false;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (RepositoryInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.getConnection(getDelegate(), conn);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (denied) {</b>
+<b class="nc">&nbsp;				conn = null;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (conn == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		InterceptingRepositoryConnection iconn = new InterceptingRepositoryConnectionWrapper(this, conn);</b>
+<b class="nc">&nbsp;		for (RepositoryConnectionInterceptor conInterceptor : conInterceptors) {</b>
+<b class="nc">&nbsp;			iconn.addRepositoryConnectionInterceptor(conInterceptor);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return iconn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.init(getDelegate());</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().init();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataDir(File dataDir) {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.setDataDir(getDelegate(), dataDir);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().setDataDir(dataDir);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.shutDown(getDelegate());</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().shutDown();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

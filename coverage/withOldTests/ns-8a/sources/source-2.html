@@ -1,0 +1,223 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FNFunction</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql.experimental</a>
+</div>
+
+<h1>Coverage Summary for Class: FNFunction (org.eclipse.rdf4j.queryrender.sparql.experimental)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FNFunction</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/47)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql.experimental;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FN;
+&nbsp;
+&nbsp;import com.google.common.base.Strings;
+&nbsp;
+&nbsp;/**
+&nbsp; * Some functions that are declared as built-in in the SPARQL 1.1 specification are also identifiable as URI functions
+&nbsp; * in the fn: namespace. RDF4J immediately converts them into the URI representation when parsing. This leads to
+&nbsp; * failures, however, with some triple stores (like Blazegraph) that do not understand the URI representation of
+&nbsp; * built-ins and try to process them as custom URI functions.
+&nbsp; *
+&nbsp; * @author Andriy Nikolov
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+<b class="nc">&nbsp;enum FNFunction {</b>
+<b class="nc">&nbsp;	CONCAT(&quot;CONCAT&quot;, FN.CONCAT),</b>
+<b class="nc">&nbsp;	CONTAINS(&quot;CONTAINS&quot;, FN.CONTAINS),</b>
+<b class="nc">&nbsp;	DAY(&quot;DAY&quot;, FN.DAY_FROM_DATETIME),</b>
+<b class="nc">&nbsp;	ENCODE_FOR_URI(&quot;ENCODE_FOR_URI&quot;, FN.ENCODE_FOR_URI),</b>
+<b class="nc">&nbsp;	STRENDS(&quot;STRENDS&quot;, FN.ENDS_WITH),</b>
+<b class="nc">&nbsp;	HOURS(&quot;HOURS&quot;, FN.HOURS_FROM_DATETIME),</b>
+<b class="nc">&nbsp;	LCASE(&quot;LCASE&quot;, FN.LOWER_CASE),</b>
+<b class="nc">&nbsp;	MINUTES(&quot;MINUTES&quot;, FN.MINUTES_FROM_DATETIME),</b>
+<b class="nc">&nbsp;	MONTH(&quot;MONTH&quot;, FN.MONTH_FROM_DATETIME),</b>
+<b class="nc">&nbsp;	ABS(&quot;ABS&quot;, FN.NUMERIC_ABS),</b>
+<b class="nc">&nbsp;	CEIL(&quot;CEIL&quot;, FN.NUMERIC_CEIL),</b>
+<b class="nc">&nbsp;	FLOOR(&quot;FLOOR&quot;, FN.NUMERIC_FLOOR),</b>
+<b class="nc">&nbsp;	ROUND(&quot;ROUND&quot;, FN.NUMERIC_ROUND),</b>
+<b class="nc">&nbsp;	REPLACE(&quot;REPLACE&quot;, FN.REPLACE),</b>
+<b class="nc">&nbsp;	SECONDS(&quot;SECONDS&quot;, FN.SECONDS_FROM_DATETIME),</b>
+<b class="nc">&nbsp;	STRSTARTS(&quot;STRSTARTS&quot;, FN.STARTS_WITH),</b>
+<b class="nc">&nbsp;	STRLEN(&quot;STRLEN&quot;, FN.STRING_LENGTH),</b>
+<b class="nc">&nbsp;	SUBSTR(&quot;SUBSTR&quot;, FN.SUBSTRING),</b>
+<b class="nc">&nbsp;	STRBEFORE(&quot;STRBEFORE&quot;, FN.SUBSTRING_BEFORE),</b>
+<b class="nc">&nbsp;	STRAFTER(&quot;STRAFTER&quot;, FN.SUBSTRING_AFTER),</b>
+<b class="nc">&nbsp;	TIMEZONE(&quot;TIMEZONE&quot;, FN.TIMEZONE_FROM_DATETIME),</b>
+<b class="nc">&nbsp;	UCASE(&quot;UCASE&quot;, FN.UPPER_CASE),</b>
+<b class="nc">&nbsp;	YEAR(&quot;YEAR&quot;, FN.YEAR_FROM_DATETIME);</b>
+&nbsp;
+&nbsp;	private final String name;
+&nbsp;	private final IRI uri;
+&nbsp;
+<b class="nc">&nbsp;	FNFunction(String name, IRI uri) {</b>
+<b class="nc">&nbsp;		this.name = name;</b>
+<b class="nc">&nbsp;		this.uri = uri;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;FNFunction&gt; byName(String name) {
+<b class="nc">&nbsp;		if (Strings.isNullOrEmpty(name)) {</b>
+<b class="nc">&nbsp;			return Optional.empty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (FNFunction item : FNFunction.values()) {</b>
+<b class="nc">&nbsp;			if (item.name.equals(name)) {</b>
+<b class="nc">&nbsp;				return Optional.of(item);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;FNFunction&gt; byUri(IRI uri) {
+<b class="nc">&nbsp;		if (uri == null) {</b>
+<b class="nc">&nbsp;			return Optional.empty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (FNFunction item : FNFunction.values()) {</b>
+<b class="nc">&nbsp;			if (item.uri.equals(uri)) {</b>
+<b class="nc">&nbsp;				return Optional.of(item);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;FNFunction&gt; byUri(String uriAsString) {
+<b class="nc">&nbsp;		if (Strings.isNullOrEmpty(uriAsString)) {</b>
+<b class="nc">&nbsp;			return Optional.empty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (FNFunction item : FNFunction.values()) {</b>
+<b class="nc">&nbsp;			if (item.uri.stringValue().equals(uriAsString)) {</b>
+<b class="nc">&nbsp;				return Optional.of(item);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getUri() {
+<b class="nc">&nbsp;		return uri;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

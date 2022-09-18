@@ -1,0 +1,179 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HTTPTupleQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.http</a>
+</div>
+
+<h1>Coverage Summary for Class: HTTPTupleQuery (org.eclipse.rdf4j.repository.http)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HTTPTupleQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.http;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+&nbsp;import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.explanation.Explanation;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException subclass
+&nbsp; * UnautorizedException, the semantics of which is defined by the HTTP protocol.
+&nbsp; *
+&nbsp; * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
+&nbsp;
+&nbsp;	private final HTTPRepositoryConnection conn;
+&nbsp;
+&nbsp;	public HTTPTupleQuery(HTTPRepositoryConnection conn, QueryLanguage ql, String queryString, String baseURI) {
+<b class="nc">&nbsp;		super(conn.getSesameSession(), ql, queryString, baseURI);</b>
+<b class="nc">&nbsp;		this.conn = conn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQueryResult evaluate() throws QueryEvaluationException {
+<b class="nc">&nbsp;		SPARQLProtocolSession client = getHttpClient();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			conn.flushTransactionState(Protocol.Action.QUERY);</b>
+&nbsp;
+<b class="nc">&nbsp;			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),</b>
+<b class="nc">&nbsp;					getMaxExecutionTime(), ((WeakReference) null), getBindingsArray());</b>
+<b class="nc">&nbsp;		} catch (IOException | RepositoryException | MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			throw new HTTPQueryEvaluationException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void evaluate(TupleQueryResultHandler handler)
+&nbsp;			throws QueryEvaluationException, TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		SPARQLProtocolSession client = getHttpClient();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			conn.flushTransactionState(Protocol.Action.QUERY);</b>
+<b class="nc">&nbsp;			client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, includeInferred, getMaxExecutionTime(),</b>
+<b class="nc">&nbsp;					handler, getBindingsArray());</b>
+<b class="nc">&nbsp;		} catch (IOException | RepositoryException | MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			throw new HTTPQueryEvaluationException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Explanation explain(Explanation.Level level) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

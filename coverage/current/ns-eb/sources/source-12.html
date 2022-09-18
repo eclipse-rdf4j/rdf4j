@@ -1,0 +1,382 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.core</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlBuilder (org.eclipse.rdf4j.sparqlbuilder.core)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.core;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+&nbsp;
+&nbsp;/**
+&nbsp; * A class to with static methods to create SPARQL query elements.
+&nbsp; */
+&nbsp;public class SparqlBuilder {
+&nbsp;
+&nbsp;	// prevent instantiation of this class
+&nbsp;	private SparqlBuilder() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL variable with a specific alias.
+&nbsp;	 *
+&nbsp;	 * @param varName the alias of the variable
+&nbsp;	 * @return a new SPARQL variable
+&nbsp;	 */
+&nbsp;	public static Variable var(String varName) {
+<b class="nc">&nbsp;		return new Variable(varName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL assignment
+&nbsp;	 *
+&nbsp;	 * @param exp the expression to evaluate
+&nbsp;	 * @param var the variable to bind the expression value to
+&nbsp;	 * @return an Assignment object
+&nbsp;	 */
+&nbsp;	public static Assignment as(Assignable exp, Variable var) {
+<b class="nc">&nbsp;		return new Assignment(exp, var);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Base declaration
+&nbsp;	 *
+&nbsp;	 * @param iri the base iri
+&nbsp;	 * @return a Base object
+&nbsp;	 */
+&nbsp;	public static Base base(Iri iri) {
+<b class="nc">&nbsp;		return new Base(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Base declaration
+&nbsp;	 *
+&nbsp;	 * @param iri the base iri
+&nbsp;	 * @return a Base object
+&nbsp;	 */
+&nbsp;	public static Base base(IRI iri) {
+<b class="nc">&nbsp;		return new Base(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Prefix declaration
+&nbsp;	 *
+&nbsp;	 * @param alias the alias of the prefix
+&nbsp;	 * @param iri   the iri the alias refers to
+&nbsp;	 * @return a Prefix object
+&nbsp;	 */
+&nbsp;	public static Prefix prefix(String alias, Iri iri) {
+<b class="nc">&nbsp;		return new Prefix(alias, iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Prefix declaration
+&nbsp;	 *
+&nbsp;	 * @param alias the alias of the prefix
+&nbsp;	 * @param iri   the iri the alias refers to
+&nbsp;	 * @return a Prefix object
+&nbsp;	 */
+&nbsp;	public static Prefix prefix(String alias, IRI iri) {
+<b class="nc">&nbsp;		return new Prefix(alias, iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL default Prefix declaration
+&nbsp;	 *
+&nbsp;	 * @param iri the default iri prefix
+&nbsp;	 * @return a Prefix object
+&nbsp;	 */
+&nbsp;	public static Prefix prefix(Iri iri) {
+<b class="nc">&nbsp;		return prefix(&quot;&quot;, iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL default Prefix declaration
+&nbsp;	 *
+&nbsp;	 * @param iri the default iri prefix as an {@link IRI}.
+&nbsp;	 * @return a Prefix object
+&nbsp;	 */
+&nbsp;	public static Prefix prefix(IRI iri) {
+<b class="nc">&nbsp;		return prefix(iri(iri));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create SPARQL Prefix declaration from the given {@link Namespace}.
+&nbsp;	 *
+&nbsp;	 * @param namespace the {@link Namespace} to convert to a prefix declaration.
+&nbsp;	 * @return a Prefix object.
+&nbsp;	 */
+&nbsp;	public static Prefix prefix(Namespace namespace) {
+<b class="nc">&nbsp;		return prefix(namespace.getPrefix(), iri(namespace.getName()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Prefix clause
+&nbsp;	 *
+&nbsp;	 * @param prefixes prefix declarations to add to this Prefix clause
+&nbsp;	 * @return a new
+&nbsp;	 */
+&nbsp;	public static PrefixDeclarations prefixes(Prefix... prefixes) {
+<b class="nc">&nbsp;		return new PrefixDeclarations().addPrefix(prefixes);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a default graph reference
+&nbsp;	 *
+&nbsp;	 * @param iri the source of the graph
+&nbsp;	 * @return a From clause
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset&quot;&gt; RDF Datasets&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static From from(Iri iri) {
+<b class="nc">&nbsp;		return new From(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a default graph reference
+&nbsp;	 *
+&nbsp;	 * @param iri the source of the graph
+&nbsp;	 * @return a From clause
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset&quot;&gt; RDF Datasets&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static From from(IRI iri) {
+<b class="nc">&nbsp;		return new From(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a named graph reference
+&nbsp;	 *
+&nbsp;	 * @param iri the source of the graph
+&nbsp;	 * @return a named From clause
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset&quot;&gt; RDF Datasets&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static From fromNamed(Iri iri) {
+<b class="nc">&nbsp;		return new From(iri, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a named graph reference
+&nbsp;	 *
+&nbsp;	 * @param iri the source of the graph
+&nbsp;	 * @return a named From clause
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset&quot;&gt; RDF Datasets&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static From fromNamed(IRI iri) {
+<b class="nc">&nbsp;		return new From(iri, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a dataset declaration
+&nbsp;	 *
+&nbsp;	 * @param graphs
+&nbsp;	 * @return a new dataset clause
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#rdfDataset&quot;&gt; RDF Datasets&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Dataset dataset(From... graphs) {
+<b class="nc">&nbsp;		return new Dataset().from(graphs);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL projection
+&nbsp;	 *
+&nbsp;	 * @param projectables projectable elements to add to the projection
+&nbsp;	 * @return a Projection
+&nbsp;	 */
+&nbsp;	public static Projection select(Projectable... projectables) {
+<b class="nc">&nbsp;		return new Projection().select(projectables);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL graph template
+&nbsp;	 *
+&nbsp;	 * @param triples triples to add to the template
+&nbsp;	 * @return a new SPARQL graph template
+&nbsp;	 */
+&nbsp;	public static GraphTemplate construct(TriplePattern... triples) {
+<b class="nc">&nbsp;		return new GraphTemplate().construct(triples);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL query pattern
+&nbsp;	 *
+&nbsp;	 * @param patterns graph patterns to add to the query pattern
+&nbsp;	 * @return a new Query Pattern
+&nbsp;	 */
+&nbsp;	public static QueryPattern where(GraphPattern... patterns) {
+<b class="nc">&nbsp;		return new QueryPattern().where(patterns);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Group By clause
+&nbsp;	 *
+&nbsp;	 * @param groupables the group conditions
+&nbsp;	 * @return a Group By clause
+&nbsp;	 */
+&nbsp;	public static GroupBy groupBy(Groupable... groupables) {
+<b class="nc">&nbsp;		return new GroupBy().by(groupables);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Order clause
+&nbsp;	 *
+&nbsp;	 * @param conditions the order conditions
+&nbsp;	 * @return an Order By clause
+&nbsp;	 */
+&nbsp;	public static OrderBy orderBy(Orderable... conditions) {
+<b class="nc">&nbsp;		return new OrderBy().by(conditions);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SPARQL Having clause
+&nbsp;	 *
+&nbsp;	 * @param expressions the having conditions
+&nbsp;	 * @return a Having clause
+&nbsp;	 */
+&nbsp;	public static Having having(Expression&lt;?&gt;... expressions) {
+<b class="nc">&nbsp;		return new Having().having(expressions);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create an ascending SPARQL order condition
+&nbsp;	 *
+&nbsp;	 * @param orderOn the order comparator
+&nbsp;	 * @return an ASC() order condition
+&nbsp;	 */
+&nbsp;	public static OrderCondition asc(Orderable orderOn) {
+<b class="nc">&nbsp;		return new OrderCondition(orderOn, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a descending SPARQL order condition
+&nbsp;	 *
+&nbsp;	 * @param orderOn the order comparator
+&nbsp;	 * @return a DESC() order condition
+&nbsp;	 */
+&nbsp;	public static OrderCondition desc(Orderable orderOn) {
+<b class="nc">&nbsp;		return new OrderCondition(orderOn, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a TriplesTemplate instance, for use with Construct and Update queries
+&nbsp;	 *
+&nbsp;	 * @param triples the triples to include in the triples template
+&nbsp;	 * @return a TriplesTemplate of the given triples
+&nbsp;	 */
+&nbsp;	public static TriplesTemplate triplesTemplate(TriplePattern... triples) {
+<b class="nc">&nbsp;		return new TriplesTemplate(triples);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

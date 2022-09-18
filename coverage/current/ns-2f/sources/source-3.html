@@ -1,0 +1,187 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Example15SimpleSPARQLQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.examples.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: Example15SimpleSPARQLQuery (org.eclipse.rdf4j.examples.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Example15SimpleSPARQLQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.examples.repository;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FOAF;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;
+&nbsp;/**
+&nbsp; * RDF Tutorial example 15: executing a simple SPARQL query on the database
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class Example15SimpleSPARQLQuery {</b>
+&nbsp;
+&nbsp;	public static void main(String[] args)
+&nbsp;			throws IOException {
+&nbsp;		// Create a new Repository.
+<b class="nc">&nbsp;		Repository db = new SailRepository(new MemoryStore());</b>
+&nbsp;
+&nbsp;		// Open a connection to the database
+<b class="nc">&nbsp;		try (RepositoryConnection conn = db.getConnection()) {</b>
+<b class="nc">&nbsp;			String filename = &quot;example-data-artists.ttl&quot;;</b>
+<b class="nc">&nbsp;			try (InputStream input = Example15SimpleSPARQLQuery.class.getResourceAsStream(&quot;/&quot; + filename)) {</b>
+&nbsp;				// add the RDF data from the inputstream directly to our database
+<b class="nc">&nbsp;				conn.add(input, &quot;&quot;, RDFFormat.TURTLE);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// We do a simple SPARQL SELECT-query that retrieves all resources of type `ex:Artist`,
+&nbsp;			// and their first names.
+<b class="nc">&nbsp;			String queryString = &quot;PREFIX ex: &lt;http://example.org/&gt; \n&quot;;</b>
+<b class="nc">&nbsp;			queryString += &quot;PREFIX foaf: &lt;&quot; + FOAF.NAMESPACE + &quot;&gt; \n&quot;;</b>
+<b class="nc">&nbsp;			queryString += &quot;SELECT ?s ?n \n&quot;;</b>
+<b class="nc">&nbsp;			queryString += &quot;WHERE { \n&quot;;</b>
+<b class="nc">&nbsp;			queryString += &quot;    ?s a ex:Artist; \n&quot;;</b>
+<b class="nc">&nbsp;			queryString += &quot;       foaf:firstName ?n .&quot;;</b>
+<b class="nc">&nbsp;			queryString += &quot;}&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleQuery query = conn.prepareTupleQuery(queryString);</b>
+&nbsp;
+&nbsp;			// A QueryResult is also an AutoCloseable resource, so make sure it gets closed when done.
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;				// we just iterate over all solutions in the result...
+<b class="nc">&nbsp;				for (BindingSet solution : result) {</b>
+&nbsp;					// ... and print out the value of the variable binding for ?s and ?n
+<b class="nc">&nbsp;					System.out.println(&quot;?s = &quot; + solution.getValue(&quot;s&quot;));</b>
+<b class="nc">&nbsp;					System.out.println(&quot;?n = &quot; + solution.getValue(&quot;n&quot;));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} finally {</b>
+&nbsp;			// Before our program exits, make sure the database is properly shut down.
+<b class="nc">&nbsp;			db.shutDown();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

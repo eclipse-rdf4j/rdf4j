@@ -1,0 +1,945 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SHACL</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: SHACL (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SHACL</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/195)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/**
+&nbsp; * Copyright (c) 2017 Eclipse RDF4J contributors, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; */
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the Shapes Constraint Language.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/2017/WD-shacl-20170303/&quot;&gt;Shapes Constraint Language&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class SHACL {</b>
+&nbsp;	/**
+&nbsp;	 * The SHACL namespace: http://www.w3.org/ns/shacl#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/ns/shacl#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the namespace: &quot;sh&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;sh&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** sh:AbstractResult */
+&nbsp;	public static final IRI ABSTRACT_RESULT;
+&nbsp;
+&nbsp;	/** sh:AndConstraintComponent */
+&nbsp;	public static final IRI AND_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:AndConstraintComponent-and */
+&nbsp;	public static final IRI AND_CONSTRAINT_COMPONENT_AND;
+&nbsp;
+&nbsp;	/** sh:BlankNode */
+&nbsp;	public static final IRI BLANK_NODE;
+&nbsp;
+&nbsp;	/** sh:BlankNodeOrIRI */
+&nbsp;	public static final IRI BLANK_NODE_OR_IRI;
+&nbsp;
+&nbsp;	/** sh:BlankNodeOrLiteral */
+&nbsp;	public static final IRI BLANK_NODE_OR_LITERAL;
+&nbsp;
+&nbsp;	/** sh:ClassConstraintComponent */
+&nbsp;	public static final IRI CLASS_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:ClassConstraintComponent-class */
+&nbsp;	public static final IRI CLASS_CONSTRAINT_COMPONENT_CLASS;
+&nbsp;
+&nbsp;	/** sh:ClosedConstraintComponent */
+&nbsp;	public static final IRI CLOSED_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:ClosedConstraintComponent-closed */
+&nbsp;	public static final IRI CLOSED_CONSTRAINT_COMPONENT_CLOSED;
+&nbsp;
+&nbsp;	/** sh:ClosedConstraintComponent-ignoredProperties */
+&nbsp;	public static final IRI CLOSED_CONSTRAINT_COMPONENT_IGNORED_PROPERTIES;
+&nbsp;
+&nbsp;	/** sh:ConstraintComponent */
+&nbsp;	public static final IRI CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:DatatypeConstraintComponent */
+&nbsp;	public static final IRI DATATYPE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:DatatypeConstraintComponent-datatype */
+&nbsp;	public static final IRI DATATYPE_CONSTRAINT_COMPONENT_DATATYPE;
+&nbsp;
+&nbsp;	/** sh:DerivedValuesConstraintComponent */
+&nbsp;	public static final IRI DERIVED_VALUES_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:DisjointConstraintComponent */
+&nbsp;	public static final IRI DISJOINT_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:DisjointConstraintComponent-disjoint */
+&nbsp;	public static final IRI DISJOINT_CONSTRAINT_COMPONENT_DISJOINT;
+&nbsp;
+&nbsp;	/** sh:EqualsConstraintComponent */
+&nbsp;	public static final IRI EQUALS_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:EqualsConstraintComponent-equals */
+&nbsp;	public static final IRI EQUALS_CONSTRAINT_COMPONENT_EQUALS;
+&nbsp;
+&nbsp;	/** sh:Function */
+&nbsp;	public static final IRI FUNCTION;
+&nbsp;
+&nbsp;	/** sh:HasValueConstraintComponent */
+&nbsp;	public static final IRI HAS_VALUE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:HasValueConstraintComponent-hasValue */
+&nbsp;	public static final IRI HAS_VALUE_CONSTRAINT_COMPONENT_HAS_VALUE;
+&nbsp;
+&nbsp;	/** sh:IRI */
+&nbsp;	public static final IRI IRI;
+&nbsp;
+&nbsp;	/** sh:IRIOrLiteral */
+&nbsp;	public static final IRI IRI_OR_LITERAL;
+&nbsp;
+&nbsp;	/** sh:InConstraintComponent */
+&nbsp;	public static final IRI IN_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:InConstraintComponent-in */
+&nbsp;	public static final IRI IN_CONSTRAINT_COMPONENT_IN;
+&nbsp;
+&nbsp;	/** sh:Info */
+&nbsp;	public static final IRI INFO;
+&nbsp;
+&nbsp;	/** sh:LanguageInConstraintComponent */
+&nbsp;	public static final IRI LANGUAGE_IN_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:LanguageInConstraintComponent-languageIn */
+&nbsp;	public static final IRI LANGUAGE_IN_CONSTRAINT_COMPONENT_LANGUAGE_IN;
+&nbsp;
+&nbsp;	/** sh:LessThanConstraintComponent */
+&nbsp;	public static final IRI LESS_THAN_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:LessThanConstraintComponent-lessThan */
+&nbsp;	public static final IRI LESS_THAN_CONSTRAINT_COMPONENT_LESS_THAN;
+&nbsp;
+&nbsp;	/** sh:LessThanOrEqualsConstraintComponent */
+&nbsp;	public static final IRI LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:LessThanOrEqualsConstraintComponent-lessThanOrEquals */
+&nbsp;	public static final IRI LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT_LESS_THAN_OR_EQUALS;
+&nbsp;
+&nbsp;	/** sh:Literal */
+&nbsp;	public static final IRI LITERAL;
+&nbsp;
+&nbsp;	/** sh:MaxCountConstraintComponent */
+&nbsp;	public static final IRI MAX_COUNT_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MaxCountConstraintComponent-maxCount */
+&nbsp;	public static final IRI MAX_COUNT_CONSTRAINT_COMPONENT_MAX_COUNT;
+&nbsp;
+&nbsp;	/** sh:MaxExclusiveConstraintComponent */
+&nbsp;	public static final IRI MAX_EXCLUSIVE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MaxExclusiveConstraintComponent-maxExclusive */
+&nbsp;	public static final IRI MAX_EXCLUSIVE_CONSTRAINT_COMPONENT_MAX_EXCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:MaxInclusiveConstraintComponent */
+&nbsp;	public static final IRI MAX_INCLUSIVE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MaxInclusiveConstraintComponent-maxInclusive */
+&nbsp;	public static final IRI MAX_INCLUSIVE_CONSTRAINT_COMPONENT_MAX_INCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:MaxLengthConstraintComponent */
+&nbsp;	public static final IRI MAX_LENGTH_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MaxLengthConstraintComponent-maxLength */
+&nbsp;	public static final IRI MAX_LENGTH_CONSTRAINT_COMPONENT_MAX_LENGTH;
+&nbsp;
+&nbsp;	/** sh:MinCountConstraintComponent */
+&nbsp;	public static final IRI MIN_COUNT_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MinCountConstraintComponent-minCount */
+&nbsp;	public static final IRI MIN_COUNT_CONSTRAINT_COMPONENT_MIN_COUNT;
+&nbsp;
+&nbsp;	/** sh:MinExclusiveConstraintComponent */
+&nbsp;	public static final IRI MIN_EXCLUSIVE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MinExclusiveConstraintComponent-minExclusive */
+&nbsp;	public static final IRI MIN_EXCLUSIVE_CONSTRAINT_COMPONENT_MIN_EXCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:MinInclusiveConstraintComponent */
+&nbsp;	public static final IRI MIN_INCLUSIVE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MinInclusiveConstraintComponent-minInclusive */
+&nbsp;	public static final IRI MIN_INCLUSIVE_CONSTRAINT_COMPONENT_MIN_INCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:MinLengthConstraintComponent */
+&nbsp;	public static final IRI MIN_LENGTH_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:MinLengthConstraintComponent-minLength */
+&nbsp;	public static final IRI MIN_LENGTH_CONSTRAINT_COMPONENT_MIN_LENGTH;
+&nbsp;
+&nbsp;	/** sh:NodeConstraintComponent */
+&nbsp;	public static final IRI NODE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:NodeConstraintComponent-node */
+&nbsp;	public static final IRI NODE_CONSTRAINT_COMPONENT_NODE;
+&nbsp;
+&nbsp;	/** sh:NodeKind */
+&nbsp;	public static final IRI NODE_KIND;
+&nbsp;
+&nbsp;	/** sh:NodeKindConstraintComponent */
+&nbsp;	public static final IRI NODE_KIND_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:NodeKindConstraintComponent-nodeKind */
+&nbsp;	public static final IRI NODE_KIND_CONSTRAINT_COMPONENT_NODE_KIND;
+&nbsp;
+&nbsp;	/** sh:NodeShape */
+&nbsp;	public static final IRI NODE_SHAPE;
+&nbsp;
+&nbsp;	/** sh:NotConstraintComponent */
+&nbsp;	public static final IRI NOT_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:NotConstraintComponent-not */
+&nbsp;	public static final IRI NOT_CONSTRAINT_COMPONENT_NOT;
+&nbsp;
+&nbsp;	/** sh:OrConstraintComponent */
+&nbsp;	public static final IRI OR_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:OrConstraintComponent-or */
+&nbsp;	public static final IRI OR_CONSTRAINT_COMPONENT_OR;
+&nbsp;
+&nbsp;	/** sh:Parameter */
+&nbsp;	public static final IRI PARAMETER;
+&nbsp;
+&nbsp;	/** sh:Parameterizable */
+&nbsp;	public static final IRI PARAMETERIZABLE;
+&nbsp;
+&nbsp;	/** sh:PatternConstraintComponent */
+&nbsp;	public static final IRI PATTERN_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:PatternConstraintComponent-flags */
+&nbsp;	public static final IRI PATTERN_CONSTRAINT_COMPONENT_FLAGS;
+&nbsp;
+&nbsp;	/** sh:PatternConstraintComponent-pattern */
+&nbsp;	public static final IRI PATTERN_CONSTRAINT_COMPONENT_PATTERN;
+&nbsp;
+&nbsp;	/** sh:PrefixDeclaration */
+&nbsp;	public static final IRI PREFIX_DECLARATION;
+&nbsp;
+&nbsp;	/** sh:PropertyConstraintComponent */
+&nbsp;	public static final IRI PROPERTY_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:PropertyConstraintComponent-property */
+&nbsp;	public static final IRI PROPERTY_CONSTRAINT_COMPONENT_PROPERTY;
+&nbsp;
+&nbsp;	/** sh:PropertyGroup */
+&nbsp;	public static final IRI PROPERTY_GROUP;
+&nbsp;
+&nbsp;	/** sh:PropertyShape */
+&nbsp;	public static final IRI PROPERTY_SHAPE;
+&nbsp;
+&nbsp;	/** sh:QualifiedMaxCountConstraintComponent */
+&nbsp;	public static final IRI QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:QualifiedMaxCountConstraintComponent-qualifiedMaxCount */
+&nbsp;	public static final IRI QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MAX_COUNT;
+&nbsp;
+&nbsp;	/** sh:QualifiedMaxCountConstraintComponent-qualifiedValueShape */
+&nbsp;	public static final IRI QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE;
+&nbsp;
+&nbsp;	/** sh:QualifiedMaxCountConstraintComponent-qualifiedValueShapesDisjoint */
+&nbsp;	public static final IRI QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT;
+&nbsp;
+&nbsp;	/** sh:QualifiedMinCountConstraintComponent */
+&nbsp;	public static final IRI QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:QualifiedMinCountConstraintComponent-qualifiedMinCount */
+&nbsp;	public static final IRI QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MIN_COUNT;
+&nbsp;
+&nbsp;	/** sh:QualifiedMinCountConstraintComponent-qualifiedValueShape */
+&nbsp;	public static final IRI QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE;
+&nbsp;
+&nbsp;	/** sh:QualifiedMinCountConstraintComponent-qualifiedValueShapesDisjoint */
+&nbsp;	public static final IRI QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT;
+&nbsp;
+&nbsp;	/** sh:ResultAnnotation */
+&nbsp;	public static final IRI RESULT_ANNOTATION;
+&nbsp;
+&nbsp;	/** sh:SPARQLAskExecutable */
+&nbsp;	public static final IRI SPARQL_ASK_EXECUTABLE;
+&nbsp;
+&nbsp;	/** sh:SPARQLAskValidator */
+&nbsp;	public static final IRI SPARQL_ASK_VALIDATOR;
+&nbsp;
+&nbsp;	/** sh:SPARQLConstraint */
+&nbsp;	public static final IRI SPARQL_CONSTRAINT;
+&nbsp;
+&nbsp;	/** sh:SPARQLConstraintComponent */
+&nbsp;	public static final IRI SPARQL_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:SPARQLConstraintComponent-sparql */
+&nbsp;	public static final IRI SPARQL_CONSTRAINT_COMPONENT_SPARQL;
+&nbsp;
+&nbsp;	/** sh:SPARQLConstructExecutable */
+&nbsp;	public static final IRI SPARQL_CONSTRUCT_EXECUTABLE;
+&nbsp;
+&nbsp;	/** sh:SPARQLExecutable */
+&nbsp;	public static final IRI SPARQL_EXECUTABLE;
+&nbsp;
+&nbsp;	/** sh:SPARQLFunction */
+&nbsp;	public static final IRI SPARQL_FUNCTION;
+&nbsp;
+&nbsp;	/** sh:SPARQLSelectExecutable */
+&nbsp;	public static final IRI SPARQL_SELECT_EXECUTABLE;
+&nbsp;
+&nbsp;	/** sh:SPARQLSelectValidator */
+&nbsp;	public static final IRI SPARQL_SELECT_VALIDATOR;
+&nbsp;
+&nbsp;	/** sh:SPARQLTarget */
+&nbsp;	public static final IRI SPARQL_TARGET;
+&nbsp;
+&nbsp;	/** sh:SPARQLTargetType */
+&nbsp;	public static final IRI SPARQL_TARGET_TYPE;
+&nbsp;
+&nbsp;	/** sh:SPARQLUpdateExecutable */
+&nbsp;	public static final IRI SPARQL_UPDATE_EXECUTABLE;
+&nbsp;
+&nbsp;	/** sh:SPARQLValuesDeriver */
+&nbsp;	public static final IRI SPARQL_VALUES_DERIVER;
+&nbsp;
+&nbsp;	/** sh:Severity */
+&nbsp;	public static final IRI SEVERITY;
+&nbsp;
+&nbsp;	/** sh:Shape */
+&nbsp;	public static final IRI SHAPE;
+&nbsp;
+&nbsp;	/** sh:Target */
+&nbsp;	public static final IRI TARGET;
+&nbsp;
+&nbsp;	/** sh:TargetType */
+&nbsp;	public static final IRI TARGET_TYPE;
+&nbsp;
+&nbsp;	/** sh:UniqueLangConstraintComponent */
+&nbsp;	public static final IRI UNIQUE_LANG_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:UniqueLangConstraintComponent-uniqueLang */
+&nbsp;	public static final IRI UNIQUE_LANG_CONSTRAINT_COMPONENT_UNIQUE_LANG;
+&nbsp;
+&nbsp;	/** sh:ValidationReport */
+&nbsp;	public static final IRI VALIDATION_REPORT;
+&nbsp;
+&nbsp;	/** sh:ValidationResult */
+&nbsp;	public static final IRI VALIDATION_RESULT;
+&nbsp;
+&nbsp;	/** sh:Validator */
+&nbsp;	public static final IRI VALIDATOR;
+&nbsp;
+&nbsp;	/** sh:ValuesDeriver */
+&nbsp;	public static final IRI VALUES_DERIVER;
+&nbsp;
+&nbsp;	/** sh:Violation */
+&nbsp;	public static final IRI VIOLATION;
+&nbsp;
+&nbsp;	/** sh:Warning */
+&nbsp;	public static final IRI WARNING;
+&nbsp;
+&nbsp;	/** sh:XoneConstraintComponent */
+&nbsp;	public static final IRI XONE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:XoneConstraintComponent-xone */
+&nbsp;	public static final IRI XONE_CONSTRAINT_COMPONENT_XONE;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** sh:alternativePath */
+&nbsp;	public static final IRI ALTERNATIVE_PATH;
+&nbsp;
+&nbsp;	/** sh:and */
+&nbsp;	public static final IRI AND;
+&nbsp;
+&nbsp;	/** sh:annotationProperty */
+&nbsp;	public static final IRI ANNOTATION_PROPERTY;
+&nbsp;
+&nbsp;	/** sh:annotationValue */
+&nbsp;	public static final IRI ANNOTATION_VALUE;
+&nbsp;
+&nbsp;	/** sh:annotationVarName */
+&nbsp;	public static final IRI ANNOTATION_VAR_NAME;
+&nbsp;
+&nbsp;	/** sh:ask */
+&nbsp;	public static final IRI ASK;
+&nbsp;
+&nbsp;	/** sh:class */
+&nbsp;	public static final IRI CLASS;
+&nbsp;
+&nbsp;	/** sh:closed */
+&nbsp;	public static final IRI CLOSED;
+&nbsp;
+&nbsp;	/** sh:conforms */
+&nbsp;	public static final IRI CONFORMS;
+&nbsp;
+&nbsp;	/** sh:construct */
+&nbsp;	public static final IRI CONSTRUCT;
+&nbsp;
+&nbsp;	/** sh:datatype */
+&nbsp;	public static final IRI DATATYPE;
+&nbsp;
+&nbsp;	/** sh:deactivated */
+&nbsp;	public static final IRI DEACTIVATED;
+&nbsp;
+&nbsp;	/** sh:declare */
+&nbsp;	public static final IRI DECLARE;
+&nbsp;
+&nbsp;	/** sh:defaultValue */
+&nbsp;	public static final IRI DEFAULT_VALUE;
+&nbsp;
+&nbsp;	/** sh:derivedValues */
+&nbsp;	public static final IRI DERIVED_VALUES;
+&nbsp;
+&nbsp;	/** sh:description */
+&nbsp;	public static final IRI DESCRIPTION;
+&nbsp;
+&nbsp;	/** sh:detail */
+&nbsp;	public static final IRI DETAIL;
+&nbsp;
+&nbsp;	/** sh:disjoint */
+&nbsp;	public static final IRI DISJOINT;
+&nbsp;
+&nbsp;	/** sh:equals */
+&nbsp;	public static final IRI EQUALS;
+&nbsp;
+&nbsp;	/** sh:flags */
+&nbsp;	public static final IRI FLAGS;
+&nbsp;
+&nbsp;	/** sh:focusNode */
+&nbsp;	public static final IRI FOCUS_NODE;
+&nbsp;
+&nbsp;	/** sh:group */
+&nbsp;	public static final IRI GROUP;
+&nbsp;
+&nbsp;	/** sh:hasValue */
+&nbsp;	public static final IRI HAS_VALUE;
+&nbsp;
+&nbsp;	/** sh:ignoredProperties */
+&nbsp;	public static final IRI IGNORED_PROPERTIES;
+&nbsp;
+&nbsp;	/** sh:in */
+&nbsp;	public static final IRI IN;
+&nbsp;
+&nbsp;	/** sh:inversePath */
+&nbsp;	public static final IRI INVERSE_PATH;
+&nbsp;
+&nbsp;	/** sh:labelTemplate */
+&nbsp;	public static final IRI LABEL_TEMPLATE;
+&nbsp;
+&nbsp;	/** sh:languageIn */
+&nbsp;	public static final IRI LANGUAGE_IN;
+&nbsp;
+&nbsp;	/** sh:lessThan */
+&nbsp;	public static final IRI LESS_THAN;
+&nbsp;
+&nbsp;	/** sh:lessThanOrEquals */
+&nbsp;	public static final IRI LESS_THAN_OR_EQUALS;
+&nbsp;
+&nbsp;	/** sh:maxCount */
+&nbsp;	public static final IRI MAX_COUNT;
+&nbsp;
+&nbsp;	/** sh:maxExclusive */
+&nbsp;	public static final IRI MAX_EXCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:maxInclusive */
+&nbsp;	public static final IRI MAX_INCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:maxLength */
+&nbsp;	public static final IRI MAX_LENGTH;
+&nbsp;
+&nbsp;	/** sh:message */
+&nbsp;	public static final IRI MESSAGE;
+&nbsp;
+&nbsp;	/** sh:minCount */
+&nbsp;	public static final IRI MIN_COUNT;
+&nbsp;
+&nbsp;	/** sh:minExclusive */
+&nbsp;	public static final IRI MIN_EXCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:minInclusive */
+&nbsp;	public static final IRI MIN_INCLUSIVE;
+&nbsp;
+&nbsp;	/** sh:minLength */
+&nbsp;	public static final IRI MIN_LENGTH;
+&nbsp;
+&nbsp;	/** sh:name */
+&nbsp;	public static final IRI NAME;
+&nbsp;
+&nbsp;	/** sh:namespace */
+&nbsp;	public static final IRI NAMESPACE_PROP;
+&nbsp;
+&nbsp;	/** sh:node */
+&nbsp;	public static final IRI NODE;
+&nbsp;
+&nbsp;	/** sh:nodeKind */
+&nbsp;	public static final IRI NODE_KIND_PROP;
+&nbsp;
+&nbsp;	/** sh:nodeValidator */
+&nbsp;	public static final IRI NODE_VALIDATOR;
+&nbsp;
+&nbsp;	/** sh:not */
+&nbsp;	public static final IRI NOT;
+&nbsp;
+&nbsp;	/** sh:oneOrMorePath */
+&nbsp;	public static final IRI ONE_OR_MORE_PATH;
+&nbsp;
+&nbsp;	/** sh:optional */
+&nbsp;	public static final IRI OPTIONAL;
+&nbsp;
+&nbsp;	/** sh:or */
+&nbsp;	public static final IRI OR;
+&nbsp;
+&nbsp;	/** sh:order */
+&nbsp;	public static final IRI ORDER;
+&nbsp;
+&nbsp;	/** sh:parameter */
+&nbsp;	public static final IRI PARAMETER_PROP;
+&nbsp;
+&nbsp;	/** sh:path */
+&nbsp;	public static final IRI PATH;
+&nbsp;
+&nbsp;	/** sh:pattern */
+&nbsp;	public static final IRI PATTERN;
+&nbsp;
+&nbsp;	/** sh:prefix */
+&nbsp;	public static final IRI PREFIX_PROP;
+&nbsp;
+&nbsp;	/** sh:prefixes */
+&nbsp;	public static final IRI PREFIXES;
+&nbsp;
+&nbsp;	/** sh:property */
+&nbsp;	public static final IRI PROPERTY;
+&nbsp;
+&nbsp;	/** sh:propertyValidator */
+&nbsp;	public static final IRI PROPERTY_VALIDATOR;
+&nbsp;
+&nbsp;	/** sh:qualifiedMaxCount */
+&nbsp;	public static final IRI QUALIFIED_MAX_COUNT;
+&nbsp;
+&nbsp;	/** sh:qualifiedMinCount */
+&nbsp;	public static final IRI QUALIFIED_MIN_COUNT;
+&nbsp;
+&nbsp;	/** sh:qualifiedValueShape */
+&nbsp;	public static final IRI QUALIFIED_VALUE_SHAPE;
+&nbsp;
+&nbsp;	/** sh:qualifiedValueShapesDisjoint */
+&nbsp;	public static final IRI QUALIFIED_VALUE_SHAPES_DISJOINT;
+&nbsp;
+&nbsp;	/** sh:result */
+&nbsp;	public static final IRI RESULT;
+&nbsp;
+&nbsp;	/** sh:resultAnnotation */
+&nbsp;	public static final IRI RESULT_ANNOTATION_PROP;
+&nbsp;
+&nbsp;	/** sh:resultMessage */
+&nbsp;	public static final IRI RESULT_MESSAGE;
+&nbsp;
+&nbsp;	/** sh:resultPath */
+&nbsp;	public static final IRI RESULT_PATH;
+&nbsp;
+&nbsp;	/** sh:resultSeverity */
+&nbsp;	public static final IRI RESULT_SEVERITY;
+&nbsp;
+&nbsp;	/** sh:returnType */
+&nbsp;	public static final IRI RETURN_TYPE;
+&nbsp;
+&nbsp;	/** sh:select */
+&nbsp;	public static final IRI SELECT;
+&nbsp;
+&nbsp;	/** sh:severity */
+&nbsp;	public static final IRI SEVERITY_PROP;
+&nbsp;
+&nbsp;	/** sh:shapesGraph */
+&nbsp;	public static final IRI SHAPES_GRAPH;
+&nbsp;
+&nbsp;	/** sh:shapesGraphWellFormed */
+&nbsp;	public static final IRI SHAPES_GRAPH_WELL_FORMED;
+&nbsp;
+&nbsp;	/** sh:sourceConstraint */
+&nbsp;	public static final IRI SOURCE_CONSTRAINT;
+&nbsp;
+&nbsp;	/** sh:sourceConstraintComponent */
+&nbsp;	public static final IRI SOURCE_CONSTRAINT_COMPONENT;
+&nbsp;
+&nbsp;	/** sh:sourceShape */
+&nbsp;	public static final IRI SOURCE_SHAPE;
+&nbsp;
+&nbsp;	/** sh:sparql */
+&nbsp;	public static final IRI SPARQL;
+&nbsp;
+&nbsp;	/** sh:target */
+&nbsp;	public static final IRI TARGET_PROP;
+&nbsp;
+&nbsp;	/** sh:targetClass */
+&nbsp;	public static final IRI TARGET_CLASS;
+&nbsp;
+&nbsp;	/** sh:targetNode */
+&nbsp;	public static final IRI TARGET_NODE;
+&nbsp;
+&nbsp;	/** sh:targetObjectsOf */
+&nbsp;	public static final IRI TARGET_OBJECTS_OF;
+&nbsp;
+&nbsp;	/** sh:targetSubjectsOf */
+&nbsp;	public static final IRI TARGET_SUBJECTS_OF;
+&nbsp;
+&nbsp;	/** sh:uniqueLang */
+&nbsp;	public static final IRI UNIQUE_LANG;
+&nbsp;
+&nbsp;	/** sh:update */
+&nbsp;	public static final IRI UPDATE;
+&nbsp;
+&nbsp;	/** sh:validator */
+&nbsp;	public static final IRI VALIDATOR_PROP;
+&nbsp;
+&nbsp;	/** sh:value */
+&nbsp;	public static final IRI VALUE;
+&nbsp;
+&nbsp;	/** sh:xone */
+&nbsp;	public static final IRI XONE;
+&nbsp;
+&nbsp;	/** sh:zeroOrMorePath */
+&nbsp;	public static final IRI ZERO_OR_MORE_PATH;
+&nbsp;
+&nbsp;	/** sh:zeroOrOnePath */
+&nbsp;	public static final IRI ZERO_OR_ONE_PATH;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		ABSTRACT_RESULT = Vocabularies.createIRI(NAMESPACE, &quot;AbstractResult&quot;);</b>
+<b class="nc">&nbsp;		AND_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;AndConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		AND_CONSTRAINT_COMPONENT_AND = Vocabularies.createIRI(NAMESPACE, &quot;AndConstraintComponent-and&quot;);</b>
+<b class="nc">&nbsp;		BLANK_NODE = Vocabularies.createIRI(NAMESPACE, &quot;BlankNode&quot;);</b>
+<b class="nc">&nbsp;		BLANK_NODE_OR_IRI = Vocabularies.createIRI(NAMESPACE, &quot;BlankNodeOrIRI&quot;);</b>
+<b class="nc">&nbsp;		BLANK_NODE_OR_LITERAL = Vocabularies.createIRI(NAMESPACE, &quot;BlankNodeOrLiteral&quot;);</b>
+<b class="nc">&nbsp;		CLASS_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;ClassConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		CLASS_CONSTRAINT_COMPONENT_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;ClassConstraintComponent-class&quot;);</b>
+<b class="nc">&nbsp;		CLOSED_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;ClosedConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		CLOSED_CONSTRAINT_COMPONENT_CLOSED = Vocabularies.createIRI(NAMESPACE, &quot;ClosedConstraintComponent-closed&quot;);</b>
+<b class="nc">&nbsp;		CLOSED_CONSTRAINT_COMPONENT_IGNORED_PROPERTIES = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;ClosedConstraintComponent-ignoredProperties&quot;);
+<b class="nc">&nbsp;		CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;ConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		DATATYPE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;DatatypeConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		DATATYPE_CONSTRAINT_COMPONENT_DATATYPE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;DatatypeConstraintComponent-datatype&quot;);
+<b class="nc">&nbsp;		DERIVED_VALUES_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;DerivedValuesConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		DISJOINT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;DisjointConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		DISJOINT_CONSTRAINT_COMPONENT_DISJOINT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;DisjointConstraintComponent-disjoint&quot;);
+<b class="nc">&nbsp;		EQUALS_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;EqualsConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		EQUALS_CONSTRAINT_COMPONENT_EQUALS = Vocabularies.createIRI(NAMESPACE, &quot;EqualsConstraintComponent-equals&quot;);</b>
+<b class="nc">&nbsp;		FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;Function&quot;);</b>
+<b class="nc">&nbsp;		HAS_VALUE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;HasValueConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		HAS_VALUE_CONSTRAINT_COMPONENT_HAS_VALUE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;HasValueConstraintComponent-hasValue&quot;);
+<b class="nc">&nbsp;		IRI = Vocabularies.createIRI(NAMESPACE, &quot;IRI&quot;);</b>
+<b class="nc">&nbsp;		IRI_OR_LITERAL = Vocabularies.createIRI(NAMESPACE, &quot;IRIOrLiteral&quot;);</b>
+<b class="nc">&nbsp;		IN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;InConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		IN_CONSTRAINT_COMPONENT_IN = Vocabularies.createIRI(NAMESPACE, &quot;InConstraintComponent-in&quot;);</b>
+<b class="nc">&nbsp;		INFO = Vocabularies.createIRI(NAMESPACE, &quot;Info&quot;);</b>
+<b class="nc">&nbsp;		LANGUAGE_IN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;LanguageInConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		LANGUAGE_IN_CONSTRAINT_COMPONENT_LANGUAGE_IN = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;LanguageInConstraintComponent-languageIn&quot;);
+<b class="nc">&nbsp;		LESS_THAN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;LessThanConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		LESS_THAN_CONSTRAINT_COMPONENT_LESS_THAN = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;LessThanConstraintComponent-lessThan&quot;);
+<b class="nc">&nbsp;		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;LessThanOrEqualsConstraintComponent&quot;);
+<b class="nc">&nbsp;		LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT_LESS_THAN_OR_EQUALS = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;LessThanOrEqualsConstraintComponent-lessThanOrEquals&quot;);
+<b class="nc">&nbsp;		LITERAL = Vocabularies.createIRI(NAMESPACE, &quot;Literal&quot;);</b>
+<b class="nc">&nbsp;		MAX_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MaxCountConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MAX_COUNT_CONSTRAINT_COMPONENT_MAX_COUNT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MaxCountConstraintComponent-maxCount&quot;);
+<b class="nc">&nbsp;		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MaxExclusiveConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MAX_EXCLUSIVE_CONSTRAINT_COMPONENT_MAX_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MaxExclusiveConstraintComponent-maxExclusive&quot;);
+<b class="nc">&nbsp;		MAX_INCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MaxInclusiveConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MAX_INCLUSIVE_CONSTRAINT_COMPONENT_MAX_INCLUSIVE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MaxInclusiveConstraintComponent-maxInclusive&quot;);
+<b class="nc">&nbsp;		MAX_LENGTH_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MaxLengthConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MAX_LENGTH_CONSTRAINT_COMPONENT_MAX_LENGTH = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MaxLengthConstraintComponent-maxLength&quot;);
+<b class="nc">&nbsp;		MIN_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MinCountConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MIN_COUNT_CONSTRAINT_COMPONENT_MIN_COUNT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MinCountConstraintComponent-minCount&quot;);
+<b class="nc">&nbsp;		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MinExclusiveConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MIN_EXCLUSIVE_CONSTRAINT_COMPONENT_MIN_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MinExclusiveConstraintComponent-minExclusive&quot;);
+<b class="nc">&nbsp;		MIN_INCLUSIVE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MinInclusiveConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MIN_INCLUSIVE_CONSTRAINT_COMPONENT_MIN_INCLUSIVE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MinInclusiveConstraintComponent-minInclusive&quot;);
+<b class="nc">&nbsp;		MIN_LENGTH_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;MinLengthConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		MIN_LENGTH_CONSTRAINT_COMPONENT_MIN_LENGTH = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;MinLengthConstraintComponent-minLength&quot;);
+<b class="nc">&nbsp;		NODE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;NodeConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		NODE_CONSTRAINT_COMPONENT_NODE = Vocabularies.createIRI(NAMESPACE, &quot;NodeConstraintComponent-node&quot;);</b>
+<b class="nc">&nbsp;		NODE_KIND = Vocabularies.createIRI(NAMESPACE, &quot;NodeKind&quot;);</b>
+<b class="nc">&nbsp;		NODE_KIND_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;NodeKindConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		NODE_KIND_CONSTRAINT_COMPONENT_NODE_KIND = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;NodeKindConstraintComponent-nodeKind&quot;);
+<b class="nc">&nbsp;		NODE_SHAPE = Vocabularies.createIRI(NAMESPACE, &quot;NodeShape&quot;);</b>
+<b class="nc">&nbsp;		NOT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;NotConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		NOT_CONSTRAINT_COMPONENT_NOT = Vocabularies.createIRI(NAMESPACE, &quot;NotConstraintComponent-not&quot;);</b>
+<b class="nc">&nbsp;		OR_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;OrConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		OR_CONSTRAINT_COMPONENT_OR = Vocabularies.createIRI(NAMESPACE, &quot;OrConstraintComponent-or&quot;);</b>
+<b class="nc">&nbsp;		PARAMETER = Vocabularies.createIRI(NAMESPACE, &quot;Parameter&quot;);</b>
+<b class="nc">&nbsp;		PARAMETERIZABLE = Vocabularies.createIRI(NAMESPACE, &quot;Parameterizable&quot;);</b>
+<b class="nc">&nbsp;		PATTERN_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;PatternConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		PATTERN_CONSTRAINT_COMPONENT_FLAGS = Vocabularies.createIRI(NAMESPACE, &quot;PatternConstraintComponent-flags&quot;);</b>
+<b class="nc">&nbsp;		PATTERN_CONSTRAINT_COMPONENT_PATTERN = Vocabularies.createIRI(NAMESPACE, &quot;PatternConstraintComponent-pattern&quot;);</b>
+<b class="nc">&nbsp;		PREFIX_DECLARATION = Vocabularies.createIRI(NAMESPACE, &quot;PrefixDeclaration&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;PropertyConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY_CONSTRAINT_COMPONENT_PROPERTY = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;PropertyConstraintComponent-property&quot;);
+<b class="nc">&nbsp;		PROPERTY_GROUP = Vocabularies.createIRI(NAMESPACE, &quot;PropertyGroup&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY_SHAPE = Vocabularies.createIRI(NAMESPACE, &quot;PropertyShape&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMaxCountConstraintComponent&quot;);
+<b class="nc">&nbsp;		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MAX_COUNT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMaxCountConstraintComponent-qualifiedMaxCount&quot;);
+<b class="nc">&nbsp;		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMaxCountConstraintComponent-qualifiedValueShape&quot;);
+<b class="nc">&nbsp;		QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMaxCountConstraintComponent-qualifiedValueShapesDisjoint&quot;);
+<b class="nc">&nbsp;		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMinCountConstraintComponent&quot;);
+<b class="nc">&nbsp;		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_MIN_COUNT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMinCountConstraintComponent-qualifiedMinCount&quot;);
+<b class="nc">&nbsp;		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPE = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMinCountConstraintComponent-qualifiedValueShape&quot;);
+<b class="nc">&nbsp;		QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT_QUALIFIED_VALUE_SHAPES_DISJOINT = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;QualifiedMinCountConstraintComponent-qualifiedValueShapesDisjoint&quot;);
+<b class="nc">&nbsp;		RESULT_ANNOTATION = Vocabularies.createIRI(NAMESPACE, &quot;ResultAnnotation&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_ASK_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLAskExecutable&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_ASK_VALIDATOR = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLAskValidator&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_CONSTRAINT = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLConstraint&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_CONSTRAINT_COMPONENT_SPARQL = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLConstraintComponent-sparql&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_CONSTRUCT_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLConstructExecutable&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLExecutable&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLFunction&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_SELECT_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLSelectExecutable&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_SELECT_VALIDATOR = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLSelectValidator&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_TARGET = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLTarget&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_TARGET_TYPE = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLTargetType&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_UPDATE_EXECUTABLE = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLUpdateExecutable&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_VALUES_DERIVER = Vocabularies.createIRI(NAMESPACE, &quot;SPARQLValuesDeriver&quot;);</b>
+<b class="nc">&nbsp;		SEVERITY = Vocabularies.createIRI(NAMESPACE, &quot;Severity&quot;);</b>
+<b class="nc">&nbsp;		SHAPE = Vocabularies.createIRI(NAMESPACE, &quot;Shape&quot;);</b>
+<b class="nc">&nbsp;		TARGET = Vocabularies.createIRI(NAMESPACE, &quot;Target&quot;);</b>
+<b class="nc">&nbsp;		TARGET_TYPE = Vocabularies.createIRI(NAMESPACE, &quot;TargetType&quot;);</b>
+<b class="nc">&nbsp;		UNIQUE_LANG_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;UniqueLangConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		UNIQUE_LANG_CONSTRAINT_COMPONENT_UNIQUE_LANG = Vocabularies.createIRI(NAMESPACE,</b>
+&nbsp;				&quot;UniqueLangConstraintComponent-uniqueLang&quot;);
+<b class="nc">&nbsp;		VALIDATION_REPORT = Vocabularies.createIRI(NAMESPACE, &quot;ValidationReport&quot;);</b>
+<b class="nc">&nbsp;		VALIDATION_RESULT = Vocabularies.createIRI(NAMESPACE, &quot;ValidationResult&quot;);</b>
+<b class="nc">&nbsp;		VALIDATOR = Vocabularies.createIRI(NAMESPACE, &quot;Validator&quot;);</b>
+<b class="nc">&nbsp;		VALUES_DERIVER = Vocabularies.createIRI(NAMESPACE, &quot;ValuesDeriver&quot;);</b>
+<b class="nc">&nbsp;		VIOLATION = Vocabularies.createIRI(NAMESPACE, &quot;Violation&quot;);</b>
+<b class="nc">&nbsp;		WARNING = Vocabularies.createIRI(NAMESPACE, &quot;Warning&quot;);</b>
+<b class="nc">&nbsp;		XONE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;XoneConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		XONE_CONSTRAINT_COMPONENT_XONE = Vocabularies.createIRI(NAMESPACE, &quot;XoneConstraintComponent-xone&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ALTERNATIVE_PATH = Vocabularies.createIRI(NAMESPACE, &quot;alternativePath&quot;);</b>
+<b class="nc">&nbsp;		AND = Vocabularies.createIRI(NAMESPACE, &quot;and&quot;);</b>
+<b class="nc">&nbsp;		ANNOTATION_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;annotationProperty&quot;);</b>
+<b class="nc">&nbsp;		ANNOTATION_VALUE = Vocabularies.createIRI(NAMESPACE, &quot;annotationValue&quot;);</b>
+<b class="nc">&nbsp;		ANNOTATION_VAR_NAME = Vocabularies.createIRI(NAMESPACE, &quot;annotationVarName&quot;);</b>
+<b class="nc">&nbsp;		ASK = Vocabularies.createIRI(NAMESPACE, &quot;ask&quot;);</b>
+<b class="nc">&nbsp;		CLASS = Vocabularies.createIRI(NAMESPACE, &quot;class&quot;);</b>
+<b class="nc">&nbsp;		CLOSED = Vocabularies.createIRI(NAMESPACE, &quot;closed&quot;);</b>
+<b class="nc">&nbsp;		CONFORMS = Vocabularies.createIRI(NAMESPACE, &quot;conforms&quot;);</b>
+<b class="nc">&nbsp;		CONSTRUCT = Vocabularies.createIRI(NAMESPACE, &quot;construct&quot;);</b>
+<b class="nc">&nbsp;		DATATYPE = Vocabularies.createIRI(NAMESPACE, &quot;datatype&quot;);</b>
+<b class="nc">&nbsp;		DEACTIVATED = Vocabularies.createIRI(NAMESPACE, &quot;deactivated&quot;);</b>
+<b class="nc">&nbsp;		DECLARE = Vocabularies.createIRI(NAMESPACE, &quot;declare&quot;);</b>
+<b class="nc">&nbsp;		DEFAULT_VALUE = Vocabularies.createIRI(NAMESPACE, &quot;defaultValue&quot;);</b>
+<b class="nc">&nbsp;		DERIVED_VALUES = Vocabularies.createIRI(NAMESPACE, &quot;derivedValues&quot;);</b>
+<b class="nc">&nbsp;		DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;description&quot;);</b>
+<b class="nc">&nbsp;		DETAIL = Vocabularies.createIRI(NAMESPACE, &quot;detail&quot;);</b>
+<b class="nc">&nbsp;		DISJOINT = Vocabularies.createIRI(NAMESPACE, &quot;disjoint&quot;);</b>
+<b class="nc">&nbsp;		EQUALS = Vocabularies.createIRI(NAMESPACE, &quot;equals&quot;);</b>
+<b class="nc">&nbsp;		FLAGS = Vocabularies.createIRI(NAMESPACE, &quot;flags&quot;);</b>
+<b class="nc">&nbsp;		FOCUS_NODE = Vocabularies.createIRI(NAMESPACE, &quot;focusNode&quot;);</b>
+<b class="nc">&nbsp;		GROUP = Vocabularies.createIRI(NAMESPACE, &quot;group&quot;);</b>
+<b class="nc">&nbsp;		HAS_VALUE = Vocabularies.createIRI(NAMESPACE, &quot;hasValue&quot;);</b>
+<b class="nc">&nbsp;		IGNORED_PROPERTIES = Vocabularies.createIRI(NAMESPACE, &quot;ignoredProperties&quot;);</b>
+<b class="nc">&nbsp;		IN = Vocabularies.createIRI(NAMESPACE, &quot;in&quot;);</b>
+<b class="nc">&nbsp;		INVERSE_PATH = Vocabularies.createIRI(NAMESPACE, &quot;inversePath&quot;);</b>
+<b class="nc">&nbsp;		LABEL_TEMPLATE = Vocabularies.createIRI(NAMESPACE, &quot;labelTemplate&quot;);</b>
+<b class="nc">&nbsp;		LANGUAGE_IN = Vocabularies.createIRI(NAMESPACE, &quot;languageIn&quot;);</b>
+<b class="nc">&nbsp;		LESS_THAN = Vocabularies.createIRI(NAMESPACE, &quot;lessThan&quot;);</b>
+<b class="nc">&nbsp;		LESS_THAN_OR_EQUALS = Vocabularies.createIRI(NAMESPACE, &quot;lessThanOrEquals&quot;);</b>
+<b class="nc">&nbsp;		MAX_COUNT = Vocabularies.createIRI(NAMESPACE, &quot;maxCount&quot;);</b>
+<b class="nc">&nbsp;		MAX_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE, &quot;maxExclusive&quot;);</b>
+<b class="nc">&nbsp;		MAX_INCLUSIVE = Vocabularies.createIRI(NAMESPACE, &quot;maxInclusive&quot;);</b>
+<b class="nc">&nbsp;		MAX_LENGTH = Vocabularies.createIRI(NAMESPACE, &quot;maxLength&quot;);</b>
+<b class="nc">&nbsp;		MESSAGE = Vocabularies.createIRI(NAMESPACE, &quot;message&quot;);</b>
+<b class="nc">&nbsp;		MIN_COUNT = Vocabularies.createIRI(NAMESPACE, &quot;minCount&quot;);</b>
+<b class="nc">&nbsp;		MIN_EXCLUSIVE = Vocabularies.createIRI(NAMESPACE, &quot;minExclusive&quot;);</b>
+<b class="nc">&nbsp;		MIN_INCLUSIVE = Vocabularies.createIRI(NAMESPACE, &quot;minInclusive&quot;);</b>
+<b class="nc">&nbsp;		MIN_LENGTH = Vocabularies.createIRI(NAMESPACE, &quot;minLength&quot;);</b>
+<b class="nc">&nbsp;		NAME = Vocabularies.createIRI(NAMESPACE, &quot;name&quot;);</b>
+<b class="nc">&nbsp;		NAMESPACE_PROP = Vocabularies.createIRI(NAMESPACE, &quot;namespace&quot;);</b>
+<b class="nc">&nbsp;		NODE = Vocabularies.createIRI(NAMESPACE, &quot;node&quot;);</b>
+<b class="nc">&nbsp;		NODE_KIND_PROP = Vocabularies.createIRI(NAMESPACE, &quot;nodeKind&quot;);</b>
+<b class="nc">&nbsp;		NODE_VALIDATOR = Vocabularies.createIRI(NAMESPACE, &quot;nodeValidator&quot;);</b>
+<b class="nc">&nbsp;		NOT = Vocabularies.createIRI(NAMESPACE, &quot;not&quot;);</b>
+<b class="nc">&nbsp;		ONE_OR_MORE_PATH = Vocabularies.createIRI(NAMESPACE, &quot;oneOrMorePath&quot;);</b>
+<b class="nc">&nbsp;		OPTIONAL = Vocabularies.createIRI(NAMESPACE, &quot;optional&quot;);</b>
+<b class="nc">&nbsp;		OR = Vocabularies.createIRI(NAMESPACE, &quot;or&quot;);</b>
+<b class="nc">&nbsp;		ORDER = Vocabularies.createIRI(NAMESPACE, &quot;order&quot;);</b>
+<b class="nc">&nbsp;		PARAMETER_PROP = Vocabularies.createIRI(NAMESPACE, &quot;parameter&quot;);</b>
+<b class="nc">&nbsp;		PATH = Vocabularies.createIRI(NAMESPACE, &quot;path&quot;);</b>
+<b class="nc">&nbsp;		PATTERN = Vocabularies.createIRI(NAMESPACE, &quot;pattern&quot;);</b>
+<b class="nc">&nbsp;		PREFIX_PROP = Vocabularies.createIRI(NAMESPACE, &quot;prefix&quot;);</b>
+<b class="nc">&nbsp;		PREFIXES = Vocabularies.createIRI(NAMESPACE, &quot;prefixes&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;property&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY_VALIDATOR = Vocabularies.createIRI(NAMESPACE, &quot;propertyValidator&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_MAX_COUNT = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedMaxCount&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_MIN_COUNT = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedMinCount&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_VALUE_SHAPE = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedValueShape&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_VALUE_SHAPES_DISJOINT = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedValueShapesDisjoint&quot;);</b>
+<b class="nc">&nbsp;		RESULT = Vocabularies.createIRI(NAMESPACE, &quot;result&quot;);</b>
+<b class="nc">&nbsp;		RESULT_ANNOTATION_PROP = Vocabularies.createIRI(NAMESPACE, &quot;resultAnnotation&quot;);</b>
+<b class="nc">&nbsp;		RESULT_MESSAGE = Vocabularies.createIRI(NAMESPACE, &quot;resultMessage&quot;);</b>
+<b class="nc">&nbsp;		RESULT_PATH = Vocabularies.createIRI(NAMESPACE, &quot;resultPath&quot;);</b>
+<b class="nc">&nbsp;		RESULT_SEVERITY = Vocabularies.createIRI(NAMESPACE, &quot;resultSeverity&quot;);</b>
+<b class="nc">&nbsp;		RETURN_TYPE = Vocabularies.createIRI(NAMESPACE, &quot;returnType&quot;);</b>
+<b class="nc">&nbsp;		SELECT = Vocabularies.createIRI(NAMESPACE, &quot;select&quot;);</b>
+<b class="nc">&nbsp;		SEVERITY_PROP = Vocabularies.createIRI(NAMESPACE, &quot;severity&quot;);</b>
+<b class="nc">&nbsp;		SHAPES_GRAPH = Vocabularies.createIRI(NAMESPACE, &quot;shapesGraph&quot;);</b>
+<b class="nc">&nbsp;		SHAPES_GRAPH_WELL_FORMED = Vocabularies.createIRI(NAMESPACE, &quot;shapesGraphWellFormed&quot;);</b>
+<b class="nc">&nbsp;		SOURCE_CONSTRAINT = Vocabularies.createIRI(NAMESPACE, &quot;sourceConstraint&quot;);</b>
+<b class="nc">&nbsp;		SOURCE_CONSTRAINT_COMPONENT = Vocabularies.createIRI(NAMESPACE, &quot;sourceConstraintComponent&quot;);</b>
+<b class="nc">&nbsp;		SOURCE_SHAPE = Vocabularies.createIRI(NAMESPACE, &quot;sourceShape&quot;);</b>
+<b class="nc">&nbsp;		SPARQL = Vocabularies.createIRI(NAMESPACE, &quot;sparql&quot;);</b>
+<b class="nc">&nbsp;		TARGET_PROP = Vocabularies.createIRI(NAMESPACE, &quot;target&quot;);</b>
+<b class="nc">&nbsp;		TARGET_CLASS = Vocabularies.createIRI(NAMESPACE, &quot;targetClass&quot;);</b>
+<b class="nc">&nbsp;		TARGET_NODE = Vocabularies.createIRI(NAMESPACE, &quot;targetNode&quot;);</b>
+<b class="nc">&nbsp;		TARGET_OBJECTS_OF = Vocabularies.createIRI(NAMESPACE, &quot;targetObjectsOf&quot;);</b>
+<b class="nc">&nbsp;		TARGET_SUBJECTS_OF = Vocabularies.createIRI(NAMESPACE, &quot;targetSubjectsOf&quot;);</b>
+<b class="nc">&nbsp;		UNIQUE_LANG = Vocabularies.createIRI(NAMESPACE, &quot;uniqueLang&quot;);</b>
+<b class="nc">&nbsp;		UPDATE = Vocabularies.createIRI(NAMESPACE, &quot;update&quot;);</b>
+<b class="nc">&nbsp;		VALIDATOR_PROP = Vocabularies.createIRI(NAMESPACE, &quot;validator&quot;);</b>
+<b class="nc">&nbsp;		VALUE = Vocabularies.createIRI(NAMESPACE, &quot;value&quot;);</b>
+<b class="nc">&nbsp;		XONE = Vocabularies.createIRI(NAMESPACE, &quot;xone&quot;);</b>
+<b class="nc">&nbsp;		ZERO_OR_MORE_PATH = Vocabularies.createIRI(NAMESPACE, &quot;zeroOrMorePath&quot;);</b>
+<b class="nc">&nbsp;		ZERO_OR_ONE_PATH = Vocabularies.createIRI(NAMESPACE, &quot;zeroOrOnePath&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

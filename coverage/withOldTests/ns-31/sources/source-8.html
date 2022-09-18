@@ -1,0 +1,346 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExclusiveGroup</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: ExclusiveGroup (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ExclusiveGroup</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Represents a group of {@link ExclusiveTupleExpr} that can only produce results at a single endpoint, the
+&nbsp; * {@link StatementSource}.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class ExclusiveGroup extends AbstractQueryModelNode
+&nbsp;		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr {
+&nbsp;	private static final long serialVersionUID = 9215353191021766797L;
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(ExclusiveGroup.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	protected final List&lt;ExclusiveTupleExpr&gt; owned = new ArrayList&lt;&gt;();</b>
+&nbsp;	protected final StatementSource owner;
+<b class="nc">&nbsp;	protected final Set&lt;String&gt; freeVars = new HashSet&lt;&gt;();</b>
+&nbsp;	protected final String id;
+&nbsp;	protected final transient QueryInfo queryInfo;
+<b class="nc">&nbsp;	protected FilterValueExpr filterExpr = null;</b>
+<b class="nc">&nbsp;	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as</b>
+&nbsp;	// additional bindings
+&nbsp;	protected transient Endpoint ownedEndpoint;
+&nbsp;
+&nbsp;	public ExclusiveGroup(Collection&lt;? extends ExclusiveTupleExpr&gt; ownedNodes, StatementSource owner,
+<b class="nc">&nbsp;			QueryInfo queryInfo) {</b>
+<b class="nc">&nbsp;		owned.addAll(ownedNodes);</b>
+<b class="nc">&nbsp;		this.owner = owner;</b>
+<b class="nc">&nbsp;		init(); // init free vars + filter expr</b>
+<b class="nc">&nbsp;		this.id = NodeFactory.getNextId();</b>
+<b class="nc">&nbsp;		this.queryInfo = queryInfo;</b>
+<b class="nc">&nbsp;		ownedEndpoint = queryInfo.getFederationContext().getEndpointManager().getEndpoint(owner.getEndpointID());</b>
+&nbsp;
+<b class="nc">&nbsp;		ownedNodes.forEach(node -&gt; node.setParentNode(this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize free variables
+&nbsp;	 */
+&nbsp;	protected void init() {
+<b class="nc">&nbsp;		for (ExclusiveTupleExpr o : owned) {</b>
+<b class="nc">&nbsp;			freeVars.addAll(o.getFreeVars());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor)
+&nbsp;			throws X {
+&nbsp;
+<b class="nc">&nbsp;		for (ExclusiveTupleExpr s : owned) {</b>
+<b class="nc">&nbsp;			s.visit(visitor);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (boundFilters != null) {</b>
+<b class="nc">&nbsp;			BoundFiltersNode.visit(visitor, boundFilters);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (filterExpr != null) {</b>
+<b class="nc">&nbsp;			filterExpr.visit(visitor);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		visitor.meetOther(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getAssuredBindingNames() {
+<b class="nc">&nbsp;		Set&lt;String&gt; res = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		owned.forEach(e -&gt; res.addAll(e.getAssuredBindingNames()));</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="nc">&nbsp;		Set&lt;String&gt; res = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		owned.forEach(e -&gt; res.addAll(e.getBindingNames()));</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ExclusiveGroup clone() {
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Operation not supported on this node!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public StatementSource getOwner() {
+<b class="nc">&nbsp;		return owner;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Endpoint getOwnedEndpoint() {
+<b class="nc">&nbsp;		return ownedEndpoint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ExclusiveTupleExpr&gt; getExclusiveExpressions() {
+<b class="nc">&nbsp;		return owned;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int getFreeVarCount() {
+<b class="nc">&nbsp;		return freeVars.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getFreeVars() {
+<b class="nc">&nbsp;		return new ArrayList&lt;&gt;(freeVars);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;StatementSource&gt; getStatementSources() {
+<b class="nc">&nbsp;		return Collections.singletonList(owner);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasFreeVarsFor(BindingSet bindings) {
+<b class="nc">&nbsp;		for (String var : freeVars) {</b>
+<b class="nc">&nbsp;			if (!bindings.hasBinding(var)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+&nbsp;		try {
+&nbsp;			// use the particular evaluation strategy for evaluation
+<b class="nc">&nbsp;			return queryInfo.getStrategy().evaluateExclusiveGroup(this, bindings);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addFilterExpr(FilterExpr expr) {
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr == null) {</b>
+<b class="nc">&nbsp;			filterExpr = expr;</b>
+<b class="nc">&nbsp;		} else if (filterExpr instanceof ConjunctiveFilterExpr) {</b>
+<b class="nc">&nbsp;			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);</b>
+<b class="nc">&nbsp;		} else if (filterExpr instanceof FilterExpr) {</b>
+<b class="nc">&nbsp;			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Unexpected type: &quot; + filterExpr.getClass().getCanonicalName());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FilterValueExpr getFilterExpr() {
+<b class="nc">&nbsp;		return filterExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet getBoundFilters() {
+<b class="nc">&nbsp;		return this.boundFilters;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasFilter() {
+<b class="nc">&nbsp;		return filterExpr != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addBoundFilter(final String varName, final Value value) {
+&nbsp;
+<b class="nc">&nbsp;		if (!freeVars.contains(varName)) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;Invalid call to addBoundFilter: variable &quot; + varName + &quot; is not known as a free variable&quot;);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// lazy initialization of bound filters
+<b class="nc">&nbsp;		if (boundFilters == null) {</b>
+<b class="nc">&nbsp;			boundFilters = new QueryBindingSet();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Note: Var nodes of children are visited in optimizer
+&nbsp;		// =&gt; i.e. actual values are set
+&nbsp;
+<b class="nc">&nbsp;		boundFilters.addBinding(varName, value);</b>
+&nbsp;
+<b class="nc">&nbsp;		freeVars.remove(varName);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryInfo getQueryInfo() {
+<b class="nc">&nbsp;		return this.queryInfo;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

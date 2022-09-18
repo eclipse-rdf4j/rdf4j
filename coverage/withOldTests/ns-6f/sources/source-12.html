@@ -1,0 +1,256 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ProjectionIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: ProjectionIterator (org.eclipse.rdf4j.query.algebra.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ProjectionIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (9/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    93.8%
+  </span>
+  <span class="absValue">
+    (30/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    98%
+  </span>
+  <span class="absValue">
+    (48/49)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.function.BiConsumer;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class ProjectionIterator extends ConvertingIteration&lt;BindingSet, BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final BiConsumer&lt;MutableBindingSet, BindingSet&gt; projector;
+&nbsp;
+&nbsp;	private final Supplier&lt;MutableBindingSet&gt; maker;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public ProjectionIterator(Projection projection, CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+&nbsp;			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
+<b class="fc">&nbsp;		super(iter);</b>
+<b class="fc">&nbsp;		ProjectionElemList projectionElemList = projection.getProjectionElemList();</b>
+<b class="fc">&nbsp;		boolean isOuterProjection = determineOuterProjection(projection);</b>
+<b class="fc">&nbsp;		boolean includeAllParentBindings = !isOuterProjection;</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;MutableBindingSet, BindingSet&gt; consumer = null;</b>
+<b class="fc">&nbsp;		for (ProjectionElem pe : projectionElemList.getElements()) {</b>
+<b class="fc">&nbsp;			String projectionName = pe.getProjectionAlias().orElse(pe.getName());</b>
+<b class="fc">&nbsp;			Function&lt;BindingSet, Value&gt; valueWithSourceName = context.getValue(pe.getName());</b>
+<b class="fc">&nbsp;			BiConsumer&lt;Value, MutableBindingSet&gt; setTarget = context.setBinding(projectionName);</b>
+<b class="fc">&nbsp;			BiConsumer&lt;MutableBindingSet, BindingSet&gt; next = (resultBindings, sourceBindings) -&gt; {</b>
+<b class="fc">&nbsp;				Value targetValue = valueWithSourceName.apply(sourceBindings);</b>
+<b class="fc">&nbsp;				if (!includeAllParentBindings &amp;&amp; targetValue == null) {</b>
+<b class="fc">&nbsp;					targetValue = valueWithSourceName.apply(parentBindings);</b>
+&nbsp;				}
+<b class="fc">&nbsp;				if (targetValue != null) {</b>
+<b class="fc">&nbsp;					setTarget.accept(targetValue, resultBindings);</b>
+&nbsp;				}
+&nbsp;			};
+<b class="fc">&nbsp;			consumer = andThen(consumer, next);</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		if (projectionElemList.getElements().isEmpty()) {</b>
+<b class="fc">&nbsp;			consumer = (resultBindings, sourceBindings) -&gt; {</b>
+&nbsp;				// If there are no projection elements we do nothing.
+<b class="fc">&nbsp;			};</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (includeAllParentBindings) {</b>
+<b class="fc">&nbsp;			this.maker = () -&gt; context.createBindingSet(parentBindings);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			this.maker = context::createBindingSet;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		this.projector = consumer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private BiConsumer&lt;MutableBindingSet, BindingSet&gt; andThen(BiConsumer&lt;MutableBindingSet, BindingSet&gt; consumer,
+&nbsp;			BiConsumer&lt;MutableBindingSet, BindingSet&gt; next) {
+<b class="fc">&nbsp;		if (consumer == null)</b>
+<b class="fc">&nbsp;			return next;</b>
+&nbsp;		else
+<b class="fc">&nbsp;			return consumer.andThen(next);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean determineOuterProjection(QueryModelNode ancestor) {
+<b class="fc">&nbsp;		while (ancestor.getParentNode() != null) {</b>
+<b class="fc">&nbsp;			ancestor = ancestor.getParentNode();</b>
+<b class="fc">&nbsp;			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {</b>
+<b class="fc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		MutableBindingSet qbs = maker.get();</b>
+<b class="fc">&nbsp;		projector.accept(qbs, sourceBindings);</b>
+<b class="fc">&nbsp;		return qbs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
+&nbsp;			BindingSet parentBindings) {
+<b class="fc">&nbsp;		return project(projElemList, sourceBindings, parentBindings, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
+&nbsp;			BindingSet parentBindings, boolean includeAllParentBindings) {
+<b class="fc">&nbsp;		final QueryBindingSet resultBindings = makeNewQueryBindings(parentBindings, includeAllParentBindings);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ProjectionElem pe : projElemList.getElements()) {</b>
+<b class="fc">&nbsp;			Value targetValue = sourceBindings.getValue(pe.getName());</b>
+<b class="pc">&nbsp;			if (!includeAllParentBindings &amp;&amp; targetValue == null) {</b>
+<b class="fc">&nbsp;				targetValue = parentBindings.getValue(pe.getName());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (targetValue != null) {</b>
+<b class="fc">&nbsp;				resultBindings.setBinding(pe.getProjectionAlias().orElse(pe.getName()), targetValue);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return resultBindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static QueryBindingSet makeNewQueryBindings(BindingSet parentBindings, boolean includeAllParentBindings) {
+<b class="fc">&nbsp;		final QueryBindingSet resultBindings = new QueryBindingSet();</b>
+<b class="pc">&nbsp;		if (includeAllParentBindings) {</b>
+<b class="nc">&nbsp;			resultBindings.addAll(parentBindings);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return resultBindings;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

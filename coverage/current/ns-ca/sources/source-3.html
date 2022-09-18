@@ -1,0 +1,1027 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractSearchIndex</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractSearchIndex (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractSearchIndex</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/258)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/393)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.Reader;
+&nbsp;import java.io.StringReader;
+&nbsp;import java.text.ParseException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Map.Entry;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.lucene.geo.SimpleWKTShapeParser;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEO;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEOF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.util.MapOfListMaps;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContext;
+&nbsp;import org.locationtech.spatial4j.shape.Point;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.collect.HashMultimap;
+&nbsp;import com.google.common.collect.SetMultimap;
+&nbsp;import com.google.common.collect.Sets;
+&nbsp;
+<b class="nc">&nbsp;public abstract class AbstractSearchIndex implements SearchIndex {</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(getClass());</b>
+&nbsp;
+<b class="nc">&nbsp;	private final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Set&lt;String&gt; REJECTED_DATATYPES = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		REJECTED_DATATYPES.add(&quot;http://www.w3.org/2001/XMLSchema#float&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected int maxDocs;
+&nbsp;
+<b class="nc">&nbsp;	protected Set&lt;String&gt; wktFields = Collections.singleton(SearchFields.getPropertyField(GEO.AS_WKT));</b>
+&nbsp;
+&nbsp;	private Set&lt;String&gt; indexedLangs;
+&nbsp;
+&nbsp;	private Map&lt;IRI, Set&lt;IRI&gt;&gt; indexedTypeMapping;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void initialize(Properties parameters) throws Exception {
+<b class="nc">&nbsp;		String maxDocParam = parameters.getProperty(LuceneSail.MAX_DOCUMENTS_KEY);</b>
+<b class="nc">&nbsp;		maxDocs = (maxDocParam != null) ? Integer.parseInt(maxDocParam) : -1;</b>
+&nbsp;
+<b class="nc">&nbsp;		String wktFieldParam = parameters.getProperty(LuceneSail.WKT_FIELDS);</b>
+<b class="nc">&nbsp;		if (wktFieldParam != null) {</b>
+<b class="nc">&nbsp;			wktFields = Sets.newHashSet(wktFieldParam.split(&quot;\\s+&quot;));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (parameters.containsKey(LuceneSail.INDEXEDLANG)) {</b>
+<b class="nc">&nbsp;			String indexedlangString = parameters.getProperty(LuceneSail.INDEXEDLANG);</b>
+&nbsp;
+<b class="nc">&nbsp;			indexedLangs = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			indexedLangs.addAll(Arrays.asList(indexedlangString.toLowerCase().split(&quot;\\s+&quot;)));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (parameters.containsKey(LuceneSail.INDEXEDTYPES)) {</b>
+<b class="nc">&nbsp;			String indexedtypesString = parameters.getProperty(LuceneSail.INDEXEDTYPES);</b>
+<b class="nc">&nbsp;			Properties prop = new Properties();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				try (Reader reader = new StringReader(indexedtypesString)) {</b>
+<b class="nc">&nbsp;					prop.load(reader);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				throw new SailException(&quot;Could read &quot; + LuceneSail.INDEXEDTYPES + &quot;: &quot; + indexedtypesString, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			indexedTypeMapping = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			for (Object key : prop.keySet()) {</b>
+<b class="nc">&nbsp;				String keyStr = key.toString();</b>
+<b class="nc">&nbsp;				Set&lt;IRI&gt; objects = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;				for (String obj : prop.getProperty(keyStr).split(&quot;\\s+&quot;)) {</b>
+<b class="nc">&nbsp;					objects.add(vf.createIRI(obj));</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				IRI keyIRI;
+&nbsp;
+&nbsp;				// special case to use the rdf:type &quot;a&quot;
+<b class="nc">&nbsp;				if (keyStr.equals(&quot;a&quot;)) {</b>
+<b class="nc">&nbsp;					keyIRI = RDF.TYPE;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					keyIRI = vf.createIRI(keyStr);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				indexedTypeMapping.put(keyIRI, objects);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract SpatialContext getSpatialContext(String property);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns whether the provided literal is accepted by the LuceneIndex to be indexed. It for instance does not make
+&nbsp;	 * much since to index xsd:float.
+&nbsp;	 *
+&nbsp;	 * @param literal the literal to be accepted
+&nbsp;	 * @return true if the given literal will be indexed by this LuceneIndex
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public boolean accept(Literal literal) {
+&nbsp;		// we reject null literals
+<b class="nc">&nbsp;		if (literal == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// we reject literals that are in the list of rejected data types
+<b class="nc">&nbsp;		if ((literal.getDatatype() != null) &amp;&amp; (REJECTED_DATATYPES.contains(literal.getDatatype().stringValue()))) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// we reject literals that aren&#39;t in the list of the indexed lang
+<b class="nc">&nbsp;		if (indexedLangs != null</b>
+<b class="nc">&nbsp;				&amp;&amp; (!literal.getLanguage().isPresent()</b>
+<b class="nc">&nbsp;						|| !indexedLangs.contains(literal.getLanguage().get().toLowerCase()</b>
+&nbsp;						))) {
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isGeoField(String fieldName) {
+<b class="nc">&nbsp;		return (wktFields != null) &amp;&amp; wktFields.contains(fieldName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isTypeStatement(Statement statement) {
+<b class="nc">&nbsp;		return isTypeFilteringEnabled()</b>
+<b class="nc">&nbsp;				&amp;&amp; statement.getObject().isIRI()</b>
+<b class="nc">&nbsp;				&amp;&amp; indexedTypeMapping.get(statement.getPredicate()) != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isTypeFilteringEnabled() {
+<b class="nc">&nbsp;		return indexedTypeMapping != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isIndexedTypeStatement(Statement statement) {
+<b class="nc">&nbsp;		if (!isTypeFilteringEnabled() || !statement.getObject().isIRI()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Set&lt;IRI&gt; objects = indexedTypeMapping.get(statement.getPredicate());</b>
+<b class="nc">&nbsp;		return objects != null &amp;&amp; objects.contains((IRI) statement.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Map&lt;IRI, Set&lt;IRI&gt;&gt; getIndexedTypeMapping() {
+<b class="nc">&nbsp;		return indexedTypeMapping;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indexes the specified Statement.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public final synchronized void addStatement(Statement statement) throws IOException {
+&nbsp;		// determine stuff to store
+<b class="nc">&nbsp;		String text = SearchFields.getLiteralPropertyValueAsString(statement);</b>
+<b class="nc">&nbsp;		if (text == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String field = SearchFields.getPropertyField(statement.getPredicate());</b>
+&nbsp;
+&nbsp;		// fetch the Document representing this Resource
+<b class="nc">&nbsp;		String resourceId = SearchFields.getResourceID(statement.getSubject());</b>
+<b class="nc">&nbsp;		String contextId = SearchFields.getContextID(statement.getContext());</b>
+&nbsp;
+<b class="nc">&nbsp;		String id = SearchFields.formIdString(resourceId, contextId);</b>
+<b class="nc">&nbsp;		SearchDocument document = getDocument(id);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (document == null) {</b>
+&nbsp;			// there is no such Document: create one now
+<b class="nc">&nbsp;			document = newDocument(id, resourceId, contextId);</b>
+<b class="nc">&nbsp;			addProperty(field, text, document);</b>
+&nbsp;
+&nbsp;			// add it to the index
+<b class="nc">&nbsp;			addDocument(document);</b>
+&nbsp;		} else {
+&nbsp;			// update this Document when this triple has not been stored already
+<b class="nc">&nbsp;			if (!document.hasProperty(field, text)) {</b>
+&nbsp;				// create a copy of the old document; updating the retrieved
+&nbsp;				// Document instance works ok for stored properties but indexed data
+&nbsp;				// gets lost when doing an IndexWriter.updateDocument with it
+<b class="nc">&nbsp;				SearchDocument newDocument = copyDocument(document);</b>
+&nbsp;
+&nbsp;				// add the new triple to the cloned document
+<b class="nc">&nbsp;				addProperty(field, text, newDocument);</b>
+&nbsp;
+&nbsp;				// update the index with the cloned document
+<b class="nc">&nbsp;				updateDocument(newDocument);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final synchronized void removeStatement(Statement statement) throws IOException {
+<b class="nc">&nbsp;		String text = SearchFields.getLiteralPropertyValueAsString(statement);</b>
+<b class="nc">&nbsp;		if (text == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// fetch the Document representing this Resource
+<b class="nc">&nbsp;		String resourceId = SearchFields.getResourceID(statement.getSubject());</b>
+<b class="nc">&nbsp;		String contextId = SearchFields.getContextID(statement.getContext());</b>
+<b class="nc">&nbsp;		String id = SearchFields.formIdString(resourceId, contextId);</b>
+<b class="nc">&nbsp;		SearchDocument document = getDocument(id);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (document != null) {</b>
+&nbsp;			// determine the values used in the index for this triple
+<b class="nc">&nbsp;			String fieldName = SearchFields.getPropertyField(statement.getPredicate());</b>
+&nbsp;
+&nbsp;			// see if this triple occurs in this Document
+<b class="nc">&nbsp;			if (document.hasProperty(fieldName, text)) {</b>
+&nbsp;				// if the Document only has one predicate field, we can remove the
+&nbsp;				// document
+<b class="nc">&nbsp;				int nrProperties = countPropertyValues(document);</b>
+<b class="nc">&nbsp;				if (nrProperties == 1) {</b>
+<b class="nc">&nbsp;					deleteDocument(document);</b>
+&nbsp;				} else {
+&nbsp;					// there are more triples encoded in this Document: remove the
+&nbsp;					// document and add a new Document without this triple
+<b class="nc">&nbsp;					SearchDocument newDocument = newDocument(id, resourceId, contextId);</b>
+<b class="nc">&nbsp;					boolean mutated = copyDocument(newDocument, document,</b>
+<b class="nc">&nbsp;							Collections.singletonMap(fieldName, Collections.singleton(text)));</b>
+<b class="nc">&nbsp;					if (mutated) {</b>
+<b class="nc">&nbsp;						updateDocument(newDocument);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add many statements at the same time, remove many statements at the same time. Ordering by resource has to be
+&nbsp;	 * done inside this method. The passed added/removed sets are disjunct, no statement can be in both
+&nbsp;	 *
+&nbsp;	 * @param added   all added statements, can have multiple subjects
+&nbsp;	 * @param removed all removed statements, can have multiple subjects
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public final synchronized void addRemoveStatements(Collection&lt;Statement&gt; added, Collection&lt;Statement&gt; removed)
+&nbsp;			throws IOException {
+&nbsp;		// Buffer per resource
+<b class="nc">&nbsp;		MapOfListMaps&lt;Resource, String, Statement&gt; rsAdded = new MapOfListMaps&lt;&gt;();</b>
+<b class="nc">&nbsp;		MapOfListMaps&lt;Resource, String, Statement&gt; rsRemoved = new MapOfListMaps&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		HashSet&lt;Resource&gt; resources = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (Statement s : added) {</b>
+<b class="nc">&nbsp;			rsAdded.add(s.getSubject(), SearchFields.getContextID(s.getContext()), s);</b>
+<b class="nc">&nbsp;			resources.add(s.getSubject());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		for (Statement s : removed) {</b>
+<b class="nc">&nbsp;			rsRemoved.add(s.getSubject(), SearchFields.getContextID(s.getContext()), s);</b>
+<b class="nc">&nbsp;			resources.add(s.getSubject());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;Removing &quot; + removed.size() + &quot; statements, adding &quot; + added.size() + &quot; statements&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		BulkUpdater updater = newBulkUpdate();</b>
+&nbsp;		// for each resource, add/remove
+<b class="nc">&nbsp;		for (Resource resource : resources) {</b>
+<b class="nc">&nbsp;			Map&lt;String, List&lt;Statement&gt;&gt; stmtsToRemove = rsRemoved.get(resource);</b>
+<b class="nc">&nbsp;			Map&lt;String, List&lt;Statement&gt;&gt; stmtsToAdd = rsAdded.get(resource);</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;String&gt; contextsToUpdate = new HashSet&lt;&gt;(stmtsToAdd.keySet());</b>
+<b class="nc">&nbsp;			contextsToUpdate.addAll(stmtsToRemove.keySet());</b>
+&nbsp;
+<b class="nc">&nbsp;			Map&lt;String, SearchDocument&gt; docsByContext = new HashMap&lt;&gt;();</b>
+&nbsp;			// is the resource in the store?
+&nbsp;			// fetch the Document representing this Resource
+<b class="nc">&nbsp;			String resourceId = SearchFields.getResourceID(resource);</b>
+<b class="nc">&nbsp;			Iterable&lt;? extends SearchDocument&gt; documents = getDocuments(resourceId);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (SearchDocument doc : documents) {</b>
+<b class="nc">&nbsp;				docsByContext.put(doc.getContext(), doc);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String contextId : contextsToUpdate) {</b>
+<b class="nc">&nbsp;				String id = SearchFields.formIdString(resourceId, contextId);</b>
+&nbsp;
+<b class="nc">&nbsp;				SearchDocument document = docsByContext.get(contextId);</b>
+<b class="nc">&nbsp;				if (document == null) {</b>
+&nbsp;					// there are no such Documents: create one now
+<b class="nc">&nbsp;					document = newDocument(id, resourceId, contextId);</b>
+&nbsp;					// add all statements, remember the contexts
+&nbsp;					// HashSet&lt;Resource&gt; contextsToAdd = new HashSet&lt;Resource&gt;();
+<b class="nc">&nbsp;					List&lt;Statement&gt; list = stmtsToAdd.get(contextId);</b>
+<b class="nc">&nbsp;					if (list != null) {</b>
+<b class="nc">&nbsp;						for (Statement s : list) {</b>
+<b class="nc">&nbsp;							addProperty(s, document);</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					// add it to the index
+<b class="nc">&nbsp;					updater.add(document);</b>
+&nbsp;
+&nbsp;					// THERE SHOULD BE NO DELETED TRIPLES ON A NEWLY ADDED RESOURCE
+<b class="nc">&nbsp;					if (stmtsToRemove.containsKey(contextId)) {</b>
+<b class="nc">&nbsp;						logger.info(</b>
+&nbsp;								&quot;Statements are marked to be removed that should not be in the store, for resource {} and context {}. Nothing done.&quot;,
+&nbsp;								resource, contextId);
+&nbsp;					}
+<b class="nc">&nbsp;				} else {</b>
+&nbsp;					// update the Document
+&nbsp;
+&nbsp;					// buffer the removed literal statements
+<b class="nc">&nbsp;					Map&lt;String, Set&lt;String&gt;&gt; removedOfResource = null;</b>
+&nbsp;					{
+<b class="nc">&nbsp;						List&lt;Statement&gt; removedStatements = stmtsToRemove.get(contextId);</b>
+<b class="nc">&nbsp;						if (removedStatements != null &amp;&amp; !removedStatements.isEmpty()) {</b>
+<b class="nc">&nbsp;							removedOfResource = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;							for (Statement r : removedStatements) {</b>
+<b class="nc">&nbsp;								String val = SearchFields.getLiteralPropertyValueAsString(r);</b>
+<b class="nc">&nbsp;								if (val != null) {</b>
+&nbsp;									// remove value from both property field and the
+&nbsp;									// corresponding text field
+<b class="nc">&nbsp;									String field = SearchFields.getPropertyField(r.getPredicate());</b>
+<b class="nc">&nbsp;									Set&lt;String&gt; removedValues = removedOfResource.get(field);</b>
+<b class="nc">&nbsp;									if (removedValues == null) {</b>
+<b class="nc">&nbsp;										removedValues = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;										removedOfResource.put(field, removedValues);</b>
+&nbsp;									}
+<b class="nc">&nbsp;									removedValues.add(val);</b>
+&nbsp;								}
+<b class="nc">&nbsp;							}</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					SearchDocument newDocument = newDocument(id, resourceId, contextId);</b>
+<b class="nc">&nbsp;					boolean mutated = copyDocument(newDocument, document, removedOfResource);</b>
+&nbsp;
+&nbsp;					// add all statements to this document, except for those which
+&nbsp;					// are already there
+&nbsp;					{
+<b class="nc">&nbsp;						List&lt;Statement&gt; addedToResource = stmtsToAdd.get(contextId);</b>
+&nbsp;						String val;
+<b class="nc">&nbsp;						if (addedToResource != null &amp;&amp; !addedToResource.isEmpty()) {</b>
+<b class="nc">&nbsp;							PropertyCache propertyCache = new PropertyCache(newDocument);</b>
+<b class="nc">&nbsp;							for (Statement s : addedToResource) {</b>
+<b class="nc">&nbsp;								val = SearchFields.getLiteralPropertyValueAsString(s);</b>
+<b class="nc">&nbsp;								if (val != null) {</b>
+<b class="nc">&nbsp;									String field = SearchFields.getPropertyField(s.getPredicate());</b>
+<b class="nc">&nbsp;									if (!propertyCache.hasProperty(field, val)) {</b>
+<b class="nc">&nbsp;										addProperty(s, newDocument);</b>
+<b class="nc">&nbsp;										mutated = true;</b>
+&nbsp;									}
+&nbsp;								}
+<b class="nc">&nbsp;							}</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+&nbsp;					// update the index with the cloned document, if it contains any
+&nbsp;					// meaningful non-system properties
+<b class="nc">&nbsp;					int nrProperties = countPropertyValues(newDocument);</b>
+<b class="nc">&nbsp;					if (nrProperties &gt; 0) {</b>
+<b class="nc">&nbsp;						if (mutated) {</b>
+<b class="nc">&nbsp;							updater.update(newDocument);</b>
+&nbsp;						}
+&nbsp;					} else {
+<b class="nc">&nbsp;						updater.delete(document);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		updater.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a copy of the old document; updating the retrieved Document instance works ok for stored properties but
+&nbsp;	 * indexed data gets lost when doing an IndexWriter.updateDocument with it.
+&nbsp;	 */
+&nbsp;	private boolean copyDocument(SearchDocument newDocument, SearchDocument document,
+&nbsp;			Map&lt;String, Set&lt;String&gt;&gt; removedProperties) {
+&nbsp;		// track if newDocument is actually different from document
+<b class="nc">&nbsp;		boolean mutated = false;</b>
+<b class="nc">&nbsp;		for (String oldFieldName : document.getPropertyNames()) {</b>
+<b class="nc">&nbsp;			newDocument.addProperty(oldFieldName);</b>
+<b class="nc">&nbsp;			List&lt;String&gt; oldValues = document.getProperty(oldFieldName);</b>
+<b class="nc">&nbsp;			if (oldValues != null) {</b>
+&nbsp;				// which fields were removed?
+<b class="nc">&nbsp;				Set&lt;String&gt; objectsRemoved = (removedProperties != null) ? removedProperties.get(oldFieldName) : null;</b>
+<b class="nc">&nbsp;				for (String oldValue : oldValues) {</b>
+&nbsp;					// do not copy removed properties to the new version of the
+&nbsp;					// document
+<b class="nc">&nbsp;					if ((objectsRemoved != null) &amp;&amp; (objectsRemoved.contains(oldValue))) {</b>
+<b class="nc">&nbsp;						mutated = true;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						addProperty(oldFieldName, oldValue, newDocument);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return mutated;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static int countPropertyValues(SearchDocument document) {
+<b class="nc">&nbsp;		int numValues = 0;</b>
+<b class="nc">&nbsp;		Collection&lt;String&gt; propertyNames = document.getPropertyNames();</b>
+<b class="nc">&nbsp;		for (String propertyName : propertyNames) {</b>
+<b class="nc">&nbsp;			List&lt;String&gt; propertyValues = document.getProperty(propertyName);</b>
+<b class="nc">&nbsp;			if (propertyValues != null) {</b>
+<b class="nc">&nbsp;				numValues += propertyValues.size();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return numValues;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add a complete Lucene Document based on these statements. Do not search for an existing document with the same
+&nbsp;	 * subject id. (assume the existing document was deleted)
+&nbsp;	 *
+&nbsp;	 * @param statements the statements that make up the resource
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public final synchronized void addDocuments(Resource subject, List&lt;Statement&gt; statements) throws IOException {
+&nbsp;
+<b class="nc">&nbsp;		String resourceId = SearchFields.getResourceID(subject);</b>
+&nbsp;
+<b class="nc">&nbsp;		SetMultimap&lt;String, Statement&gt; stmtsByContextId = HashMultimap.create();</b>
+&nbsp;
+&nbsp;		String contextId;
+<b class="nc">&nbsp;		for (Statement statement : statements) {</b>
+<b class="nc">&nbsp;			contextId = SearchFields.getContextID(statement.getContext());</b>
+&nbsp;
+<b class="nc">&nbsp;			stmtsByContextId.put(contextId, statement);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		BulkUpdater batch = newBulkUpdate();</b>
+<b class="nc">&nbsp;		for (Entry&lt;String, Collection&lt;Statement&gt;&gt; entry : stmtsByContextId.asMap().entrySet()) {</b>
+&nbsp;			// create a new document
+<b class="nc">&nbsp;			String id = SearchFields.formIdString(resourceId, entry.getKey());</b>
+<b class="nc">&nbsp;			SearchDocument document = newDocument(id, resourceId, entry.getKey());</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Statement stmt : entry.getValue()) {</b>
+&nbsp;				// determine stuff to store
+<b class="nc">&nbsp;				addProperty(stmt, document);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			// add it to the index
+<b class="nc">&nbsp;			batch.add(document);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		batch.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * check if the passed statement should be added (is it indexed? is it stored?) and add it as predicate to the
+&nbsp;	 * passed document. No checks whether the predicate was already there.
+&nbsp;	 *
+&nbsp;	 * @param statement the statement to add
+&nbsp;	 * @param document  the document to add to
+&nbsp;	 */
+&nbsp;	private void addProperty(Statement statement, SearchDocument document) {
+<b class="nc">&nbsp;		String value = SearchFields.getLiteralPropertyValueAsString(statement);</b>
+<b class="nc">&nbsp;		if (value == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		String field = SearchFields.getPropertyField(statement.getPredicate());</b>
+<b class="nc">&nbsp;		addProperty(field, value, document);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void addProperty(String field, String value, SearchDocument document) {
+<b class="nc">&nbsp;		if (isGeoField(field)) {</b>
+<b class="nc">&nbsp;			document.addGeoProperty(field, value);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			document.addProperty(field, value);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final Collection&lt;BindingSet&gt; evaluate(SearchQueryEvaluator evaluator) throws SailException {
+<b class="nc">&nbsp;		if (evaluator instanceof QuerySpec) {</b>
+<b class="nc">&nbsp;			QuerySpec query = (QuerySpec) evaluator;</b>
+<b class="nc">&nbsp;			Iterable&lt;? extends DocumentScore&gt; result = evaluateQuery(query);</b>
+<b class="nc">&nbsp;			return generateBindingSets(query, result);</b>
+<b class="nc">&nbsp;		} else if (evaluator instanceof DistanceQuerySpec) {</b>
+<b class="nc">&nbsp;			DistanceQuerySpec query = (DistanceQuerySpec) evaluator;</b>
+<b class="nc">&nbsp;			Iterable&lt;? extends DocumentDistance&gt; result = evaluateQuery(query);</b>
+<b class="nc">&nbsp;			return generateBindingSets(query, result);</b>
+<b class="nc">&nbsp;		} else if (evaluator instanceof GeoRelationQuerySpec) {</b>
+<b class="nc">&nbsp;			GeoRelationQuerySpec query = (GeoRelationQuerySpec) evaluator;</b>
+<b class="nc">&nbsp;			Iterable&lt;? extends DocumentResult&gt; result = evaluateQuery(query);</b>
+<b class="nc">&nbsp;			return generateBindingSets(query, result);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported &quot; + SearchQueryEvaluator.class.getSimpleName() + &quot;: &quot;</b>
+<b class="nc">&nbsp;					+ evaluator.getClass().getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates one Lucene Query. It distinguishes between two cases, the one where no subject is given and the one
+&nbsp;	 * were it is given.
+&nbsp;	 *
+&nbsp;	 * @param query the Lucene query to evaluate
+&nbsp;	 * @return QueryResult consisting of hits and highlighter
+&nbsp;	 */
+&nbsp;	private Iterable&lt;? extends DocumentScore&gt; evaluateQuery(QuerySpec query) {
+<b class="nc">&nbsp;		Iterable&lt;? extends DocumentScore&gt; hits = null;</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;			// parse the query string to a lucene query
+&nbsp;
+<b class="nc">&nbsp;			String sQuery = query.getQueryString();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!sQuery.isEmpty()) {</b>
+&nbsp;				// if the query requests for the snippet, create a highlighter using
+&nbsp;				// this query
+<b class="nc">&nbsp;				boolean highlight = (query.getSnippetVariableName() != null || query.getPropertyVariableName() != null);</b>
+&nbsp;
+&nbsp;				// distinguish the two cases of subject == null
+<b class="nc">&nbsp;				hits = query(query.getSubject(), query.getQueryString(), query.getPropertyURI(), highlight);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				hits = null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;There was a problem evaluating query &#39;&quot; + query.getQueryString() + &quot;&#39; for property &#39;&quot;</b>
+<b class="nc">&nbsp;					+ query.getPropertyURI() + &quot;!&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return hits;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This method generates bindings from the given result of a Lucene query.
+&nbsp;	 *
+&nbsp;	 * @param query the Lucene query
+&nbsp;	 * @return a LinkedHashSet containing generated bindings
+&nbsp;	 * @throws SailException
+&nbsp;	 */
+&nbsp;	private Collection&lt;BindingSet&gt; generateBindingSets(QuerySpec query, Iterable&lt;? extends DocumentScore&gt; hits)
+&nbsp;			throws SailException {
+&nbsp;		// Since one resource can be returned many times, it can lead now to
+&nbsp;		// multiple occurrences
+&nbsp;		// of the same binding tuple in the BINDINGS clause. This in turn leads to
+&nbsp;		// duplicate answers in the original SPARQL query.
+&nbsp;		// We want to avoid this, so BindingSets added to the result must be
+&nbsp;		// unique.
+<b class="nc">&nbsp;		LinkedHashSet&lt;BindingSet&gt; bindingSets = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; bindingNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		final String matchVar = query.getMatchesVariableName();</b>
+<b class="nc">&nbsp;		if (matchVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(matchVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String scoreVar = query.getScoreVariableName();</b>
+<b class="nc">&nbsp;		if (scoreVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(scoreVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String snippetVar = query.getSnippetVariableName();</b>
+<b class="nc">&nbsp;		if (snippetVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(snippetVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String propertyVar = query.getPropertyVariableName();</b>
+<b class="nc">&nbsp;		if (propertyVar != null &amp;&amp; query.getPropertyURI() == null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(propertyVar);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hits != null) {</b>
+&nbsp;			// for each hit ...
+<b class="nc">&nbsp;			for (DocumentScore hit : hits) {</b>
+&nbsp;				// this takes the new bindings
+<b class="nc">&nbsp;				QueryBindingSet derivedBindings = new QueryBindingSet();</b>
+&nbsp;
+&nbsp;				// get the current hit
+<b class="nc">&nbsp;				SearchDocument doc = hit.getDocument();</b>
+<b class="nc">&nbsp;				if (doc == null) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// get the score of the hit
+<b class="nc">&nbsp;				float score = hit.getScore();</b>
+&nbsp;
+&nbsp;				// bind the respective variables
+<b class="nc">&nbsp;				if (matchVar != null) {</b>
+<b class="nc">&nbsp;					Resource resource = getResource(doc);</b>
+<b class="nc">&nbsp;					derivedBindings.addBinding(matchVar, resource);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if ((scoreVar != null) &amp;&amp; (score &gt; 0.0f)) {</b>
+<b class="nc">&nbsp;					derivedBindings.addBinding(scoreVar, SearchFields.scoreToLiteral(score));</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (snippetVar != null || propertyVar != null) {</b>
+<b class="nc">&nbsp;					if (hit.isHighlighted()) {</b>
+&nbsp;						// limit to the queried field, if there was one
+&nbsp;						Collection&lt;String&gt; fields;
+<b class="nc">&nbsp;						if (query.getPropertyURI() != null) {</b>
+<b class="nc">&nbsp;							String fieldname = SearchFields.getPropertyField(query.getPropertyURI());</b>
+<b class="nc">&nbsp;							fields = Collections.singleton(fieldname);</b>
+<b class="nc">&nbsp;						} else {</b>
+<b class="nc">&nbsp;							fields = doc.getPropertyNames();</b>
+&nbsp;						}
+&nbsp;
+&nbsp;						// extract snippets from Lucene&#39;s query results
+<b class="nc">&nbsp;						for (String field : fields) {</b>
+<b class="nc">&nbsp;							Iterable&lt;String&gt; snippets = hit.getSnippets(field);</b>
+<b class="nc">&nbsp;							if (snippets != null) {</b>
+<b class="nc">&nbsp;								for (String snippet : snippets) {</b>
+<b class="nc">&nbsp;									if (snippet != null &amp;&amp; !snippet.isEmpty()) {</b>
+&nbsp;										// create an individual binding set for each
+&nbsp;										// snippet
+<b class="nc">&nbsp;										QueryBindingSet snippetBindings = new QueryBindingSet(derivedBindings);</b>
+&nbsp;
+<b class="nc">&nbsp;										if (snippetVar != null) {</b>
+<b class="nc">&nbsp;											snippetBindings.addBinding(snippetVar, vf.createLiteral(snippet));</b>
+&nbsp;										}
+&nbsp;
+<b class="nc">&nbsp;										if (propertyVar != null &amp;&amp; query.getPropertyURI() == null) {</b>
+<b class="nc">&nbsp;											snippetBindings.addBinding(propertyVar, vf.createIRI(field));</b>
+&nbsp;										}
+&nbsp;
+<b class="nc">&nbsp;										bindingSets.add(snippetBindings);</b>
+&nbsp;									}
+<b class="nc">&nbsp;								}</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					} else {</b>
+<b class="nc">&nbsp;						logger.warn(</b>
+&nbsp;								&quot;Lucene Query requests snippet, but no highlighter was generated for it, no snippets will be generated!\n{}&quot;,
+&nbsp;								query);
+<b class="nc">&nbsp;						bindingSets.add(derivedBindings);</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="nc">&nbsp;					bindingSets.add(derivedBindings);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// we succeeded
+<b class="nc">&nbsp;		return new BindingSetCollection(bindingNames, bindingSets);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Iterable&lt;? extends DocumentDistance&gt; evaluateQuery(DistanceQuerySpec query) {
+<b class="nc">&nbsp;		Iterable&lt;? extends DocumentDistance&gt; hits = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		Literal from = query.getFrom();</b>
+<b class="nc">&nbsp;		double distance = query.getDistance();</b>
+<b class="nc">&nbsp;		IRI units = query.getUnits();</b>
+<b class="nc">&nbsp;		IRI geoProperty = query.getGeoProperty();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!GEO.WKT_LITERAL.equals(from.getDatatype())) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(&quot;Unsupported datatype: &quot; + from.getDatatype());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Shape shape = parseQueryPoint(SearchFields.getPropertyField(geoProperty), from.getLabel());</b>
+<b class="nc">&nbsp;			if (!(shape instanceof Point)) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(&quot;Geometry literal is not a point: &quot; + from.getLabel());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Point p = (Point) shape;</b>
+<b class="nc">&nbsp;			hits = geoQuery(geoProperty, p, units, distance, query.getDistanceVar(), query.getContextVar());</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;There was a problem evaluating distance query &#39;within &quot; + distance + getUnitSymbol(units)</b>
+<b class="nc">&nbsp;					+ &quot; of &quot; + from.getLabel() + &quot;&#39;!&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return hits;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String getUnitSymbol(IRI units) {
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			return &quot;m&quot;;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return &quot;&quot;;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Collection&lt;BindingSet&gt; generateBindingSets(DistanceQuerySpec query,
+&nbsp;			Iterable&lt;? extends DocumentDistance&gt; hits) throws SailException {
+&nbsp;		// Since one resource can be returned many times, it can lead now to
+&nbsp;		// multiple occurrences
+&nbsp;		// of the same binding tuple in the BINDINGS clause. This in turn leads to
+&nbsp;		// duplicate answers in the original SPARQL query.
+&nbsp;		// We want to avoid this, so BindingSets added to the result must be
+&nbsp;		// unique.
+<b class="nc">&nbsp;		LinkedHashSet&lt;BindingSet&gt; bindingSets = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; bindingNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		final String subjVar = query.getSubjectVar();</b>
+<b class="nc">&nbsp;		if (subjVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(subjVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String geoVar = query.getGeoVar();</b>
+<b class="nc">&nbsp;		if (geoVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(geoVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String distanceVar = query.getDistanceVar();</b>
+<b class="nc">&nbsp;		if (distanceVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(distanceVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final Var contextVar = query.getContextVar();</b>
+<b class="nc">&nbsp;		if (contextVar != null &amp;&amp; !contextVar.hasValue()) {</b>
+<b class="nc">&nbsp;			bindingNames.add(contextVar.getName());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hits != null) {</b>
+<b class="nc">&nbsp;			double maxDistance = query.getDistance();</b>
+&nbsp;			// for each hit ...
+<b class="nc">&nbsp;			for (DocumentDistance hit : hits) {</b>
+&nbsp;				// get the current hit
+<b class="nc">&nbsp;				SearchDocument doc = hit.getDocument();</b>
+<b class="nc">&nbsp;				if (doc == null) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				List&lt;String&gt; geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));</b>
+<b class="nc">&nbsp;				for (String geometry : geometries) {</b>
+<b class="nc">&nbsp;					double distance = hit.getDistance();</b>
+&nbsp;					// Distance queries are generally implemented by checking
+&nbsp;					// if indexed points intersect with a bounding disc.
+&nbsp;					// Unfortunately, this means the results may potentially also
+&nbsp;					// include other indexed shapes that intersect with the disc.
+&nbsp;					// The distances assigned to these other shapes may well be
+&nbsp;					// greater than the original bounding distance.
+&nbsp;					// We could exclude such results by checking if the shapes are
+&nbsp;					// points,
+&nbsp;					// but instead we do a faster sanity check of the distance.
+&nbsp;					// This has the potential (desirable?) side-effect of extending
+&nbsp;					// the distance function
+&nbsp;					// to arbitrary shapes.
+<b class="nc">&nbsp;					if (distance &lt; maxDistance) {</b>
+<b class="nc">&nbsp;						QueryBindingSet derivedBindings = new QueryBindingSet();</b>
+<b class="nc">&nbsp;						if (subjVar != null) {</b>
+<b class="nc">&nbsp;							Resource resource = getResource(doc);</b>
+<b class="nc">&nbsp;							derivedBindings.addBinding(subjVar, resource);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (contextVar != null &amp;&amp; !contextVar.hasValue()) {</b>
+<b class="nc">&nbsp;							Resource ctx = SearchFields.createContext(doc.getContext());</b>
+<b class="nc">&nbsp;							if (ctx != null) {</b>
+<b class="nc">&nbsp;								derivedBindings.addBinding(contextVar.getName(), ctx);</b>
+&nbsp;							}
+&nbsp;						}
+<b class="nc">&nbsp;						if (geoVar != null) {</b>
+<b class="nc">&nbsp;							derivedBindings.addBinding(geoVar, SearchFields.wktToLiteral(geometry));</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (distanceVar != null) {</b>
+<b class="nc">&nbsp;							derivedBindings.addBinding(distanceVar, SearchFields.distanceToLiteral(distance));</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						bindingSets.add(derivedBindings);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// we succeeded
+<b class="nc">&nbsp;		return new BindingSetCollection(bindingNames, bindingSets);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Iterable&lt;? extends DocumentResult&gt; evaluateQuery(GeoRelationQuerySpec query) {
+<b class="nc">&nbsp;		Iterable&lt;? extends DocumentResult&gt; hits = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		Literal qgeom = query.getQueryGeometry();</b>
+<b class="nc">&nbsp;		IRI geoProperty = query.getGeoProperty();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!GEO.WKT_LITERAL.equals(qgeom.getDatatype())) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(&quot;Unsupported datatype: &quot; + qgeom.getDatatype());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			hits = geoRelationQuery(query.getRelation(), geoProperty, qgeom.getLabel(), query.getContextVar());</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;There was a problem evaluating spatial relation query &#39;&quot; + query.getRelation() + &quot; &quot;</b>
+<b class="nc">&nbsp;					+ qgeom.getLabel() + &quot;&#39;!&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return hits;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Collection&lt;BindingSet&gt; generateBindingSets(GeoRelationQuerySpec query,
+&nbsp;			Iterable&lt;? extends DocumentResult&gt; hits) throws SailException {
+&nbsp;		// Since one resource can be returned many times, it can lead now to
+&nbsp;		// multiple occurrences
+&nbsp;		// of the same binding tuple in the BINDINGS clause. This in turn leads to
+&nbsp;		// duplicate answers in the original SPARQL query.
+&nbsp;		// We want to avoid this, so BindingSets added to the result must be
+&nbsp;		// unique.
+<b class="nc">&nbsp;		LinkedHashSet&lt;BindingSet&gt; bindingSets = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; bindingNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		final String subjVar = query.getSubjectVar();</b>
+<b class="nc">&nbsp;		if (subjVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(subjVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String geoVar = query.getGeoVar();</b>
+<b class="nc">&nbsp;		if (geoVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(geoVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String fVar = query.getFunctionValueVar();</b>
+<b class="nc">&nbsp;		if (fVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(fVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final Var contextVar = query.getContextVar();</b>
+<b class="nc">&nbsp;		if (contextVar != null &amp;&amp; !contextVar.hasValue()) {</b>
+<b class="nc">&nbsp;			bindingNames.add(contextVar.getName());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hits != null) {</b>
+&nbsp;			// for each hit ...
+<b class="nc">&nbsp;			for (DocumentResult hit : hits) {</b>
+&nbsp;				// get the current hit
+<b class="nc">&nbsp;				SearchDocument doc = hit.getDocument();</b>
+<b class="nc">&nbsp;				if (doc == null) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				List&lt;String&gt; geometries = doc.getProperty(SearchFields.getPropertyField(query.getGeoProperty()));</b>
+<b class="nc">&nbsp;				for (String geometry : geometries) {</b>
+<b class="nc">&nbsp;					QueryBindingSet derivedBindings = new QueryBindingSet();</b>
+<b class="nc">&nbsp;					if (subjVar != null) {</b>
+<b class="nc">&nbsp;						Resource resource = getResource(doc);</b>
+<b class="nc">&nbsp;						derivedBindings.addBinding(subjVar, resource);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (contextVar != null &amp;&amp; !contextVar.hasValue()) {</b>
+<b class="nc">&nbsp;						Resource ctx = SearchFields.createContext(doc.getContext());</b>
+<b class="nc">&nbsp;						if (ctx != null) {</b>
+<b class="nc">&nbsp;							derivedBindings.addBinding(contextVar.getName(), ctx);</b>
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;					if (geoVar != null) {</b>
+<b class="nc">&nbsp;						derivedBindings.addBinding(geoVar, SearchFields.wktToLiteral(geometry));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (fVar != null) {</b>
+<b class="nc">&nbsp;						derivedBindings.addBinding(fVar, BooleanLiteral.TRUE);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					bindingSets.add(derivedBindings);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// we succeeded
+<b class="nc">&nbsp;		return new BindingSetCollection(bindingNames, bindingSets);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Object parseLuceneQueryShape(String property, String value) throws ParseException, IOException {
+<b class="nc">&nbsp;		return SimpleWKTShapeParser.parse(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Shape parseQueryShape(String property, String value) throws ParseException {
+<b class="nc">&nbsp;		return getSpatialContext(property).readShapeFromWkt(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Shape parseQueryPoint(String property, String value) throws ParseException {
+<b class="nc">&nbsp;		return getSpatialContext(property).readShapeFromWkt(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the Resource corresponding with the specified Document.
+&nbsp;	 */
+&nbsp;	protected Resource getResource(SearchDocument document) {
+<b class="nc">&nbsp;		return SearchFields.createResource(document.getResource());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract SearchDocument getDocument(String id) throws IOException;
+&nbsp;
+&nbsp;	protected abstract Iterable&lt;? extends SearchDocument&gt; getDocuments(String resourceId) throws IOException;
+&nbsp;
+&nbsp;	protected abstract SearchDocument newDocument(String id, String resourceId, String context);
+&nbsp;
+&nbsp;	protected abstract SearchDocument copyDocument(SearchDocument doc);
+&nbsp;
+&nbsp;	protected abstract void addDocument(SearchDocument doc) throws IOException;
+&nbsp;
+&nbsp;	protected abstract void updateDocument(SearchDocument doc) throws IOException;
+&nbsp;
+&nbsp;	protected abstract void deleteDocument(SearchDocument doc) throws IOException;
+&nbsp;
+&nbsp;	protected abstract Iterable&lt;? extends DocumentScore&gt; query(Resource subject, String q, IRI property,
+&nbsp;			boolean highlight) throws MalformedQueryException, IOException;
+&nbsp;
+&nbsp;	protected abstract Iterable&lt;? extends DocumentDistance&gt; geoQuery(IRI geoProperty, Point p, IRI units,
+&nbsp;			double distance, String distanceVar, Var context) throws MalformedQueryException, IOException;
+&nbsp;
+&nbsp;	protected abstract Iterable&lt;? extends DocumentResult&gt; geoRelationQuery(String relation, IRI geoProperty,
+&nbsp;			String wkt, Var context) throws MalformedQueryException, IOException;
+&nbsp;
+&nbsp;	protected abstract BulkUpdater newBulkUpdate();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

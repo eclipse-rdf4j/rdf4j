@@ -1,0 +1,234 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > VByte</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.hdt</a>
+</div>
+
+<h1>Coverage Summary for Class: VByte (org.eclipse.rdf4j.rio.hdt)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">VByte</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.hdt;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;
+&nbsp;/**
+&nbsp; * Variable byte encoding for numbers.
+&nbsp; *
+&nbsp; * A variable number of bytes is used to encode (unsigned) numeric values, the first bit (MSB) of each byte indicates if
+&nbsp; * there are more bytes to read, the other 7 bits are used to encode the value.
+&nbsp; *
+&nbsp; * In this implementation, the MSB is set to &lt;code&gt;1&lt;/code&gt; if this byte is the last one.
+&nbsp; *
+&nbsp; * E.g: &lt;code&gt;10000001&lt;/code&gt; is value 1, &lt;code&gt;00000001 10000001&lt;/code&gt; is 128 (decimal). Note that the value is stored
+&nbsp; * little-endian, so in this example &lt;code&gt;10000001 00000001&lt;/code&gt;.
+&nbsp; *
+&nbsp; * @author Bart.Hanssens
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://nlp.stanford.edu/IR-book/html/htmledition/variable-byte-codes-1.html&quot;&gt;Variable byte codes&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;public class VByte {</b>
+&nbsp;	/**
+&nbsp;	 * Checks if the most significant bit is set. If this bit is zero, then the next byte must also be read to decode
+&nbsp;	 * the number.
+&nbsp;	 *
+&nbsp;	 * @param b
+&nbsp;	 * @return true if there is a next byte
+&nbsp;	 */
+&nbsp;	public static boolean hasNext(byte b) {
+<b class="nc">&nbsp;		return (b &amp; 0xff) &lt; 0x80;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode a series of encoded bytes, with a maximum of 8 bytes
+&nbsp;	 *
+&nbsp;	 * @param bytes byte array
+&nbsp;	 * @param len   number of bytes to decode
+&nbsp;	 * @return long value
+&nbsp;	 */
+&nbsp;	public static long decode(byte[] bytes, int len) {
+<b class="nc">&nbsp;		if (len &gt; 8 || bytes.length &lt; len) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Buffer too long, or incorrect length&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		long val = 0L;</b>
+&nbsp;		// little-endian to big-endian, e.g. HDT-It stores vbyte 0x81 0x00 as 0x00 0x81 (at least on x86)
+<b class="nc">&nbsp;		for (int i = len - 1; i &gt;= 0; i--) {</b>
+<b class="nc">&nbsp;			val &lt;&lt;= 7;</b>
+<b class="nc">&nbsp;			val |= bytes[i] &amp; 0x7F;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return val;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode a maximum of 8 bytes from the input stream.
+&nbsp;	 *
+&nbsp;	 * @param is input stream
+&nbsp;	 * @return decode value
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static long decode(InputStream is) throws IOException {
+<b class="nc">&nbsp;		byte[] buffer = new byte[8];</b>
+&nbsp;
+<b class="nc">&nbsp;		int i = 0;</b>
+&nbsp;		do {
+<b class="nc">&nbsp;			buffer[i] = (byte) is.read();</b>
+<b class="nc">&nbsp;		} while (i &lt; buffer.length &amp;&amp; hasNext(buffer[i++]));</b>
+<b class="nc">&nbsp;		return decode(buffer, i);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode a maximum of 8 bytes from a byte array.
+&nbsp;	 *
+&nbsp;	 * @param b     byte array
+&nbsp;	 * @param start starting position
+&nbsp;	 * @return decode value
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static long decodeFrom(byte[] b, int start) throws IOException {
+<b class="nc">&nbsp;		byte[] buffer = new byte[8];</b>
+&nbsp;
+<b class="nc">&nbsp;		int i = 0;</b>
+&nbsp;		do {
+<b class="nc">&nbsp;			buffer[i] = b[start + i];</b>
+<b class="nc">&nbsp;		} while (i &lt; buffer.length &amp;&amp; hasNext(buffer[i++]));</b>
+<b class="nc">&nbsp;		return decode(buffer, i);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calculate the number of bytes needed for encoding a value
+&nbsp;	 *
+&nbsp;	 * @param value numeric value
+&nbsp;	 * @return number of bytes
+&nbsp;	 */
+&nbsp;	public static int encodedLength(long value) {
+<b class="nc">&nbsp;		if (value &lt; 127) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value &lt; 16_384) {</b>
+<b class="nc">&nbsp;			return 2;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value &lt; 2_097_152) {</b>
+<b class="nc">&nbsp;			return 3;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value &lt; 268_435_456) {</b>
+<b class="nc">&nbsp;			return 4;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return 5;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

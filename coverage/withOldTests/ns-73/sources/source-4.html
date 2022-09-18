@@ -1,0 +1,615 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryEvaluationUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.util</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryEvaluationUtil (org.eclipse.rdf4j.query.algebra.evaluation.util)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryEvaluationUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.9%
+  </span>
+  <span class="absValue">
+    (11/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    37%
+  </span>
+  <span class="absValue">
+    (80/216)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    49.1%
+  </span>
+  <span class="absValue">
+    (78/159)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryEvaluationUtil$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (12/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    37%
+  </span>
+  <span class="absValue">
+    (80/216)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    49.4%
+  </span>
+  <span class="absValue">
+    (79/160)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.util;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import javax.xml.datatype.DatatypeConstants;
+&nbsp;import javax.xml.datatype.Duration;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;public class QueryEvaluationUtil {</b>
+&nbsp;
+<b class="fc">&nbsp;	public static final ValueExprEvaluationException INDETERMINATE_DATE_TIME_EXCEPTION = new ValueExprEvaluationException(</b>
+&nbsp;			&quot;Indeterminate result for date/time comparison&quot;);
+<b class="fc">&nbsp;	public static final ValueExprEvaluationException STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION = new ValueExprEvaluationException(</b>
+&nbsp;			&quot;Unable to compare strings with other supported types&quot;);
+<b class="fc">&nbsp;	public static final ValueExprEvaluationException NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION = new ValueExprEvaluationException(</b>
+&nbsp;			&quot;Unable to compare numeric types with other supported types&quot;);
+<b class="fc">&nbsp;	public static final ValueExprEvaluationException DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION = new ValueExprEvaluationException(</b>
+&nbsp;			&quot;Unable to compare date types with other supported types&quot;);
+<b class="fc">&nbsp;	public static final ValueExprEvaluationException UNSUPPOERTED_TYPES_EXCEPTION = new ValueExprEvaluationException(</b>
+&nbsp;			&quot;Unable to compare literals with unsupported types&quot;);
+<b class="fc">&nbsp;	public static final ValueExprEvaluationException NOT_COMPATIBLE_AND_ORDERED_EXCEPTION = new ValueExprEvaluationException(</b>
+&nbsp;			&quot;Only literals with compatible, ordered datatypes can be compared using &lt;, &lt;=, &gt; and &gt;= operators&quot;);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines the effective boolean value (EBV) of the supplied value as defined in the
+&nbsp;	 * &lt;a href=&quot;http://www.w3.org/TR/rdf-sparql-query/#ebv&quot;&gt;SPARQL specification&lt;/a&gt;:
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;The EBV of any literal whose type is CoreDatatype.XSD:boolean or numeric is false if the lexical form is not
+&nbsp;	 * valid for that datatype (e.g. &quot;abc&quot;^^xsd:integer).
+&nbsp;	 * &lt;li&gt;If the argument is a typed literal with a datatype of CoreDatatype.XSD:boolean, the EBV is the value of that
+&nbsp;	 * argument.
+&nbsp;	 * &lt;li&gt;If the argument is a plain literal or a typed literal with a datatype of CoreDatatype.XSD:string, the EBV is
+&nbsp;	 * false if the operand value has zero length; otherwise the EBV is true.
+&nbsp;	 * &lt;li&gt;If the argument is a numeric type or a typed literal with a datatype derived from a numeric type, the EBV is
+&nbsp;	 * false if the operand value is NaN or is numerically equal to zero; otherwise the EBV is true.
+&nbsp;	 * &lt;li&gt;All other arguments, including unbound arguments, produce a type error.
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 *
+&nbsp;	 * @param value Some value.
+&nbsp;	 * @return The EBV of &lt;var&gt;value&lt;/var&gt;.
+&nbsp;	 * @throws ValueExprEvaluationException In case the application of the EBV algorithm results in a type error.
+&nbsp;	 */
+&nbsp;	public static boolean getEffectiveBooleanValue(Value value) throws ValueExprEvaluationException {
+<b class="pc">&nbsp;		if (value.isLiteral()) {</b>
+<b class="fc">&nbsp;			Literal literal = (Literal) value;</b>
+<b class="fc">&nbsp;			String label = literal.getLabel();</b>
+<b class="fc">&nbsp;			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatype().orElse(null);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (datatype == CoreDatatype.XSD.STRING) {</b>
+<b class="nc">&nbsp;				return label.length() &gt; 0;</b>
+<b class="pc">&nbsp;			} else if (datatype == CoreDatatype.XSD.BOOLEAN) {</b>
+&nbsp;				// also false for illegal values
+<b class="pc">&nbsp;				return &quot;true&quot;.equals(label) || &quot;1&quot;.equals(label);</b>
+<b class="nc">&nbsp;			} else if (datatype == CoreDatatype.XSD.DECIMAL) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					String normDec = XMLDatatypeUtil.normalizeDecimal(label);</b>
+<b class="nc">&nbsp;					return !normDec.equals(&quot;0.0&quot;);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (datatype != null &amp;&amp; datatype.isIntegerDatatype()) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					String normInt = XMLDatatypeUtil.normalize(label, datatype);</b>
+<b class="nc">&nbsp;					return !normInt.equals(&quot;0&quot;);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (datatype != null &amp;&amp; datatype.isFloatingPointDatatype()) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					String normFP = XMLDatatypeUtil.normalize(label, datatype);</b>
+<b class="nc">&nbsp;					return !normFP.equals(&quot;0.0E0&quot;) &amp;&amp; !normFP.equals(&quot;NaN&quot;);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator)
+&nbsp;			throws ValueExprEvaluationException {
+<b class="fc">&nbsp;		return compare(leftVal, rightVal, operator, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean compare(Value leftVal, Value rightVal, CompareOp operator, boolean strict)
+&nbsp;			throws ValueExprEvaluationException {
+<b class="fc">&nbsp;		if (leftVal.isLiteral() &amp;&amp; rightVal.isLiteral()) {</b>
+&nbsp;			// Both left and right argument is a Literal
+<b class="fc">&nbsp;			return compareLiterals((Literal) leftVal, (Literal) rightVal, operator, strict);</b>
+&nbsp;		} else {
+&nbsp;			// All other value combinations
+<b class="pc">&nbsp;			switch (operator) {</b>
+&nbsp;			case EQ:
+<b class="fc">&nbsp;				return Objects.equals(leftVal, rightVal);</b>
+&nbsp;			case NE:
+<b class="fc">&nbsp;				return !Objects.equals(leftVal, rightVal);</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(</b>
+&nbsp;						&quot;Only literals with compatible, ordered datatypes can be compared using &lt;, &lt;=, &gt; and &gt;= operators&quot;);
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares the supplied {@link Literal} arguments using the supplied operator, using strict (minimally-conforming)
+&nbsp;	 * SPARQL 1.1 operator behavior.
+&nbsp;	 *
+&nbsp;	 * @param leftLit  the left literal argument of the comparison.
+&nbsp;	 * @param rightLit the right literal argument of the comparison.
+&nbsp;	 * @param operator the comparison operator to use.
+&nbsp;	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
+&nbsp;	 *         otherwise.
+&nbsp;	 * @throws ValueExprEvaluationException if a type error occurred.
+&nbsp;	 */
+&nbsp;	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator)
+&nbsp;			throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		return compareLiterals(leftLit, rightLit, operator, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares the supplied {@link Literal} arguments using the supplied operator.
+&nbsp;	 *
+&nbsp;	 * @param leftLit  the left literal argument of the comparison.
+&nbsp;	 * @param rightLit the right literal argument of the comparison.
+&nbsp;	 * @param operator the comparison operator to use.
+&nbsp;	 * @param strict   boolean indicating whether comparison should use strict (minimally-conforming) SPARQL 1.1
+&nbsp;	 *                 operator behavior, or extended behavior.
+&nbsp;	 * @return {@code true} if execution of the supplied operator on the supplied arguments succeeds, {@code false}
+&nbsp;	 *         otherwise.
+&nbsp;	 * @throws ValueExprEvaluationException if a type error occurred.
+&nbsp;	 */
+&nbsp;	public static boolean compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict)
+&nbsp;			throws ValueExprEvaluationException {
+&nbsp;		// type precendence:
+&nbsp;		// - simple literal
+&nbsp;		// - numeric
+&nbsp;		// - CoreDatatype.XSD:boolean
+&nbsp;		// - CoreDatatype.XSD:dateTime
+&nbsp;		// - CoreDatatype.XSD:string
+&nbsp;		// - RDF term (equal and unequal only)
+&nbsp;
+<b class="fc">&nbsp;		CoreDatatype.XSD leftCoreDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);</b>
+<b class="fc">&nbsp;		CoreDatatype.XSD rightCoreDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean leftLangLit = Literals.isLanguageLiteral(leftLit);</b>
+<b class="fc">&nbsp;		boolean rightLangLit = Literals.isLanguageLiteral(rightLit);</b>
+&nbsp;
+&nbsp;		// for purposes of query evaluation in SPARQL, simple literals and string-typed literals with the same lexical
+&nbsp;		// value are considered equal.
+&nbsp;
+<b class="fc">&nbsp;		if (QueryEvaluationUtil.isSimpleLiteral(leftLangLit, leftCoreDatatype)</b>
+<b class="fc">&nbsp;				&amp;&amp; QueryEvaluationUtil.isSimpleLiteral(rightLangLit, rightCoreDatatype)) {</b>
+<b class="fc">&nbsp;			return compareWithOperator(operator, leftLit.getLabel().compareTo(rightLit.getLabel()));</b>
+<b class="pc">&nbsp;		} else if (!(leftLangLit || rightLangLit)) {</b>
+&nbsp;
+<b class="fc">&nbsp;			CoreDatatype.XSD commonDatatype = getCommonDatatype(strict, leftCoreDatatype, rightCoreDatatype);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (commonDatatype != null) {</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					if (commonDatatype == CoreDatatype.XSD.DOUBLE) {</b>
+<b class="fc">&nbsp;						return compareWithOperator(operator,</b>
+<b class="fc">&nbsp;								Double.compare(leftLit.doubleValue(), rightLit.doubleValue()));</b>
+<b class="fc">&nbsp;					} else if (commonDatatype == CoreDatatype.XSD.FLOAT) {</b>
+<b class="fc">&nbsp;						return compareWithOperator(operator,</b>
+<b class="fc">&nbsp;								Float.compare(leftLit.floatValue(), rightLit.floatValue()));</b>
+<b class="fc">&nbsp;					} else if (commonDatatype == CoreDatatype.XSD.DECIMAL) {</b>
+<b class="fc">&nbsp;						return compareWithOperator(operator, leftLit.decimalValue().compareTo(rightLit.decimalValue()));</b>
+<b class="pc">&nbsp;					} else if (commonDatatype.isIntegerDatatype()) {</b>
+<b class="fc">&nbsp;						return compareWithOperator(operator, leftLit.integerValue().compareTo(rightLit.integerValue()));</b>
+<b class="nc">&nbsp;					} else if (commonDatatype == CoreDatatype.XSD.BOOLEAN) {</b>
+<b class="nc">&nbsp;						return compareWithOperator(operator,</b>
+<b class="nc">&nbsp;								Boolean.compare(leftLit.booleanValue(), rightLit.booleanValue()));</b>
+<b class="nc">&nbsp;					} else if (commonDatatype.isCalendarDatatype()) {</b>
+<b class="nc">&nbsp;						XMLGregorianCalendar left = leftLit.calendarValue();</b>
+<b class="nc">&nbsp;						XMLGregorianCalendar right = rightLit.calendarValue();</b>
+&nbsp;
+<b class="nc">&nbsp;						int compare = left.compare(right);</b>
+&nbsp;
+&nbsp;						// Note: XMLGregorianCalendar.compare() returns compatible values (-1, 0, 1) but INDETERMINATE
+&nbsp;						// needs special treatment
+<b class="nc">&nbsp;						if (compare == DatatypeConstants.INDETERMINATE) {</b>
+&nbsp;							// If we compare two CoreDatatype.XSD:dateTime we should use the specific comparison
+&nbsp;							// specified in SPARQL
+&nbsp;							// 1.1
+<b class="nc">&nbsp;							if (leftCoreDatatype == CoreDatatype.XSD.DATETIME</b>
+&nbsp;									&amp;&amp; rightCoreDatatype == CoreDatatype.XSD.DATETIME) {
+<b class="nc">&nbsp;								throw INDETERMINATE_DATE_TIME_EXCEPTION;</b>
+&nbsp;							}
+&nbsp;						} else {
+<b class="nc">&nbsp;							return compareWithOperator(operator, compare);</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;					} else if (!strict &amp;&amp; commonDatatype.isDurationDatatype()) {</b>
+<b class="nc">&nbsp;						Duration left = XMLDatatypeUtil.parseDuration(leftLit.getLabel());</b>
+<b class="nc">&nbsp;						Duration right = XMLDatatypeUtil.parseDuration(rightLit.getLabel());</b>
+<b class="nc">&nbsp;						int compare = left.compare(right);</b>
+<b class="nc">&nbsp;						if (compare != DatatypeConstants.INDETERMINATE) {</b>
+<b class="nc">&nbsp;							return compareWithOperator(operator, compare);</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype,</b>
+&nbsp;									leftLangLit, rightLangLit);
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;					} else if (commonDatatype == CoreDatatype.XSD.STRING) {</b>
+<b class="nc">&nbsp;						return compareWithOperator(operator, leftLit.getLabel().compareTo(rightLit.getLabel()));</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+&nbsp;					// One of the basic-type method calls failed, try syntactic match before throwing an error
+<b class="nc">&nbsp;					if (leftLit.equals(rightLit)) {</b>
+<b class="nc">&nbsp;						switch (operator) {</b>
+&nbsp;						case EQ:
+<b class="nc">&nbsp;							return true;</b>
+&nbsp;						case NE:
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					throw new ValueExprEvaluationException(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// All other cases, e.g. literals with languages, unequal or
+&nbsp;		// unordered datatypes, etc. These arguments can only be compared
+&nbsp;		// using the operators &#39;EQ&#39; and &#39;NE&#39;. See SPARQL&#39;s RDFterm-equal
+&nbsp;		// operator
+&nbsp;
+<b class="fc">&nbsp;		return otherCases(leftLit, rightLit, operator, leftCoreDatatype, rightCoreDatatype, leftLangLit, rightLangLit);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean otherCases(Literal leftLit, Literal rightLit, CompareOp operator,
+&nbsp;			CoreDatatype.XSD leftCoreDatatype, CoreDatatype.XSD rightCoreDatatype, boolean leftLangLit,
+&nbsp;			boolean rightLangLit) {
+<b class="fc">&nbsp;		boolean literalsEqual = leftLit.equals(rightLit);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (!literalsEqual) {</b>
+<b class="pc">&nbsp;			if (!leftLangLit &amp;&amp; !rightLangLit &amp;&amp; isSupportedDatatype(leftCoreDatatype)</b>
+<b class="pc">&nbsp;					&amp;&amp; isSupportedDatatype(rightCoreDatatype)) {</b>
+&nbsp;				// left and right arguments have incompatible but supported datatypes
+&nbsp;
+&nbsp;				// we need to check that the lexical-to-value mapping for both datatypes succeeds
+<b class="pc">&nbsp;				if (!XMLDatatypeUtil.isValidValue(leftLit.getLabel(), leftCoreDatatype)) {</b>
+<b class="nc">&nbsp;					throw new ValueExprEvaluationException(&quot;not a valid datatype value: &quot; + leftLit);</b>
+&nbsp;				}
+&nbsp;
+<b class="pc">&nbsp;				if (!XMLDatatypeUtil.isValidValue(rightLit.getLabel(), rightCoreDatatype)) {</b>
+<b class="nc">&nbsp;					throw new ValueExprEvaluationException(&quot;not a valid datatype value: &quot; + rightLit);</b>
+&nbsp;				}
+&nbsp;
+<b class="pc">&nbsp;				boolean leftString = leftCoreDatatype == CoreDatatype.XSD.STRING;</b>
+<b class="fc">&nbsp;				boolean leftNumeric = leftCoreDatatype.isNumericDatatype();</b>
+<b class="fc">&nbsp;				boolean leftDate = leftCoreDatatype.isCalendarDatatype();</b>
+&nbsp;
+<b class="pc">&nbsp;				boolean rightString = rightCoreDatatype == CoreDatatype.XSD.STRING;</b>
+<b class="fc">&nbsp;				boolean rightNumeric = rightCoreDatatype.isNumericDatatype();</b>
+<b class="fc">&nbsp;				boolean rightDate = rightCoreDatatype.isCalendarDatatype();</b>
+&nbsp;
+<b class="pc">&nbsp;				if (leftString != rightString) {</b>
+<b class="fc">&nbsp;					throw STRING_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (leftNumeric != rightNumeric) {</b>
+<b class="nc">&nbsp;					throw NUMERIC_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (leftDate != rightDate) {</b>
+<b class="nc">&nbsp;					throw DATE_WITH_OTHER_SUPPORTED_TYPE_EXCEPTION;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (!leftLangLit &amp;&amp; !rightLangLit) {</b>
+&nbsp;				// For literals with unsupported datatypes we don&#39;t know if their values are equal
+<b class="nc">&nbsp;				throw UNSUPPOERTED_TYPES_EXCEPTION;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		switch (operator) {</b>
+&nbsp;		case EQ:
+<b class="nc">&nbsp;			return literalsEqual;</b>
+&nbsp;		case NE:
+<b class="nc">&nbsp;			return !literalsEqual;</b>
+&nbsp;		case LT:
+&nbsp;		case LE:
+&nbsp;		case GE:
+&nbsp;		case GT:
+<b class="nc">&nbsp;			throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown operator: &quot; + operator);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static CoreDatatype.XSD getCommonDatatype(boolean strict, CoreDatatype.XSD leftCoreDatatype,
+&nbsp;			CoreDatatype.XSD rightCoreDatatype) {
+<b class="pc">&nbsp;		if (leftCoreDatatype != null &amp;&amp; rightCoreDatatype != null) {</b>
+<b class="fc">&nbsp;			if (leftCoreDatatype == rightCoreDatatype) {</b>
+<b class="fc">&nbsp;				return leftCoreDatatype;</b>
+<b class="pc">&nbsp;			} else if (leftCoreDatatype.isNumericDatatype() &amp;&amp; rightCoreDatatype.isNumericDatatype()) {</b>
+&nbsp;				// left and right arguments have different datatypes, try to find a more general, shared datatype
+<b class="pc">&nbsp;				if (leftCoreDatatype == CoreDatatype.XSD.DOUBLE || rightCoreDatatype == CoreDatatype.XSD.DOUBLE) {</b>
+<b class="fc">&nbsp;					return CoreDatatype.XSD.DOUBLE;</b>
+<b class="pc">&nbsp;				} else if (leftCoreDatatype == CoreDatatype.XSD.FLOAT || rightCoreDatatype == CoreDatatype.XSD.FLOAT) {</b>
+<b class="fc">&nbsp;					return CoreDatatype.XSD.FLOAT;</b>
+<b class="pc">&nbsp;				} else if (leftCoreDatatype == CoreDatatype.XSD.DECIMAL</b>
+&nbsp;						|| rightCoreDatatype == CoreDatatype.XSD.DECIMAL) {
+<b class="fc">&nbsp;					return CoreDatatype.XSD.DECIMAL;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return CoreDatatype.XSD.INTEGER;</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (!strict &amp;&amp; leftCoreDatatype.isCalendarDatatype() &amp;&amp; rightCoreDatatype.isCalendarDatatype()) {</b>
+&nbsp;				// We&#39;re not running in strict eval mode so we use extended datatype comparsion.
+<b class="nc">&nbsp;				return CoreDatatype.XSD.DATETIME;</b>
+<b class="pc">&nbsp;			} else if (!strict &amp;&amp; leftCoreDatatype.isDurationDatatype() &amp;&amp; rightCoreDatatype.isDurationDatatype()) {</b>
+<b class="nc">&nbsp;				return CoreDatatype.XSD.DURATION;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean compareWithOperator(CompareOp operator, int i) {
+<b class="pc">&nbsp;		switch (operator) {</b>
+&nbsp;		case LT:
+<b class="fc">&nbsp;			return i &lt; 0;</b>
+&nbsp;		case LE:
+<b class="fc">&nbsp;			return i &lt;= 0;</b>
+&nbsp;		case EQ:
+<b class="fc">&nbsp;			return i == 0;</b>
+&nbsp;		case NE:
+<b class="fc">&nbsp;			return i != 0;</b>
+&nbsp;		case GE:
+<b class="fc">&nbsp;			return i &gt;= 0;</b>
+&nbsp;		case GT:
+<b class="fc">&nbsp;			return i &gt; 0;</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown operator: &quot; + operator);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied value is a &quot;plain literal&quot;. A &quot;plain literal&quot; is a literal with no datatype and
+&nbsp;	 * optionally a language tag.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#dfn-plain-literal&quot;&gt;RDF Literal
+&nbsp;	 *      Documentation&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isPlainLiteral(Value v) {
+<b class="nc">&nbsp;		if (v.isLiteral()) {</b>
+<b class="nc">&nbsp;			return isPlainLiteral(((Literal) v));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isPlainLiteral(Literal l) {
+<b class="nc">&nbsp;		assert l.getLanguage().isEmpty() || (l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING);</b>
+<b class="nc">&nbsp;		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || l.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;//	public static boolean isPlainLiteral(Literal l) {
+&nbsp;//		return l.getCoreDatatype().filter(d -&gt; d == CoreDatatype.XSD.STRING).isPresent();
+&nbsp;////		return l.getCoreDatatype().orElse(null) == CoreDatatype.XSD.STRING;
+&nbsp;//	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied value is a &quot;simple literal&quot;. A &quot;simple literal&quot; is a literal with no language tag nor
+&nbsp;	 * datatype.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#simple_literal&quot;&gt;SPARQL Simple Literal Documentation&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isSimpleLiteral(Value v) {
+<b class="nc">&nbsp;		if (v.isLiteral()) {</b>
+<b class="nc">&nbsp;			return isSimpleLiteral((Literal) v);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied literal is a &quot;simple literal&quot;. A &quot;simple literal&quot; is a literal with no language tag
+&nbsp;	 * and the datatype {@link CoreDatatype.XSD#STRING}.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#simple_literal&quot;&gt;SPARQL Simple Literal Documentation&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isSimpleLiteral(Literal l) {
+<b class="nc">&nbsp;		return l.getCoreDatatype() == CoreDatatype.XSD.STRING &amp;&amp; !Literals.isLanguageLiteral(l);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied literal is a &quot;simple literal&quot;. A &quot;simple literal&quot; is a literal with no language tag
+&nbsp;	 * and the datatype {@link CoreDatatype.XSD#STRING}.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#simple_literal&quot;&gt;SPARQL Simple Literal Documentation&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isSimpleLiteral(boolean isLang, CoreDatatype datatype) {
+<b class="pc">&nbsp;		return !isLang &amp;&amp; datatype == CoreDatatype.XSD.STRING;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied literal is a &quot;string literal&quot;. A &quot;string literal&quot; is either a simple literal, a plain
+&nbsp;	 * literal with language tag, or a literal with datatype CoreDatatype.XSD:string.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#func-string&quot;&gt;SPARQL Functions on Strings Documentation&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isStringLiteral(Value v) {
+<b class="nc">&nbsp;		if (v.isLiteral()) {</b>
+<b class="nc">&nbsp;			return isStringLiteral((Literal) v);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied two literal arguments are &#39;argument compatible&#39; according to the SPARQL definition.
+&nbsp;	 *
+&nbsp;	 * @param arg1 the first argument
+&nbsp;	 * @param arg2 the second argument
+&nbsp;	 * @return true iff the two supplied arguments are argument compatible, false otherwise
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#func-arg-compatibility&quot;&gt;SPARQL Argument Compatibility
+&nbsp;	 *      Rules&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean compatibleArguments(Literal arg1, Literal arg2) {
+&nbsp;		// 1. The arguments are literals typed as CoreDatatype.XSD:string
+&nbsp;		// 2. The arguments are language literals with identical language tags
+&nbsp;		// 3. The first argument is a language literal and the second
+&nbsp;		// argument is a literal typed as CoreDatatype.XSD:string
+&nbsp;
+<b class="nc">&nbsp;		return (isSimpleLiteral(arg1) &amp;&amp; isSimpleLiteral(arg2))</b>
+<b class="nc">&nbsp;				|| (Literals.isLanguageLiteral(arg1) &amp;&amp; Literals.isLanguageLiteral(arg2)</b>
+<b class="nc">&nbsp;						&amp;&amp; arg1.getLanguage().equals(arg2.getLanguage()))</b>
+<b class="nc">&nbsp;				|| (Literals.isLanguageLiteral(arg1) &amp;&amp; isSimpleLiteral(arg2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied literal is a &quot;string literal&quot;. A &quot;string literal&quot; is either a simple literal, a plain
+&nbsp;	 * literal with language tag, or a literal with datatype CoreDatatype.XSD:string.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#func-string&quot;&gt;SPARQL Functions on Strings Documentation&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isStringLiteral(Literal l) {
+<b class="nc">&nbsp;		return l.getCoreDatatype() == CoreDatatype.XSD.STRING || Literals.isLanguageLiteral(l);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isSupportedDatatype(CoreDatatype.XSD datatype) {
+<b class="pc">&nbsp;		return datatype != null &amp;&amp; (datatype == CoreDatatype.XSD.STRING ||</b>
+<b class="pc">&nbsp;				datatype.isNumericDatatype() ||</b>
+<b class="nc">&nbsp;				datatype.isCalendarDatatype());</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

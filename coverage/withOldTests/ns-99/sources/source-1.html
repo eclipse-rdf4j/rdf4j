@@ -1,0 +1,476 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LocalRepositoryManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.manager</a>
+</div>
+
+<h1>Coverage Summary for Class: LocalRepositoryManager (org.eclipse.rdf4j.repository.manager)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LocalRepositoryManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/60)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/147)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.manager;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.nio.file.StandardCopyOption;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.eclipse.rdf4j.common.io.FileUtil;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+&nbsp;import org.eclipse.rdf4j.repository.DelegatingRepository;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolverClient;
+&nbsp;import org.eclipse.rdf4j.repository.config.DelegatingRepositoryImplConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryFactory;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryRegistry;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the {@link RepositoryManager} interface that operates directly on the repository data files in
+&nbsp; * the local file system.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class LocalRepositoryManager extends RepositoryManager {
+&nbsp;
+&nbsp;	public static final String REPOSITORIES_DIR = &quot;repositories&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private static final RDFFormat CONFIG_FORMAT = RDFFormat.TURTLE;</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final String CFG_FILE = &quot;config.&quot; + CONFIG_FORMAT.getDefaultFileExtension();</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final WriterConfig CFG_CONFIG = new WriterConfig().set(BasicWriterSettings.BASE_DIRECTIVE, false)</b>
+<b class="nc">&nbsp;			.set(BasicWriterSettings.PRETTY_PRINT, true)</b>
+<b class="nc">&nbsp;			.set(BasicWriterSettings.INLINE_BLANK_NODES, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The base dir to resolve any relative paths against.
+&nbsp;	 */
+&nbsp;	private final File baseDir;
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private volatile SharedHttpClientSessionManager client;
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private volatile SPARQLServiceResolver serviceResolver;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RepositoryManager that operates on the specfified base directory.
+&nbsp;	 *
+&nbsp;	 * @param baseDir The base directory where data for repositories can be stored, among other things.
+&nbsp;	 */
+&nbsp;	public LocalRepositoryManager(File baseDir) {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;
+<b class="nc">&nbsp;		this.baseDir = baseDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the base dir against which to resolve relative paths.
+&nbsp;	 */
+&nbsp;	public File getBaseDir() {
+<b class="nc">&nbsp;		return baseDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the base dir against which to resolve relative paths.
+&nbsp;	 *
+&nbsp;	 * @throws MalformedURLException If the path cannot be parsed as a URL
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public URL getLocation() throws MalformedURLException {
+<b class="nc">&nbsp;		return baseDir.toURI().toURL();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the httpClient.
+&nbsp;	 */
+&nbsp;	protected SharedHttpClientSessionManager getSesameClient() {
+<b class="nc">&nbsp;		SharedHttpClientSessionManager result = client;</b>
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				result = client;</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+<b class="nc">&nbsp;					result = client = new SharedHttpClientSessionManager();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClient getHttpClient() {
+<b class="nc">&nbsp;		SharedHttpClientSessionManager nextClient = client;</b>
+<b class="nc">&nbsp;		if (nextClient == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return nextClient.getHttpClient();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient httpClient) {
+<b class="nc">&nbsp;		getSesameClient().setHttpClient(httpClient);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the serviceResolver.
+&nbsp;	 */
+&nbsp;	protected FederatedServiceResolver getFederatedServiceResolver() {
+<b class="nc">&nbsp;		SPARQLServiceResolver result = serviceResolver;</b>
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				result = serviceResolver;</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+<b class="nc">&nbsp;					result = serviceResolver = new SPARQLServiceResolver();</b>
+<b class="nc">&nbsp;					result.setHttpClientSessionManager(getSesameClient());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.shutDown();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				SPARQLServiceResolver toCloseServiceResolver = serviceResolver;</b>
+<b class="nc">&nbsp;				serviceResolver = null;</b>
+<b class="nc">&nbsp;				if (toCloseServiceResolver != null) {</b>
+<b class="nc">&nbsp;					toCloseServiceResolver.shutDown();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				SharedHttpClientSessionManager toCloseClient = client;</b>
+<b class="nc">&nbsp;				client = null;</b>
+<b class="nc">&nbsp;				if (toCloseClient != null) {</b>
+<b class="nc">&nbsp;					toCloseClient.shutDown();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Resolves the specified path against the manager&#39;s base directory.
+&nbsp;	 *
+&nbsp;	 * @see #getBaseDir
+&nbsp;	 */
+&nbsp;	public File resolvePath(String path) {
+<b class="nc">&nbsp;		return new File(getBaseDir(), path);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public File getRepositoryDir(String repositoryID) {
+<b class="nc">&nbsp;		File repositoriesDir = resolvePath(REPOSITORIES_DIR);</b>
+<b class="nc">&nbsp;		return new File(repositoriesDir, repositoryID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Repository createRepository(String id) throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		Repository repository = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		RepositoryConfig repConfig = getRepositoryConfig(id);</b>
+<b class="nc">&nbsp;		if (repConfig != null) {</b>
+<b class="nc">&nbsp;			repConfig.validate();</b>
+&nbsp;
+<b class="nc">&nbsp;			repository = createRepositoryStack(repConfig.getRepositoryImplConfig());</b>
+<b class="nc">&nbsp;			repository.setDataDir(getRepositoryDir(id));</b>
+<b class="nc">&nbsp;			repository.init();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return repository;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates the stack of Repository objects for the repository represented by the specified
+&nbsp;	 * {@link org.eclipse.rdf4j.repository.config.RepositoryImplConfig}. Uses a
+&nbsp;	 * {@link org.eclipse.rdf4j.repository.config.RepositoryFactory} to create the repository and initialize it.
+&nbsp;	 *
+&nbsp;	 * @param config The node representing the to-be-created repository in the configuration.
+&nbsp;	 * @return The created repository, or &lt;var&gt;null&lt;/var&gt; if no such repository exists.
+&nbsp;	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
+&nbsp;	 *                                   data.
+&nbsp;	 */
+&nbsp;	private Repository createRepositoryStack(RepositoryImplConfig config) throws RepositoryConfigException {
+<b class="nc">&nbsp;		RepositoryFactory factory = RepositoryRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(config.getType())</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new RepositoryConfigException(&quot;Unsupported repository type: &quot; + config.getType()));</b>
+<b class="nc">&nbsp;		Repository repository = factory.getRepository(config);</b>
+<b class="nc">&nbsp;		if (repository instanceof RepositoryResolverClient) {</b>
+<b class="nc">&nbsp;			((RepositoryResolverClient) repository).setRepositoryResolver(this);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (repository instanceof FederatedServiceResolverClient) {</b>
+<b class="nc">&nbsp;			((FederatedServiceResolverClient) repository).setFederatedServiceResolver(getFederatedServiceResolver());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (repository instanceof SessionManagerDependent) {</b>
+<b class="nc">&nbsp;			((SessionManagerDependent) repository).setHttpClientSessionManager(client);</b>
+<b class="nc">&nbsp;		} else if (repository instanceof HttpClientDependent) {</b>
+<b class="nc">&nbsp;			((HttpClientDependent) repository).setHttpClient(getHttpClient());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (config instanceof DelegatingRepositoryImplConfig) {</b>
+<b class="nc">&nbsp;			RepositoryImplConfig delegateConfig = ((DelegatingRepositoryImplConfig) config).getDelegate();</b>
+<b class="nc">&nbsp;			Repository delegate = createRepositoryStack(delegateConfig);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				((DelegatingRepository) repository).setDelegate(delegate);</b>
+<b class="nc">&nbsp;			} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryConfigException(</b>
+<b class="nc">&nbsp;						&quot;Delegate specified for repository that is not a DelegatingRepository: &quot; + delegate.getClass(),</b>
+&nbsp;						e);
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return repository;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized RepositoryConfig getRepositoryConfig(String id) {
+<b class="nc">&nbsp;		File dataDir = getRepositoryDir(id);</b>
+<b class="nc">&nbsp;		if (new File(dataDir, CFG_FILE).exists()) {</b>
+<b class="nc">&nbsp;			File configFile = new File(dataDir, CFG_FILE);</b>
+<b class="nc">&nbsp;			try (InputStream input = new FileInputStream(configFile)) {</b>
+<b class="nc">&nbsp;				Model model = Rio.parse(input, configFile.toURI().toString(), CONFIG_FORMAT);</b>
+<b class="nc">&nbsp;				Set&lt;String&gt; repositoryIDs = RepositoryConfigUtil.getRepositoryIDs(model);</b>
+<b class="nc">&nbsp;				if (repositoryIDs.isEmpty()) {</b>
+<b class="nc">&nbsp;					throw new RepositoryConfigException(&quot;No repository ID in configuration: &quot; + configFile);</b>
+<b class="nc">&nbsp;				} else if (repositoryIDs.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new RepositoryConfigException(&quot;Multiple repository IDs in configuration: &quot; + configFile);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String repositoryID = repositoryIDs.iterator().next();</b>
+<b class="nc">&nbsp;				if (!id.equals(repositoryID)</b>
+<b class="nc">&nbsp;						&amp;&amp; !getRepositoryDir(repositoryID).getCanonicalFile().equals(dataDir.getCanonicalFile())) {</b>
+<b class="nc">&nbsp;					throw new RepositoryConfigException(&quot;Wrong repository ID in configuration: &quot; + configFile);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return RepositoryConfigUtil.getRepositoryConfig(model, repositoryID);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryConfigException(e);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryInfo getRepositoryInfo(String id) {
+<b class="nc">&nbsp;		RepositoryConfig config = getRepositoryConfig(id);</b>
+<b class="nc">&nbsp;		if (config == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		RepositoryInfo repInfo = new RepositoryInfo();</b>
+<b class="nc">&nbsp;		repInfo.setId(config.getID());</b>
+<b class="nc">&nbsp;		repInfo.setDescription(config.getTitle());</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			repInfo.setLocation(getRepositoryDir(config.getID()).toURI().toURL());</b>
+<b class="nc">&nbsp;		} catch (MalformedURLException mue) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;Location of repository does not resolve to a valid URL&quot;, mue);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		repInfo.setReadable(true);</b>
+<b class="nc">&nbsp;		repInfo.setWritable(true);</b>
+<b class="nc">&nbsp;		return repInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized List&lt;RepositoryInfo&gt; getAllRepositoryInfos() throws RepositoryException {
+<b class="nc">&nbsp;		File repositoriesDir = resolvePath(REPOSITORIES_DIR);</b>
+<b class="nc">&nbsp;		String[] dirs = repositoriesDir.list((File repositories, String name) -&gt; {</b>
+<b class="nc">&nbsp;			File dataDir = new File(repositories, name);</b>
+<b class="nc">&nbsp;			return dataDir.isDirectory() &amp;&amp; new File(dataDir, CFG_FILE).exists();</b>
+&nbsp;		});
+<b class="nc">&nbsp;		if (dirs == null) {</b>
+<b class="nc">&nbsp;			return Collections.emptyList();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		List&lt;RepositoryInfo&gt; result = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (String name : dirs) {</b>
+<b class="nc">&nbsp;			RepositoryInfo repInfo = getRepositoryInfo(name);</b>
+<b class="nc">&nbsp;			result.add(repInfo);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void addRepositoryConfig(RepositoryConfig config)
+&nbsp;			throws RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		Objects.requireNonNull(config).validate();</b>
+<b class="nc">&nbsp;		File dataDir = getRepositoryDir(config.getID());</b>
+<b class="nc">&nbsp;		if (!dataDir.exists()) {</b>
+<b class="nc">&nbsp;			dataDir.mkdirs();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!dataDir.isDirectory()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(&quot;Could not create directory: &quot; + dataDir);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		File configFile = new File(dataDir, CFG_FILE);</b>
+<b class="nc">&nbsp;		Model model = getModelFactory().createEmptyModel();</b>
+<b class="nc">&nbsp;		String ns = configFile.toURI().toString() + &quot;#&quot;;</b>
+<b class="nc">&nbsp;		config.export(model, SimpleValueFactory.getInstance().createIRI(ns, config.getID()));</b>
+<b class="nc">&nbsp;		File part = new File(configFile.getParentFile(), configFile.getName() + &quot;.part&quot;);</b>
+<b class="nc">&nbsp;		try (OutputStream output = new FileOutputStream(part)) {</b>
+<b class="nc">&nbsp;			Rio.write(model, output, configFile.toURI().toString(), CONFIG_FORMAT, CFG_CONFIG);</b>
+<b class="nc">&nbsp;		} catch (IOException | RDFHandlerException | UnsupportedRDFormatException | URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			Files.move(part.toPath(), configFile.toPath(), StandardCopyOption.REPLACE_EXISTING);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized boolean removeRepository(String repositoryID)
+&nbsp;			throws RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		boolean removed = super.removeRepository(repositoryID);</b>
+<b class="nc">&nbsp;		File dataDir = getRepositoryDir(repositoryID);</b>
+<b class="nc">&nbsp;		if (dataDir.isDirectory()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Cleaning up data dir {} for repository {}&quot;, dataDir.getAbsolutePath(), repositoryID);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				FileUtil.deleteDir(dataDir);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryConfigException(e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return removed;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

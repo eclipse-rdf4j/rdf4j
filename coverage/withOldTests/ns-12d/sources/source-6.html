@@ -1,0 +1,421 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExploreServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.commands</a>
+</div>
+
+<h1>Coverage Summary for Class: ExploreServlet (org.eclipse.rdf4j.workbench.commands)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ExploreServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ExploreServlet$ResultCursor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/77)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.commands;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;import org.eclipse.rdf4j.workbench.base.TupleServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;public class ExploreServlet extends TupleServlet {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(ExploreServlet.class);</b>
+&nbsp;
+&nbsp;	protected static final String LIMIT = &quot;limit_explore&quot;;
+&nbsp;
+&nbsp;	protected static final int LIMIT_DEFAULT = 100;
+&nbsp;
+&nbsp;	public ExploreServlet() {
+<b class="nc">&nbsp;		super(&quot;explore.xsl&quot;, &quot;subject&quot;, &quot;predicate&quot;, &quot;object&quot;, &quot;context&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String[] getCookieNames() {
+<b class="nc">&nbsp;		return new String[] { LIMIT, &quot;total_result_count&quot;, &quot;show-datatypes&quot; };</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+&nbsp;			throws Exception {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.service(req, resp, xslPath);</b>
+<b class="nc">&nbsp;		} catch (BadRequestException exc) {</b>
+<b class="nc">&nbsp;			logger.warn(exc.toString(), exc);</b>
+<b class="nc">&nbsp;			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;			builder.transform(xslPath, &quot;explore.xsl&quot;);</b>
+<b class="nc">&nbsp;			builder.start(&quot;error-message&quot;);</b>
+<b class="nc">&nbsp;			builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;			builder.result(exc.getMessage());</b>
+<b class="nc">&nbsp;			builder.end();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final TupleResultBuilder builder,
+&nbsp;			final RepositoryConnection con) throws BadRequestException, RDF4JException {
+<b class="nc">&nbsp;		final Value value = req.getValue(&quot;resource&quot;);</b>
+<b class="nc">&nbsp;		logger.debug(&quot;resource = {}&quot;, value);</b>
+&nbsp;
+&nbsp;		// At worst, malicious parameter value could cause inaccurate
+&nbsp;		// reporting of count in page.
+<b class="nc">&nbsp;		int count = req.getInt(&quot;know_total&quot;);</b>
+<b class="nc">&nbsp;		if (count == 0) {</b>
+<b class="nc">&nbsp;			count = this.processResource(con, builder, value, 0, Integer.MAX_VALUE, false).getTotalResultCount();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.cookies.addTotalResultCountCookie(req, resp, (int) count);</b>
+<b class="nc">&nbsp;		final int offset = req.getInt(&quot;offset&quot;);</b>
+<b class="nc">&nbsp;		int limit = LIMIT_DEFAULT;</b>
+<b class="nc">&nbsp;		if (req.isParameterPresent(LIMIT)) {</b>
+<b class="nc">&nbsp;			limit = req.getInt(LIMIT);</b>
+<b class="nc">&nbsp;			if (0 == limit) {</b>
+<b class="nc">&nbsp;				limit = Integer.MAX_VALUE;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		this.processResource(con, builder, value, offset, limit, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Query the repository for all instances of the given value, optionally writing the results into the HTTP response.
+&nbsp;	 *
+&nbsp;	 * @param con     the connection to the repository
+&nbsp;	 * @param builder used for writing to the HTTP response
+&nbsp;	 * @param value   the value to query the repository for
+&nbsp;	 * @param offset  The result at which to start rendering results.
+&nbsp;	 * @param limit   The limit on the number of results to render.
+&nbsp;	 * @param render  If false, suppresses output to the HTTP response.
+&nbsp;	 * @throws RDF4JException if there is an issue iterating through results
+&nbsp;	 * @return The count of all triples in the repository using the given value.
+&nbsp;	 */
+&nbsp;	protected ResultCursor processResource(final RepositoryConnection con, final TupleResultBuilder builder,
+&nbsp;			final Value value, final int offset, final int limit, final boolean render) throws RDF4JException {
+<b class="nc">&nbsp;		final ResultCursor cursor = new ResultCursor(offset, limit, render);</b>
+<b class="nc">&nbsp;		boolean resource = value instanceof Resource;</b>
+<b class="nc">&nbsp;		if (resource) {</b>
+<b class="nc">&nbsp;			export(con, builder, cursor, (Resource) value, null, null);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;After subject, total = {}&quot;, cursor.getTotalResultCount());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			export(con, builder, cursor, null, (IRI) value, null);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;After predicate, total = {}&quot;, cursor.getTotalResultCount());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			export(con, builder, cursor, null, null, value);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;After object, total = {}&quot;, cursor.getTotalResultCount());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (resource) {</b>
+<b class="nc">&nbsp;			export(con, builder, cursor, null, null, null, (Resource) value);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;After context, total = {}&quot;, cursor.getTotalResultCount());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return cursor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Render statements in the repository matching the given pattern to the HTTP response. It is an implicit assumption
+&nbsp;	 * when this calls {@link #isFirstTimeSeen} that {@link #processResource} &#39;s calls into here have been made in the
+&nbsp;	 * following order:
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;ol&gt;
+&nbsp;	 * &lt;li&gt;export(*, subject, null, null, null)&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;export(*, null, predicate, null, null)&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;export(*, null, null, object, null)&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;export(*, null, null, null, context)&lt;/li&gt;
+&nbsp;	 * &lt;/ol&gt;
+&nbsp;	 *
+&nbsp;	 * @param con     the connection to the repository
+&nbsp;	 * @param builder used for writing to the HTTP response
+&nbsp;	 * @param cursor  used for keeping track of our location in the result set
+&nbsp;	 * @param subj    the triple subject
+&nbsp;	 * @param pred    the triple predicate
+&nbsp;	 * @param obj     the triple object
+&nbsp;	 * @param context the triple context
+&nbsp;	 */
+&nbsp;	private void export(RepositoryConnection con, TupleResultBuilder builder, ResultCursor cursor, Resource subj,
+&nbsp;			IRI pred, Value obj, Resource... context)
+&nbsp;			throws RDF4JException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryResult&lt;Statement&gt; result = con.getStatements(subj, pred, obj, true, context)) {</b>
+<b class="nc">&nbsp;			while (result.hasNext()) {</b>
+<b class="nc">&nbsp;				Statement statement = result.next();</b>
+<b class="nc">&nbsp;				if (isFirstTimeSeen(statement, pred, obj, context)) {</b>
+<b class="nc">&nbsp;					if (cursor.mayRender()) {</b>
+<b class="nc">&nbsp;						builder.result(statement.getSubject(), statement.getPredicate(), statement.getObject(),</b>
+<b class="nc">&nbsp;								statement.getContext());</b>
+&nbsp;					}
+<b class="nc">&nbsp;					cursor.advance();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets whether this is the first time the result quad has been seen.
+&nbsp;	 *
+&nbsp;	 * @param patternPredicate the predicate asked for, or null if another quad element was asked for
+&nbsp;	 * @param patternObject    the object asked for, or null if another quad element was asked for
+&nbsp;	 * @param result           the result statement to determine if we&#39;ve already seen
+&nbsp;	 * @param patternContext   the context asked for, or null if another quad element was asked for
+&nbsp;	 * @return true, if this is the first time the quad has been seen, false otherwise
+&nbsp;	 */
+&nbsp;	private boolean isFirstTimeSeen(Statement result, IRI patternPredicate, Value patternObject,
+&nbsp;			Resource... patternContext) {
+<b class="nc">&nbsp;		Resource resultSubject = result.getSubject();</b>
+<b class="nc">&nbsp;		IRI resultPredicate = result.getPredicate();</b>
+<b class="nc">&nbsp;		Value resultObject = result.getObject();</b>
+&nbsp;		boolean firstTimeSeen;
+<b class="nc">&nbsp;		if (1 == patternContext.length) {</b>
+&nbsp;			// I.e., when context matches explore value.
+<b class="nc">&nbsp;			Resource ctx = patternContext[0];</b>
+<b class="nc">&nbsp;			firstTimeSeen = !(ctx.equals(resultSubject) || ctx.equals(resultPredicate) || ctx.equals(resultObject));</b>
+<b class="nc">&nbsp;		} else if (null != patternObject) {</b>
+&nbsp;			// I.e., when object matches explore value.
+<b class="nc">&nbsp;			firstTimeSeen = !(resultObject.equals(resultSubject) || resultObject.equals(resultPredicate));</b>
+<b class="nc">&nbsp;		} else if (null != patternPredicate) {</b>
+&nbsp;			// I.e., when predicate matches explore value.
+<b class="nc">&nbsp;			firstTimeSeen = !(resultPredicate.equals(resultSubject));</b>
+&nbsp;		} else {
+&nbsp;			// I.e., when subject matches explore value.
+<b class="nc">&nbsp;			firstTimeSeen = true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return firstTimeSeen;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Class for keeping track of location within the result set, relative to offset and limit.
+&nbsp;	 *
+&nbsp;	 * @author Dale Visser
+&nbsp;	 */
+&nbsp;	protected class ResultCursor {
+&nbsp;
+&nbsp;		private int untilFirst;
+&nbsp;
+<b class="nc">&nbsp;		private int totalResults = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		private int renderedResults = 0;</b>
+&nbsp;
+&nbsp;		private final int limit;
+&nbsp;
+&nbsp;		private final boolean render;
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @param offset the desired offset at which rendering should start
+&nbsp;		 * @param limit  the desired maximum number of results to render
+&nbsp;		 * @param render if false, suppresses any rendering
+&nbsp;		 */
+<b class="nc">&nbsp;		public ResultCursor(final int offset, final int limit, final boolean render) {</b>
+<b class="nc">&nbsp;			this.render = render;</b>
+<b class="nc">&nbsp;			this.limit = limit &gt; 0 ? limit : Integer.MAX_VALUE;</b>
+<b class="nc">&nbsp;			this.untilFirst = offset &gt;= 0 ? offset : 0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Gets the total number of results. Only meant to be called after advance() has been called for all results in
+&nbsp;		 * the set.
+&nbsp;		 *
+&nbsp;		 * @return the number of times advance() has been called
+&nbsp;		 */
+&nbsp;		public int getTotalResultCount() {
+<b class="nc">&nbsp;			return this.totalResults;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Gets the number of results that were actually rendered. Only meant to be called after advance() has been
+&nbsp;		 * called for all results in the set.
+&nbsp;		 *
+&nbsp;		 * @return the number of times advance() has been called when this.mayRender() evaluated to true
+&nbsp;		 */
+&nbsp;		public int getRenderedResultCount() {
+<b class="nc">&nbsp;			return this.renderedResults;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return whether it is allowed to render the next result
+&nbsp;		 */
+&nbsp;		public boolean mayRender() {
+<b class="nc">&nbsp;			return this.render &amp;&amp; (this.untilFirst == 0 &amp;&amp; this.renderedResults &lt; this.limit);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Advances the cursor, incrementing the total count, and moving other internal counters.
+&nbsp;		 */
+&nbsp;		public void advance() {
+<b class="nc">&nbsp;			this.totalResults++;</b>
+<b class="nc">&nbsp;			if (this.mayRender()) {</b>
+<b class="nc">&nbsp;				this.renderedResults++;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (this.untilFirst &gt; 0) {</b>
+<b class="nc">&nbsp;				this.untilFirst--;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

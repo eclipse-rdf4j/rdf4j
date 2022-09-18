@@ -1,0 +1,342 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FileLogReader</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.logging.file.logback</a>
+</div>
+
+<h1>Coverage Summary for Class: FileLogReader (org.eclipse.rdf4j.common.logging.file.logback)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FileLogReader</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/91)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.logging.file.logback;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.RandomAccessFile;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.text.ParseException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogLevel;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogRecord;
+&nbsp;import org.eclipse.rdf4j.common.logging.base.AbstractLogReader;
+&nbsp;import org.eclipse.rdf4j.common.logging.base.SimpleLogRecord;
+&nbsp;
+&nbsp;import ch.qos.logback.core.Appender;
+&nbsp;import ch.qos.logback.core.FileAppender;
+&nbsp;
+&nbsp;/**
+&nbsp; * File log reader
+&nbsp; */
+&nbsp;public class FileLogReader extends AbstractLogReader {
+&nbsp;
+<b class="nc">&nbsp;	private File logFile = null;</b>
+<b class="nc">&nbsp;	private RandomAccessFile log = null;</b>
+&nbsp;
+&nbsp;	private long fileLength;
+&nbsp;	private long byteOffset;
+&nbsp;
+<b class="nc">&nbsp;	private LogRecord next = null;</b>
+<b class="nc">&nbsp;	private int count = 0;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 */
+<b class="nc">&nbsp;	public FileLogReader() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param logFile
+&nbsp;	 */
+<b class="nc">&nbsp;	public FileLogReader(File logFile) {</b>
+<b class="nc">&nbsp;		this.logFile = logFile;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setAppender(Appender&lt;?&gt; appender) {
+<b class="nc">&nbsp;		super.setAppender(appender);</b>
+<b class="nc">&nbsp;		if (appender instanceof FileAppender) {</b>
+<b class="nc">&nbsp;			this.logFile = new File(((FileAppender&lt;?&gt;) appender).getFile());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;FileLogReader appender must be an instance of FileAppender!&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.next = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws Exception {
+<b class="nc">&nbsp;		if (logFile == null) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Log file is undefined for this FileLogReader!&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (log != null) {</b>
+<b class="nc">&nbsp;			log.close();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		log = new RandomAccessFile(logFile, &quot;r&quot;);</b>
+<b class="nc">&nbsp;		fileLength = log.length();</b>
+<b class="nc">&nbsp;		byteOffset = fileLength - 1;</b>
+<b class="nc">&nbsp;		count = 0;</b>
+<b class="nc">&nbsp;		next = getNext();</b>
+<b class="nc">&nbsp;		if (getOffset() &gt; 0) {</b>
+<b class="nc">&nbsp;			doSkip(getOffset());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Skip for a specific offset
+&nbsp;	 *
+&nbsp;	 * @param offset offset
+&nbsp;	 */
+&nbsp;	private void doSkip(int offset) {
+<b class="nc">&nbsp;		while (this.hasNext() &amp;&amp; (count &lt; offset)) {</b>
+<b class="nc">&nbsp;			this.next();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isMoreAvailable() {
+<b class="nc">&nbsp;		return next != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() {
+<b class="nc">&nbsp;		if (getLimit() == 0) {</b>
+<b class="nc">&nbsp;			return isMoreAvailable();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return isMoreAvailable() &amp;&amp; (count &lt; (getOffset() + getLimit()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public LogRecord next() {
+<b class="nc">&nbsp;		LogRecord result = next;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			next = getNext();</b>
+<b class="nc">&nbsp;			count++;</b>
+<b class="nc">&nbsp;		} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Unable to get next log record.&quot;, ioe);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (!hasNext()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				destroy();</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+&nbsp;				// too bad
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get next log record
+&nbsp;	 *
+&nbsp;	 * @return log record
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private LogRecord getNext() throws IOException {
+<b class="nc">&nbsp;		SimpleLogRecord result = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder message = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;String&gt; stackTrace = new LinkedList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (result == null &amp;&amp; byteOffset &gt; 0) {</b>
+<b class="nc">&nbsp;			List&lt;Byte&gt; bytesRead = new LinkedList&lt;&gt;();</b>
+<b class="nc">&nbsp;			if (byteOffset &lt; 0) {</b>
+<b class="nc">&nbsp;				System.err.println(&quot;Subzero byteOffset with: &quot;);</b>
+<b class="nc">&nbsp;				System.err.println(&quot;\tMessage: &quot; + message);</b>
+<b class="nc">&nbsp;				System.err.println(&quot;\tStacktrace: &quot; + stackTrace.size());</b>
+&nbsp;			}
+&nbsp;			// find start of previous line
+&nbsp;			byte currentByte;
+&nbsp;			do {
+<b class="nc">&nbsp;				log.seek(byteOffset--);</b>
+<b class="nc">&nbsp;				currentByte = log.readByte();</b>
+<b class="nc">&nbsp;				if (currentByte != &#39;\n&#39; &amp;&amp; currentByte != &#39;\r&#39;) {</b>
+<b class="nc">&nbsp;					bytesRead.add(0, currentByte);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} while (byteOffset &gt; 0 &amp;&amp; currentByte != &#39;\n&#39; &amp;&amp; currentByte != &#39;\r&#39;);</b>
+&nbsp;
+&nbsp;			// if at start of file, retrieve the byte we just read in the do/while
+<b class="nc">&nbsp;			if (byteOffset &lt; 1) {</b>
+<b class="nc">&nbsp;				byteOffset = 0;</b>
+<b class="nc">&nbsp;				log.seek(0);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// read the line
+<b class="nc">&nbsp;			byte[] lineBytes = new byte[bytesRead.size()];</b>
+<b class="nc">&nbsp;			int index = 0;</b>
+<b class="nc">&nbsp;			Iterator&lt;Byte&gt; byteIt = bytesRead.iterator();</b>
+<b class="nc">&nbsp;			while (byteIt.hasNext()) {</b>
+<b class="nc">&nbsp;				lineBytes[index] = byteIt.next();</b>
+<b class="nc">&nbsp;				index++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String lastLine = new String(lineBytes, StandardCharsets.UTF_8);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (lastLine != null) {</b>
+&nbsp;				// is this a log line?
+<b class="nc">&nbsp;				Matcher matcher = StackTracePatternLayout.DEFAULT_PARSER_PATTERN.matcher(lastLine);</b>
+<b class="nc">&nbsp;				if (matcher.matches()) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						LogLevel level = LogLevel.valueOf(matcher.group(1).trim());</b>
+<b class="nc">&nbsp;						Date timestamp = LogRecord.ISO8601_TIMESTAMP_FORMAT.parse(matcher.group(2).trim());</b>
+<b class="nc">&nbsp;						String threadName = matcher.group(3);</b>
+<b class="nc">&nbsp;						message.insert(0, matcher.group(4));</b>
+&nbsp;
+<b class="nc">&nbsp;						result = new SimpleLogRecord();</b>
+<b class="nc">&nbsp;						result.setLevel(level);</b>
+<b class="nc">&nbsp;						result.setTime(timestamp);</b>
+<b class="nc">&nbsp;						result.setThreadName(threadName);</b>
+<b class="nc">&nbsp;						result.setMessage(message.toString());</b>
+<b class="nc">&nbsp;						result.setStackTrace(stackTrace);</b>
+&nbsp;
+<b class="nc">&nbsp;						message = new StringBuilder();</b>
+<b class="nc">&nbsp;						stackTrace = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;					} catch (ParseException pe) {</b>
+<b class="nc">&nbsp;						throw new IOException(&quot;Unable to parse timestamp in log record&quot;);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;				// it may be a message line or a stacktrace line
+&nbsp;				else {
+<b class="nc">&nbsp;					if (!lastLine.trim().isEmpty()) {</b>
+<b class="nc">&nbsp;						if (lastLine.startsWith(&quot;\t&quot;)) {</b>
+<b class="nc">&nbsp;							stackTrace.add(0, lastLine.trim());</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							message.insert(0, lastLine);</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() throws IOException {
+<b class="nc">&nbsp;		if (log != null) {</b>
+<b class="nc">&nbsp;			log.close();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		log = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

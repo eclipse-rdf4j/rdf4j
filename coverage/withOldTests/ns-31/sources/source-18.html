@@ -1,0 +1,265 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementSourcePattern</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementSourcePattern (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementSourcePattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedUnionTask;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionTask;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
+&nbsp;import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Represents statements that can produce results at a some particular endpoints, the statement sources.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; * @see StatementSource
+&nbsp; */
+&nbsp;public class StatementSourcePattern extends FedXStatementPattern {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 7548505818766482715L;
+&nbsp;
+<b class="nc">&nbsp;	protected boolean usePreparedQuery = false;</b>
+&nbsp;	protected final FederationContext federationContext;
+&nbsp;
+&nbsp;	public StatementSourcePattern(StatementPattern node, QueryInfo queryInfo) {
+<b class="nc">&nbsp;		super(node, queryInfo);</b>
+<b class="nc">&nbsp;		this.federationContext = queryInfo.getFederationContext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addStatementSource(StatementSource statementSource) {
+<b class="nc">&nbsp;		statementSources.add(statementSource);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		WorkerUnionBase&lt;BindingSet&gt; union = null;</b>
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated in prepared query</b>
+<b class="nc">&nbsp;			String preparedQuery = null; // used for some triple sources</b>
+<b class="nc">&nbsp;			union = federationContext.getManager().createWorkerUnion(queryInfo);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (StatementSource source : statementSources) {</b>
+&nbsp;
+<b class="nc">&nbsp;				Endpoint ownedEndpoint = queryInfo.getFederationContext()</b>
+<b class="nc">&nbsp;						.getEndpointManager()</b>
+<b class="nc">&nbsp;						.getEndpoint(source.getEndpointID());</b>
+<b class="nc">&nbsp;				TripleSource t = ownedEndpoint.getTripleSource();</b>
+&nbsp;
+&nbsp;				/*
+&nbsp;				 * Implementation note: for some endpoint types it is much more efficient to use prepared queries as
+&nbsp;				 * there might be some overhead (obsolete optimization) in the native implementation. This is for
+&nbsp;				 * instance the case for SPARQL connections. In contrast for NativeRepositories it is much more
+&nbsp;				 * efficient to use getStatements(subj, pred, obj) instead of evaluating a prepared query.
+&nbsp;				 */
+&nbsp;
+<b class="nc">&nbsp;				if (t.usePreparedQuery(this, queryInfo)) {</b>
+&nbsp;
+&nbsp;					// queryString needs to be constructed only once for a given bindingset
+<b class="nc">&nbsp;					if (preparedQuery == null) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,</b>
+<b class="nc">&nbsp;									queryInfo.getDataset());</b>
+<b class="nc">&nbsp;						} catch (IllegalQueryException e1) {</b>
+&nbsp;							/* all vars are bound, this must be handled as a check query, can occur in joins */
+<b class="nc">&nbsp;							CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res = handleStatementSourcePatternCheck(</b>
+&nbsp;									bindings);
+<b class="nc">&nbsp;							if (boundFilters != null &amp;&amp; !(res instanceof EmptyIteration)) {</b>
+<b class="nc">&nbsp;								res = new InsertBindingsIteration(res, boundFilters);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							return res;</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint, bindings,</b>
+<b class="nc">&nbsp;							(isEvaluated.get() ? null : filterExpr), queryInfo));</b>
+&nbsp;
+&nbsp;				} else {
+<b class="nc">&nbsp;					union.addTask(new ParallelUnionTask(union, this, ownedEndpoint, bindings, filterExpr, queryInfo));</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			union.run(); // execute the union in this thread</b>
+&nbsp;
+<b class="nc">&nbsp;			if (boundFilters != null) {</b>
+&nbsp;				// make sure to insert any values from FILTER expressions that are directly
+&nbsp;				// bound in this expression
+<b class="nc">&nbsp;				return new InsertBindingsIteration(union, boundFilters);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return union;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			if (union != null) {</b>
+<b class="nc">&nbsp;				union.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			if (union != null) {</b>
+<b class="nc">&nbsp;				union.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw t;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; handleStatementSourcePatternCheck(
+&nbsp;			BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+&nbsp;
+&nbsp;		// if at least one source has statements, we can return this binding set as result
+&nbsp;
+&nbsp;		// XXX do this in parallel for the number of endpoints ?
+<b class="nc">&nbsp;		for (StatementSource source : statementSources) {</b>
+<b class="nc">&nbsp;			Endpoint ownedEndpoint = queryInfo.getFederationContext()</b>
+<b class="nc">&nbsp;					.getEndpointManager()</b>
+<b class="nc">&nbsp;					.getEndpoint(source.getEndpointID());</b>
+<b class="nc">&nbsp;			TripleSource t = ownedEndpoint.getTripleSource();</b>
+<b class="nc">&nbsp;			if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset())) {</b>
+<b class="nc">&nbsp;				return new SingleBindingSetIteration(bindings);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return new EmptyIteration&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

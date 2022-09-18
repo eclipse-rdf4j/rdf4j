@@ -1,0 +1,233 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TransactionExportStatementsView</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: TransactionExportStatementsView (org.eclipse.rdf4j.http.server.repository.transaction)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TransactionExportStatementsView</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.transaction;
+&nbsp;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_OK;
+&nbsp;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.concurrent.ExecutionException;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.server.ServerHTTPException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterFactory;
+&nbsp;import org.springframework.web.servlet.View;
+&nbsp;
+&nbsp;/**
+&nbsp; * View used to export statements as part of a transaction. Renders the statements as RDF using a serialization
+&nbsp; * specified using a parameter or Accept header.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class TransactionExportStatementsView implements View {
+&nbsp;
+&nbsp;	public static final String SUBJECT_KEY = &quot;subject&quot;;
+&nbsp;
+&nbsp;	public static final String PREDICATE_KEY = &quot;predicate&quot;;
+&nbsp;
+&nbsp;	public static final String OBJECT_KEY = &quot;object&quot;;
+&nbsp;
+&nbsp;	public static final String CONTEXTS_KEY = &quot;contexts&quot;;
+&nbsp;
+&nbsp;	public static final String USE_INFERENCING_KEY = &quot;useInferencing&quot;;
+&nbsp;
+&nbsp;	public static final String TRANSACTION_KEY = &quot;transaction&quot;;
+&nbsp;
+&nbsp;	public static final String FACTORY_KEY = &quot;factory&quot;;
+&nbsp;
+&nbsp;	public static final String HEADERS_ONLY = &quot;headersOnly&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private static final TransactionExportStatementsView INSTANCE = new TransactionExportStatementsView();</b>
+&nbsp;
+&nbsp;	public static TransactionExportStatementsView getInstance() {
+<b class="nc">&nbsp;		return INSTANCE;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private TransactionExportStatementsView() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getContentType() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;rawtypes&quot;)
+&nbsp;	@Override
+&nbsp;	public void render(Map model, HttpServletRequest request, HttpServletResponse response) throws Exception {
+<b class="nc">&nbsp;		Resource subj = (Resource) model.get(SUBJECT_KEY);</b>
+<b class="nc">&nbsp;		IRI pred = (IRI) model.get(PREDICATE_KEY);</b>
+<b class="nc">&nbsp;		Value obj = (Value) model.get(OBJECT_KEY);</b>
+<b class="nc">&nbsp;		Resource[] contexts = (Resource[]) model.get(CONTEXTS_KEY);</b>
+<b class="nc">&nbsp;		boolean useInferencing = (Boolean) model.get(USE_INFERENCING_KEY);</b>
+<b class="nc">&nbsp;		Transaction transaction = (Transaction) model.get(TRANSACTION_KEY);</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory) model.get(FACTORY_KEY);</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			try (OutputStream out = response.getOutputStream()) {</b>
+<b class="nc">&nbsp;				RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);</b>
+&nbsp;
+<b class="nc">&nbsp;				response.setStatus(SC_OK);</b>
+&nbsp;
+<b class="nc">&nbsp;				String mimeType = rdfFormat.getDefaultMIMEType();</b>
+<b class="nc">&nbsp;				if (rdfFormat.hasCharset()) {</b>
+<b class="nc">&nbsp;					Charset charset = rdfFormat.getCharset();</b>
+<b class="nc">&nbsp;					mimeType += &quot;; charset=&quot; + charset.name();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				response.setContentType(mimeType);</b>
+&nbsp;
+<b class="nc">&nbsp;				String filename = &quot;statements&quot;;</b>
+<b class="nc">&nbsp;				if (rdfFormat.getDefaultFileExtension() != null) {</b>
+<b class="nc">&nbsp;					filename += &quot;.&quot; + rdfFormat.getDefaultFileExtension();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				response.setHeader(&quot;Content-Disposition&quot;, &quot;attachment; filename=&quot; + filename);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (!headersOnly) {</b>
+<b class="nc">&nbsp;					transaction.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Serialization error: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;		} catch (ExecutionException | InterruptedException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Repository error: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

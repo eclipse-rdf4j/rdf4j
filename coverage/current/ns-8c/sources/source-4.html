@@ -1,0 +1,202 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryWrapper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.base</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryWrapper (org.eclipse.rdf4j.repository.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositoryWrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.2%
+  </span>
+  <span class="absValue">
+    (6/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (7/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.base;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.DelegatingRepository;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link DelegatingRepository} implementation that, by default, forwards all method calls to its delegate.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class RepositoryWrapper implements DelegatingRepository {
+&nbsp;
+&nbsp;	private volatile Repository delegate;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;RepositoryWrapper&lt;/var&gt;.
+&nbsp;	 */
+<b class="nc">&nbsp;	public RepositoryWrapper() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;RepositoryWrapper&lt;/var&gt; and calls {@link #setDelegate(Repository)} with the supplied delegate
+&nbsp;	 * repository.
+&nbsp;	 */
+<b class="fc">&nbsp;	public RepositoryWrapper(Repository delegate) {</b>
+<b class="fc">&nbsp;		setDelegate(delegate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDelegate(Repository delegate) {
+<b class="fc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Repository getDelegate() {
+<b class="fc">&nbsp;		return delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataDir(File dataDir) {
+<b class="nc">&nbsp;		getDelegate().setDataDir(dataDir);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public File getDataDir() {
+<b class="nc">&nbsp;		return getDelegate().getDataDir();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() throws RepositoryException {
+<b class="fc">&nbsp;		getDelegate().shutDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isWritable() throws RepositoryException {
+<b class="nc">&nbsp;		return getDelegate().isWritable();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryConnection getConnection() throws RepositoryException {
+<b class="fc">&nbsp;		return getDelegate().getConnection();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="fc">&nbsp;		return getDelegate().getValueFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return getDelegate().toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isInitialized() {
+<b class="nc">&nbsp;		return getDelegate().isInitialized();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().init();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

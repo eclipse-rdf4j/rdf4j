@@ -1,0 +1,391 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QuerySpec</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: QuerySpec (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QuerySpec</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/90)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;
+&nbsp;/**
+&nbsp; * A QuerySpec holds information extracted from a TupleExpr corresponding with a single Lucene query. Access the
+&nbsp; * patterns or use the get-methods to get the names of the variables to bind.
+&nbsp; */
+&nbsp;public class QuerySpec extends AbstractSearchQueryEvaluator {
+&nbsp;
+&nbsp;	private final StatementPattern matchesPattern;
+&nbsp;
+&nbsp;	private final StatementPattern queryPattern;
+&nbsp;
+&nbsp;	private final StatementPattern propertyPattern;
+&nbsp;
+&nbsp;	private final StatementPattern scorePattern;
+&nbsp;
+&nbsp;	private final StatementPattern snippetPattern;
+&nbsp;
+&nbsp;	private final StatementPattern typePattern;
+&nbsp;
+&nbsp;	private final StatementPattern idPattern;
+&nbsp;
+&nbsp;	private final Resource subject;
+&nbsp;
+&nbsp;	private final String queryString;
+&nbsp;
+&nbsp;	private final IRI propertyURI;
+&nbsp;
+&nbsp;	private final String matchesVarName;
+&nbsp;
+&nbsp;	private final String propertyVarName;
+&nbsp;
+&nbsp;	private final String scoreVarName;
+&nbsp;
+&nbsp;	private final String snippetVarName;
+&nbsp;
+&nbsp;	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern, StatementPattern propertyPattern,
+&nbsp;			StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
+&nbsp;			Resource subject, String queryString, IRI propertyURI) {
+<b class="nc">&nbsp;		this(matchesPattern, queryPattern, propertyPattern, scorePattern, snippetPattern, typePattern,</b>
+&nbsp;				null, subject, queryString, propertyURI);
+&nbsp;	}
+&nbsp;
+&nbsp;	public QuerySpec(StatementPattern matchesPattern, StatementPattern queryPattern, StatementPattern propertyPattern,
+&nbsp;			StatementPattern scorePattern, StatementPattern snippetPattern, StatementPattern typePattern,
+<b class="nc">&nbsp;			StatementPattern idPattern, Resource subject, String queryString, IRI propertyURI) {</b>
+<b class="nc">&nbsp;		this.matchesPattern = matchesPattern;</b>
+<b class="nc">&nbsp;		this.queryPattern = queryPattern;</b>
+<b class="nc">&nbsp;		this.propertyPattern = propertyPattern;</b>
+<b class="nc">&nbsp;		this.scorePattern = scorePattern;</b>
+<b class="nc">&nbsp;		this.snippetPattern = snippetPattern;</b>
+<b class="nc">&nbsp;		this.typePattern = typePattern;</b>
+<b class="nc">&nbsp;		this.idPattern = idPattern;</b>
+<b class="nc">&nbsp;		this.subject = subject;</b>
+<b class="nc">&nbsp;		this.queryString = queryString;</b>
+<b class="nc">&nbsp;		this.propertyURI = propertyURI;</b>
+<b class="nc">&nbsp;		if (matchesPattern != null) {</b>
+<b class="nc">&nbsp;			this.matchesVarName = matchesPattern.getSubjectVar().getName();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.matchesVarName = null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (propertyPattern != null) {</b>
+<b class="nc">&nbsp;			this.propertyVarName = propertyPattern.getObjectVar().getName();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.propertyVarName = null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (scorePattern != null) {</b>
+<b class="nc">&nbsp;			this.scoreVarName = scorePattern.getObjectVar().getName();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.scoreVarName = null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (snippetPattern != null) {</b>
+<b class="nc">&nbsp;			this.snippetVarName = snippetPattern.getObjectVar().getName();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.snippetVarName = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public QuerySpec(String matchesVarName, String propertyVarName, String scoreVarName, String snippetVarName,
+<b class="nc">&nbsp;			Resource subject, String queryString, IRI propertyURI) {</b>
+<b class="nc">&nbsp;		this.matchesVarName = matchesVarName;</b>
+<b class="nc">&nbsp;		this.propertyVarName = propertyVarName;</b>
+<b class="nc">&nbsp;		this.scoreVarName = scoreVarName;</b>
+<b class="nc">&nbsp;		this.snippetVarName = snippetVarName;</b>
+<b class="nc">&nbsp;		this.matchesPattern = null;</b>
+<b class="nc">&nbsp;		this.propertyPattern = null;</b>
+<b class="nc">&nbsp;		this.scorePattern = null;</b>
+<b class="nc">&nbsp;		this.snippetPattern = null;</b>
+<b class="nc">&nbsp;		this.typePattern = null;</b>
+<b class="nc">&nbsp;		this.queryPattern = null;</b>
+<b class="nc">&nbsp;		this.idPattern = null;</b>
+<b class="nc">&nbsp;		this.subject = subject;</b>
+<b class="nc">&nbsp;		this.queryString = queryString;</b>
+<b class="nc">&nbsp;		this.propertyURI = propertyURI;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryModelNode getParentQueryModelNode() {
+<b class="nc">&nbsp;		return getMatchesPattern();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryModelNode removeQueryPatterns() {
+<b class="nc">&nbsp;		final Supplier&lt;? extends QueryModelNode&gt; replacement = SingletonSet::new;</b>
+&nbsp;
+<b class="nc">&nbsp;		replace(getQueryPattern(), replacement);</b>
+<b class="nc">&nbsp;		replace(getScorePattern(), replacement);</b>
+<b class="nc">&nbsp;		replace(getPropertyPattern(), replacement);</b>
+<b class="nc">&nbsp;		replace(getSnippetPattern(), replacement);</b>
+<b class="nc">&nbsp;		replace(getTypePattern(), replacement);</b>
+<b class="nc">&nbsp;		replace(getIdPattern(), replacement);</b>
+&nbsp;
+<b class="nc">&nbsp;		final QueryModelNode placeholder = new SingletonSet();</b>
+&nbsp;
+<b class="nc">&nbsp;		getMatchesPattern().replaceWith(placeholder);</b>
+&nbsp;
+<b class="nc">&nbsp;		return placeholder;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Replace the given pattern with a new instance of the given replacement type.
+&nbsp;	 *
+&nbsp;	 * @param pattern     the pattern to remove
+&nbsp;	 * @param replacement the replacement type
+&nbsp;	 */
+&nbsp;	private void replace(QueryModelNode pattern, Supplier&lt;? extends QueryModelNode&gt; replacement) {
+<b class="nc">&nbsp;		if (pattern != null) {</b>
+<b class="nc">&nbsp;			pattern.replaceWith(replacement.get());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getMatchesPattern() {
+<b class="nc">&nbsp;		return matchesPattern;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * return the name of the bound variable that should match the query
+&nbsp;	 *
+&nbsp;	 * @return the name of the variable or null, if no name set
+&nbsp;	 */
+&nbsp;	public String getMatchesVariableName() {
+<b class="nc">&nbsp;		return matchesVarName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getQueryPattern() {
+<b class="nc">&nbsp;		return queryPattern;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getPropertyPattern() {
+<b class="nc">&nbsp;		return propertyPattern;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getIdPattern() {
+<b class="nc">&nbsp;		return idPattern;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getPropertyVariableName() {
+<b class="nc">&nbsp;		return propertyVarName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getScorePattern() {
+<b class="nc">&nbsp;		return scorePattern;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The variable name associated with the query score
+&nbsp;	 *
+&nbsp;	 * @return the name or null, if no score is queried in the pattern
+&nbsp;	 */
+&nbsp;	public String getScoreVariableName() {
+<b class="nc">&nbsp;		return scoreVarName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getSnippetPattern() {
+<b class="nc">&nbsp;		return snippetPattern;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getSnippetVariableName() {
+<b class="nc">&nbsp;		return snippetVarName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getTypePattern() {
+<b class="nc">&nbsp;		return typePattern;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * the type of query, must equal {@link LuceneSailSchema#LUCENE_QUERY}. A null type is possible, but not valid.
+&nbsp;	 *
+&nbsp;	 * @return the type of the Query or null, if no type assigned.
+&nbsp;	 */
+&nbsp;	public IRI getQueryType() {
+<b class="nc">&nbsp;		if (typePattern != null) {</b>
+<b class="nc">&nbsp;			return (IRI) typePattern.getObjectVar().getValue();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource getSubject() {
+<b class="nc">&nbsp;		return subject;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * return the literal expression of the query or null, if none set. (null values are possible, but not valid).
+&nbsp;	 *
+&nbsp;	 * @return the query or null
+&nbsp;	 */
+&nbsp;	public String getQueryString() {
+&nbsp;		// this should be the same as ((Literal)
+&nbsp;		// queryPattern.getObjectVar().getValue()).getLabel();
+<b class="nc">&nbsp;		return queryString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return The URI of the property who&#39;s literal values should be searched, or &lt;code&gt;null&lt;/code&gt;
+&nbsp;	 */
+&nbsp;	public IRI getPropertyURI() {
+<b class="nc">&nbsp;		return propertyURI;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isEvaluable() {
+<b class="nc">&nbsp;		return queryString != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		buffer.append(&quot;QuerySpec\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;   queryString=\&quot;&quot; + queryString + &quot;\&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;   propertyURI=&quot; + propertyURI + &quot;\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;   subject=&quot; + subject + &quot;\n&quot;);</b>
+<b class="nc">&nbsp;		append(matchesPattern, buffer);</b>
+<b class="nc">&nbsp;		append(queryPattern, buffer);</b>
+<b class="nc">&nbsp;		append(propertyPattern, buffer);</b>
+<b class="nc">&nbsp;		append(scorePattern, buffer);</b>
+<b class="nc">&nbsp;		append(snippetPattern, buffer);</b>
+<b class="nc">&nbsp;		append(typePattern, buffer);</b>
+<b class="nc">&nbsp;		return buffer.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void append(StatementPattern pattern, StringBuilder buffer) {
+<b class="nc">&nbsp;		if (pattern == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		buffer.append(&quot;   &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;StatementPattern\n&quot;);</b>
+<b class="nc">&nbsp;		append(pattern.getSubjectVar(), buffer);</b>
+<b class="nc">&nbsp;		append(pattern.getPredicateVar(), buffer);</b>
+<b class="nc">&nbsp;		append(pattern.getObjectVar(), buffer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void append(Var var, StringBuilder buffer) {
+<b class="nc">&nbsp;		buffer.append(&quot;      &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(var.toString());</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,551 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXConfig (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
+&nbsp;import org.eclipse.rdf4j.federated.monitoring.QueryLog;
+&nbsp;import org.eclipse.rdf4j.federated.monitoring.QueryPlanLog;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;
+&nbsp;import com.google.common.cache.CacheBuilderSpec;
+&nbsp;
+&nbsp;/**
+&nbsp; * Configuration class for FedX
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+<b class="nc">&nbsp;public class FedXConfig {</b>
+&nbsp;
+<b class="nc">&nbsp;	public static FedXConfig DEFAULT_CONFIG = new FedXConfig();</b>
+&nbsp;
+<b class="nc">&nbsp;	private int joinWorkerThreads = 20;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int unionWorkerThreads = 20;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int leftJoinWorkerThreads = 10;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int boundJoinBlockSize = 15;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int enforceMaxQueryTime = 30;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean enableServiceAsBoundJoin = true;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean enableMonitoring = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean isLogQueryPlan = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean isLogQueries = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean debugQueryPlan = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean includeInferredDefault = true;</b>
+&nbsp;
+<b class="nc">&nbsp;	private String sourceSelectionCacheSpec = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	private TaskWrapper taskWrapper = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	private String prefixDeclarations = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int consumingIterationMax = 1000;</b>
+&nbsp;
+&nbsp;	/* factory like setters */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set whether the query plan shall be debugged. See {@link #isDebugQueryPlan()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be set after federation construction and initialize.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param flag
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withDebugQueryPlan(boolean flag) {
+<b class="nc">&nbsp;		this.debugQueryPlan = flag;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set whether to log queries. See {@link #isLogQueries()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param flag
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withLogQueries(boolean flag) {
+<b class="nc">&nbsp;		this.isLogQueries = flag;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set enforce max query time. See {@link #getEnforceMaxQueryTime()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be set after federation construction and initialize.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param enforceMaxQueryTime time in seconds, 0 to disable
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withEnforceMaxQueryTime(int enforceMaxQueryTime) {
+<b class="nc">&nbsp;		this.enforceMaxQueryTime = enforceMaxQueryTime;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the default value supplied to {@link Query#setIncludeInferred(boolean)}
+&nbsp;	 *
+&nbsp;	 * @param flag
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withIncludeInferredDefault(boolean flag) {
+<b class="nc">&nbsp;		this.includeInferredDefault = flag;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enable monitoring. See {@link #isEnableMonitoring()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param flag
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withEnableMonitoring(boolean flag) {
+<b class="nc">&nbsp;		this.enableMonitoring = flag;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the bound join block size. See {@link #getBoundJoinBlockSize()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param boundJoinBlockSize
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withBoundJoinBlockSize(int boundJoinBlockSize) {
+<b class="nc">&nbsp;		this.boundJoinBlockSize = boundJoinBlockSize;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the number of join worker threads. See {@link #getJoinWorkerThreads()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param joinWorkerThreads
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withJoinWorkerThreads(int joinWorkerThreads) {
+<b class="nc">&nbsp;		this.joinWorkerThreads = joinWorkerThreads;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the number of left join worker threads. See {@link #getLeftJoinWorkerThreads()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param leftJoinWorkerThreads
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withLeftJoinWorkerThreads(int leftJoinWorkerThreads) {
+<b class="nc">&nbsp;		this.leftJoinWorkerThreads = leftJoinWorkerThreads;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the number of union worker threads. See {@link #getUnionWorkerThreads()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param unionWorkerThreads
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withUnionWorkerThreads(int unionWorkerThreads) {
+<b class="nc">&nbsp;		this.unionWorkerThreads = unionWorkerThreads;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the optional prefix declarations file. See {@link #getPrefixDeclarations()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param prefixFile
+&nbsp;	 * @return config
+&nbsp;	 */
+&nbsp;	public FedXConfig withPrefixDeclarations(String prefixFile) {
+<b class="nc">&nbsp;		this.prefixDeclarations = prefixFile;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Whether to log the query plan with {@link QueryPlanLog}. See {@link #isLogQueryPlan()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param flag
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withLogQueryPlan(boolean flag) {
+<b class="nc">&nbsp;		this.isLogQueryPlan = flag;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Whether external SERVICE clauses are evaluated using bound join (i.e. with the VALUES clause). Default
+&nbsp;	 * &lt;i&gt;true&lt;/i&gt;
+&nbsp;	 *
+&nbsp;	 * @param flag
+&nbsp;	 * @return the current config.
+&nbsp;	 */
+&nbsp;	public FedXConfig withEnableServiceAsBoundJoin(boolean flag) {
+<b class="nc">&nbsp;		this.enableServiceAsBoundJoin = flag;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The cache specification for the {@link SourceSelectionMemoryCache}. If not set explicitly, the
+&nbsp;	 * {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
+&nbsp;	 *
+&nbsp;	 * @param cacheSpec the {@link CacheBuilderSpec} for the {@link SourceSelectionCache}
+&nbsp;	 * @return the current config
+&nbsp;	 * @see SourceSelectionMemoryCache
+&nbsp;	 */
+&nbsp;	public FedXConfig withSourceSelectionCacheSpec(String cacheSpec) {
+<b class="nc">&nbsp;		this.sourceSelectionCacheSpec = cacheSpec;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper is
+&nbsp;	 * explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
+&nbsp;	 *
+&nbsp;	 * @param taskWrapper the {@link TaskWrapper}
+&nbsp;	 * @return the current config
+&nbsp;	 * @see TaskWrapper
+&nbsp;	 */
+&nbsp;	public FedXConfig withTaskWrapper(TaskWrapper taskWrapper) {
+<b class="nc">&nbsp;		this.taskWrapper = taskWrapper;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The (maximum) number of join worker threads used in the {@link ControlledWorkerScheduler} for join operations.
+&nbsp;	 * Default is 20.
+&nbsp;	 *
+&nbsp;	 * @return the number of join worker threads
+&nbsp;	 */
+&nbsp;	public int getJoinWorkerThreads() {
+<b class="nc">&nbsp;		return joinWorkerThreads;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The (maximum) number of union worker threads used in the {@link ControlledWorkerScheduler} for join operations.
+&nbsp;	 * Default is 20
+&nbsp;	 *
+&nbsp;	 * @return number of union worker threads
+&nbsp;	 */
+&nbsp;	public int getUnionWorkerThreads() {
+<b class="nc">&nbsp;		return unionWorkerThreads;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The (maximum) number of left join worker threads used in the {@link ControlledWorkerScheduler} for join
+&nbsp;	 * operations. Default is 10.
+&nbsp;	 *
+&nbsp;	 * @return the number of left join worker threads
+&nbsp;	 */
+&nbsp;	public int getLeftJoinWorkerThreads() {
+<b class="nc">&nbsp;		return leftJoinWorkerThreads;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The block size for a bound join, i.e. the number of bindings that are integrated in a single subquery. Default is
+&nbsp;	 * 15.
+&nbsp;	 *
+&nbsp;	 * @return the bound join block size
+&nbsp;	 */
+&nbsp;	public int getBoundJoinBlockSize() {
+<b class="nc">&nbsp;		return boundJoinBlockSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a flag indicating whether vectored evaluation using the VALUES clause shall be applied for SERVICE
+&nbsp;	 * expressions.
+&nbsp;	 *
+&nbsp;	 * Default: false
+&nbsp;	 *
+&nbsp;	 * Note: for todays endpoints it is more efficient to disable vectored evaluation of SERVICE.
+&nbsp;	 *
+&nbsp;	 * @return whether SERVICE expressions are evaluated using bound joins
+&nbsp;	 */
+&nbsp;	public boolean getEnableServiceAsBoundJoin() {
+<b class="nc">&nbsp;		return enableServiceAsBoundJoin;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the maximum query time in seconds used for query evaluation. Applied if {@link QueryManager} is used to
+&nbsp;	 * create queries.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Set to 0 to disable query timeouts.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * The timeout is also applied for individual fine-granular join or union operations as a max time.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @return the maximum query time in seconds
+&nbsp;	 */
+&nbsp;	public int getEnforceMaxQueryTime() {
+<b class="nc">&nbsp;		return enforceMaxQueryTime;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the default for {@link Operation#getIncludeInferred()}
+&nbsp;	 */
+&nbsp;	public boolean getIncludeInferredDefault() {
+<b class="nc">&nbsp;		return includeInferredDefault;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag to enable/disable monitoring features. Default=false.
+&nbsp;	 *
+&nbsp;	 * @return whether monitoring is enabled
+&nbsp;	 */
+&nbsp;	public boolean isEnableMonitoring() {
+<b class="nc">&nbsp;		return enableMonitoring;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag to enable/disable query plan logging via {@link QueryPlanLog}. Default=false The {@link QueryPlanLog}
+&nbsp;	 * facility allows to retrieve the query execution plan from a variable local to the executing thread.
+&nbsp;	 *
+&nbsp;	 * @return whether the query plan shall be logged
+&nbsp;	 */
+&nbsp;	public boolean isLogQueryPlan() {
+<b class="nc">&nbsp;		return isLogQueryPlan;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag to enable/disable query logging via {@link QueryLog}. Default=false The {@link QueryLog} facility allows to
+&nbsp;	 * log all queries to a file. See {@link QueryLog} for details.
+&nbsp;	 *
+&nbsp;	 * Requires {@link #isEnableMonitoring()} to be active.
+&nbsp;	 *
+&nbsp;	 * @return whether queries are logged
+&nbsp;	 */
+&nbsp;	public boolean isLogQueries() {
+<b class="nc">&nbsp;		return isLogQueries;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the path to a property file containing prefix declarations as &quot;namespace=prefix&quot; pairs (one per line).
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Default: no prefixes are replaced. Note that prefixes are only replaced when using the {@link QueryManager} to
+&nbsp;	 * create/evaluate queries.
+&nbsp;	 *
+&nbsp;	 * Example:
+&nbsp;	 *
+&nbsp;	 * &lt;code&gt;
+&nbsp;	 * foaf=http://xmlns.com/foaf/0.1/
+&nbsp;	 * rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns#
+&nbsp;	 * =http://mydefaultns.org/
+&nbsp;	 * &lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @return the location of the prefix declarations or &lt;code&gt;null&lt;/code&gt; if not configured
+&nbsp;	 */
+&nbsp;	public String getPrefixDeclarations() {
+<b class="nc">&nbsp;		return prefixDeclarations;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the configured {@link CacheBuilderSpec} (if any) for the {@link SourceSelectionMemoryCache}. If not
+&nbsp;	 * defined, the {@link SourceSelectionMemoryCache#DEFAULT_CACHE_SPEC} is used.
+&nbsp;	 *
+&nbsp;	 * @return the {@link CacheBuilderSpec} or &lt;code&gt;null&lt;/code&gt;
+&nbsp;	 */
+&nbsp;	public String getSourceSelectionCacheSpec() {
+<b class="nc">&nbsp;		return this.sourceSelectionCacheSpec;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The debug mode for query plan. If enabled, the query execution plan is printed to stdout
+&nbsp;	 *
+&nbsp;	 * @return whether the query plan is printed to std out
+&nbsp;	 */
+&nbsp;	public boolean isDebugQueryPlan() {
+<b class="nc">&nbsp;		return debugQueryPlan;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link TaskWrapper} which may be used for wrapping any background {@link Runnable}s. If no such wrapper
+&nbsp;	 * is explicitly configured, the unmodified task is returned. See {@link TaskWrapper} for more information.
+&nbsp;	 *
+&nbsp;	 * @return the {@link TaskWrapper}, an empty {@link Optional} if none is explicitly configured
+&nbsp;	 */
+&nbsp;	public Optional&lt;TaskWrapper&gt; getTaskWrapper() {
+<b class="nc">&nbsp;		return Optional.ofNullable(taskWrapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the max number of results to be consumed by {@link ConsumingIteration}. See
+&nbsp;	 * {@link #getConsumingIterationMax()}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can only be set before federation initialization.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param max
+&nbsp;	 * @return the current config
+&nbsp;	 */
+&nbsp;	public FedXConfig withConsumingIterationMax(int max) {
+<b class="nc">&nbsp;		this.consumingIterationMax = max;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the max number of results to be consumed by {@link ConsumingIteration}
+&nbsp;	 */
+&nbsp;	public int getConsumingIterationMax() {
+<b class="nc">&nbsp;		return consumingIterationMax;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

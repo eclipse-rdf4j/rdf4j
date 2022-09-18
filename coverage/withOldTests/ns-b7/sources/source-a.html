@@ -1,0 +1,213 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailDatasetTripleSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: SailDatasetTripleSource (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailDatasetTripleSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (3/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (7/28)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
+&nbsp;
+&nbsp;/**
+&nbsp; * Implementation of the TripleSource interface using {@link SailDataset}
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class SailDatasetTripleSource implements RDFStarTripleSource {
+&nbsp;
+&nbsp;	private final ValueFactory vf;
+&nbsp;
+&nbsp;	private final SailDataset dataset;
+&nbsp;
+<b class="fc">&nbsp;	public SailDatasetTripleSource(ValueFactory vf, SailDataset dataset) {</b>
+<b class="fc">&nbsp;		this.vf = vf;</b>
+<b class="fc">&nbsp;		this.dataset = dataset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return dataset.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Statement, QueryEvaluationException&gt; getStatements(Resource subj, IRI pred,
+&nbsp;			Value obj, Resource... contexts) throws QueryEvaluationException {
+<b class="fc">&nbsp;		CloseableIteration&lt;? extends Statement, SailException&gt; statements = null;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			statements = dataset.getStatements(subj, pred, obj, contexts);</b>
+<b class="fc">&nbsp;			return new TripleSourceIterationWrapper&lt;&gt;(statements);</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			if (statements != null) {</b>
+<b class="nc">&nbsp;				statements.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (t instanceof SailException) {</b>
+<b class="nc">&nbsp;				throw new QueryEvaluationException(t);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw t;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="fc">&nbsp;		return vf;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Triple, QueryEvaluationException&gt; getRdfStarTriples(Resource subj, IRI pred,
+&nbsp;			Value obj) throws QueryEvaluationException {
+<b class="nc">&nbsp;		CloseableIteration&lt;? extends Triple, SailException&gt; triples = null;</b>
+<b class="nc">&nbsp;		TripleSourceIterationWrapper&lt;? extends Triple&gt; iterationWrapper = null;</b>
+&nbsp;		try {
+&nbsp;			// In contrast to statement retrieval (which gets de-duplicated later on when handling things like
+&nbsp;			// projections and conversions) we need to make sure we de-duplicate the RDF-star triples here.
+<b class="nc">&nbsp;			triples = dataset.getTriples(subj, pred, obj);</b>
+<b class="nc">&nbsp;			iterationWrapper = new TripleSourceIterationWrapper&lt;&gt;(triples);</b>
+<b class="nc">&nbsp;			return new DistinctIteration&lt;&gt;(iterationWrapper);</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (triples != null) {</b>
+<b class="nc">&nbsp;					triples.close();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				if (iterationWrapper != null) {</b>
+<b class="nc">&nbsp;					iterationWrapper.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (t instanceof SailException) {</b>
+<b class="nc">&nbsp;				throw new QueryEvaluationException(t);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw t;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

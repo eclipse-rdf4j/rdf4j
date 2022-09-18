@@ -1,0 +1,398 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ProxySettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.app.net</a>
+</div>
+
+<h1>Coverage Summary for Class: ProxySettings (org.eclipse.rdf4j.common.app.net)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ProxySettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.app.net;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.StringTokenizer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.app.config.Configuration;
+&nbsp;import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility class for handling proxy connection settings.
+&nbsp; */
+&nbsp;public class ProxySettings implements Configuration {
+&nbsp;
+&nbsp;	private final static String PROPNAME_PROXIES_ENABLED = &quot;proxies.enabled&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_PROXIES_NONPROXYHOSTS_STARTING = &quot;proxies.nonProxyHosts.starting&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_HTTP_PROXYHOST = &quot;http.proxyHost&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_HTTP_PROXYPORT = &quot;http.proxyPort&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_HTTPS_PROXYHOST = &quot;https.proxyHost&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_HTTPS_PROXYPORT = &quot;https.proxyPort&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_FTP_PROXYHOST = &quot;ftp.proxyHost&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_FTP_PROXYPORT = &quot;ftp.proxyPort&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_SOCKS_PROXYHOST = &quot;socksProxyHost&quot;;
+&nbsp;
+&nbsp;	private final static String PROPNAME_SOCKS_PROXYPORT = &quot;socksProxyPort&quot;;
+&nbsp;
+&nbsp;	private Properties props;
+&nbsp;
+&nbsp;	public static final String PROXY_SETTINGS_FILENAME = &quot;proxy.properties&quot;;
+&nbsp;
+&nbsp;	private final File confDir;
+&nbsp;
+&nbsp;	private File propsFile;
+&nbsp;
+<b class="nc">&nbsp;	public ProxySettings(File applicationDataDir) throws IOException {</b>
+<b class="nc">&nbsp;		confDir = new File(applicationDataDir, DIR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setProperty(String key, String val) {
+<b class="nc">&nbsp;		if (val == null) {</b>
+<b class="nc">&nbsp;			props.remove(key);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			props.setProperty(key, val);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setSystemProperty(String key, String val) {
+<b class="nc">&nbsp;		if (val == null) {</b>
+<b class="nc">&nbsp;			System.getProperties().remove(key);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			System.setProperty(key, val);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean getProxiesEnabled() {
+<b class="nc">&nbsp;		String val = props.getProperty(PROPNAME_PROXIES_ENABLED);</b>
+<b class="nc">&nbsp;		if (val != null) {</b>
+<b class="nc">&nbsp;			val = val.trim();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return String.valueOf(true).equalsIgnoreCase(val);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param proxiesEnabled
+&nbsp;	 */
+&nbsp;	public void setProxiesEnabled(boolean proxiesEnabled) {
+<b class="nc">&nbsp;		props.setProperty(PROPNAME_PROXIES_ENABLED, String.valueOf(proxiesEnabled));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return proxy
+&nbsp;	 */
+&nbsp;	public String getHttpProxyHost() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_HTTP_PROXYHOST);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param httpProxyHost
+&nbsp;	 */
+&nbsp;	public void setHttpProxyHost(String httpProxyHost) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_HTTP_PROXYHOST, httpProxyHost);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_HTTP_PROXYHOST, httpProxyHost);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get HTTP proxy port as string
+&nbsp;	 *
+&nbsp;	 * @return proxy port
+&nbsp;	 */
+&nbsp;	public String getHttpProxyPort() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_HTTP_PROXYPORT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set HTTP proxy port
+&nbsp;	 *
+&nbsp;	 * @param httpProxyPort proxy port
+&nbsp;	 */
+&nbsp;	public void setHttpProxyPort(String httpProxyPort) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_HTTP_PROXYPORT, httpProxyPort);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_HTTP_PROXYPORT, httpProxyPort);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get HTTPS proxy host
+&nbsp;	 *
+&nbsp;	 * @return proxy host as string
+&nbsp;	 */
+&nbsp;	public String getHttpsProxyHost() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_HTTPS_PROXYHOST);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get HTTPS proxy host
+&nbsp;	 *
+&nbsp;	 * @param httpsProxyHost
+&nbsp;	 */
+&nbsp;	public void setHttpsProxyHost(String httpsProxyHost) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_HTTPS_PROXYHOST, httpsProxyHost);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_HTTPS_PROXYHOST, httpsProxyHost);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getHttpsProxyPort() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_HTTPS_PROXYPORT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setHttpsProxyPort(String httpsProxyPort) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_HTTPS_PROXYPORT, httpsProxyPort);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_HTTPS_PROXYPORT, httpsProxyPort);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getFtpProxyHost() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_FTP_PROXYHOST);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setFtpProxyHost(String ftpProxyHost) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_FTP_PROXYHOST, ftpProxyHost);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_FTP_PROXYHOST, ftpProxyHost);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getFtpProxyPort() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_FTP_PROXYPORT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setFtpProxyPort(String ftpProxyPort) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_FTP_PROXYPORT, ftpProxyPort);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_FTP_PROXYPORT, ftpProxyPort);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getSocksProxyHost() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_SOCKS_PROXYHOST);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setSocksProxyHost(String socksProxyHost) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_SOCKS_PROXYHOST, socksProxyHost);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_SOCKS_PROXYHOST, socksProxyHost);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getSocksProxyPort() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_SOCKS_PROXYPORT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setSocksProxyPort(String socksProxyPort) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_SOCKS_PROXYPORT, socksProxyPort);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(PROPNAME_SOCKS_PROXYPORT, socksProxyPort);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setProxySystemProperty(String key, String val) {
+<b class="nc">&nbsp;		if (getProxiesEnabled()) {</b>
+<b class="nc">&nbsp;			setSystemProperty(key, val);</b>
+&nbsp;		}
+&nbsp;		// See SES-1100: Sesame should leave proxy settings alone if not enabled
+&nbsp;		// else {
+&nbsp;		// setSystemProperty(key, null);
+&nbsp;		// }
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the semicolon-separated list of hostnames starting with given strings, that do not use the proxy settings.
+&nbsp;	 */
+&nbsp;	public String getNonProxyHostsStarting() {
+<b class="nc">&nbsp;		return props.getProperty(PROPNAME_PROXIES_NONPROXYHOSTS_STARTING);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the semicolon separated list of hostnames starting with given strings, that do not use the proxy settings.
+&nbsp;	 */
+&nbsp;	public void setNonProxyHostsStarting(String nonProxyHostsStarting) {
+<b class="nc">&nbsp;		setProperty(PROPNAME_PROXIES_NONPROXYHOSTS_STARTING, nonProxyHostsStarting);</b>
+&nbsp;
+&nbsp;		// parse nonproxy hosts
+<b class="nc">&nbsp;		StringBuilder sysPropBuffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		if (nonProxyHostsStarting != null) {</b>
+<b class="nc">&nbsp;			StringTokenizer st = new StringTokenizer(nonProxyHostsStarting, &quot;;&quot;);</b>
+<b class="nc">&nbsp;			while (st.hasMoreTokens()) {</b>
+<b class="nc">&nbsp;				sysPropBuffer.append(st.nextToken().trim());</b>
+<b class="nc">&nbsp;				sysPropBuffer.append(&#39;*&#39;);</b>
+<b class="nc">&nbsp;				if (st.hasMoreTokens()) {</b>
+<b class="nc">&nbsp;					sysPropBuffer.append(&#39;|&#39;);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		String sysPropValue = null;</b>
+<b class="nc">&nbsp;		if (sysPropBuffer.length() &gt; 0) {</b>
+<b class="nc">&nbsp;			sysPropValue = sysPropBuffer.toString();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// set system properties accordingly
+<b class="nc">&nbsp;		setProxySystemProperty(&quot;http.nonProxyHosts&quot;, sysPropValue);</b>
+<b class="nc">&nbsp;		setProxySystemProperty(&quot;ftp.nonProxyHosts&quot;, sysPropValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * (Re-)loads the proxy system properties.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void load() throws IOException {
+<b class="nc">&nbsp;		Properties proxyConfig = ConfigurationUtil.loadConfigurationProperties(PROXY_SETTINGS_FILENAME, null);</b>
+&nbsp;
+<b class="nc">&nbsp;		propsFile = new File(confDir, PROXY_SETTINGS_FILENAME);</b>
+&nbsp;
+<b class="nc">&nbsp;		props = ConfigurationUtil.loadConfigurationProperties(propsFile, proxyConfig);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Saves the currently known settings.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void save() throws IOException {
+<b class="nc">&nbsp;		if (!props.isEmpty()) {</b>
+<b class="nc">&nbsp;			ConfigurationUtil.saveConfigurationProperties(props, propsFile, false);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		ConfigurationUtil.saveConfigurationProperties(props,</b>
+<b class="nc">&nbsp;				new File(propsFile.getParentFile(), propsFile.getName() + &quot;.default&quot;), true);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() throws IOException {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws IOException {
+<b class="nc">&nbsp;		load();</b>
+&nbsp;
+&nbsp;		// make sure some system properties are set properly
+<b class="nc">&nbsp;		setHttpProxyHost(getHttpProxyHost());</b>
+<b class="nc">&nbsp;		setHttpProxyPort(getHttpProxyPort());</b>
+<b class="nc">&nbsp;		setHttpsProxyHost(getHttpsProxyHost());</b>
+<b class="nc">&nbsp;		setHttpsProxyPort(getHttpsProxyPort());</b>
+<b class="nc">&nbsp;		setFtpProxyHost(getFtpProxyHost());</b>
+<b class="nc">&nbsp;		setFtpProxyPort(getFtpProxyPort());</b>
+<b class="nc">&nbsp;		setSocksProxyHost(getSocksProxyHost());</b>
+<b class="nc">&nbsp;		setSocksProxyPort(getSocksProxyPort());</b>
+<b class="nc">&nbsp;		setNonProxyHostsStarting(getNonProxyHostsStarting());</b>
+&nbsp;
+<b class="nc">&nbsp;		save();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

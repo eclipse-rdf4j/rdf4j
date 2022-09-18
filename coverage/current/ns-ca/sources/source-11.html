@@ -1,0 +1,303 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SearchFields</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: SearchFields (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SearchFields</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEO;
+&nbsp;
+&nbsp;public final class SearchFields {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The name of the Document field holding the document identifier. This consists of the Resource identifier (URI or
+&nbsp;	 * BNodeID) and the Context ID (the format is &quot;resourceId|contextId&quot;)
+&nbsp;	 */
+&nbsp;	public static final String ID_FIELD_NAME = &quot;id&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The name of the Document field holding the Resource identifier. The value stored in this field is either a URI or
+&nbsp;	 * a BNode ID.
+&nbsp;	 */
+&nbsp;	public static final String URI_FIELD_NAME = &quot;uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The name of the Document field that holds multiple text values of a Resource. The field is called &quot;text&quot;, as it
+&nbsp;	 * contains all text, but was called &quot;ALL&quot; during the discussion. For each statement-literal of the resource, the
+&nbsp;	 * object literal is stored in a field using the predicate-literal and additionally in a TEXT_FIELD_NAME-literal
+&nbsp;	 * field.
+&nbsp;	 */
+&nbsp;	public static final String TEXT_FIELD_NAME = &quot;text&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The name of the Document field holding the context identifer(s).
+&nbsp;	 */
+&nbsp;	public static final String CONTEXT_FIELD_NAME = &quot;context&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * the null context
+&nbsp;	 */
+&nbsp;	public static final String CONTEXT_NULL = &quot;null&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * String used to prefix BNode IDs with so that we can distinguish BNode fields from URI fields in Documents. The
+&nbsp;	 * prefix is chosen so that it is invalid as a (part of a) URI scheme.
+&nbsp;	 */
+&nbsp;	public static final String BNODE_ID_PREFIX = &quot;!&quot;;
+&nbsp;
+&nbsp;	public static final String HIGHLIGHTER_PRE_TAG = &quot;&lt;B&gt;&quot;;
+&nbsp;
+&nbsp;	public static final String HIGHLIGHTER_POST_TAG = &quot;&lt;/B&gt;&quot;;
+&nbsp;
+<b class="nc">&nbsp;	public static final Pattern HIGHLIGHTER_PATTERN = Pattern</b>
+<b class="nc">&nbsp;			.compile(&quot;(&quot; + HIGHLIGHTER_PRE_TAG + &quot;.+?&quot; + HIGHLIGHTER_POST_TAG + &quot;)&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final ValueFactory valueFactory = SimpleValueFactory.getInstance();</b>
+&nbsp;
+&nbsp;	private SearchFields() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the String ID corresponding with the specified Resource. The id string is either the URI or a bnode
+&nbsp;	 * prefixed with a &quot;!&quot;.
+&nbsp;	 */
+&nbsp;	public static String getResourceID(Resource resource) {
+<b class="nc">&nbsp;		if (resource instanceof IRI) {</b>
+<b class="nc">&nbsp;			return resource.toString();</b>
+<b class="nc">&nbsp;		} else if (resource instanceof BNode) {</b>
+<b class="nc">&nbsp;			return BNODE_ID_PREFIX + ((BNode) resource).getID();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown Resource type: &quot; + resource);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the ID for a context. Context can be null, then the &quot;null&quot; string is returned
+&nbsp;	 *
+&nbsp;	 * @param resource the context
+&nbsp;	 * @return a string
+&nbsp;	 */
+&nbsp;	public static String getContextID(Resource resource) {
+<b class="nc">&nbsp;		if (resource == null) {</b>
+<b class="nc">&nbsp;			return CONTEXT_NULL;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return getResourceID(resource);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an id-string (a serialized resource) back to a resource Inverse method of {@link #getResourceID(Resource)}
+&nbsp;	 *
+&nbsp;	 * @param idString
+&nbsp;	 * @return resource
+&nbsp;	 */
+&nbsp;	public static Resource createResource(String idString) {
+<b class="nc">&nbsp;		if (idString.startsWith(BNODE_ID_PREFIX)) {</b>
+<b class="nc">&nbsp;			return valueFactory.createBNode(idString.substring(BNODE_ID_PREFIX.length()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return valueFactory.createIRI(idString);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Resource createContext(String idString) {
+<b class="nc">&nbsp;		if (CONTEXT_NULL.equals(idString)) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return createResource(idString);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getLiteralPropertyValueAsString(Statement statement) {
+<b class="nc">&nbsp;		Value object = statement.getObject();</b>
+<b class="nc">&nbsp;		if (object instanceof Literal) {</b>
+<b class="nc">&nbsp;			return ((Literal) object).getLabel();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getPropertyField(IRI property) {
+<b class="nc">&nbsp;		return property.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the specified field name is a property field name.
+&nbsp;	 */
+&nbsp;	public static boolean isPropertyField(String fieldName) {
+<b class="nc">&nbsp;		return !ID_FIELD_NAME.equals(fieldName) &amp;&amp; !URI_FIELD_NAME.equals(fieldName)</b>
+<b class="nc">&nbsp;				&amp;&amp; !TEXT_FIELD_NAME.equals(fieldName) &amp;&amp; !CONTEXT_FIELD_NAME.equals(fieldName)</b>
+&nbsp;				// geo/internal fields
+<b class="nc">&nbsp;				&amp;&amp; fieldName.charAt(0) != &#39;_&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String formIdString(String resourceId, String contextId) {
+<b class="nc">&nbsp;		StringBuilder idBuilder = new StringBuilder(resourceId);</b>
+<b class="nc">&nbsp;		idBuilder.append(&quot;|&quot;);</b>
+<b class="nc">&nbsp;		idBuilder.append(contextId);</b>
+<b class="nc">&nbsp;		return idBuilder.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a score value encoded as a Literal.
+&nbsp;	 *
+&nbsp;	 * @param score the float score to convert
+&nbsp;	 * @return the score as a literal
+&nbsp;	 */
+&nbsp;	public static Literal scoreToLiteral(float score) {
+<b class="nc">&nbsp;		return valueFactory.createLiteral(score);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Literal wktToLiteral(String wkt) {
+<b class="nc">&nbsp;		return valueFactory.createLiteral(wkt, GEO.WKT_LITERAL);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Literal distanceToLiteral(double d) {
+<b class="nc">&nbsp;		return valueFactory.createLiteral(d);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getSnippet(String highlightedValue) {
+<b class="nc">&nbsp;		if (highlightedValue.length() &gt; 100) {</b>
+<b class="nc">&nbsp;			StringBuilder buf = new StringBuilder();</b>
+<b class="nc">&nbsp;			String separator = &quot;&quot;;</b>
+<b class="nc">&nbsp;			Matcher matcher = HIGHLIGHTER_PATTERN.matcher(highlightedValue);</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; 2 &amp;&amp; matcher.find(); i++) {</b>
+<b class="nc">&nbsp;				buf.append(separator);</b>
+<b class="nc">&nbsp;				buf.append(matcher.group());</b>
+<b class="nc">&nbsp;				separator = &quot;...&quot;;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			highlightedValue = buf.toString();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return highlightedValue;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

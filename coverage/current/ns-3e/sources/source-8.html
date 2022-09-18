@@ -1,0 +1,237 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SubQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.structures</a>
+</div>
+
+<h1>Coverage Summary for Class: SubQuery (org.eclipse.rdf4j.federated.structures)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SubQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.structures;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;import java.util.Arrays;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;
+&nbsp;public class SubQuery implements Serializable {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 8968907794785828994L;
+&nbsp;
+&nbsp;	protected final Resource subj;
+&nbsp;	protected final IRI pred;
+&nbsp;	protected final Value obj;
+&nbsp;	/**
+&nbsp;	 * the contexts, length zero array for triple mode query
+&nbsp;	 */
+&nbsp;	protected final Resource[] contexts;
+&nbsp;
+&nbsp;	public SubQuery(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.subj = subj;</b>
+<b class="nc">&nbsp;		this.pred = pred;</b>
+<b class="nc">&nbsp;		this.obj = obj;</b>
+<b class="nc">&nbsp;		this.contexts = contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SubQuery(StatementPattern stmt, Dataset dataset) {
+<b class="nc">&nbsp;		this((Resource) stmt.getSubjectVar().getValue(), (IRI) stmt.getPredicateVar().getValue(),</b>
+<b class="nc">&nbsp;				stmt.getObjectVar().getValue(), FedXUtil.toContexts(stmt, dataset));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if this subquery is unbound in all three positions
+&nbsp;	 */
+&nbsp;	public boolean isUnbound() {
+<b class="nc">&nbsp;		return subj == null &amp;&amp; pred == null &amp;&amp; obj == null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource subject() {
+<b class="nc">&nbsp;		return this.subj;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI predicate() {
+<b class="nc">&nbsp;		return this.pred;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value object() {
+<b class="nc">&nbsp;		return this.obj;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource[] contexts() {
+<b class="nc">&nbsp;		return this.contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		final int prime = 31;</b>
+<b class="nc">&nbsp;		int result = 1;</b>
+<b class="nc">&nbsp;		result = prime * result + Arrays.hashCode(contexts);</b>
+<b class="nc">&nbsp;		result = prime * result + ((obj == null) ? 0 : obj.hashCode());</b>
+<b class="nc">&nbsp;		result = prime * result + ((pred == null) ? 0 : pred.hashCode());</b>
+<b class="nc">&nbsp;		result = prime * result + ((subj == null) ? 0 : subj.hashCode());</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object obj) {
+<b class="nc">&nbsp;		if (this == obj) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (obj == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getClass() != obj.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		SubQuery other = (SubQuery) obj;</b>
+<b class="nc">&nbsp;		if (!Arrays.equals(contexts, other.contexts)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (this.obj == null) {</b>
+<b class="nc">&nbsp;			if (other.obj != null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (!this.obj.equals(other.obj)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (pred == null) {</b>
+<b class="nc">&nbsp;			if (other.pred != null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (!pred.equals(other.pred)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (subj == null) {</b>
+<b class="nc">&nbsp;			if (other.subj != null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (!subj.equals(other.subj)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

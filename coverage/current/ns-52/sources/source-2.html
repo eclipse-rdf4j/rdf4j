@@ -1,0 +1,246 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NamespacesController</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.namespaces</a>
+</div>
+
+<h1>Coverage Summary for Class: NamespacesController (org.eclipse.rdf4j.http.server.repository.namespaces)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NamespacesController</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/49)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.namespaces;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
+&nbsp;import org.eclipse.rdf4j.http.server.ClientHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.ServerHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.QueryResultView;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.TupleQueryResultView;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.impl.ListBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.context.ApplicationContextException;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.mvc.AbstractController;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles requests for the list of namespace definitions for a repository.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class NamespacesController extends AbstractController {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+<b class="nc">&nbsp;	public NamespacesController() throws ApplicationContextException {</b>
+<b class="nc">&nbsp;		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, &quot;DELETE&quot; });</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		String reqMethod = request.getMethod();</b>
+<b class="nc">&nbsp;		if (METHOD_GET.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;GET namespace list&quot;);</b>
+<b class="nc">&nbsp;			return getExportNamespacesResult(request, response);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (METHOD_HEAD.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;HEAD namespace list&quot;);</b>
+<b class="nc">&nbsp;			return getExportNamespacesResult(request, response);</b>
+<b class="nc">&nbsp;		} else if (&quot;DELETE&quot;.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;DELETE namespaces&quot;);</b>
+<b class="nc">&nbsp;			return getClearNamespacesResult(request, response);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED, &quot;Method not allowed: &quot; + reqMethod);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView getExportNamespacesResult(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws ClientHTTPException, ServerHTTPException {
+<b class="nc">&nbsp;		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		if (!headersOnly) {</b>
+<b class="nc">&nbsp;			List&lt;String&gt; columnNames = Arrays.asList(&quot;prefix&quot;, &quot;namespace&quot;);</b>
+<b class="nc">&nbsp;			List&lt;BindingSet&gt; namespaces = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+<b class="nc">&nbsp;				final ValueFactory vf = repositoryCon.getValueFactory();</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					try (CloseableIteration&lt;? extends Namespace, RepositoryException&gt; iter = repositoryCon</b>
+<b class="nc">&nbsp;							.getNamespaces()) {</b>
+<b class="nc">&nbsp;						while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;							Namespace ns = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;							Literal prefix = vf.createLiteral(ns.getPrefix());</b>
+<b class="nc">&nbsp;							Literal namespace = vf.createLiteral(ns.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;							BindingSet bindingSet = new ListBindingSet(columnNames, prefix, namespace);</b>
+<b class="nc">&nbsp;							namespaces.add(bindingSet);</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;					throw new ServerHTTPException(&quot;Repository error: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(columnNames, namespaces));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,</b>
+<b class="nc">&nbsp;				TupleQueryResultWriterRegistry.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;		model.put(QueryResultView.FILENAME_HINT_KEY, &quot;namespaces&quot;);</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.HEADERS_ONLY, headersOnly);</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.FACTORY_KEY, factory);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ModelAndView(TupleQueryResultView.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView getClearNamespacesResult(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws ServerHTTPException {
+<b class="nc">&nbsp;		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				repositoryCon.clearNamespaces();</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Repository error: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

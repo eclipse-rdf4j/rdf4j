@@ -1,0 +1,407 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > N3ParserTestCase</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.rio.n3</a>
+</div>
+
+<h1>Coverage Summary for Class: N3ParserTestCase (org.eclipse.rdf4j.testsuite.rio.n3)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">N3ParserTestCase</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">N3ParserTestCase$NegativeParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">N3ParserTestCase$PositiveParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/68)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.rio.n3;
+&nbsp;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
+&nbsp;
+&nbsp;import junit.framework.TestCase;
+&nbsp;import junit.framework.TestSuite;
+&nbsp;
+&nbsp;/**
+&nbsp; * JUnit test for the N3 parser that uses the tests that are available
+&nbsp; * &lt;a href=&quot;http://www.w3.org/2000/10/swap/test/n3parser.tests&quot;&gt;online&lt;/a&gt;.
+&nbsp; */
+<b class="nc">&nbsp;public abstract class N3ParserTestCase {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final String BASE_URL = &quot;http://www.w3.org/2000/10/swap/test/&quot;;
+&nbsp;
+&nbsp;	private static final String MANIFEST_URL = &quot;http://www.w3.org/2000/10/swap/test/n3parser.tests&quot;;
+&nbsp;
+&nbsp;	/*--------------------*
+&nbsp;	 * Static initializer *
+&nbsp;	 *--------------------*/
+&nbsp;
+&nbsp;	public TestSuite createTestSuite() throws Exception {
+&nbsp;		// Create test suite
+<b class="nc">&nbsp;		TestSuite suite = new TestSuite(N3ParserTestCase.class.getName());</b>
+&nbsp;
+&nbsp;		// Add the manifest to a repository and query it
+<b class="nc">&nbsp;		URL url = url(MANIFEST_URL);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory f = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		String n3test = &quot;http://www.w3.org/2004/11/n3test#&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI POSITIVE_PARSER_TEST = f.createIRI(n3test, &quot;PositiveParserTest&quot;);</b>
+<b class="nc">&nbsp;		IRI NEGATIVE_PARSER_TEST = f.createIRI(n3test, &quot;NegativeParserTest&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI INPUT_DOCUMENT = f.createIRI(n3test, &quot;inputDocument&quot;);</b>
+<b class="nc">&nbsp;		IRI OUTPUT_DOCUMENT = f.createIRI(n3test, &quot;outputDocument&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (InputStream in = url.openStream()) {</b>
+<b class="nc">&nbsp;			Model manifest = Rio.parse(in, base(MANIFEST_URL), RDFFormat.TURTLE);</b>
+&nbsp;
+&nbsp;			// add all positive parser tests
+<b class="nc">&nbsp;			Set&lt;Resource&gt; positiveTests = manifest.filter(null, RDF.TYPE, POSITIVE_PARSER_TEST).subjects();</b>
+<b class="nc">&nbsp;			for (Resource s : positiveTests) {</b>
+<b class="nc">&nbsp;				String inputURL = Models.getProperty(manifest, s, INPUT_DOCUMENT).toString();</b>
+<b class="nc">&nbsp;				String outputURL = Models.getProperty(manifest, s, OUTPUT_DOCUMENT).toString();</b>
+<b class="nc">&nbsp;				suite.addTest(new PositiveParserTest(s.toString(), inputURL, outputURL));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// add all negative parser tests
+<b class="nc">&nbsp;			Set&lt;Resource&gt; negativeTests = manifest.filter(null, RDF.TYPE, NEGATIVE_PARSER_TEST).subjects();</b>
+<b class="nc">&nbsp;			for (Resource s : negativeTests) {</b>
+<b class="nc">&nbsp;				String inputURL = Models.getProperty(manifest, s, INPUT_DOCUMENT).toString();</b>
+<b class="nc">&nbsp;				suite.addTest(new NegativeParserTest(s.toString(), inputURL));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return suite;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract RDFParser createRDFParser();
+&nbsp;
+&nbsp;	/*--------------------------------*
+&nbsp;	 * Inner class PositiveParserTest *
+&nbsp;	 *--------------------------------*/
+&nbsp;
+&nbsp;	private class PositiveParserTest extends TestCase {
+&nbsp;
+&nbsp;		/*-----------*
+&nbsp;		 * Variables *
+&nbsp;		 *-----------*/
+&nbsp;
+&nbsp;		private final URL inputURL;
+&nbsp;
+&nbsp;		private final URL outputURL;
+&nbsp;
+&nbsp;		/*--------------*
+&nbsp;		 * Constructors *
+&nbsp;		 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;		public PositiveParserTest(String testURI, String inputURL, String outputURL) throws MalformedURLException {</b>
+<b class="nc">&nbsp;			super(testURI);</b>
+<b class="nc">&nbsp;			this.inputURL = url(inputURL);</b>
+<b class="nc">&nbsp;			this.outputURL = url(outputURL);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*---------*
+&nbsp;		 * Methods *
+&nbsp;		 *---------*/
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void runTest() throws Exception {
+&nbsp;			// Parse input data
+<b class="nc">&nbsp;			RDFParser turtleParser = createRDFParser();</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Statement&gt; inputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementCollector inputCollector = new StatementCollector(inputCollection);</b>
+<b class="nc">&nbsp;			turtleParser.setRDFHandler(inputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;			InputStream in = inputURL.openStream();</b>
+<b class="nc">&nbsp;			turtleParser.parse(in, base(inputURL.toExternalForm()));</b>
+<b class="nc">&nbsp;			in.close();</b>
+&nbsp;
+&nbsp;			// Parse expected output data
+<b class="nc">&nbsp;			NTriplesParser ntriplesParser = new NTriplesParser();</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Statement&gt; outputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementCollector outputCollector = new StatementCollector(outputCollection);</b>
+<b class="nc">&nbsp;			ntriplesParser.setRDFHandler(outputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;			in = outputURL.openStream();</b>
+<b class="nc">&nbsp;			ntriplesParser.parse(in, base(outputURL.toExternalForm()));</b>
+<b class="nc">&nbsp;			in.close();</b>
+&nbsp;
+&nbsp;			// Check equality of the two models
+<b class="nc">&nbsp;			if (!Models.isomorphic(inputCollection, outputCollection)) {</b>
+<b class="nc">&nbsp;				System.err.println(&quot;===models not equal===&quot;);</b>
+&nbsp;				// System.err.println(&quot;Expected: &quot; + outputCollection);
+&nbsp;				// System.err.println(&quot;Actual : &quot; + inputCollection);
+&nbsp;				// System.err.println(&quot;======================&quot;);
+&nbsp;
+<b class="nc">&nbsp;				List&lt;Statement&gt; missing = new LinkedList&lt;&gt;(outputCollection);</b>
+<b class="nc">&nbsp;				missing.removeAll(inputCollection);</b>
+&nbsp;
+<b class="nc">&nbsp;				List&lt;Statement&gt; unexpected = new LinkedList&lt;&gt;(inputCollection);</b>
+<b class="nc">&nbsp;				unexpected.removeAll(outputCollection);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (!missing.isEmpty()) {</b>
+<b class="nc">&nbsp;					System.err.println(&quot;Missing   : &quot; + missing);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (!unexpected.isEmpty()) {</b>
+<b class="nc">&nbsp;					System.err.println(&quot;Unexpected: &quot; + unexpected);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				fail(&quot;models not equal&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	} // end inner class PositiveParserTest
+&nbsp;
+&nbsp;	/*--------------------------------*
+&nbsp;	 * Inner class NegativeParserTest *
+&nbsp;	 *--------------------------------*/
+&nbsp;
+&nbsp;	private class NegativeParserTest extends TestCase {
+&nbsp;
+&nbsp;		/*-----------*
+&nbsp;		 * Variables *
+&nbsp;		 *-----------*/
+&nbsp;
+&nbsp;		private final URL inputURL;
+&nbsp;
+&nbsp;		/*--------------*
+&nbsp;		 * Constructors *
+&nbsp;		 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;		public NegativeParserTest(String testURI, String inputURL) throws MalformedURLException {</b>
+<b class="nc">&nbsp;			super(testURI);</b>
+<b class="nc">&nbsp;			this.inputURL = url(inputURL);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*---------*
+&nbsp;		 * Methods *
+&nbsp;		 *---------*/
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void runTest() {
+&nbsp;			try {
+&nbsp;				// Try parsing the input; this should result in an error being
+&nbsp;				// reported.
+<b class="nc">&nbsp;				RDFParser turtleParser = createRDFParser();</b>
+&nbsp;
+<b class="nc">&nbsp;				turtleParser.setRDFHandler(new StatementCollector());</b>
+&nbsp;
+<b class="nc">&nbsp;				InputStream in = inputURL.openStream();</b>
+<b class="nc">&nbsp;				turtleParser.parse(in, base(inputURL.toExternalForm()));</b>
+<b class="nc">&nbsp;				in.close();</b>
+&nbsp;
+<b class="nc">&nbsp;				fail(&quot;Parser parses erroneous data without reporting errors&quot;);</b>
+<b class="nc">&nbsp;			} catch (RDFParseException e) {</b>
+&nbsp;				// This is expected as the input file is incorrect RDF
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Error: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	} // end inner class NegativeParserTest
+&nbsp;
+&nbsp;	private static URL url(String uri) throws MalformedURLException {
+<b class="nc">&nbsp;		return new URL(uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String base(String uri) {
+<b class="nc">&nbsp;		return uri;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

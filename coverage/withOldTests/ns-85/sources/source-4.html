@@ -1,0 +1,355 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLResultsCSVWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.text.csv</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLResultsCSVWriter (org.eclipse.rdf4j.query.resultio.text.csv)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLResultsCSVWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.text.csv;
+&nbsp;
+&nbsp;import java.io.BufferedWriter;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+&nbsp;
+&nbsp;/**
+&nbsp; * TupleQueryResultWriter for the SPARQL CSV (Comma-Separated Values) format.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-results-csv-tsv/#csv&quot;&gt;SPARQL 1.1 Query Results CSV Format&lt;/a&gt;
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
+&nbsp;
+&nbsp;	private final Writer writer;
+&nbsp;
+&nbsp;	private List&lt;String&gt; bindingNames;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param out
+&nbsp;	 */
+&nbsp;	public SPARQLResultsCSVWriter(OutputStream out) {
+<b class="nc">&nbsp;		this(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 1024));</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public SPARQLResultsCSVWriter(Writer writer) {</b>
+<b class="nc">&nbsp;		this.writer = writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startQueryResult(List&lt;String&gt; bindingNames) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		super.startQueryResult(bindingNames);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.bindingNames = bindingNames;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; bindingNames.size(); i++) {</b>
+<b class="nc">&nbsp;				writer.write(bindingNames.get(i));</b>
+<b class="nc">&nbsp;				if (i &lt; bindingNames.size() - 1) {</b>
+<b class="nc">&nbsp;					writer.write(&quot;,&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			writer.write(&quot;\r\n&quot;);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endQueryResult() throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		if (bindingNames == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Could not end query result as startQueryResult was not called first.&quot;);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			writer.flush();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		if (bindingNames == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Must call startQueryResult before handleSolution&quot;);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; bindingNames.size(); i++) {</b>
+<b class="nc">&nbsp;				String name = bindingNames.get(i);</b>
+<b class="nc">&nbsp;				Value value = bindingSet.getValue(name);</b>
+<b class="nc">&nbsp;				if (value != null) {</b>
+<b class="nc">&nbsp;					writeValue(value);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (i &lt; bindingNames.size() - 1) {</b>
+<b class="nc">&nbsp;					writer.write(&quot;,&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			writer.write(&quot;\r\n&quot;);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final TupleQueryResultFormat getTupleQueryResultFormat() {
+<b class="nc">&nbsp;		return TupleQueryResultFormat.CSV;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final TupleQueryResultFormat getQueryResultFormat() {
+<b class="nc">&nbsp;		return getTupleQueryResultFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeValue(Value val) throws IOException {
+<b class="nc">&nbsp;		if (val instanceof Resource) {</b>
+<b class="nc">&nbsp;			writeResource((Resource) val);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeLiteral((Literal) val);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeResource(Resource res) throws IOException {
+<b class="nc">&nbsp;		if (res instanceof IRI) {</b>
+<b class="nc">&nbsp;			writeURI((IRI) res);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeBNode((BNode) res);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeURI(IRI uri) throws IOException {
+<b class="nc">&nbsp;		String uriString = uri.toString();</b>
+<b class="nc">&nbsp;		boolean quoted = uriString.contains(&quot;,&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (quoted) {</b>
+&nbsp;			// write opening quote for entire value
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writer.write(uriString);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (quoted) {</b>
+&nbsp;			// write closing quote for entire value
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeBNode(BNode bNode) throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;_:&quot;);</b>
+<b class="nc">&nbsp;		writer.write(bNode.getID());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeLiteral(Literal literal) throws IOException {
+<b class="nc">&nbsp;		String label = literal.getLabel();</b>
+<b class="nc">&nbsp;		IRI datatype = literal.getDatatype();</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean quoted = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (XMLDatatypeUtil.isIntegerDatatype(datatype) || XMLDatatypeUtil.isDecimalDatatype(datatype)</b>
+<b class="nc">&nbsp;				|| XSD.DOUBLE.equals(datatype)) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				String normalized = XMLDatatypeUtil.normalize(label, datatype);</b>
+<b class="nc">&nbsp;				writer.write(normalized);</b>
+&nbsp;				return; // done
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+&nbsp;				// not a valid numeric datatyped literal. ignore error and write as
+&nbsp;				// (optionally quoted) string instead.
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (label.contains(&quot;,&quot;) || label.contains(&quot;\r&quot;) || label.contains(&quot;\n&quot;) || label.contains(&quot;\&quot;&quot;)) {</b>
+<b class="nc">&nbsp;			quoted = true;</b>
+&nbsp;
+&nbsp;			// escape quotes inside the string
+<b class="nc">&nbsp;			label = label.replace(&quot;\&quot;&quot;, &quot;\&quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (quoted) {</b>
+&nbsp;			// write opening quote for entire value
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writer.write(label);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (quoted) {</b>
+&nbsp;			// write closing quote for entire value
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startDocument() throws QueryResultHandlerException {
+&nbsp;		// Ignored by SPARQLResultsCSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException {
+&nbsp;		// Ignored by SPARQLResultsCSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startHeader() throws QueryResultHandlerException {
+&nbsp;		// Ignored by SPARQLResultsCSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleLinks(List&lt;String&gt; linkUrls) throws QueryResultHandlerException {
+&nbsp;		// Ignored by SPARQLResultsCSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endHeader() throws QueryResultHandlerException {
+&nbsp;		// Ignored by SPARQLResultsCSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleBoolean(boolean value) throws QueryResultHandlerException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Cannot handle boolean results&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
+&nbsp;		// Ignored by SPARQLResultsCSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

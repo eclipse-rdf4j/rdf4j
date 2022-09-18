@@ -1,0 +1,329 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQL10ManifestTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQL10ManifestTest (org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQL10ManifestTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SPARQL10ManifestTest$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/67)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.JarURLConnection;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.jar.JarFile;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.FileUtil;
+&nbsp;import org.eclipse.rdf4j.common.io.ZipUtil;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.repository.util.RDFInserter;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.turtle.TurtleParser;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import junit.framework.TestResult;
+&nbsp;import junit.framework.TestSuite;
+&nbsp;
+&nbsp;@Deprecated
+<b class="nc">&nbsp;public class SPARQL10ManifestTest {</b>
+&nbsp;
+<b class="nc">&nbsp;	static final Logger logger = LoggerFactory.getLogger(SPARQL10ManifestTest.class);</b>
+&nbsp;
+&nbsp;	private static final boolean REMOTE = false;
+&nbsp;
+&nbsp;	public static TestSuite suite(SPARQLQueryTest.Factory factory) throws Exception {
+&nbsp;		final String manifestFile;
+&nbsp;		final File tmpDir;
+&nbsp;
+&nbsp;		if (REMOTE) {
+&nbsp;			manifestFile = &quot;http://www.w3.org/2001/sw/DataAccess/tests/data-r2/manifest-evaluation.ttl&quot;;
+&nbsp;			tmpDir = null;
+&nbsp;		} else {
+<b class="nc">&nbsp;			URL url = SPARQL10ManifestTest.class</b>
+<b class="nc">&nbsp;					.getResource(&quot;/testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (&quot;jar&quot;.equals(url.getProtocol())) {</b>
+&nbsp;				// Extract manifest files to a temporary directory
+&nbsp;				try {
+<b class="nc">&nbsp;					tmpDir = Files.createTempDirectory(&quot;sparql-evaluation&quot;).toFile();</b>
+&nbsp;
+<b class="nc">&nbsp;					JarURLConnection con = (JarURLConnection) url.openConnection();</b>
+<b class="nc">&nbsp;					JarFile jar = con.getJarFile();</b>
+&nbsp;
+<b class="nc">&nbsp;					ZipUtil.extract(jar, tmpDir);</b>
+&nbsp;
+<b class="nc">&nbsp;					File localFile = new File(tmpDir, con.getEntryName());</b>
+<b class="nc">&nbsp;					manifestFile = localFile.toURI().toURL().toString();</b>
+<b class="nc">&nbsp;				} catch (IOException e) {</b>
+<b class="nc">&nbsp;					throw new AssertionError(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				manifestFile = url.toString();</b>
+<b class="nc">&nbsp;				tmpDir = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TestSuite suite = new TestSuite(factory.getClass().getName()) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void run(TestResult result) {
+&nbsp;				try {
+<b class="nc">&nbsp;					super.run(result);</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					if (tmpDir != null) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							FileUtil.deleteDir(tmpDir);</b>
+<b class="nc">&nbsp;						} catch (IOException e) {</b>
+<b class="nc">&nbsp;							System.err.println(</b>
+<b class="nc">&nbsp;									&quot;Unable to clean up temporary directory &#39;&quot; + tmpDir + &quot;&#39;: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+<b class="nc">&nbsp;		Repository manifestRep = new SailRepository(new MemoryStore());</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = manifestRep.getConnection()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			addTurtle(con, new URL(manifestFile), manifestFile);</b>
+&nbsp;
+<b class="nc">&nbsp;			String query = &quot;&quot;</b>
+&nbsp;					+ &quot;PREFIX mf: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt;\n &quot;
+&nbsp;					+ &quot;PRFIX qt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt;&quot;
+&nbsp;					+ &quot;SELECT DISTINCT ?manifestFile\n&quot;
+&nbsp;					+ &quot;WHERE { ?x rdf:first ?manifestFile .} &quot;;
+&nbsp;
+<b class="nc">&nbsp;			TupleQueryResult manifestResults = con.prepareTupleQuery(QueryLanguage.SPARQL, query, manifestFile)</b>
+<b class="nc">&nbsp;					.evaluate();</b>
+&nbsp;
+<b class="nc">&nbsp;			while (manifestResults.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = manifestResults.next();</b>
+<b class="nc">&nbsp;				String subManifestFile = bindingSet.getValue(&quot;manifestFile&quot;).stringValue();</b>
+<b class="nc">&nbsp;				suite.addTest(SPARQLQueryTest.suite(subManifestFile, factory));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			manifestResults.close();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		manifestRep.shutDown();</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.info(&quot;Created aggregated test suite with &quot; + suite.countTestCases() + &quot; test cases.&quot;);</b>
+<b class="nc">&nbsp;		return suite;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static void addTurtle(RepositoryConnection con, URL url, String baseURI, Resource... contexts)
+&nbsp;			throws IOException, RepositoryException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		Objects.requireNonNull(contexts,</b>
+&nbsp;				&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = url.toExternalForm();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (InputStream in = url.openStream()) {</b>
+<b class="nc">&nbsp;			final ValueFactory vf = con.getRepository().getValueFactory();</b>
+<b class="nc">&nbsp;			RDFParser rdfParser = new TurtleParser();</b>
+<b class="nc">&nbsp;			rdfParser.setValueFactory(vf);</b>
+&nbsp;
+<b class="nc">&nbsp;			RDFInserter rdfInserter = new RDFInserter(con);</b>
+<b class="nc">&nbsp;			rdfInserter.enforceContext(contexts);</b>
+<b class="nc">&nbsp;			rdfParser.setRDFHandler(rdfInserter);</b>
+&nbsp;
+<b class="nc">&nbsp;			con.begin();</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				rdfParser.parse(in, baseURI);</b>
+<b class="nc">&nbsp;				con.commit();</b>
+<b class="nc">&nbsp;			} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				if (con.isActive()) {</b>
+<b class="nc">&nbsp;					con.rollback();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (e.getCause() != null &amp;&amp; e.getCause() instanceof RepositoryException) {</b>
+&nbsp;					// RDFInserter only throws wrapped RepositoryExceptions
+<b class="nc">&nbsp;					throw (RepositoryException) e.getCause();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw e;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;				if (con.isActive()) {</b>
+<b class="nc">&nbsp;					con.rollback();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

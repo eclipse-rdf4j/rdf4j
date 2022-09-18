@@ -1,0 +1,241 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemTripleIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: MemTripleIterator (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemTripleIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;
+&nbsp;/**
+&nbsp; * An Iteration that can iterate over a list of {@link Triple} objects.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class MemTripleIterator&lt;X extends Exception&gt; extends LookAheadIteration&lt;MemTriple, X&gt; {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The lists of statements over which to iterate.
+&nbsp;	 */
+&nbsp;	private final MemStatement[] statementList;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The subject of statements to return, or null if any subject is OK.
+&nbsp;	 */
+&nbsp;	private final MemResource subject;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The predicate of statements to return, or null if any predicate is OK.
+&nbsp;	 */
+&nbsp;	private final MemIRI predicate;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The object of statements to return, or null if any object is OK.
+&nbsp;	 */
+&nbsp;	private final MemValue object;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates which snapshot should be iterated over.
+&nbsp;	 */
+&nbsp;	private final int snapshot;
+&nbsp;	private final int statementListSize;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The index of the last statement that has been returned.
+&nbsp;	 */
+&nbsp;	private int statementIndex;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new MemTripleIterator that will iterate over the triples contained in the supplied MemStatementList
+&nbsp;	 * searching for triples that occur as either subject or object in those statements, and which match the specified
+&nbsp;	 * pattern of subject, predicate, object.
+&nbsp;	 *
+&nbsp;	 * @param statementList the statements over which to iterate.
+&nbsp;	 * @param subject       subject of pattern.
+&nbsp;	 * @param predicate     predicate of pattern.
+&nbsp;	 * @param object        object of pattern.
+&nbsp;	 */
+&nbsp;	public MemTripleIterator(MemStatementList statementList, MemResource subject, MemIRI predicate, MemValue object,
+<b class="nc">&nbsp;			int snapshot) throws InterruptedException {</b>
+<b class="nc">&nbsp;		this.statementList = statementList.getStatements();</b>
+<b class="nc">&nbsp;		this.statementListSize = statementList.getGuaranteedLastIndexInUse() + 1;</b>
+<b class="nc">&nbsp;		assert this.statementListSize &lt;= this.statementList.length;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.subject = subject;</b>
+<b class="nc">&nbsp;		this.predicate = predicate;</b>
+<b class="nc">&nbsp;		this.object = object;</b>
+<b class="nc">&nbsp;		this.snapshot = snapshot;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.statementIndex = -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Searches through statementList, starting from index &lt;var&gt;_nextStatementIdx + 1&lt;/var&gt;, for triples that match the
+&nbsp;	 * constraints that have been set for this iterator.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected MemTriple getNextElement() {
+<b class="nc">&nbsp;		statementIndex++;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (; statementIndex &lt; statementListSize; statementIndex++) {</b>
+<b class="nc">&nbsp;			MemStatement statement = statementList[statementIndex];</b>
+<b class="nc">&nbsp;			if (statement == null) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (isInSnapshot(statement)) {</b>
+<b class="nc">&nbsp;				if (statement.getSubject().isTriple() &amp;&amp; statement.getSubject() instanceof MemTriple) {</b>
+<b class="nc">&nbsp;					MemTriple triple = (MemTriple) statement.getSubject();</b>
+<b class="nc">&nbsp;					if (triple.matchesSPO(subject, predicate, object)) {</b>
+<b class="nc">&nbsp;						return triple;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (statement.getObject().isTriple() &amp;&amp; statement.getObject() instanceof MemTriple) {</b>
+<b class="nc">&nbsp;					MemTriple triple = (MemTriple) statement.getObject();</b>
+<b class="nc">&nbsp;					if (triple.matchesSPO(subject, predicate, object)) {</b>
+<b class="nc">&nbsp;						return triple;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// No more matching statements.
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isInSnapshot(MemStatement st) {
+<b class="nc">&nbsp;		return snapshot &lt; 0 || st.isInSnapshot(snapshot);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

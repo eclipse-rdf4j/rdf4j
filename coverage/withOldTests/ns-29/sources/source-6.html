@@ -1,0 +1,433 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Create</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: Create (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Create</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/119)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileNotFoundException;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.StringReader;
+&nbsp;import java.net.URI;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.nio.file.FileSystem;
+&nbsp;import java.nio.file.FileSystems;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.console.Util;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
+&nbsp;import org.eclipse.rdf4j.repository.config.ConfigTemplate;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigSchema;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.jline.reader.EndOfFileException;
+&nbsp;import org.jline.reader.UserInterruptException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Create command
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; */
+&nbsp;public class Create extends ConsoleCommand {
+&nbsp;	private static final String TEMPLATES_SUBDIR = &quot;templates&quot;;
+&nbsp;	private static final String FILE_EXT = &quot;.ttl&quot;;
+&nbsp;	private final File templatesDir;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;create&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Creates a new repository&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return PrintHelp.USAGE + &quot;create &lt;template&gt;   Create a new repository using this configuration template\n&quot;</b>
+<b class="nc">&nbsp;				+ &quot;  built-in: \n&quot; + Util.formatToWidth(80, &quot;    &quot;, getBuiltinTemplates(), &quot;, &quot;) + &quot;\n&quot;</b>
+<b class="nc">&nbsp;				+ &quot;  template-dir (&quot; + templatesDir + &quot;):\n&quot; + Util.formatToWidth(80, &quot;    &quot;, getUserTemplates(), &quot;, &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 */
+&nbsp;	public Create(ConsoleIO consoleIO, ConsoleState state) {
+<b class="nc">&nbsp;		super(consoleIO, state);</b>
+<b class="nc">&nbsp;		this.templatesDir = new File(state.getDataDirectory(), TEMPLATES_SUBDIR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(String... tokens) throws IOException {
+<b class="nc">&nbsp;		if (tokens.length &lt; 2) {</b>
+<b class="nc">&nbsp;			writeln(getHelpLong());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			createRepository(tokens[1]);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return a concatenated list of ordered configuration templates files, without file type extension.
+&nbsp;	 *
+&nbsp;	 * @param path path with templates
+&nbsp;	 * @return string concatenated string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private String getOrderedTemplates(Path path) throws IOException {
+<b class="nc">&nbsp;		try (Stream&lt;Path&gt; walk = Files.walk(path)) {</b>
+<b class="nc">&nbsp;			return walk</b>
+<b class="nc">&nbsp;					.filter(Files::isRegularFile)</b>
+<b class="nc">&nbsp;					.map(f -&gt; f.getFileName().toString())</b>
+<b class="nc">&nbsp;					.filter(s -&gt; s.endsWith(FILE_EXT))</b>
+<b class="nc">&nbsp;					.map(s -&gt; s.substring(0, s.length() - FILE_EXT.length()))</b>
+<b class="nc">&nbsp;					.sorted()</b>
+<b class="nc">&nbsp;					.collect(Collectors.joining(&quot;, &quot;));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the names of the user-defined repository templates, located in the templates directory.
+&nbsp;	 *
+&nbsp;	 * @return ordered array of names
+&nbsp;	 */
+&nbsp;	private String getUserTemplates() {
+<b class="nc">&nbsp;		if (templatesDir == null || !templatesDir.exists() || !templatesDir.isDirectory()) {</b>
+<b class="nc">&nbsp;			return &quot;&quot;;</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			return getOrderedTemplates(templatesDir.toPath());</b>
+<b class="nc">&nbsp;		} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to read templates directory repository &quot;, ioe);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the names of the built-in repository templates, located in the JAR containing RepositoryConfig.
+&nbsp;	 *
+&nbsp;	 * @return concatenated list of names
+&nbsp;	 */
+&nbsp;	private String getBuiltinTemplates() {
+&nbsp;		// assume the templates are all located in the same jar &quot;directory&quot; as the RepositoryConfig class
+<b class="nc">&nbsp;		Class cl = RepositoryConfig.class;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			URI dir = cl.getResource(cl.getSimpleName() + &quot;.class&quot;).toURI();</b>
+<b class="nc">&nbsp;			if (dir.getScheme().equals(&quot;jar&quot;)) {</b>
+<b class="nc">&nbsp;				try (FileSystem fs = FileSystems.newFileSystem(dir, Collections.EMPTY_MAP, null)) {</b>
+&nbsp;					// turn package structure into directory structure
+<b class="nc">&nbsp;					String pkg = cl.getPackage().getName().replaceAll(&quot;\\.&quot;, &quot;/&quot;);</b>
+<b class="nc">&nbsp;					return getOrderedTemplates(fs.getPath(pkg));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (NullPointerException | URISyntaxException | IOException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Could not get built-in config templates from JAR&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new repository based on a template
+&nbsp;	 *
+&nbsp;	 * @param templateName name of the template
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private void createRepository(final String templateName) throws IOException {
+&nbsp;		try {
+&nbsp;			// FIXME: remove assumption of .ttl extension
+<b class="nc">&nbsp;			final String templateFileName = templateName + FILE_EXT;</b>
+<b class="nc">&nbsp;			final File templateFile = new File(templatesDir, templateFileName);</b>
+&nbsp;
+<b class="nc">&nbsp;			InputStream templateStream = createTemplateStream(templateName, templateFileName, templatesDir,</b>
+&nbsp;					templateFile);
+<b class="nc">&nbsp;			if (templateStream != null) {</b>
+&nbsp;				String template;
+&nbsp;				try {
+<b class="nc">&nbsp;					template = IOUtil.readString(new InputStreamReader(templateStream, StandardCharsets.UTF_8));</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					templateStream.close();</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				final ConfigTemplate configTemplate = new ConfigTemplate(template);</b>
+<b class="nc">&nbsp;				final Map&lt;String, String&gt; valueMap = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				final Map&lt;String, List&lt;String&gt;&gt; variableMap = configTemplate.getVariableMap();</b>
+&nbsp;
+<b class="nc">&nbsp;				boolean eof = inputParameters(valueMap, variableMap, configTemplate.getMultilineMap());</b>
+<b class="nc">&nbsp;				if (!eof) {</b>
+<b class="nc">&nbsp;					final String configString = configTemplate.render(valueMap);</b>
+<b class="nc">&nbsp;					final Model graph = new LinkedHashModel();</b>
+&nbsp;
+<b class="nc">&nbsp;					final RDFParser rdfParser = Rio.createParser(RDFFormat.TURTLE, SimpleValueFactory.getInstance());</b>
+<b class="nc">&nbsp;					rdfParser.setRDFHandler(new StatementCollector(graph));</b>
+<b class="nc">&nbsp;					rdfParser.parse(new StringReader(configString), RepositoryConfigSchema.NAMESPACE);</b>
+&nbsp;
+<b class="nc">&nbsp;					final Resource repositoryNode = Models</b>
+<b class="nc">&nbsp;							.subject(graph.getStatements(null, RDF.TYPE, RepositoryConfigSchema.REPOSITORY))</b>
+<b class="nc">&nbsp;							.orElseThrow(() -&gt; new RepositoryConfigException(&quot;missing repository node&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;					final RepositoryConfig repConfig = RepositoryConfig.create(graph, repositoryNode);</b>
+<b class="nc">&nbsp;					repConfig.validate();</b>
+&nbsp;
+<b class="nc">&nbsp;					String overwrite = &quot;WARNING: you are about to overwrite the configuration of an existing repository!&quot;;</b>
+<b class="nc">&nbsp;					boolean proceedOverwrite = this.state.getManager().hasRepositoryConfig(repConfig.getID())</b>
+<b class="nc">&nbsp;							? askProceed(overwrite, false)</b>
+<b class="nc">&nbsp;							: true;</b>
+&nbsp;
+<b class="nc">&nbsp;					String suggested = this.state.getManager().getNewRepositoryID(repConfig.getID());</b>
+<b class="nc">&nbsp;					String invalid = &quot;WARNING: There are potentially incompatible characters in the repository id.&quot;;</b>
+<b class="nc">&nbsp;					boolean proceedInvalid = !suggested.startsWith(repConfig.getID())</b>
+<b class="nc">&nbsp;							? askProceed(invalid, false)</b>
+<b class="nc">&nbsp;							: true;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (proceedInvalid &amp;&amp; proceedOverwrite) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							this.state.getManager().addRepositoryConfig(repConfig);</b>
+<b class="nc">&nbsp;							writeInfo(&quot;Repository created&quot;);</b>
+<b class="nc">&nbsp;						} catch (RepositoryReadOnlyException e) {</b>
+<b class="nc">&nbsp;							this.state.getManager().addRepositoryConfig(repConfig);</b>
+<b class="nc">&nbsp;							writeInfo(&quot;Repository created&quot;);</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						writeln(&quot;Create aborted&quot;);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (EndOfFileException | UserInterruptException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Create repository aborted&quot;, e);</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to create repository&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Ask user to specify values for the template variables
+&nbsp;	 *
+&nbsp;	 * @param valueMap
+&nbsp;	 * @param variableMap
+&nbsp;	 * @param multilineInput
+&nbsp;	 * @return
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private boolean inputParameters(final Map&lt;String, String&gt; valueMap, final Map&lt;String, List&lt;String&gt;&gt; variableMap,
+&nbsp;			Map&lt;String, String&gt; multilineInput) throws IOException {
+<b class="nc">&nbsp;		if (!variableMap.isEmpty()) {</b>
+<b class="nc">&nbsp;			writeln(&quot;Please specify values for the following variables:&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		boolean eof = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Map.Entry&lt;String, List&lt;String&gt;&gt; entry : variableMap.entrySet()) {</b>
+<b class="nc">&nbsp;			final String var = entry.getKey();</b>
+<b class="nc">&nbsp;			final List&lt;String&gt; values = entry.getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;			sb.append(var);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (values.size() &gt; 1) {</b>
+<b class="nc">&nbsp;				sb.append(&quot; (&quot;);</b>
+<b class="nc">&nbsp;				for (int i = 0; i &lt; values.size(); i++) {</b>
+<b class="nc">&nbsp;					if (i &gt; 0) {</b>
+<b class="nc">&nbsp;						sb.append(&quot;|&quot;);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					sb.append(values.get(i));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				sb.append(&quot;)&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (!values.isEmpty()) {</b>
+<b class="nc">&nbsp;				sb.append(&quot; [&quot; + values.get(0) + &quot;]&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String prompt = sb.append(&quot;: &quot;).toString();</b>
+<b class="nc">&nbsp;			String value = multilineInput.containsKey(var) ? consoleIO.readMultiLineInput(prompt)</b>
+<b class="nc">&nbsp;					: consoleIO.readln(prompt);</b>
+<b class="nc">&nbsp;			eof = (value == null);</b>
+<b class="nc">&nbsp;			if (eof) {</b>
+<b class="nc">&nbsp;				break; // for loop</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			value = value.trim();</b>
+<b class="nc">&nbsp;			if (value.length() == 0) {</b>
+<b class="nc">&nbsp;				value = null; // NOPMD</b>
+&nbsp;			}
+<b class="nc">&nbsp;			valueMap.put(var, value);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return eof;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create input stream from a template file in the specified file directory. If the file cannot be found, try to
+&nbsp;	 * read it from the embedded java resources instead.
+&nbsp;	 *
+&nbsp;	 * @param templateName     name of the template
+&nbsp;	 * @param templateFileName template file name
+&nbsp;	 * @param templatesDir     template directory
+&nbsp;	 * @param templateFile     template file
+&nbsp;	 * @return input stream of the template
+&nbsp;	 * @throws FileNotFoundException
+&nbsp;	 */
+&nbsp;	private InputStream createTemplateStream(final String templateName, final String templateFileName,
+&nbsp;			final File templatesDir, final File templateFile) throws FileNotFoundException {
+<b class="nc">&nbsp;		InputStream templateStream = null;</b>
+<b class="nc">&nbsp;		if (templateFile.exists()) {</b>
+<b class="nc">&nbsp;			if (templateFile.canRead()) {</b>
+<b class="nc">&nbsp;				templateStream = new FileInputStream(templateFile);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeError(&quot;Not allowed to read template file: &quot; + templateFile);</b>
+&nbsp;			}
+&nbsp;		} else {
+&nbsp;			// Try class path for built-ins
+<b class="nc">&nbsp;			templateStream = RepositoryConfig.class.getResourceAsStream(templateFileName);</b>
+<b class="nc">&nbsp;			if (templateStream == null) {</b>
+<b class="nc">&nbsp;				writeError(&quot;No template called &quot; + templateName + &quot; found in &quot; + templatesDir);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return templateStream;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

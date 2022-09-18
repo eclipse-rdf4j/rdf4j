@@ -1,0 +1,130 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFHandler (org.eclipse.rdf4j.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">RDFHandler</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;
+&nbsp;/**
+&nbsp; * An interface defining methods related to RDF data handling. &lt;var&gt;RDFHandler&lt;/var&gt; is both used as a &quot;consumer&quot; and as
+&nbsp; * a &quot;producer&quot; interface. As such it can be used both as an interface for receiving RDF data, for example by listening
+&nbsp; * to the results of an RDF parser, and as an interface for reporting RDF data, for example to an object that serializes
+&nbsp; * RDF data to an RDF/XML document.
+&nbsp; */
+&nbsp;public interface RDFHandler {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Signals the start of the RDF data. This method is called before any data is reported.
+&nbsp;	 *
+&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
+&nbsp;	 */
+&nbsp;	void startRDF() throws RDFHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Signals the end of the RDF data. This method is called when all data has been reported.
+&nbsp;	 *
+&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
+&nbsp;	 */
+&nbsp;	void endRDF() throws RDFHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles a namespace declaration/definition. A namespace declaration associates a (short) prefix string with the
+&nbsp;	 * namespace&#39;s URI. The prefix for default namespaces, which do not have an associated prefix, are represented as
+&nbsp;	 * empty strings.
+&nbsp;	 *
+&nbsp;	 * @param prefix The prefix for the namespace, or an empty string in case of a default namespace.
+&nbsp;	 * @param uri    The URI that the prefix maps to.
+&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
+&nbsp;	 */
+&nbsp;	void handleNamespace(String prefix, String uri) throws RDFHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles a statement.
+&nbsp;	 *
+&nbsp;	 * @param st The statement.
+&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
+&nbsp;	 */
+&nbsp;	void handleStatement(Statement st) throws RDFHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles a comment.
+&nbsp;	 *
+&nbsp;	 * @param comment The comment.
+&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
+&nbsp;	 */
+&nbsp;	void handleComment(String comment) throws RDFHandlerException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,249 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConfigTemplate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.config</a>
+</div>
+
+<h1>Coverage Summary for Class: ConfigTemplate (org.eclipse.rdf4j.repository.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConfigTemplate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.config;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class ConfigTemplate {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private static final Pattern TOKEN_PATTERN = Pattern.compile(&quot;\\{%[\\p{Print}&amp;&amp;[^\\}]]+%\\}&quot;);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private String template;
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;String, List&lt;String&gt;&gt; variableMap = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;String, String&gt; multilineMap = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	public ConfigTemplate(String template) {</b>
+<b class="nc">&nbsp;		setTemplate(template);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public String getTemplate() {
+<b class="nc">&nbsp;		return template;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public final void setTemplate(String template) {
+<b class="nc">&nbsp;		if (template == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;template must not be null&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.template = template;</b>
+&nbsp;
+<b class="nc">&nbsp;		parseTemplate();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void parseTemplate() {
+<b class="nc">&nbsp;		Matcher matcher = TOKEN_PATTERN.matcher(template);</b>
+<b class="nc">&nbsp;		while (matcher.find()) {</b>
+<b class="nc">&nbsp;			String group = matcher.group();</b>
+<b class="nc">&nbsp;			String[] tokensArray = group.substring(2, group.length() - 2).split(&quot;\\|&quot;);</b>
+<b class="nc">&nbsp;			List&lt;String&gt; tokens = Arrays.asList(tokensArray);</b>
+<b class="nc">&nbsp;			String var = tokens.get(0).trim();</b>
+<b class="nc">&nbsp;			if (var.length() == 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Illegal template token: &quot; + matcher.group());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (!variableMap.containsKey(var)) {</b>
+<b class="nc">&nbsp;				variableMap.put(var, tokens.subList(1, tokens.size()));</b>
+<b class="nc">&nbsp;				int start = matcher.start();</b>
+<b class="nc">&nbsp;				String before = template.substring(Math.max(start - 3, 0), start);</b>
+<b class="nc">&nbsp;				int end = matcher.end();</b>
+<b class="nc">&nbsp;				if ((&quot;&#39;&#39;&#39;&quot;.equals(before) || &quot;\&quot;\&quot;\&quot;&quot;.equals(before))</b>
+<b class="nc">&nbsp;						&amp;&amp; before.equals(template.substring(end, end + 3))) {</b>
+<b class="nc">&nbsp;					multilineMap.put(var, before);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;String, List&lt;String&gt;&gt; getVariableMap() {
+<b class="nc">&nbsp;		return Collections.unmodifiableMap(variableMap);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String render(Map&lt;String, String&gt; valueMap) {
+<b class="nc">&nbsp;		StringBuffer result = new StringBuffer(template.length());</b>
+<b class="nc">&nbsp;		Matcher matcher = TOKEN_PATTERN.matcher(template);</b>
+<b class="nc">&nbsp;		while (matcher.find()) {</b>
+<b class="nc">&nbsp;			String group = matcher.group();</b>
+<b class="nc">&nbsp;			String[] tokensArray = group.substring(2, group.length() - 2).split(&quot;\\|&quot;);</b>
+<b class="nc">&nbsp;			String var = tokensArray[0].trim();</b>
+<b class="nc">&nbsp;			String value = valueMap.get(var);</b>
+<b class="nc">&nbsp;			if (value == null) {</b>
+<b class="nc">&nbsp;				List&lt;String&gt; values = variableMap.get(var);</b>
+<b class="nc">&nbsp;				value = values.isEmpty() ? &quot;&quot; : values.get(0);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (!value.isEmpty() &amp;&amp; multilineMap.containsKey(var)) {</b>
+<b class="nc">&nbsp;				value = escapeMultilineQuotes(multilineMap.get(var), value);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			matcher.appendReplacement(result, Matcher.quoteReplacement(value));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		matcher.appendTail(result);</b>
+<b class="nc">&nbsp;		return result.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Escape Turtle multiline literal quote characters in the given value.
+&nbsp;	 *
+&nbsp;	 * @param quoteVariant either &#39;&#39;&#39; or &quot;&quot;&quot;
+&nbsp;	 * @param value        the value to escape properly
+&nbsp;	 * @return the value with any needed multiline quote sequences escaped
+&nbsp;	 */
+&nbsp;	protected static String escapeMultilineQuotes(String quoteVariant, String value) {
+<b class="nc">&nbsp;		if (&quot;&#39;&#39;&#39;&quot;.equals(quoteVariant) || &quot;\&quot;\&quot;\&quot;&quot;.equals(quoteVariant)) {</b>
+<b class="nc">&nbsp;			return value.replace(quoteVariant, new String(new char[3]).replace(&quot;\0&quot;, &quot;\\&quot; + quoteVariant.charAt(0)));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Only a valid Turtle multi-line quote delmiter is allowed.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;String, String&gt; getMultilineMap() {
+<b class="nc">&nbsp;		return Collections.unmodifiableMap(multilineMap);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,271 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFSizeBenchmarks</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.benchmark.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFSizeBenchmarks (org.eclipse.rdf4j.benchmark.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFSizeBenchmarks</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/67)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.benchmark.rio;
+&nbsp;
+&nbsp;import static java.nio.charset.StandardCharsets.UTF_16;
+&nbsp;import static java.nio.charset.StandardCharsets.UTF_8;
+&nbsp;
+&nbsp;import static org.apache.commons.io.output.NullOutputStream.NULL_OUTPUT_STREAM;
+&nbsp;import static org.eclipse.rdf4j.rio.helpers.BasicParserSettings.VERIFY_LANGUAGE_TAGS;
+&nbsp;import static org.eclipse.rdf4j.rio.helpers.BasicParserSettings.VERIFY_RELATIVE_URIS;
+&nbsp;import static org.eclipse.rdf4j.rio.helpers.BasicParserSettings.VERIFY_URI_SYNTAX;
+&nbsp;
+&nbsp;import java.io.BufferedInputStream;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.time.Duration;
+&nbsp;import java.time.Instant;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.apache.commons.io.output.CountingOutputStream;
+&nbsp;import org.apache.commons.lang3.tuple.Pair;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;p&gt;
+&nbsp; * This class benchmarks {@link RDFWriter}s in terms of output size given a number of datasets (see
+&nbsp; * {@link RDFTestDataset}. The output of the benchmark is the output size in megabytes, the time for parsing the input
+&nbsp; * dataset (!) and writing the output and a description of the writer used for each of the datasets.
+&nbsp; * &lt;/p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * Please note that the datasets from {@link RDFTestDataset} are fairly large files
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Frens Jan Rumph
+&nbsp; */
+<b class="nc">&nbsp;public class RDFSizeBenchmarks {</b>
+&nbsp;
+&nbsp;	public static void main(String[] args) throws IOException {
+<b class="nc">&nbsp;		List&lt;File&gt; datasets = List.of(</b>
+<b class="nc">&nbsp;				RDFTestDataset.SWDF.download(),</b>
+<b class="nc">&nbsp;				RDFTestDataset.LEXVO.download(),</b>
+<b class="nc">&nbsp;				RDFTestDataset.DATAGOVBE.download(),</b>
+<b class="nc">&nbsp;				RDFTestDataset.FISHMARK.download(),</b>
+<b class="nc">&nbsp;				RDFTestDataset.SP2BENCH.download(),</b>
+<b class="nc">&nbsp;				RDFTestDataset.GENE2GO.download(),</b>
+<b class="nc">&nbsp;				RDFTestDataset.BSBM.download()</b>
+&nbsp;		);
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Pair&lt;RDFFormat, WriterConfig&gt;&gt; writers = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		writers.put(&quot;binary v1, buffer size = 100&quot;,</b>
+<b class="nc">&nbsp;				binaryV1(100L));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v1, buffer size =  8k&quot;,</b>
+<b class="nc">&nbsp;				binaryV1(8192L));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size = 100, UTF-16&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(100L, UTF_16, false));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size =  8k, UTF-16&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(8192L, UTF_16, false));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size = 100, UTF-8&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(100L, UTF_8, false));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size =  8k, UTF-8&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(8192L, UTF_8, false));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size = 100, UTF-16, with id-recycling&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(100L, UTF_16, true));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size =  8k, UTF-16, with id-recycling&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(8192L, UTF_16, true));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size = 100, UTF-8, with id-recycling&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(100L, UTF_8, true));</b>
+<b class="nc">&nbsp;		writers.put(&quot;binary v2, buffer size =  8k, UTF-8, with id-recycling&quot;,</b>
+<b class="nc">&nbsp;				binaryV2(8192L, UTF_8, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		for (File dataset : datasets) {</b>
+<b class="nc">&nbsp;			for (Map.Entry&lt;String, Pair&lt;RDFFormat, WriterConfig&gt;&gt; writer : writers.entrySet()) {</b>
+<b class="nc">&nbsp;				System.gc();</b>
+<b class="nc">&nbsp;				reportSize(dataset, writer.getKey(), writer.getValue().getKey(), writer.getValue().getValue());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Pair&lt;RDFFormat, WriterConfig&gt; binaryV1(long bufferSize) {
+<b class="nc">&nbsp;		return Pair.of(RDFFormat.BINARY, new WriterConfig()</b>
+<b class="nc">&nbsp;				.set(BinaryRDFWriterSettings.VERSION, 1L)</b>
+<b class="nc">&nbsp;				.set(BinaryRDFWriterSettings.BUFFER_SIZE, bufferSize));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Pair&lt;RDFFormat, WriterConfig&gt; binaryV2(long bufferSize, Charset charset, boolean recycleIds) {
+<b class="nc">&nbsp;		WriterConfig config = new WriterConfig()</b>
+<b class="nc">&nbsp;				.set(BinaryRDFWriterSettings.VERSION, 2L)</b>
+<b class="nc">&nbsp;				.set(BinaryRDFWriterSettings.BUFFER_SIZE, bufferSize)</b>
+<b class="nc">&nbsp;				.set(BinaryRDFWriterSettings.CHARSET, charset.name())</b>
+<b class="nc">&nbsp;				.set(BinaryRDFWriterSettings.RECYCLE_IDS, recycleIds);</b>
+<b class="nc">&nbsp;		return Pair.of(RDFFormat.BINARY, config);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void reportSize(File path, String description, RDFFormat outputFormat, WriterConfig writerConfig)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		String fileName = path.getName();</b>
+<b class="nc">&nbsp;		RDFFormat inputFormat = Rio.getParserFormatForFileName(fileName)</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new IllegalArgumentException(&quot;No format available for &quot; + fileName));</b>
+<b class="nc">&nbsp;		try (InputStream is = new BufferedInputStream(new FileInputStream(path))) {</b>
+<b class="nc">&nbsp;			reportSize(fileName, is, description, inputFormat, outputFormat, writerConfig);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void reportSize(String dataset, InputStream is, String description, RDFFormat inputFormat,
+&nbsp;			RDFFormat outputFormat, WriterConfig writerConfig) throws IOException {
+&nbsp;
+<b class="nc">&nbsp;		CountingOutputStream os = new CountingOutputStream(NULL_OUTPUT_STREAM);</b>
+<b class="nc">&nbsp;		RDFWriter writer = Rio.createWriter(outputFormat, os);</b>
+<b class="nc">&nbsp;		writer.setWriterConfig(writerConfig);</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFParser parser = Rio.createParser(inputFormat);</b>
+<b class="nc">&nbsp;		parser.setRDFHandler(writer);</b>
+&nbsp;		// Verification of datasets is disabled because of encoding issues in the input data and it&#39;s not a critical
+&nbsp;		// part of the benchmarking.
+<b class="nc">&nbsp;		parser.setParserConfig(new ParserConfig()</b>
+<b class="nc">&nbsp;				.set(VERIFY_LANGUAGE_TAGS, false)</b>
+<b class="nc">&nbsp;				.set(VERIFY_RELATIVE_URIS, false)</b>
+<b class="nc">&nbsp;				.set(VERIFY_URI_SYNTAX, false));</b>
+&nbsp;
+<b class="nc">&nbsp;		Instant start = Instant.now();</b>
+<b class="nc">&nbsp;		parser.parse(is);</b>
+<b class="nc">&nbsp;		Instant end = Instant.now();</b>
+<b class="nc">&nbsp;		Duration duration = Duration.between(start, end);</b>
+&nbsp;
+<b class="nc">&nbsp;		long size = os.getByteCount();</b>
+<b class="nc">&nbsp;		System.out.printf(</b>
+&nbsp;				&quot;%20s %8.2f MB in %-14s - %s%n&quot;,
+&nbsp;				dataset,
+<b class="nc">&nbsp;				size / 1024 / 1024f,</b>
+&nbsp;				duration,
+&nbsp;				description
+&nbsp;		);
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

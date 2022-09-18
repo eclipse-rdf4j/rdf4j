@@ -1,0 +1,505 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QuerySpecBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: QuerySpecBuilder (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QuerySpecBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/117)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QuerySpecBuilder$PatternFilter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/90)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/142)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.vocabulary.RDF.TYPE;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.INDEXID;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.LUCENE_QUERY;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.PROPERTY;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SNIPPET;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A QueryInterpreter creates a set of QuerySpecs based on Lucene-related StatementPatterns that it finds in a
+&nbsp; * TupleExpr.
+&nbsp; * &lt;p&gt;
+&nbsp; * QuerySpecs will only be created when the set of StatementPatterns is complete (i.e. contains at least a matches and a
+&nbsp; * query statement connected properly) and correct (query pattern has a literal object, matches a resource subject,
+&nbsp; * etc.).
+&nbsp; */
+&nbsp;public class QuerySpecBuilder implements SearchQueryInterpreter {
+&nbsp;
+<b class="nc">&nbsp;	private final static Logger logger = LoggerFactory.getLogger(QuerySpecBuilder.class);</b>
+&nbsp;
+&nbsp;	private final boolean incompleteQueryFails;
+&nbsp;
+&nbsp;	private final IRI indexId;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize a new QuerySpecBuilder
+&nbsp;	 *
+&nbsp;	 * @param incompleteQueryFails see {@link LuceneSail#isIncompleteQueryFails()}
+&nbsp;	 */
+&nbsp;	public QuerySpecBuilder(boolean incompleteQueryFails) {
+<b class="nc">&nbsp;		this(incompleteQueryFails, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize a new QuerySpecBuilder
+&nbsp;	 *
+&nbsp;	 * @param incompleteQueryFails see {@link LuceneSail#isIncompleteQueryFails()}
+&nbsp;	 * @param indexId              the id of the index, null to do not filter by index id, see
+&nbsp;	 *                             {@link LuceneSail#INDEX_ID}
+&nbsp;	 */
+<b class="nc">&nbsp;	public QuerySpecBuilder(boolean incompleteQueryFails, IRI indexId) {</b>
+<b class="nc">&nbsp;		this.incompleteQueryFails = incompleteQueryFails;</b>
+<b class="nc">&nbsp;		this.indexId = indexId;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in a
+&nbsp;	 * TupleExpr. To be removed, prefer {@link #process(TupleExpr, BindingSet, Collection&lt;SearchQueryEvaluator&gt;)}.
+&nbsp;	 */
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	@Deprecated
+&nbsp;	public Set&lt;QuerySpec&gt; process(TupleExpr tupleExpr, BindingSet bindings) throws SailException {
+<b class="nc">&nbsp;		HashSet&lt;QuerySpec&gt; result = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		process(tupleExpr, bindings, (Collection&lt;SearchQueryEvaluator&gt;) (Collection&lt;?&gt;) result);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends a set of QuerySpecs embodying all necessary information to perform the Lucene query embedded in a
+&nbsp;	 * TupleExpr.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void process(TupleExpr tupleExpr, BindingSet bindings, Collection&lt;SearchQueryEvaluator&gt; result)
+&nbsp;			throws SailException {
+&nbsp;		// find Lucene-related StatementPatterns
+<b class="nc">&nbsp;		PatternFilter filter = new PatternFilter();</b>
+<b class="nc">&nbsp;		tupleExpr.visit(filter);</b>
+&nbsp;
+&nbsp;		// loop over all matches statements
+<b class="nc">&nbsp;		for (StatementPattern matchesPattern : filter.matchesPatterns) {</b>
+&nbsp;			// the subject of the matches statements should be a variable or a
+&nbsp;			// Resource
+<b class="nc">&nbsp;			Var subjectVar = matchesPattern.getSubjectVar();</b>
+<b class="nc">&nbsp;			Value subjectValue = subjectVar.hasValue() ? subjectVar.getValue()</b>
+<b class="nc">&nbsp;					: bindings.getValue(subjectVar.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (subjectValue != null &amp;&amp; !(subjectValue instanceof Resource)) {</b>
+<b class="nc">&nbsp;				failOrWarn(MATCHES + &quot; properties should have Resource subjects: &quot; + subjectVar.getValue());</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Resource subject = (Resource) subjectValue;</b>
+&nbsp;
+&nbsp;			// the matches var should have no value
+<b class="nc">&nbsp;			Var matchesVar = matchesPattern.getObjectVar();</b>
+<b class="nc">&nbsp;			if (matchesVar.hasValue()) {</b>
+<b class="nc">&nbsp;				failOrWarn(MATCHES + &quot; properties should have variable objects: &quot; + matchesVar.getValue());</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// do we need to filter by id?
+&nbsp;			StatementPattern idPattern;
+&nbsp;
+<b class="nc">&nbsp;			if (indexId != null) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					idPattern = getPattern(matchesVar, filter.idPatterns);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					failOrWarn(e);</b>
+<b class="nc">&nbsp;					continue;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				if (idPattern == null) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				Var indexIdVar = idPattern.getObjectVar();</b>
+<b class="nc">&nbsp;				Value indexIdValue = indexIdVar.hasValue() ? indexIdVar.getValue()</b>
+<b class="nc">&nbsp;						: bindings.getValue(indexIdVar.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;				if (!(indexIdValue instanceof IRI &amp;&amp; indexIdVar.getValue().equals(indexId))) {</b>
+<b class="nc">&nbsp;					continue; // this match isn&#39;t for this index, continue for the next one</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				idPattern = null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// find the relevant outgoing patterns
+&nbsp;			StatementPattern typePattern, queryPattern, propertyPattern, scorePattern, snippetPattern;
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				typePattern = getPattern(matchesVar, filter.typePatterns);</b>
+<b class="nc">&nbsp;				queryPattern = getPattern(matchesVar, filter.queryPatterns);</b>
+<b class="nc">&nbsp;				propertyPattern = getPattern(matchesVar, filter.propertyPatterns);</b>
+<b class="nc">&nbsp;				scorePattern = getPattern(matchesVar, filter.scorePatterns);</b>
+<b class="nc">&nbsp;				snippetPattern = getPattern(matchesVar, filter.snippetPatterns);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				failOrWarn(e);</b>
+<b class="nc">&nbsp;				continue;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// fetch the query String
+<b class="nc">&nbsp;			String queryString = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (queryPattern != null) {</b>
+<b class="nc">&nbsp;				Var queryVar = queryPattern.getObjectVar();</b>
+<b class="nc">&nbsp;				Value queryValue = queryVar.hasValue() ? queryVar.getValue() : bindings.getValue(queryVar.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;				if (queryValue instanceof Literal) {</b>
+<b class="nc">&nbsp;					queryString = ((Literal) queryValue).getLabel();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// check property restriction or variable
+<b class="nc">&nbsp;			IRI propertyURI = null;</b>
+<b class="nc">&nbsp;			if (propertyPattern != null) {</b>
+<b class="nc">&nbsp;				Var propertyVar = propertyPattern.getObjectVar();</b>
+<b class="nc">&nbsp;				Value propertyValue = propertyVar.hasValue() ? propertyVar.getValue()</b>
+<b class="nc">&nbsp;						: bindings.getValue(propertyVar.getName());</b>
+&nbsp;
+&nbsp;				// if property is a restriction, it should be an URI
+<b class="nc">&nbsp;				if (propertyValue instanceof IRI) {</b>
+<b class="nc">&nbsp;					propertyURI = (IRI) propertyValue;</b>
+&nbsp;				}
+&nbsp;				// otherwise, it should be a variable
+<b class="nc">&nbsp;				else if (propertyValue != null) {</b>
+<b class="nc">&nbsp;					failOrWarn(PROPERTY + &quot; should have a property URI or a variable as object: &quot;</b>
+<b class="nc">&nbsp;							+ propertyVar.getValue());</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// check the score variable, if any
+<b class="nc">&nbsp;			Var scoreVar = scorePattern == null ? null : scorePattern.getObjectVar();</b>
+<b class="nc">&nbsp;			if (scoreVar != null &amp;&amp; scoreVar.hasValue()) {</b>
+<b class="nc">&nbsp;				failOrWarn(SCORE + &quot; should have a variable as object: &quot; + scoreVar.getValue());</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// check the snippet variable, if any
+<b class="nc">&nbsp;			Var snippetVar = snippetPattern == null ? null : snippetPattern.getObjectVar();</b>
+<b class="nc">&nbsp;			if (snippetVar != null &amp;&amp; snippetVar.hasValue()) {</b>
+<b class="nc">&nbsp;				failOrWarn(SNIPPET + &quot; should have a variable as object: &quot; + snippetVar.getValue());</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// check type pattern
+<b class="nc">&nbsp;			if (typePattern == null) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Query variable &#39;{}&#39; has not rdf:type, assuming {}&quot;, subject, LUCENE_QUERY);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			QuerySpec querySpec = new QuerySpec(matchesPattern, queryPattern, propertyPattern, scorePattern,</b>
+&nbsp;					snippetPattern, typePattern, idPattern, subject, queryString, propertyURI);
+&nbsp;
+<b class="nc">&nbsp;			if (querySpec.isEvaluable()) {</b>
+&nbsp;				// constant optimizer
+<b class="nc">&nbsp;				result.add(querySpec);</b>
+&nbsp;			} else {
+&nbsp;				// evaluate later
+<b class="nc">&nbsp;				TupleFunctionCall funcCall = new TupleFunctionCall();</b>
+<b class="nc">&nbsp;				funcCall.setURI(LuceneSailSchema.SEARCH.toString());</b>
+<b class="nc">&nbsp;				funcCall.addArg(queryPattern.getObjectVar());</b>
+<b class="nc">&nbsp;				if (subject != null) {</b>
+<b class="nc">&nbsp;					funcCall.addArg(matchesPattern.getSubjectVar());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_MATCHES));</b>
+<b class="nc">&nbsp;					funcCall.addResultVar(matchesPattern.getSubjectVar());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (propertyPattern != null) {</b>
+<b class="nc">&nbsp;					funcCall.addArg(new ValueConstant(LuceneSailSchema.PROPERTY));</b>
+<b class="nc">&nbsp;					if (propertyURI != null) {</b>
+<b class="nc">&nbsp;						funcCall.addArg(propertyPattern.getObjectVar());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						funcCall.addArg(new ValueConstant(LuceneSailSchema.ALL_PROPERTIES));</b>
+<b class="nc">&nbsp;						funcCall.addResultVar(propertyPattern.getObjectVar());</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				if (scoreVar != null) {</b>
+<b class="nc">&nbsp;					funcCall.addArg(new ValueConstant(LuceneSailSchema.SCORE));</b>
+<b class="nc">&nbsp;					funcCall.addResultVar(scoreVar);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (snippetVar != null) {</b>
+<b class="nc">&nbsp;					funcCall.addArg(new ValueConstant(LuceneSailSchema.SNIPPET));</b>
+<b class="nc">&nbsp;					funcCall.addResultVar(snippetVar);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				Join join = new Join();</b>
+<b class="nc">&nbsp;				matchesPattern.replaceWith(join);</b>
+<b class="nc">&nbsp;				join.setLeftArg(matchesPattern);</b>
+<b class="nc">&nbsp;				join.setRightArg(funcCall);</b>
+&nbsp;
+<b class="nc">&nbsp;				querySpec.removeQueryPatterns();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// fail on superflous typePattern, query, score, or snippet patterns.
+&nbsp;	}
+&nbsp;
+&nbsp;	private void failOrWarn(Exception exception) throws SailException {
+<b class="nc">&nbsp;		if (incompleteQueryFails) {</b>
+<b class="nc">&nbsp;			throw exception instanceof SailException ? (SailException) exception : new SailException(exception);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(exception.getMessage(), exception);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void failOrWarn(String message) throws SailException {
+<b class="nc">&nbsp;		if (incompleteQueryFails) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Invalid Text Query: &quot; + message);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(message);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the StatementPattern, if any, from the specified Collection that has the specified subject var. If
+&nbsp;	 * multiple StatementPatterns exist with this subject var, an IllegalArgumentException is thrown. It also removes
+&nbsp;	 * the patter from the arraylist, to be able to check if some patterns are added without a MATCHES property.
+&nbsp;	 */
+&nbsp;	private StatementPattern getPattern(Var subjectVar, ArrayList&lt;StatementPattern&gt; patterns)
+&nbsp;			throws IllegalArgumentException {
+<b class="nc">&nbsp;		StatementPattern result = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (StatementPattern pattern : patterns) {</b>
+<b class="nc">&nbsp;			if (pattern.getSubjectVar().equals(subjectVar)) {</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+<b class="nc">&nbsp;					result = pattern;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new IllegalArgumentException(</b>
+&nbsp;							&quot;multiple StatementPatterns with the same subject: &quot; + result + &quot;, &quot; + pattern);
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;		// remove the result from the list, to filter out superflous patterns
+<b class="nc">&nbsp;		if (result != null) {</b>
+<b class="nc">&nbsp;			patterns.remove(result);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private static class PatternFilter extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;		public ArrayList&lt;StatementPattern&gt; typePatterns = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public ArrayList&lt;StatementPattern&gt; matchesPatterns = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public ArrayList&lt;StatementPattern&gt; queryPatterns = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public ArrayList&lt;StatementPattern&gt; propertyPatterns = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public ArrayList&lt;StatementPattern&gt; scorePatterns = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public ArrayList&lt;StatementPattern&gt; snippetPatterns = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public ArrayList&lt;StatementPattern&gt; idPatterns = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Method implementing the visitor pattern that gathers all statements using a predicate from the LuceneSail&#39;s
+&nbsp;		 * namespace.
+&nbsp;		 */
+&nbsp;		@Override
+&nbsp;		public void meet(StatementPattern node) {
+<b class="nc">&nbsp;			Value predicate = node.getPredicateVar().getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (MATCHES.equals(predicate)) {</b>
+<b class="nc">&nbsp;				matchesPatterns.add(node);</b>
+<b class="nc">&nbsp;			} else if (QUERY.equals(predicate)) {</b>
+<b class="nc">&nbsp;				queryPatterns.add(node);</b>
+<b class="nc">&nbsp;			} else if (PROPERTY.equals(predicate)) {</b>
+<b class="nc">&nbsp;				propertyPatterns.add(node);</b>
+<b class="nc">&nbsp;			} else if (SCORE.equals(predicate)) {</b>
+<b class="nc">&nbsp;				scorePatterns.add(node);</b>
+<b class="nc">&nbsp;			} else if (SNIPPET.equals(predicate)) {</b>
+<b class="nc">&nbsp;				snippetPatterns.add(node);</b>
+<b class="nc">&nbsp;			} else if (INDEXID.equals(predicate)) {</b>
+<b class="nc">&nbsp;				idPatterns.add(node);</b>
+<b class="nc">&nbsp;			} else if (TYPE.equals(predicate)) {</b>
+<b class="nc">&nbsp;				Value object = node.getObjectVar().getValue();</b>
+<b class="nc">&nbsp;				if (LUCENE_QUERY.equals(object)) {</b>
+<b class="nc">&nbsp;					typePatterns.add(node);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,523 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFXMLParserTestCase</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.rio.rdfxml</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFXMLParserTestCase (org.eclipse.rdf4j.testsuite.rio.rdfxml)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFXMLParserTestCase</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/35)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RDFXMLParserTestCase$CanonXMLValueFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RDFXMLParserTestCase$NegativeParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RDFXMLParserTestCase$PositiveParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/99)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.rio.rdfxml;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import javax.xml.parsers.ParserConfigurationException;
+&nbsp;
+&nbsp;import org.apache.xml.security.c14n.CanonicalizationException;
+&nbsp;import org.apache.xml.security.c14n.Canonicalizer;
+&nbsp;import org.apache.xml.security.c14n.InvalidCanonicalizerException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.xml.sax.SAXException;
+&nbsp;
+&nbsp;import junit.framework.TestCase;
+&nbsp;import junit.framework.TestSuite;
+&nbsp;
+&nbsp;/**
+&nbsp; * JUnit test for the RDF/XML parser that uses the test manifest that is available
+&nbsp; * &lt;a href=&quot;http://www.w3.org/2000/10/rdf-tests/rdfcore/Manifest.rdf&quot;&gt;online&lt;/a&gt;.
+&nbsp; */
+<b class="nc">&nbsp;public abstract class RDFXMLParserTestCase {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final String W3C_TESTS_DIR = &quot;http://www.w3.org/2000/10/rdf-tests/rdfcore/&quot;;
+&nbsp;
+&nbsp;	private static final String LOCAL_TESTS_DIR = &quot;/testcases/rdfxml/&quot;;
+&nbsp;
+&nbsp;	private static final String W3C_MANIFEST_FILE = W3C_TESTS_DIR + &quot;Manifest.rdf&quot;;
+&nbsp;
+&nbsp;	/*--------------------*
+&nbsp;	 * Static initializer *
+&nbsp;	 *--------------------*/
+&nbsp;
+&nbsp;	public TestSuite createTestSuite() throws Exception {
+&nbsp;		// Create an RDF repository for the manifest data
+<b class="nc">&nbsp;		Repository repository = new SailRepository(new MemoryStore());</b>
+&nbsp;		// Create test suite
+<b class="nc">&nbsp;		TestSuite suite = new TestSuite(RDFXMLParserTestCase.class.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+&nbsp;
+&nbsp;			// Add W3C&#39;s manifest
+<b class="nc">&nbsp;			URL w3cManifest = resolveURL(W3C_MANIFEST_FILE);</b>
+<b class="nc">&nbsp;			con.add(w3cManifest, base(W3C_MANIFEST_FILE), RDFFormat.RDFXML);</b>
+&nbsp;
+&nbsp;			// Add all positive parser tests
+<b class="nc">&nbsp;			String query = &quot;&quot;</b>
+&nbsp;					+ &quot;PREFIX test: &lt;http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#&gt;&quot;
+&nbsp;					+ &quot; SELECT ?TESTCASE ?INPUT ?OUTPUT &quot;
+&nbsp;					+ &quot; WHERE { ?TESTCASE a test:PositiveParserTest; &quot;
+&nbsp;					+ &quot;                test:inputDocument ?INPUT; &quot;
+&nbsp;					+ &quot;                test:outputDocument ?OUTPUT; &quot;
+&nbsp;					+ &quot;                test:status \&quot;APPROVED\&quot; .} &quot;;
+&nbsp;
+<b class="nc">&nbsp;			try (var queryResult = con.prepareTupleQuery(query).evaluate()) {</b>
+<b class="nc">&nbsp;				while (queryResult.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = queryResult.next();</b>
+<b class="nc">&nbsp;					String caseURI = bindingSet.getValue(&quot;TESTCASE&quot;).toString();</b>
+<b class="nc">&nbsp;					String inputURL = bindingSet.getValue(&quot;INPUT&quot;).toString();</b>
+<b class="nc">&nbsp;					String outputURL = bindingSet.getValue(&quot;OUTPUT&quot;).toString();</b>
+<b class="nc">&nbsp;					suite.addTest(new PositiveParserTest(caseURI, inputURL, outputURL));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			// Add all negative parser tests
+<b class="nc">&nbsp;			query = &quot;&quot;</b>
+&nbsp;					+ &quot;PREFIX test: &lt;http://www.w3.org/2000/10/rdf-tests/rdfcore/testSchema#&gt;&quot;
+&nbsp;					+ &quot; SELECT ?TESTCASE ?INPUT ?OUTPUT &quot;
+&nbsp;					+ &quot; WHERE { ?TESTCASE a test:NegativeParserTest; &quot;
+&nbsp;					+ &quot;                test:inputDocument ?INPUT; &quot;
+&nbsp;					+ &quot;                test:outputDocument ?OUTPUT; &quot;
+&nbsp;					+ &quot;                test:status \&quot;APPROVED\&quot; .} &quot;;
+<b class="nc">&nbsp;			try (var queryResult = con.prepareTupleQuery(query).evaluate()) {</b>
+<b class="nc">&nbsp;				while (queryResult.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = queryResult.next();</b>
+<b class="nc">&nbsp;					String caseURI = bindingSet.getValue(&quot;TESTCASE&quot;).toString();</b>
+<b class="nc">&nbsp;					String inputURL = bindingSet.getValue(&quot;INPUT&quot;).toString();</b>
+<b class="nc">&nbsp;					suite.addTest(new NegativeParserTest(caseURI, inputURL));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		repository.shutDown();</b>
+&nbsp;
+<b class="nc">&nbsp;		return suite;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static URL resolveURL(String urlString) throws MalformedURLException {
+<b class="nc">&nbsp;		if (urlString.startsWith(W3C_TESTS_DIR)) {</b>
+&nbsp;			// resolve to local copy
+<b class="nc">&nbsp;			urlString = LOCAL_TESTS_DIR + &quot;w3c-approved/&quot; + urlString.substring(W3C_TESTS_DIR.length());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (urlString.startsWith(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;			return RDFXMLParserTestCase.class.getResource(urlString);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return url(urlString);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract RDFParser createRDFParser();
+&nbsp;
+&nbsp;	/*--------------------------------*
+&nbsp;	 * Inner class PositiveParserTest *
+&nbsp;	 *--------------------------------*/
+&nbsp;
+&nbsp;	private class PositiveParserTest extends TestCase {
+&nbsp;
+&nbsp;		/*-----------*
+&nbsp;		 * Variables *
+&nbsp;		 *-----------*/
+&nbsp;
+&nbsp;		private final String inputURL;
+&nbsp;
+&nbsp;		private final String outputURL;
+&nbsp;
+&nbsp;		/*--------------*
+&nbsp;		 * Constructors *
+&nbsp;		 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;		public PositiveParserTest(String caseURI, String inputURL, String outputURL) {</b>
+<b class="nc">&nbsp;			super(caseURI);</b>
+<b class="nc">&nbsp;			this.inputURL = inputURL;</b>
+<b class="nc">&nbsp;			this.outputURL = outputURL;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*---------*
+&nbsp;		 * Methods *
+&nbsp;		 *---------*/
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void runTest() throws Exception {
+&nbsp;			// Parse input data
+<b class="nc">&nbsp;			RDFParser rdfxmlParser = createRDFParser();</b>
+<b class="nc">&nbsp;			rdfxmlParser.setValueFactory(new CanonXMLValueFactory());</b>
+<b class="nc">&nbsp;			rdfxmlParser.getParserConfig().addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);</b>
+<b class="nc">&nbsp;			rdfxmlParser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Statement&gt; inputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementCollector inputCollector = new StatementCollector(inputCollection);</b>
+<b class="nc">&nbsp;			rdfxmlParser.setRDFHandler(inputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (InputStream in = resolveURL(inputURL).openStream()) {</b>
+<b class="nc">&nbsp;				rdfxmlParser.parse(in, base(inputURL));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// Parse expected output data
+<b class="nc">&nbsp;			NTriplesParser ntriplesParser = new NTriplesParser();</b>
+<b class="nc">&nbsp;			ntriplesParser.setValueFactory(new CanonXMLValueFactory());</b>
+<b class="nc">&nbsp;			ntriplesParser.getParserConfig().addNonFatalError(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);</b>
+<b class="nc">&nbsp;			ntriplesParser.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Statement&gt; outputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementCollector outputCollector = new StatementCollector(outputCollection);</b>
+<b class="nc">&nbsp;			ntriplesParser.setRDFHandler(outputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (InputStream in = resolveURL(outputURL).openStream()) {</b>
+<b class="nc">&nbsp;				ntriplesParser.parse(in, base(inputURL));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// Check equality of the two models
+<b class="nc">&nbsp;			if (!Models.isomorphic(inputCollection, outputCollection)) {</b>
+&nbsp;
+<b class="nc">&nbsp;				String expected = outputCollection.stream().map(Objects::toString).collect(Collectors.joining());</b>
+<b class="nc">&nbsp;				String actual = inputCollection.stream().map(Objects::toString).collect(Collectors.joining(&quot;\n&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertEquals(expected, actual);</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	} // end inner class PositiveParserTest
+&nbsp;
+&nbsp;	/*--------------------------------*
+&nbsp;	 * Inner class NegativeParserTest *
+&nbsp;	 *--------------------------------*/
+&nbsp;
+&nbsp;	private class NegativeParserTest extends TestCase {
+&nbsp;
+&nbsp;		/*-----------*
+&nbsp;		 * Variables *
+&nbsp;		 *-----------*/
+&nbsp;
+&nbsp;		private final String inputURL;
+&nbsp;
+&nbsp;		/*--------------*
+&nbsp;		 * Constructors *
+&nbsp;		 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;		public NegativeParserTest(String caseURI, String inputURL) {</b>
+<b class="nc">&nbsp;			super(caseURI);</b>
+<b class="nc">&nbsp;			this.inputURL = inputURL;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*---------*
+&nbsp;		 * Methods *
+&nbsp;		 *---------*/
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void runTest() {
+&nbsp;			try {
+&nbsp;				// Try parsing the input; this should result in an error being
+&nbsp;				// reported.
+<b class="nc">&nbsp;				RDFParser rdfxmlParser = createRDFParser();</b>
+<b class="nc">&nbsp;				rdfxmlParser.getParserConfig().set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);</b>
+<b class="nc">&nbsp;				rdfxmlParser.getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);</b>
+<b class="nc">&nbsp;				rdfxmlParser.getParserConfig().set(BasicParserSettings.NORMALIZE_DATATYPE_VALUES, true);</b>
+&nbsp;
+<b class="nc">&nbsp;				rdfxmlParser.setRDFHandler(new StatementCollector());</b>
+&nbsp;
+<b class="nc">&nbsp;				InputStream in = resolveURL(inputURL).openStream();</b>
+<b class="nc">&nbsp;				rdfxmlParser.parse(in, base(inputURL));</b>
+<b class="nc">&nbsp;				in.close();</b>
+&nbsp;
+<b class="nc">&nbsp;				fail(&quot;Parser parses erroneous data without reporting errors&quot;);</b>
+<b class="nc">&nbsp;			} catch (RDFParseException e) {</b>
+&nbsp;				// This is expected as the input file is incorrect RDF
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Error: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	} // end inner class NegativeParserTest
+&nbsp;
+<b class="nc">&nbsp;	private static class CanonXMLValueFactory extends SimpleValueFactory {</b>
+&nbsp;
+&nbsp;		private final Canonicalizer c14n;
+&nbsp;
+<b class="nc">&nbsp;		public CanonXMLValueFactory() throws InvalidCanonicalizerException, ParserConfigurationException {</b>
+<b class="nc">&nbsp;			org.apache.xml.security.Init.init();</b>
+&nbsp;
+<b class="nc">&nbsp;			c14n = Canonicalizer.getInstance(Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Literal createLiteral(String value, IRI datatype) {
+<b class="nc">&nbsp;			if (RDF.XMLLITERAL.equals(datatype)) {</b>
+<b class="nc">&nbsp;				value = canonicalizeXmlLiteral(value);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return super.createLiteral(value, datatype);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Literal createLiteral(String value, CoreDatatype datatype) {
+<b class="nc">&nbsp;			if (datatype == CoreDatatype.RDF.XMLLITERAL) {</b>
+<b class="nc">&nbsp;				value = canonicalizeXmlLiteral(value);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return super.createLiteral(value, datatype);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Literal createLiteral(String value, IRI datatype, CoreDatatype coreDatatype) {
+<b class="nc">&nbsp;			if (coreDatatype == CoreDatatype.RDF.XMLLITERAL) {</b>
+<b class="nc">&nbsp;				assert RDF.XMLLITERAL.equals(datatype);</b>
+<b class="nc">&nbsp;				value = canonicalizeXmlLiteral(value);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				assert !RDF.XMLLITERAL.equals(datatype);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return super.createLiteral(value, datatype, coreDatatype);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private String canonicalizeXmlLiteral(String value) {
+&nbsp;			// Canonicalize the literal value
+&nbsp;			try {
+<b class="nc">&nbsp;				return new String(c14n.canonicalize(value.getBytes(StandardCharsets.UTF_8)), StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;			} catch (ParserConfigurationException | IOException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;			} catch (CanonicalizationException | SAXException e) {</b>
+<b class="nc">&nbsp;				return value;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static URL url(String uri) throws MalformedURLException {
+<b class="nc">&nbsp;		return new URL(uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String base(String uri) {
+<b class="nc">&nbsp;		return uri;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

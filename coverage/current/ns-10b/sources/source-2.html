@@ -1,0 +1,166 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RemoteRepositoryProperties</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.repository.remote</a>
+</div>
+
+<h1>Coverage Summary for Class: RemoteRepositoryProperties (org.eclipse.rdf4j.spring.repository.remote)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RemoteRepositoryProperties</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.repository.remote;
+&nbsp;
+&nbsp;import javax.validation.constraints.NotBlank;
+&nbsp;import javax.validation.constraints.Pattern;
+&nbsp;
+&nbsp;import org.hibernate.validator.constraints.Length;
+&nbsp;import org.springframework.boot.context.properties.ConfigurationProperties;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Gabriel Pickl
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;@ConfigurationProperties(prefix = &quot;rdf4j.spring.repository.remote&quot;)
+<b class="nc">&nbsp;public class RemoteRepositoryProperties {</b>
+&nbsp;	/** URL of the SPARQL endpoint */
+<b class="nc">&nbsp;	@NotBlank</b>
+&nbsp;	@Pattern(regexp = &quot;^(https?|ftp|file)://[-a-zA-Z0-9+&amp;@#/%?=~_|!:,.;]*[-a-zA-Z0-9+&amp;@#/%=~_|]&quot;)
+&nbsp;	private String managerUrl = null;
+&nbsp;	/** Name of the repository */
+<b class="nc">&nbsp;	@NotBlank</b>
+&nbsp;	@Length(min = 1)
+&nbsp;	private String name = null;
+&nbsp;
+&nbsp;	public String getManagerUrl() {
+<b class="nc">&nbsp;		return managerUrl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setManagerUrl(String managerUrl) {
+<b class="nc">&nbsp;		this.managerUrl = managerUrl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setName(String name) {
+<b class="nc">&nbsp;		this.name = name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;RemoteRepositoryConfig{&quot;</b>
+&nbsp;				+ &quot;managerUrl=&#39;&quot;
+&nbsp;				+ managerUrl
+&nbsp;				+ &#39;\&#39;&#39;
+&nbsp;				+ &quot;, name=&#39;&quot;
+&nbsp;				+ name
+&nbsp;				+ &#39;\&#39;&#39;
+&nbsp;				+ &#39;}&#39;;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

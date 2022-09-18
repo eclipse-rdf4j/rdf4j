@@ -1,0 +1,200 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ArtService</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.demo.service</a>
+</div>
+
+<h1>Coverage Summary for Class: ArtService (org.eclipse.rdf4j.spring.demo.service)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ArtService</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.demo.service;
+&nbsp;
+&nbsp;import static java.util.stream.Collectors.groupingBy;
+&nbsp;import static java.util.stream.Collectors.toSet;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.spring.demo.dao.ArtistDao;
+&nbsp;import org.eclipse.rdf4j.spring.demo.dao.PaintingDao;
+&nbsp;import org.eclipse.rdf4j.spring.demo.model.Artist;
+&nbsp;import org.eclipse.rdf4j.spring.demo.model.Painting;
+&nbsp;import org.springframework.beans.factory.annotation.Autowired;
+&nbsp;import org.springframework.stereotype.Component;
+&nbsp;import org.springframework.transaction.annotation.Transactional;
+&nbsp;
+&nbsp;/**
+&nbsp; * Uses {@link ArtistDao} and {@link PaintingDao} to query and manipulate the repository.
+&nbsp; *
+&nbsp; *
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;@Component
+<b class="nc">&nbsp;public class ArtService {</b>
+&nbsp;	@Autowired
+&nbsp;	private ArtistDao artistDao;
+&nbsp;
+&nbsp;	@Autowired
+&nbsp;	private PaintingDao paintingDao;
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public Artist createArtist(String firstName, String lastName) {
+<b class="nc">&nbsp;		Artist artist = new Artist();</b>
+<b class="nc">&nbsp;		artist.setFirstName(firstName);</b>
+<b class="nc">&nbsp;		artist.setLastName(lastName);</b>
+<b class="nc">&nbsp;		return artistDao.save(artist);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public Painting createPainting(String title, String technique, IRI artist) {
+<b class="nc">&nbsp;		Painting painting = new Painting();</b>
+<b class="nc">&nbsp;		painting.setTitle(title);</b>
+<b class="nc">&nbsp;		painting.setTechnique(technique);</b>
+<b class="nc">&nbsp;		painting.setArtistId(artist);</b>
+<b class="nc">&nbsp;		return paintingDao.save(painting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public List&lt;Painting&gt; getPaintings() {
+<b class="nc">&nbsp;		return paintingDao.list();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public List&lt;Artist&gt; getArtists() {
+<b class="nc">&nbsp;		return artistDao.list();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public Set&lt;Artist&gt; getArtistsWithoutPaintings() {
+<b class="nc">&nbsp;		return artistDao.getArtistsWithoutPaintings();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public Map&lt;Artist, Set&lt;Painting&gt;&gt; getPaintingsGroupedByArtist() {
+<b class="nc">&nbsp;		List&lt;Painting&gt; paintings = paintingDao.list();</b>
+<b class="nc">&nbsp;		return paintings</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.collect(groupingBy(</b>
+<b class="nc">&nbsp;						p -&gt; artistDao.getById(p.getArtistId()),</b>
+<b class="nc">&nbsp;						toSet()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public IRI addArtist(Artist artist) {
+<b class="nc">&nbsp;		return artistDao.saveAndReturnId(artist);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Transactional
+&nbsp;	public IRI addPainting(Painting painting) {
+<b class="nc">&nbsp;		return paintingDao.saveAndReturnId(painting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

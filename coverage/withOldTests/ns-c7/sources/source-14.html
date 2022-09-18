@@ -1,0 +1,543 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Varint</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lmdb</a>
+</div>
+
+<h1>Coverage Summary for Class: Varint (org.eclipse.rdf4j.sail.lmdb)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Varint</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/93)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Varint$GroupMatcher</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/66)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/114)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lmdb;
+&nbsp;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;
+&nbsp;/**
+&nbsp; * Encodes and decodes unsigned values using variable-length encoding.
+&nbsp; */
+&nbsp;public final class Varint {
+&nbsp;
+&nbsp;	private Varint() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encodes a value using the &lt;a href=&quot;https://sqlite.org/src4/doc/trunk/www/varint.wiki&quot;&gt;variable-length encoding of
+&nbsp;	 * SQLite&lt;/a&gt;.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The encoding has the following properties:
+&nbsp;	 * &lt;ol&gt;
+&nbsp;	 * &lt;li&gt;Smaller (and more common) values use fewer bytes and take up less space than larger (and less common)
+&nbsp;	 * values.&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;The length of any varint can be determined by looking at just the first byte of the encoding.&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;Lexicographical and numeric ordering for varints are the same. Hence if a group of varints are ordered
+&nbsp;	 * lexicographically (that is to say, if they are ordered by {@link java.util.Arrays#compare(byte[], byte[])} with
+&nbsp;	 * shorter varints coming first) then those varints will also be in numeric order. This property means that varints
+&nbsp;	 * can be used as keys in the key/value backend storage and the records will occur in numerical order of the
+&nbsp;	 * keys.&lt;/li&gt;
+&nbsp;	 * &lt;/ol&gt;
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;table&gt;
+&nbsp;	 * &lt;thead&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;th&gt;A0&lt;/th&gt;
+&nbsp;	 * &lt;th&gt;Value&lt;/th&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;/thead&gt; &lt;tbody&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;0–240&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;A0&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;241–248&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;240 + 256 × (A0 – 241) + A1&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;249&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;2288 + 256 × A1 + A2&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;250&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;A1…A3 as a 3-byte big-endian integer&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;251&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;A1…A4 as a 4-byte big-endian integer&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;252&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;A1…A5 as a 5-byte big-endian integer&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;253&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;A1…A6 as a 6-byte big-endian integer&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;254&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;A1…A7 as a 7-byte big-endian integer&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;255&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;A1…A8 as a 8-byte big-endian integer&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;/tbody&gt;
+&nbsp;	 * &lt;/table&gt;
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param bb    buffer for writing bytes
+&nbsp;	 * @param value value to encode
+&nbsp;	 */
+&nbsp;	public static void writeUnsigned(final ByteBuffer bb, final long value) {
+<b class="nc">&nbsp;		if (value &lt;= 240) {</b>
+<b class="nc">&nbsp;			bb.put((byte) value);</b>
+<b class="nc">&nbsp;		} else if (value &lt;= 2287) {</b>
+<b class="nc">&nbsp;			bb.put((byte) ((value - 240) / 256 + 241));</b>
+<b class="nc">&nbsp;			bb.put((byte) ((value - 240) % 256));</b>
+<b class="nc">&nbsp;		} else if (value &lt;= 67823) {</b>
+<b class="nc">&nbsp;			bb.put((byte) 249);</b>
+<b class="nc">&nbsp;			bb.put((byte) ((value - 2288) / 256));</b>
+<b class="nc">&nbsp;			bb.put((byte) ((value - 2288) % 256));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			int bytes = descriptor(value) + 1;</b>
+<b class="nc">&nbsp;			bb.put((byte) (250 + (bytes - 3)));</b>
+<b class="nc">&nbsp;			writeSignificantBits(bb, value, bytes);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calculates required length in bytes to encode the given long value using variable-length encoding.
+&nbsp;	 *
+&nbsp;	 * @param value the value value
+&nbsp;	 * @return length in bytes
+&nbsp;	 */
+&nbsp;	public static int calcLengthUnsigned(long value) {
+<b class="nc">&nbsp;		if (value &lt;= 240) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+<b class="nc">&nbsp;		} else if (value &lt;= 2287) {</b>
+<b class="nc">&nbsp;			return 2;</b>
+<b class="nc">&nbsp;		} else if (value &lt;= 67823) {</b>
+<b class="nc">&nbsp;			return 3;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			int bytes = descriptor(value) + 1;</b>
+<b class="nc">&nbsp;			return 1 + bytes;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calculates required length in bytes to encode a list of four long values using variable-length encoding.
+&nbsp;	 *
+&nbsp;	 * @param a first value
+&nbsp;	 * @param b second value
+&nbsp;	 * @param c third value
+&nbsp;	 * @param d fourth value
+&nbsp;	 * @return length in bytes
+&nbsp;	 */
+&nbsp;	public static int calcListLengthUnsigned(long a, long b, long c, long d) {
+<b class="nc">&nbsp;		return calcLengthUnsigned(a) + calcLengthUnsigned(b) + calcLengthUnsigned(c) + calcLengthUnsigned(d);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The number of bytes required to represent the given number minus one. The descriptor can be encoded in 3 bits.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 000 = 1, 001 = 2, ..., 111 = 8
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param value the long value
+&nbsp;	 * @return the descriptor encoded as byte
+&nbsp;	 */
+&nbsp;	private static byte descriptor(long value) {
+<b class="nc">&nbsp;		return value == 0 ? 0 : (byte) (7 - Long.numberOfLeadingZeros(value) / 8);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decodes a value using the &lt;a href=&quot;https://sqlite.org/src4/doc/trunk/www/varint.wiki&quot;&gt;variable-length encoding of
+&nbsp;	 * SQLite&lt;/a&gt;.
+&nbsp;	 *
+&nbsp;	 * @param bb buffer for reading bytes
+&nbsp;	 * @return decoded value
+&nbsp;	 * @throws IllegalArgumentException if encoded varint is longer than 9 bytes
+&nbsp;	 * @see #writeUnsigned(ByteBuffer, long)
+&nbsp;	 */
+&nbsp;	public static long readUnsigned(ByteBuffer bb) throws IllegalArgumentException {
+<b class="nc">&nbsp;		int a0 = bb.get() &amp; 0xFF;</b>
+<b class="nc">&nbsp;		if (a0 &lt;= 240) {</b>
+<b class="nc">&nbsp;			return a0;</b>
+<b class="nc">&nbsp;		} else if (a0 &lt;= 248) {</b>
+<b class="nc">&nbsp;			int a1 = bb.get() &amp; 0xFF;</b>
+<b class="nc">&nbsp;			return 240 + 256 * (a0 - 241) + a1;</b>
+<b class="nc">&nbsp;		} else if (a0 == 249) {</b>
+<b class="nc">&nbsp;			int a1 = bb.get() &amp; 0xFF;</b>
+<b class="nc">&nbsp;			int a2 = bb.get() &amp; 0xFF;</b>
+<b class="nc">&nbsp;			return 2288 + 256 * a1 + a2;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			int bytes = a0 - 250 + 3;</b>
+<b class="nc">&nbsp;			return readSignificantBits(bb, bytes);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decodes a value using the &lt;a href=&quot;https://sqlite.org/src4/doc/trunk/www/varint.wiki&quot;&gt;variable-length encoding of
+&nbsp;	 * SQLite&lt;/a&gt;.
+&nbsp;	 *
+&nbsp;	 * @param bb buffer for reading bytes
+&nbsp;	 * @return decoded value
+&nbsp;	 * @throws IllegalArgumentException if encoded varint is longer than 9 bytes
+&nbsp;	 * @see #writeUnsigned(ByteBuffer, long)
+&nbsp;	 */
+&nbsp;	public static long readUnsigned(ByteBuffer bb, int pos) throws IllegalArgumentException {
+<b class="nc">&nbsp;		int a0 = bb.get(pos) &amp; 0xFF;</b>
+<b class="nc">&nbsp;		if (a0 &lt;= 240) {</b>
+<b class="nc">&nbsp;			return a0;</b>
+<b class="nc">&nbsp;		} else if (a0 &lt;= 248) {</b>
+<b class="nc">&nbsp;			int a1 = bb.get(pos + 1) &amp; 0xFF;</b>
+<b class="nc">&nbsp;			return 240 + 256 * (a0 - 241) + a1;</b>
+<b class="nc">&nbsp;		} else if (a0 == 249) {</b>
+<b class="nc">&nbsp;			int a1 = bb.get(pos + 1) &amp; 0xFF;</b>
+<b class="nc">&nbsp;			int a2 = bb.get(pos + 1) &amp; 0xFF;</b>
+<b class="nc">&nbsp;			return 2288 + 256 * a1 + a2;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			int bytes = a0 - 250 + 3;</b>
+<b class="nc">&nbsp;			return readSignificantBits(bb, pos + 1, bytes);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines length of an encoded varint value by inspecting the first byte.
+&nbsp;	 *
+&nbsp;	 * @param a0 first byte of varint value
+&nbsp;	 * @return decoded value
+&nbsp;	 */
+&nbsp;	public static int firstToLength(byte a0) {
+<b class="nc">&nbsp;		int a0Unsigned = a0 &amp; 0xFF;</b>
+<b class="nc">&nbsp;		if (a0Unsigned &lt;= 240) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+<b class="nc">&nbsp;		} else if (a0Unsigned &lt;= 248) {</b>
+<b class="nc">&nbsp;			return 2;</b>
+<b class="nc">&nbsp;		} else if (a0Unsigned == 249) {</b>
+<b class="nc">&nbsp;			return 3;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			int bytes = a0Unsigned - 250 + 3;</b>
+<b class="nc">&nbsp;			return 1 + bytes;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decodes a single element of a list of variable-length long values from a buffer.
+&nbsp;	 *
+&nbsp;	 * @param bb    buffer for reading bytes
+&nbsp;	 * @param index the element&#39;s index
+&nbsp;	 * @return the decoded value
+&nbsp;	 */
+&nbsp;	public static long readListElementUnsigned(ByteBuffer bb, int index) {
+<b class="nc">&nbsp;		int pos = 0;</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; index; i++) {</b>
+<b class="nc">&nbsp;			pos += firstToLength(bb.get(pos));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return readUnsigned(bb, pos);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encodes multiple values using variable-length encoding into the given buffer.
+&nbsp;	 *
+&nbsp;	 * @param bb     buffer for writing bytes
+&nbsp;	 * @param values array with values to write
+&nbsp;	 */
+&nbsp;	public static void writeListUnsigned(final ByteBuffer bb, final long[] values) {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; values.length; i++) {</b>
+<b class="nc">&nbsp;			final long value = values[i];</b>
+<b class="nc">&nbsp;			if (value &lt;= 240) {</b>
+<b class="nc">&nbsp;				bb.put((byte) value);</b>
+<b class="nc">&nbsp;			} else if (value &lt;= 2287) {</b>
+<b class="nc">&nbsp;				bb.put((byte) ((value - 240) / 256 + 241));</b>
+<b class="nc">&nbsp;				bb.put((byte) ((value - 240) % 256));</b>
+<b class="nc">&nbsp;			} else if (value &lt;= 67823) {</b>
+<b class="nc">&nbsp;				bb.put((byte) 249);</b>
+<b class="nc">&nbsp;				bb.put((byte) ((value - 2288) / 256));</b>
+<b class="nc">&nbsp;				bb.put((byte) ((value - 2288) % 256));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				int bytes = descriptor(value) + 1;</b>
+<b class="nc">&nbsp;				bb.put((byte) (250 + (bytes - 3)));</b>
+<b class="nc">&nbsp;				writeSignificantBits(bb, value, bytes);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decodes multiple values using variable-length encoding from the given buffer.
+&nbsp;	 *
+&nbsp;	 * @param bb     buffer for writing bytes
+&nbsp;	 * @param values array for the result values
+&nbsp;	 */
+&nbsp;	public static void readListUnsigned(ByteBuffer bb, long[] values) {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; values.length; i++) {</b>
+<b class="nc">&nbsp;			values[i] = readUnsigned(bb);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decodes multiple values using variable-length encoding from the given buffer.
+&nbsp;	 *
+&nbsp;	 * @param bb       buffer for writing bytes
+&nbsp;	 * @param indexMap map for indexes of values within values array
+&nbsp;	 * @param values   array for the result values
+&nbsp;	 */
+&nbsp;	public static void readListUnsigned(ByteBuffer bb, int[] indexMap, long[] values) {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; values.length; i++) {</b>
+<b class="nc">&nbsp;			values[indexMap[i]] = readUnsigned(bb);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes only the significant bytes of the given value in big-endian order.
+&nbsp;	 *
+&nbsp;	 * @param bb    buffer for writing bytes
+&nbsp;	 * @param value value to encode
+&nbsp;	 * @param bytes number of significant bytes
+&nbsp;	 */
+&nbsp;	private static void writeSignificantBits(ByteBuffer bb, long value, int bytes) {
+<b class="nc">&nbsp;		while (bytes-- &gt; 0) {</b>
+<b class="nc">&nbsp;			bb.put((byte) (0xFF &amp; (value &gt;&gt;&gt; (bytes * 8))));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads only the significant bytes of the given value in big-endian order.
+&nbsp;	 *
+&nbsp;	 * @param bb    buffer for reading bytes
+&nbsp;	 * @param bytes number of significant bytes
+&nbsp;	 */
+&nbsp;	private static long readSignificantBits(ByteBuffer bb, int bytes) {
+<b class="nc">&nbsp;		bytes--;</b>
+<b class="nc">&nbsp;		long value = (long) (bb.get() &amp; 0xFF) &lt;&lt; (bytes * 8);</b>
+<b class="nc">&nbsp;		while (bytes-- &gt; 0) {</b>
+<b class="nc">&nbsp;			value |= (long) (bb.get() &amp; 0xFF) &lt;&lt; (bytes * 8);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads only the significant bytes of the given value in big-endian order.
+&nbsp;	 *
+&nbsp;	 * @param bb    buffer for reading bytes
+&nbsp;	 * @param pos   position within the buffer
+&nbsp;	 * @param bytes number of significant bytes
+&nbsp;	 */
+&nbsp;	private static long readSignificantBits(ByteBuffer bb, int pos, int bytes) {
+<b class="nc">&nbsp;		bytes--;</b>
+<b class="nc">&nbsp;		long value = (long) (bb.get(pos++) &amp; 0xFF) &lt;&lt; (bytes * 8);</b>
+<b class="nc">&nbsp;		while (bytes-- &gt; 0) {</b>
+<b class="nc">&nbsp;			value |= (long) (bb.get(pos++) &amp; 0xFF) &lt;&lt; (bytes * 8);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static int compareRegion(ByteBuffer bb1, int startIdx1, ByteBuffer bb2, int startIdx2, int length) {
+<b class="nc">&nbsp;		int result = 0;</b>
+<b class="nc">&nbsp;		for (int i = 0; result == 0 &amp;&amp; i &lt; length; i++) {</b>
+<b class="nc">&nbsp;			result = (bb1.get(startIdx1 + i) &amp; 0xff) - (bb2.get(startIdx2 + i) &amp; 0xff);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A matcher for partial equality tests of varint lists.
+&nbsp;	 */
+&nbsp;	public static class GroupMatcher {
+&nbsp;
+&nbsp;		final ByteBuffer value;
+&nbsp;		final boolean[] shouldMatch;
+&nbsp;		final int[] lengths;
+&nbsp;
+<b class="nc">&nbsp;		public GroupMatcher(ByteBuffer value, boolean[] shouldMatch) {</b>
+<b class="nc">&nbsp;			this.value = value;</b>
+<b class="nc">&nbsp;			this.shouldMatch = shouldMatch;</b>
+<b class="nc">&nbsp;			this.lengths = new int[shouldMatch.length];</b>
+<b class="nc">&nbsp;			int pos = 0;</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; lengths.length; i++) {</b>
+<b class="nc">&nbsp;				int length = firstToLength(value.get(pos));</b>
+<b class="nc">&nbsp;				lengths[i] = length;</b>
+<b class="nc">&nbsp;				pos += length;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public GroupMatcher(ByteBuffer value, boolean a, boolean b, boolean c, boolean d, boolean e) {
+<b class="nc">&nbsp;			this(value, new boolean[] { a, b, c, d, e });</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean matches(ByteBuffer other) {
+<b class="nc">&nbsp;			int thisPos = 0;</b>
+<b class="nc">&nbsp;			int otherPos = 0;</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; shouldMatch.length; i++) {</b>
+<b class="nc">&nbsp;				int length = lengths[i];</b>
+<b class="nc">&nbsp;				int otherLength = firstToLength(other.get(otherPos));</b>
+<b class="nc">&nbsp;				if (shouldMatch[i]) {</b>
+<b class="nc">&nbsp;					if (length != otherLength || compareRegion(value, thisPos, other, otherPos, length) != 0) {</b>
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				thisPos += length;</b>
+<b class="nc">&nbsp;				otherPos += otherLength;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,244 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Prefixes</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.setting</a>
+</div>
+
+<h1>Coverage Summary for Class: Prefixes (org.eclipse.rdf4j.console.setting)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Prefixes</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.setting;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+&nbsp;import org.eclipse.rdf4j.model.util.Namespaces;
+&nbsp;import org.eclipse.rdf4j.model.util.URIUtil;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.ROV;
+&nbsp;
+&nbsp;/**
+&nbsp; * Namespace prefix setting
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public class Prefixes extends ConsoleSetting&lt;Set&lt;Namespace&gt;&gt; {
+&nbsp;	public final static String NAME = &quot;prefixes&quot;;
+&nbsp;
+<b class="nc">&nbsp;	public final static Set&lt;Namespace&gt; DEFAULT = new HashSet&lt;&gt;(Namespaces.DEFAULT_RDFA11);</b>
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		DEFAULT.add(ROV.NS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return &quot;set prefixes=&lt;default&gt;         Set the prefixes to a default list of prefixes\n&quot;</b>
+&nbsp;				+ &quot;    prefixes=&lt;none&gt;            Remove all namespace prefixes\n&quot;
+&nbsp;				+ &quot;	prefixes=prefix ns-url     Set prefix for namespace\n&quot;
+&nbsp;				+ &quot;	prefixes=prefix &lt;none&gt;     Remove namespace prefix\n&quot;;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * Default set of namespaces are well-known ones
+&nbsp;	 */
+&nbsp;	public Prefixes() {
+<b class="nc">&nbsp;		super(new HashSet&lt;&gt;(DEFAULT));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param initValue
+&nbsp;	 */
+&nbsp;	public Prefixes(Set&lt;Namespace&gt; initValue) {
+<b class="nc">&nbsp;		super(initValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return NAME;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear() {
+<b class="nc">&nbsp;		get().clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove the namespace with specified prefix
+&nbsp;	 *
+&nbsp;	 * @param prefix
+&nbsp;	 */
+&nbsp;	private void clearNamespace(String prefix) {
+<b class="nc">&nbsp;		get().removeIf(ns -&gt; ns.getPrefix().equals(prefix));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getAsString() {
+<b class="nc">&nbsp;		return get().stream().map(ns -&gt; {</b>
+<b class="nc">&nbsp;			return ns.getPrefix() + &quot; &quot; + ns.getName();</b>
+<b class="nc">&nbsp;		}).sorted().collect(Collectors.joining(&quot;,&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a namespace from a string, using one whitespace to separate prefix and namespace URI E.g. &#39;dcterms
+&nbsp;	 * http://purl.org/dc/terms/&#39;
+&nbsp;	 *
+&nbsp;	 * @param namespace
+&nbsp;	 */
+&nbsp;	private void setNamespace(String namespace) {
+<b class="nc">&nbsp;		String[] parts = namespace.split(&quot; &quot;);</b>
+<b class="nc">&nbsp;		if (parts.length != 2) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Error parsing namespace: &quot; + namespace);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parts[1].equals(&quot;&lt;none&gt;&quot;)) {</b>
+<b class="nc">&nbsp;			clearNamespace(parts[0]);</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		if (!URIUtil.isValidURIReference(parts[1])) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Error parsing namespace URI: &quot; + parts[1]);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		get().add(new SimpleNamespace(parts[0], parts[1]));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setFromString(String value) throws IllegalArgumentException {
+<b class="nc">&nbsp;		if (value == null || value.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Empty or null namespace value&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value.equals(&quot;&lt;none&gt;&quot;)) {</b>
+<b class="nc">&nbsp;			clear();</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		if (value.equals(&quot;&lt;default&gt;&quot;)) {</b>
+<b class="nc">&nbsp;			set(new HashSet&lt;&gt;(DEFAULT));</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String[] namespaces = value.split(&quot;,&quot;);</b>
+<b class="nc">&nbsp;		for (String namespace : namespaces) {</b>
+<b class="nc">&nbsp;			setNamespace(namespace);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

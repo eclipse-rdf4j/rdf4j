@@ -1,0 +1,175 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ResolvableRepositoryInformation</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.endpoint.provider</a>
+</div>
+
+<h1>Coverage Summary for Class: ResolvableRepositoryInformation (org.eclipse.rdf4j.federated.endpoint.provider)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ResolvableRepositoryInformation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.endpoint.provider;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.EndpointType;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
+&nbsp;import org.eclipse.rdf4j.federated.util.Vocabulary;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolver;
+&nbsp;
+&nbsp;/**
+&nbsp; * Graph information for a {@link ResolvableEndpoint} where the {@link Repository} is looked up using the configured
+&nbsp; * {@link RepositoryResolver}.
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * Format:
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;#64;prefix sd: &amp;lt;http://www.w3.org/ns/sparql-service-description#&amp;gt; .
+&nbsp; * &amp;#64;prefix fedx: &amp;lt;http://www.fluidops.com/config/fedx#&amp;gt; .
+&nbsp; *
+&nbsp; * &amp;lt;http://myname&amp;gt; a sd:Service ;
+&nbsp; *  	fedx:store &quot;ResolvableRepository&quot;;
+&nbsp; *  	fedx:repositoryName &quot;myRepoId&quot;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see ResolvableEndpoint
+&nbsp; * @see ResolvableRepositoryProvider
+&nbsp; */
+&nbsp;public class ResolvableRepositoryInformation extends RepositoryInformation {
+&nbsp;
+&nbsp;	public ResolvableRepositoryInformation(Model graph, Resource repNode) {
+<b class="nc">&nbsp;		super(EndpointType.Other);</b>
+<b class="nc">&nbsp;		initialize(graph, repNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ResolvableRepositoryInformation(String repositoryId) {
+<b class="nc">&nbsp;		super(repositoryId, &quot;http://&quot; + repositoryId, location(repositoryId), EndpointType.Other);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void initialize(Model graph, Resource repNode) {
+&nbsp;
+&nbsp;		// name: the node&#39;s value
+<b class="nc">&nbsp;		setProperty(&quot;name&quot;, repNode.stringValue());</b>
+&nbsp;
+&nbsp;		// location
+<b class="nc">&nbsp;		Model repositoryId = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_NAME, null);</b>
+<b class="nc">&nbsp;		String repoId = repositoryId.iterator().next().getObject().stringValue();</b>
+&nbsp;
+<b class="nc">&nbsp;		setProperty(&quot;location&quot;, location(repoId));</b>
+&nbsp;
+&nbsp;		// id: the name of the location
+<b class="nc">&nbsp;		String id = repoId;</b>
+<b class="nc">&nbsp;		setProperty(&quot;id&quot;, id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String location(String repoId) {
+<b class="nc">&nbsp;		return &quot;resolvable:&quot; + repoId;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

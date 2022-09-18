@@ -1,0 +1,206 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFJSONParserSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFJSONParserSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFJSONParserSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * A selection of parser settings specific to RDF/JSON parsers.
+&nbsp; * &lt;p&gt;
+&nbsp; * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class RDFJSONParserSettings {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple values for a
+&nbsp;	 * single object in a single statement.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property
+&nbsp;	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_values}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_values&quot;, &quot;Fail on multiple object values&quot;,
+&nbsp;			Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple types for a
+&nbsp;	 * single object in a single statement.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_types}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_MULTIPLE_OBJECT_TYPES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_types&quot;, &quot;Fail on multiple object types&quot;,
+&nbsp;			Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple languages for
+&nbsp;	 * a single object in a single statement.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property
+&nbsp;	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_languages}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_MULTIPLE_OBJECT_LANGUAGES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_languages&quot;, &quot;Fail on multiple object languages&quot;,
+&nbsp;			Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple datatypes for
+&nbsp;	 * a single object in a single statement.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property
+&nbsp;	 * {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_datatypes}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_MULTIPLE_OBJECT_DATATYPES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdfjson.fail_on_multiple_object_datatypes&quot;, &quot;Fail on multiple object datatypes&quot;,
+&nbsp;			Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether an RDF/JSON parser should fail if it finds multiple properties
+&nbsp;	 * that it does not recognize in the JSON document.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdfjson.fail_on_unknown_property}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_UNKNOWN_PROPERTY = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdfjson.fail_on_unknown_property&quot;, &quot;Fail on unknown property&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether an RDF/JSON parser should support the graphs extension to make it
+&nbsp;	 * a quads format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdfjson.support_graphs_extension}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; SUPPORT_GRAPHS_EXTENSION = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdfjson.support_graphs_extension&quot;, &quot;SUPPORT_GRAPHS_EXTENSION&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private default constructor.
+&nbsp;	 */
+&nbsp;	private RDFJSONParserSettings() {
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,188 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PooledConnectionObjectFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.pool</a>
+</div>
+
+<h1>Coverage Summary for Class: PooledConnectionObjectFactory (org.eclipse.rdf4j.spring.pool)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PooledConnectionObjectFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.pool;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;
+&nbsp;import org.apache.commons.pool2.BasePooledObjectFactory;
+&nbsp;import org.apache.commons.pool2.ObjectPool;
+&nbsp;import org.apache.commons.pool2.PooledObject;
+&nbsp;import org.apache.commons.pool2.impl.DefaultPooledObject;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.tx.exception.RepositoryConnectionPoolException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Obtains connections from the delegate factory and manages them in the object pool.
+&nbsp; *
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;class PooledConnectionObjectFactory extends BasePooledObjectFactory&lt;RepositoryConnection&gt; {
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;	private ObjectPool&lt;RepositoryConnection&gt; pool;
+&nbsp;	private final RepositoryConnectionFactory delegate;
+&nbsp;
+<b class="nc">&nbsp;	public PooledConnectionObjectFactory(RepositoryConnectionFactory delegate) {</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryConnection create() throws Exception {
+<b class="nc">&nbsp;		logger.debug(</b>
+&nbsp;				&quot;Creating pooled connection - obtaining underlying connection from delegate factory&quot;);
+&nbsp;		try {
+<b class="nc">&nbsp;			return delegate.getConnection();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConnectionPoolException(</b>
+&nbsp;					&quot;Error obtaining RepositoryConnection for pool&quot;, e);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PooledObject&lt;RepositoryConnection&gt; wrap(RepositoryConnection con) {
+<b class="nc">&nbsp;		return new DefaultPooledObject&lt;&gt;(new PooledRepositoryConnection(con, pool));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPool(ObjectPool&lt;RepositoryConnection&gt; pool) {
+<b class="nc">&nbsp;		this.pool = pool;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroyObject(PooledObject&lt;RepositoryConnection&gt; pooledObject) throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;destroying pooled connection - closing underlying connection&quot;);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			pooledObject.getObject().close();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;successfully closed underlying connection&quot;);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConnectionPoolException(&quot;Error closing RepositoryConnection&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean validateObject(PooledObject&lt;RepositoryConnection&gt; p) {
+<b class="nc">&nbsp;		RepositoryConnection con = p.getObject();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			con.prepareTupleQuery(&quot;select (1 as ?one) where {}&quot;).evaluate().close();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;Test query on pooled connection caused exception - it will be destroyed&quot;);</b>
+<b class="nc">&nbsp;			return false;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		logger.debug(&quot;pooled connection still works&quot;);</b>
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

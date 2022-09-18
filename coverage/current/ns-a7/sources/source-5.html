@@ -1,0 +1,387 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BasicParserSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: BasicParserSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BasicParserSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    85.7%
+  </span>
+  <span class="absValue">
+    (36/42)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.util.Namespaces;
+&nbsp;import org.eclipse.rdf4j.rio.DatatypeHandler;
+&nbsp;import org.eclipse.rdf4j.rio.DatatypeHandlerRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.LanguageHandler;
+&nbsp;import org.eclipse.rdf4j.rio.LanguageHandlerRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A class encapsulating the basic parser settings that most parsers may support.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class BasicParserSettings {
+&nbsp;
+<b class="fc">&nbsp;	private final static Logger log = LoggerFactory.getLogger(BasicParserSettings.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether values for recognised datatypes are to be verified.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Verification is performed using registered DatatypeHandlers.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_datatype_values}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; VERIFY_DATATYPE_VALUES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.verify_datatype_values&quot;, &quot;Verify recognised datatype values&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether to fail parsing if datatypes are not recognised.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Datatypes are recognised based on matching one of the registered {@link DatatypeHandler}s.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_unknown_datatypes}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_UNKNOWN_DATATYPES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_unknown_datatypes&quot;, &quot;Fail on unknown datatypes&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether recognised datatypes need to have their values be normalized.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Normalization is performed using registered DatatypeHandlers.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_datatype_values}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; NORMALIZE_DATATYPE_VALUES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.normalize_datatype_values&quot;, &quot;Normalize recognised datatype values&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Setting used to specify which {@link DatatypeHandler} implementations are to be used for a given parser
+&nbsp;	 * configuration.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to an XMLSchema DatatypeHandler implementation based on {@link DatatypeHandler#XMLSCHEMA} and an RDF
+&nbsp;	 * DatatypeHandler implementation based on {@link DatatypeHandler#RDFDATATYPES}.
+&nbsp;	 */
+&nbsp;	public static final RioSetting&lt;List&lt;DatatypeHandler&gt;&gt; DATATYPE_HANDLERS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether to fail parsing if languages are not recognized.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Languages are recognized based on matching one of the registered {@link LanguageHandler}s.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_unknown_languages}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_UNKNOWN_LANGUAGES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_unknown_languages&quot;, &quot;Fail on unknown languages&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether languages are to be verified based on a given set of definitions
+&nbsp;	 * for valid languages.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Verification is performed using registered {@link LanguageHandler}s.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_language_tags}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; VERIFY_LANGUAGE_TAGS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.verify_language_tags&quot;, &quot;Verify language tags&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether languages need to be normalized.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Normalization is performed using registered {@link LanguageHandler}s.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.normalize_language_tags}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; NORMALIZE_LANGUAGE_TAGS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.normalize_language_tags&quot;, &quot;Normalize recognised language tags&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Setting used to specify which {@link LanguageHandler} implementations are to be used for a given parser
+&nbsp;	 * configuration.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to an BCP47 LanguageHandler implementation based on {@link LanguageHandler#BCP47}.
+&nbsp;	 */
+&nbsp;	public static final RioSetting&lt;List&lt;LanguageHandler&gt;&gt; LANGUAGE_HANDLERS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether relative URIs are verified.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true..
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_relative_uris}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; VERIFY_RELATIVE_URIS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.verify_relative_uris&quot;, &quot;Verify relative URIs&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine if URIs should be verified to contain only legal characters.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to {@code true}. If set to {@code false}, the parser will report syntactically illegal URIs to the
+&nbsp;	 * {@link RDFHandler}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.verify_uri_syntax}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; VERIFY_URI_SYNTAX = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.verify_uri_syntax&quot;, &quot;Verify URI syntax&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether parser should attempt to preserve identifiers for blank nodes. If
+&nbsp;	 * the blank node did not have an identifier in the document a new identifier will be generated for it.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.preserve_bnode_ids}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; PRESERVE_BNODE_IDS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.preserve_bnode_ids&quot;, &quot;Preserve blank node identifiers&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Scheme and authority of new mint Skolem IRIs that should replace Blank Nodes. For example a value of
+&nbsp;	 * &quot;http://example.com&quot; might cause a blank node to be replaced with an IRI of
+&nbsp;	 * &quot;http://example.com/.well-known/genid/d26a2d0e98334696f4ad70a677abc1f6&quot;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to null (disabled).
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.skolem_origin}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;String&gt; SKOLEMIZE_ORIGIN = new StringRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.skolem_origin&quot;,
+&nbsp;			&quot;Replace blank nodes with well known genid IRIs using this scheme and authority&quot;, null);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether parser should preserve, truncate, drop, or otherwise manipulate
+&nbsp;	 * statements that contain long literals. The maximum length of literals if this setting is set to truncate or drop
+&nbsp;	 * is configured using {@link #LARGE_LITERALS_LIMIT}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to {@link LargeLiteralHandling#PRESERVE}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;LargeLiteralHandling&gt; LARGE_LITERALS_HANDLING = new RioSettingImpl&lt;&gt;(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.large_literals&quot;, &quot;Large literals handling&quot;, LargeLiteralHandling.PRESERVE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#PRESERVE}, which it is by default, then
+&nbsp;	 * the value of this setting is not used.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#DROP} , then the value of this setting
+&nbsp;	 * corresponds to the maximum number of bytes for a literal before the statement it is a part of is dropped silently
+&nbsp;	 * by the parser.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If {@link #LARGE_LITERALS_HANDLING} is set to {@link LargeLiteralHandling#TRUNCATE} , then the value of this
+&nbsp;	 * setting corresponds to the maximum number of bytes for a literal before the value is truncated.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to 1048576 bytes, which is equivalent to 1 megabyte.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.large_literals_limit}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Long&gt; LARGE_LITERALS_LIMIT = new LongRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.large_literals_limit&quot;, &quot;Size limit for large literals&quot;, 1048576L);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Setting to provide a collection of {@link Namespace} objects which will be used when parsing RDF as the basis for
+&nbsp;	 * the default set of namespaces of the document.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Namespaces specified within the RDF document being parsed will override these defaults
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to {@link Namespaces.DEFAULT_RDF4J} the RDFa 1.1 initial context + some additional prefixes.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Set&lt;Namespace&gt;&gt; NAMESPACES = new RioSettingImpl&lt;&gt;(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.namespaces&quot;, &quot;Collection of default namespaces to use for parsing&quot;,
+&nbsp;			Namespaces.DEFAULT_RDF4J);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether it should process RDF-star triples encoded as RDF-compatible
+&nbsp;	 * special IRIs back to RDF-star values. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of
+&nbsp;	 * the N-Triples serialization of the RDF-star triple value.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Parsers that support RDF-star natively will honour this setting too.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.process_encoded_rdf_star}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; PROCESS_ENCODED_RDF_STAR = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.process_encoded_rdf_star&quot;,
+&nbsp;			&quot;Converts RDF-star triples encoded as RDF-compatible IRIs back to triple values&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	static {
+<b class="fc">&nbsp;		List&lt;DatatypeHandler&gt; defaultDatatypeHandlers = new ArrayList&lt;&gt;(5);</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			DatatypeHandlerRegistry registry = DatatypeHandlerRegistry.getInstance();</b>
+<b class="fc">&nbsp;			for (String nextDatatype : Arrays.asList(DatatypeHandler.XMLSCHEMA, DatatypeHandler.RDFDATATYPES,</b>
+&nbsp;					DatatypeHandler.DBPEDIA, DatatypeHandler.VIRTUOSOGEOMETRY, DatatypeHandler.GEOSPARQL)) {
+<b class="fc">&nbsp;				Optional&lt;DatatypeHandler&gt; nextDatatypeHandler = registry.get(nextDatatype);</b>
+<b class="fc">&nbsp;				if (nextDatatypeHandler.isPresent()) {</b>
+<b class="fc">&nbsp;					defaultDatatypeHandlers.add(nextDatatypeHandler.get());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					log.warn(&quot;Could not find DatatypeHandler : {}&quot;, nextDatatype);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+&nbsp;			// Ignore exceptions so that service loading failures do not cause
+&nbsp;			// class initialization errors.
+<b class="nc">&nbsp;			log.warn(&quot;Found an error loading DatatypeHandler services&quot;, e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		DATATYPE_HANDLERS = new RioSettingImpl&lt;&gt;(&quot;org.eclipse.rdf4j.rio.datatype_handlers&quot;, &quot;Datatype Handlers&quot;,</b>
+<b class="fc">&nbsp;				Collections.unmodifiableList(defaultDatatypeHandlers));</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;LanguageHandler&gt; defaultLanguageHandlers = new ArrayList&lt;&gt;(1);</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			LanguageHandlerRegistry registry = LanguageHandlerRegistry.getInstance();</b>
+<b class="fc">&nbsp;			String nextLanguageTagScheme = LanguageHandler.BCP47;</b>
+<b class="fc">&nbsp;			if (registry.has(nextLanguageTagScheme)) {</b>
+<b class="fc">&nbsp;				Optional&lt;LanguageHandler&gt; nextLanguageHandler = registry.get(nextLanguageTagScheme);</b>
+<b class="fc">&nbsp;				if (nextLanguageHandler.isPresent()) {</b>
+<b class="fc">&nbsp;					defaultLanguageHandlers.add(nextLanguageHandler.get());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					log.warn(&quot;Could not find LanguageHandler : {}&quot;, nextLanguageTagScheme);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+&nbsp;			// Ignore exceptions so that service loading failures do not cause
+&nbsp;			// class initialization errors.
+<b class="nc">&nbsp;			log.warn(&quot;Found an error loading LanguageHandler services&quot;, e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		LANGUAGE_HANDLERS = new RioSettingImpl&lt;&gt;(&quot;org.eclipse.rdf4j.rio.language_handlers&quot;, &quot;Language Handlers&quot;,</b>
+<b class="fc">&nbsp;				Collections.unmodifiableList(defaultLanguageHandlers));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private default constructor.
+&nbsp;	 */
+&nbsp;	private BasicParserSettings() {
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

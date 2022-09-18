@@ -1,0 +1,173 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ShaclSailSchema</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.config</a>
+</div>
+
+<h1>Coverage Summary for Class: ShaclSailSchema (org.eclipse.rdf4j.sail.shacl.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ShaclSailSchema</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.config;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.iri;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+&nbsp;
+&nbsp;/**
+&nbsp; * Defines constants for the ShaclSail schema which is used by {@link ShaclSailFactory}s to initialize
+&nbsp; * {@link ShaclSail}s.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class ShaclSailSchema {</b>
+&nbsp;
+&nbsp;	/** The ShaclSail schema namespace (&lt;code&gt;http://rdf4j.org/config/sail/shacl#&lt;/code&gt;). */
+&nbsp;	public static final String NAMESPACE = &quot;http://rdf4j.org/config/sail/shacl#&quot;;
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#parallelValidation&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI PARALLEL_VALIDATION = create(&quot;parallelValidation&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#logValidationPlans&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI LOG_VALIDATION_PLANS = create(&quot;logValidationPlans&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#logValidationViolations&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI LOG_VALIDATION_VIOLATIONS = create(&quot;logValidationViolations&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#validationEnabled&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI VALIDATION_ENABLED = create(&quot;validationEnabled&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#cacheSelectNodes&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI CACHE_SELECT_NODES = create(&quot;cacheSelectNodes&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#globalLogValidationExecution&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI GLOBAL_LOG_VALIDATION_EXECUTION = create(&quot;globalLogValidationExecution&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI RDFS_SUB_CLASS_REASONING = create(&quot;rdfsSubClassReasoning&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#performanceLogging&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI PERFORMANCE_LOGGING = create(&quot;performanceLogging&quot;);</b>
+&nbsp;
+&nbsp;	/** &lt;code&gt;http://rdf4j.org/config/sail/shacl#serializableValidation&lt;/code&gt; */
+<b class="nc">&nbsp;	public final static IRI SERIALIZABLE_VALIDATION = create(&quot;serializableValidation&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public final static IRI ECLIPSE_RDF4J_SHACL_EXTENSIONS = create(&quot;eclipseRdf4jShaclExtensions&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public final static IRI DASH_DATA_SHAPES = create(&quot;dashDataShapes&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public final static IRI VALIDATION_RESULTS_LIMIT_TOTAL = create(&quot;validationResultsLimitTotal&quot;);</b>
+<b class="nc">&nbsp;	public final static IRI VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT = create(&quot;validationResultsLimitPerConstraint&quot;);</b>
+<b class="nc">&nbsp;	public final static IRI TRANSACTIONAL_VALIDATION_LIMIT = create(&quot;transactionalValidationLimit&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public final static IRI SHAPES_GRAPH = create(&quot;shapesGraph&quot;);</b>
+&nbsp;
+&nbsp;	private static IRI create(String localName) {
+<b class="nc">&nbsp;		return iri(NAMESPACE, localName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

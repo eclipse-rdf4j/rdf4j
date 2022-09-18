@@ -1,0 +1,479 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > URIUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.util</a>
+</div>
+
+<h1>Coverage Summary for Class: URIUtil (org.eclipse.rdf4j.model.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">URIUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (4/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    7%
+  </span>
+  <span class="absValue">
+    (14/200)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25.3%
+  </span>
+  <span class="absValue">
+    (22/87)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.util;
+&nbsp;
+&nbsp;import java.net.URI;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.text.ASCIIUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility functions for working with {@link URI URIs}.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;public class URIUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reserved characters: their usage within the URI component is limited to their reserved purpose. If the data for a
+&nbsp;	 * URI component would conflict with the reserved purpose, then the conflicting data must be escaped before forming
+&nbsp;	 * the URI. http://www.isi.edu/in-notes/rfc2396.txt section 2.2.
+&nbsp;	 */
+<b class="fc">&nbsp;	private static final Set&lt;Character&gt; reserved = new HashSet&lt;&gt;(</b>
+<b class="fc">&nbsp;			Arrays.asList(new Character[] { &#39;;&#39;, &#39;/&#39;, &#39;?&#39;, &#39;:&#39;, &#39;@&#39;, &#39;&amp;&#39;, &#39;=&#39;, &#39;+&#39;, &#39;$&#39;, &#39;,&#39; }));</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Punctuation mark characters, which are part of the set of unreserved chars and therefore allowed to occur in
+&nbsp;	 * unescaped form. See http://www.isi.edu/in-notes/rfc2396.txt
+&nbsp;	 */
+<b class="fc">&nbsp;	private static final Set&lt;Character&gt; mark = new HashSet&lt;&gt;(</b>
+<b class="fc">&nbsp;			Arrays.asList(new Character[] { &#39;-&#39;, &#39;_&#39;, &#39;.&#39;, &#39;!&#39;, &#39;~&#39;, &#39;*&#39;, &#39;\&#39;&#39;, &#39;(&#39;, &#39;)&#39; }));</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Regular expression pattern for matching unicode control characters.
+&nbsp;	 */
+<b class="fc">&nbsp;	private static final Pattern unicodeControlCharPattern = Pattern.compile(&quot;.*[\u0000-\u001F\u007F-\u009F].*&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Finds the index of the first local name character in an (non-relative) URI. This index is determined by the
+&nbsp;	 * following the following steps:
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;Find the &lt;em&gt;first&lt;/em&gt; occurrence of the &#39;#&#39; character,
+&nbsp;	 * &lt;li&gt;If this fails, find the &lt;em&gt;last&lt;/em&gt; occurrence of the &#39;/&#39; character,
+&nbsp;	 * &lt;li&gt;If this fails, find the &lt;em&gt;last&lt;/em&gt; occurrence of the &#39;:&#39; character.
+&nbsp;	 * &lt;li&gt;Add &lt;var&gt;1&lt;var&gt; to the found index and return this value.
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 * Note that the third step should never fail as every legal (non-relative) URI contains at least one &#39;:&#39; character
+&nbsp;	 * to seperate the scheme from the rest of the URI. If this fails anyway, the method will throw an
+&nbsp;	 * {@link IllegalArgumentException}.
+&nbsp;	 *
+&nbsp;	 * @param uri A URI string.
+&nbsp;	 * @return The index of the first local name character in the URI string. Note that this index does not reference an
+&nbsp;	 *         actual character if the algorithm determines that there is not local name. In that case, the return index
+&nbsp;	 *         is equal to the length of the URI string.
+&nbsp;	 * @throws IllegalArgumentException If the supplied URI string doesn&#39;t contain any of the separator characters.
+&nbsp;	 *                                  Every legal (non-relative) URI contains at least one &#39;:&#39; character to seperate
+&nbsp;	 *                                  the scheme from the rest of the URI.
+&nbsp;	 */
+&nbsp;	public static int getLocalNameIndex(String uri) {
+<b class="fc">&nbsp;		int separatorIdx = uri.indexOf(&#39;#&#39;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (separatorIdx &lt; 0) {</b>
+<b class="fc">&nbsp;			separatorIdx = uri.lastIndexOf(&#39;/&#39;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (separatorIdx &lt; 0) {</b>
+<b class="fc">&nbsp;			separatorIdx = uri.lastIndexOf(&#39;:&#39;);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (separatorIdx &lt; 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;No separator character founds in URI: &quot; + uri);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return separatorIdx + 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the URI consisting of the specified namespace and local name has been split correctly according to
+&nbsp;	 * the URI splitting rules specified in {@link URI}.
+&nbsp;	 *
+&nbsp;	 * @param namespace The URI&#39;s namespace, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param localName The URI&#39;s local name, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the specified URI has been correctly split into a namespace and local name,
+&nbsp;	 *         &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @see URI
+&nbsp;	 * @see #getLocalNameIndex(String)
+&nbsp;	 */
+&nbsp;	public static boolean isCorrectURISplit(String namespace, String localName) {
+<b class="pc">&nbsp;		assert namespace != null : &quot;namespace must not be null&quot;;</b>
+<b class="pc">&nbsp;		assert localName != null : &quot;localName must not be null&quot;;</b>
+&nbsp;
+<b class="pc">&nbsp;		if (namespace.length() == 0) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		int nsLength = namespace.length();</b>
+<b class="fc">&nbsp;		char lastNsChar = namespace.charAt(nsLength - 1);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (lastNsChar == &#39;#&#39;) {</b>
+&nbsp;			// correct split if namespace has no other &#39;#&#39;
+<b class="nc">&nbsp;			return namespace.lastIndexOf(&#39;#&#39;, nsLength - 2) == -1 &amp;&amp; localName.indexOf(&#39;#&#39;) == -1;</b>
+<b class="pc">&nbsp;		} else if (lastNsChar == &#39;/&#39;) {</b>
+&nbsp;			// correct split if local name has no &#39;/&#39; and URI contains no &#39;#&#39;
+<b class="pc">&nbsp;			return localName.indexOf(&#39;/&#39;) == -1 &amp;&amp; localName.indexOf(&#39;#&#39;) == -1 &amp;&amp; namespace.indexOf(&#39;#&#39;) == -1;</b>
+<b class="nc">&nbsp;		} else if (lastNsChar == &#39;:&#39;) {</b>
+&nbsp;			// correct split if local name has no &#39;:&#39; and URI contains no &#39;#&#39; or
+&nbsp;			// &#39;/&#39;
+<b class="nc">&nbsp;			return localName.indexOf(&#39;:&#39;) == -1 &amp;&amp; localName.indexOf(&#39;#&#39;) == -1 &amp;&amp; localName.indexOf(&#39;/&#39;) == -1</b>
+<b class="nc">&nbsp;					&amp;&amp; namespace.indexOf(&#39;#&#39;) == -1 &amp;&amp; namespace.indexOf(&#39;/&#39;) == -1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that the supplied string is a valid RDF (1.0) URI reference, as defined in
+&nbsp;	 * &lt;a href= &quot;http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref&quot; &gt;section 6.4 of the RDF
+&nbsp;	 * Concepts and Abstract Syntax specification&lt;/a&gt; (RDF 1.0 Recommendation of February 10, 2004).
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An RDF URI reference is valid if it is a Unicode string that:
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;does not contain any control characters ( #x00 - #x1F, #x7F-#x9F)
+&nbsp;	 * &lt;li&gt;and would produce a valid URI character sequence (per RFC2396 , section 2.1) representing an absolute URI
+&nbsp;	 * with optional fragment identifier when subjected to the encoding described below
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 * The encoding consists of:
+&nbsp;	 * &lt;ol&gt;
+&nbsp;	 * &lt;li&gt;encoding the Unicode string as UTF-8, giving a sequence of octet values.
+&nbsp;	 * &lt;li&gt;%-escaping octets that do not correspond to permitted US-ASCII characters.
+&nbsp;	 * &lt;/ol&gt;
+&nbsp;	 *
+&nbsp;	 * @param uriRef a string representing an RDF URI reference.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; iff the supplied string is a syntactically valid RDF URI reference, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2004/REC-rdf-concepts-20040210/#section-Graph-URIref&quot;&gt;section 6.4 of the RDF
+&nbsp;	 *      Concepts and Abstract Syntax specification&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;http://www.ietf.org/rfc/rfc3986.txt&quot;&gt;RFC 3986&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;http://www.ietf.org/rfc/rfc2396.txt&quot;&gt;RFC 2396&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isValidURIReference(String uriRef) {
+&nbsp;		// check that string contains no Unicode control characters.
+<b class="nc">&nbsp;		boolean valid = !unicodeControlCharPattern.matcher(uriRef).matches();</b>
+<b class="nc">&nbsp;		if (valid) {</b>
+&nbsp;			// check that proper encoding/escaping would yield a valid absolute
+&nbsp;			// RFC 2396 URI
+<b class="nc">&nbsp;			final String escaped = escapeExcludedChars(uriRef);</b>
+&nbsp;			try {
+&nbsp;				/*
+&nbsp;				 * NOTE we use java.net.URI parsing to check compliance to the RFC, which is almost, but not completely,
+&nbsp;				 * in alignment with RFC 2396, and has not been updated for compatibility with RFC 3986. See the
+&nbsp;				 * java.net.URI javadoc ( https://docs.oracle.com/javase/8/docs/api/java/net/URI.html ) for details.&quot;
+&nbsp;				 */
+<b class="nc">&nbsp;				final java.net.URI uri = new java.net.URI(escaped);</b>
+<b class="nc">&nbsp;				valid = uri.isAbsolute();</b>
+<b class="nc">&nbsp;			} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;				valid = false;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return valid;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Escapes any character that is not either reserved or in the legal range of unreserved characters, according to
+&nbsp;	 * RFC 2396.
+&nbsp;	 *
+&nbsp;	 * @param unescaped a (relative or absolute) uri reference.
+&nbsp;	 * @return a (relative or absolute) uri reference with all characters that can not appear as-is in a URI %-escaped.
+&nbsp;	 * @see &lt;a href=&quot;http://www.ietf.org/rfc/rfc2396.txt&quot;&gt;RFC 2396&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	private static String escapeExcludedChars(String unescaped) {
+<b class="nc">&nbsp;		final StringBuilder escaped = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; unescaped.length(); i++) {</b>
+<b class="nc">&nbsp;			char c = unescaped.charAt(i);</b>
+<b class="nc">&nbsp;			if (!isUnreserved(c) &amp;&amp; !reserved.contains(c)) {</b>
+<b class="nc">&nbsp;				escaped.append(&quot;%&quot; + Integer.toHexString((int) c));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				escaped.append(c);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return escaped.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A character is unreserved according to RFC 2396 if it is either an alphanumeric char or a punctuation mark.
+&nbsp;	 */
+&nbsp;	private static boolean isUnreserved(char c) {
+<b class="nc">&nbsp;		final int n = (int) c;</b>
+&nbsp;		// check if alphanumeric
+<b class="nc">&nbsp;		boolean unreserved = (47 &lt; n &amp;&amp; n &lt; 58) || (96 &lt; n &amp;&amp; n &lt; 123) || (64 &lt; n &amp;&amp; n &lt; 91);</b>
+<b class="nc">&nbsp;		if (!unreserved) {</b>
+&nbsp;			// check if punctuation mark
+<b class="nc">&nbsp;			unreserved = mark.contains(c);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return unreserved;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the specified name is allowed as the local name part of an IRI according to the SPARQL 1.1/Turtle
+&nbsp;	 * 1.1 spec.
+&nbsp;	 *
+&nbsp;	 * @param name the candidate local name
+&nbsp;	 * @return true if it is a local name
+&nbsp;	 */
+&nbsp;	public static boolean isValidLocalName(String name) {
+&nbsp;		// Empty names are legal
+<b class="nc">&nbsp;		if (name.length() == 0) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!isPN_CHARS_U(name.charAt(0)) &amp;&amp; name.charAt(0) != &#39;:&#39; &amp;&amp; !ASCIIUtil.isNumber(name.charAt(0))</b>
+<b class="nc">&nbsp;				&amp;&amp; !isPLX_START(name)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!isNameStartChar(name.charAt(0))) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 1; i &lt; name.length(); i++) {</b>
+<b class="nc">&nbsp;			if (!isNameChar(name.charAt(i))) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Check if the percent encoding was less than two characters from the
+&nbsp;			// end of the prefix, in which case it is invalid
+<b class="nc">&nbsp;			if (name.charAt(i) == &#39;%&#39; &amp;&amp; (name.length() - i) &lt; 3) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents either a valid prefixed name base character or an underscore.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * From Turtle Spec:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS_U
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * [164s] PN_CHARS_U ::= PN_CHARS_BASE | &#39;_&#39;
+&nbsp;	 */
+&nbsp;	private static boolean isPN_CHARS_U(int codePoint) {
+<b class="nc">&nbsp;		return isPN_CHARS_BASE(codePoint) || codePoint == &#39;_&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isPLX_START(String name) {
+<b class="nc">&nbsp;		if (name.length() &gt;= 3 &amp;&amp; isPERCENT(name.substring(0, 3))) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (name.length() &gt;= 2 &amp;&amp; isPN_LOCAL_ESC(name.substring(0, 2))) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isPERCENT(String name) {
+<b class="nc">&nbsp;		if (name.length() != 3) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (name.charAt(0) != &#39;%&#39;) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!ASCIIUtil.isHex(name.charAt(1)) || !ASCIIUtil.isHex(name.charAt(2))) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isPN_LOCAL_ESC(String name) {
+<b class="nc">&nbsp;		if (name.length() != 2) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!name.startsWith(&quot;\\&quot;)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(Arrays.binarySearch(LOCAL_ESCAPED_CHARS, name.charAt(1)) &gt; -1)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static final char[] LOCAL_ESCAPED_CHARS = new char[] { &#39;_&#39;, &#39;~&#39;, &#39;.&#39;, &#39;-&#39;, &#39;!&#39;, &#39;$&#39;, &#39;&amp;&#39;, &#39;\&#39;&#39;, &#39;(&#39;, &#39;)&#39;,</b>
+&nbsp;			&#39;*&#39;, &#39;+&#39;, &#39;,&#39;, &#39;;&#39;, &#39;=&#39;, &#39;/&#39;, &#39;?&#39;, &#39;#&#39;, &#39;@&#39;, &#39;%&#39; };
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid prefixed name base character.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * From Turtle Spec:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS_BASE
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * [163s] PN_CHARS_BASE ::= [A-Z] | [a-z] | [#x00C0-#x00D6] | [#x00D8-#x00F6] | [#x00F8-#x02FF] | [#x0370-#x037D] |
+&nbsp;	 * [#x037F-#x1FFF] | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] |
+&nbsp;	 * [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
+&nbsp;	 */
+&nbsp;	private static boolean isPN_CHARS_BASE(int codePoint) {
+<b class="nc">&nbsp;		return ASCIIUtil.isLetter(codePoint) || codePoint &gt;= 0x00C0 &amp;&amp; codePoint &lt;= 0x00D6</b>
+&nbsp;				|| codePoint &gt;= 0x00D8 &amp;&amp; codePoint &lt;= 0x00F6 || codePoint &gt;= 0x00F8 &amp;&amp; codePoint &lt;= 0x02FF
+&nbsp;				|| codePoint &gt;= 0x0370 &amp;&amp; codePoint &lt;= 0x037D || codePoint &gt;= 0x037F &amp;&amp; codePoint &lt;= 0x1FFF
+&nbsp;				|| codePoint &gt;= 0x200C &amp;&amp; codePoint &lt;= 0x200D || codePoint &gt;= 0x2070 &amp;&amp; codePoint &lt;= 0x218F
+&nbsp;				|| codePoint &gt;= 0x2C00 &amp;&amp; codePoint &lt;= 0x2FEF || codePoint &gt;= 0x3001 &amp;&amp; codePoint &lt;= 0xD7FF
+&nbsp;				|| codePoint &gt;= 0xF900 &amp;&amp; codePoint &lt;= 0xFDCF || codePoint &gt;= 0xFDF0 &amp;&amp; codePoint &lt;= 0xFFFD
+&nbsp;				|| codePoint &gt;= 0x10000 &amp;&amp; codePoint &lt;= 0xEFFFF;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid name start character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid name start char, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	private static boolean isNameStartChar(int codePoint) {
+<b class="nc">&nbsp;		return isPN_CHARS_U(codePoint) || codePoint == &#39;:&#39; || ASCIIUtil.isNumber(codePoint) || codePoint == &#39;\\&#39;</b>
+&nbsp;				|| codePoint == &#39;%&#39;;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid name character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid name char, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	private static boolean isNameChar(int codePoint) {
+<b class="nc">&nbsp;		return isPN_CHARS(codePoint) || codePoint == &#39;.&#39; || codePoint == &#39;:&#39; | codePoint == &#39;\\&#39; || codePoint == &#39;%&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid prefixed name character.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * From Turtle Spec:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * [166s] PN_CHARS ::= PN_CHARS_U | &#39;-&#39; | [0-9] | #x00B7 | [#x0300-#x036F] | [#x203F-#x2040]
+&nbsp;	 */
+&nbsp;	private static boolean isPN_CHARS(int codePoint) {
+<b class="nc">&nbsp;		return isPN_CHARS_U(codePoint) || ASCIIUtil.isNumber(codePoint) || codePoint == &#39;-&#39; || codePoint == 0x00B7</b>
+&nbsp;				|| codePoint &gt;= 0x0300 &amp;&amp; codePoint &lt;= 0x036F || codePoint &gt;= 0x203F &amp;&amp; codePoint &lt;= 0x2040;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

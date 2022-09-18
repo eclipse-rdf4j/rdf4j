@@ -1,0 +1,364 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TupleQueryResultFormat</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: TupleQueryResultFormat (org.eclipse.rdf4j.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TupleQueryResultFormat</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    30%
+  </span>
+  <span class="absValue">
+    (3/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (24/32)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio;
+&nbsp;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;/**
+&nbsp; * Represents the concept of an tuple query result serialization format. Tuple query result formats are identified by a
+&nbsp; * {@link #getName() name} and can have one or more associated MIME types, zero or more associated file extensions and
+&nbsp; * can specify a (default) character encoding.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class TupleQueryResultFormat extends QueryResultFormat {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that RDF-star triples can be serialized natively for this format.
+&nbsp;	 */
+&nbsp;	private static final boolean SUPPORTS_RDF_STAR = true;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that RDF-star triples will NOT be serialized natively for this format.
+&nbsp;	 */
+&nbsp;	private static final boolean NO_RDF_STAR = false;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL Query Results XML Format.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat SPARQL = new TupleQueryResultFormat(&quot;SPARQL/XML&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/sparql-results+xml&quot;, &quot;application/xml&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;srx&quot;, &quot;xml&quot;), SPARQL_RESULTS_XML_URI, NO_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL-star Query Results XML Format (like SPARQL/XML but with native RDF-star support).
+&nbsp;	 */
+&nbsp;	@Experimental
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat SPARQL_STAR = new TupleQueryResultFormat(&quot;SPARQL-star/XML&quot;,</b>
+<b class="fc">&nbsp;			List.of(&quot;application/x-sparqlstar-results+xml&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			List.of(&quot;srxs&quot;), null, SUPPORTS_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Binary RDF results table format.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat BINARY = new TupleQueryResultFormat(&quot;BINARY&quot;,</b>
+&nbsp;			&quot;application/x-binary-rdf-results-table&quot;, null, &quot;brt&quot;, SUPPORTS_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL Query Results JSON Format.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat JSON = new TupleQueryResultFormat(&quot;SPARQL/JSON&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/sparql-results+json&quot;, &quot;application/json&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;srj&quot;, &quot;json&quot;), SPARQL_RESULTS_JSON_URI, NO_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL-star Query Results JSON Format (like SPARQL JSON but with RDF-star support).
+&nbsp;	 */
+&nbsp;	@Experimental
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat JSON_STAR = new TupleQueryResultFormat(&quot;SPARQL-star/JSON&quot;,</b>
+<b class="fc">&nbsp;			List.of(&quot;application/x-sparqlstar-results+json&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			List.of(&quot;srjs&quot;), null, SUPPORTS_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL Query Result CSV Format.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat CSV = new TupleQueryResultFormat(&quot;SPARQL/CSV&quot;, List.of(&quot;text/csv&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, List.of(&quot;csv&quot;), SPARQL_RESULTS_CSV_URI, NO_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL Query Result TSV Format.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat TSV = new TupleQueryResultFormat(&quot;SPARQL/TSV&quot;,</b>
+<b class="fc">&nbsp;			List.of(&quot;text/tab-separated-values&quot;), StandardCharsets.UTF_8, List.of(&quot;tsv&quot;),</b>
+&nbsp;			SPARQL_RESULTS_TSV_URI, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL-star Query Results TSV Format (like SPARQL TSV but with RDF-star support).
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final TupleQueryResultFormat TSV_STAR = new TupleQueryResultFormat(&quot;SPARQL-star/TSV&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;text/x-tab-separated-values-star&quot;, &quot;application/x-sparqlstar-results+tsv&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, List.of(&quot;tsvs&quot;), null, SUPPORTS_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the TupleQueryResultFormat can encode RDF-star triples natively.
+&nbsp;	 */
+&nbsp;	private final boolean supportsRDFStar;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name     The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeType The MIME type of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the SPARQL/XML
+&nbsp;	 *                 format.
+&nbsp;	 * @param fileExt  The (default) file extension for the format, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML.
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, String mimeType, String fileExt) {
+<b class="nc">&nbsp;		this(name, mimeType, null, fileExt, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name            The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeType        The MIME type of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                        SPARQL/XML format.
+&nbsp;	 * @param fileExt         The (default) file extension for the format, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML.
+&nbsp;	 * @param supportsRDFStar &lt;var&gt;True&lt;/var&gt; if the TupleQueryResultFormat supports the encoding of RDF-star triples
+&nbsp;	 *                        natively and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, String mimeType, String fileExt, boolean supportsRDFStar) {
+<b class="nc">&nbsp;		this(name, mimeType, null, fileExt, supportsRDFStar);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name     The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeType The MIME type of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the SPARQL/XML
+&nbsp;	 *                 format.
+&nbsp;	 * @param charset  The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExt  The (default) file extension for the format, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML.
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, String mimeType, Charset charset, String fileExt) {
+<b class="nc">&nbsp;		this(name, mimeType, charset, fileExt, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name            The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeType        The MIME type of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                        SPARQL/XML format.
+&nbsp;	 * @param charset         The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExt         The (default) file extension for the format, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML.
+&nbsp;	 * @param supportsRDFStar &lt;var&gt;True&lt;/var&gt; if the TupleQueryResultFormat supports the encoding of RDF-star triples
+&nbsp;	 *                        natively and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, String mimeType, Charset charset, String fileExt,
+&nbsp;			boolean supportsRDFStar) {
+<b class="fc">&nbsp;		super(name, mimeType, charset, fileExt);</b>
+<b class="fc">&nbsp;		this.supportsRDFStar = supportsRDFStar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name           The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeTypes      The MIME types of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+&nbsp;	 *                       the format.
+&nbsp;	 * @param charset        The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExtensions The format&#39;s file extensions, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML files. The first item in
+&nbsp;	 *                       the list is interpreted as the default file extension for the format.
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset,
+&nbsp;			Collection&lt;String&gt; fileExtensions) {
+<b class="nc">&nbsp;		this(name, mimeTypes, charset, fileExtensions, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name            The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeTypes       The MIME types of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                        SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+&nbsp;	 *                        the format.
+&nbsp;	 * @param charset         The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExtensions  The format&#39;s file extensions, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML files. The first item in
+&nbsp;	 *                        the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param supportsRDFStar &lt;var&gt;True&lt;/var&gt; if the TupleQueryResultFormat supports the encoding of RDF-star triples
+&nbsp;	 *                        natively and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset,
+&nbsp;			Collection&lt;String&gt; fileExtensions, boolean supportsRDFStar) {
+<b class="nc">&nbsp;		super(name, mimeTypes, charset, fileExtensions);</b>
+<b class="nc">&nbsp;		this.supportsRDFStar = supportsRDFStar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name           The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeTypes      The MIME types of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+&nbsp;	 *                       the format.
+&nbsp;	 * @param charset        The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExtensions The format&#39;s file extensions, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML files. The first item in
+&nbsp;	 *                       the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param standardURI    The standard URI that has been assigned to this format by a standards organisation or null
+&nbsp;	 *                       if it does not currently have a standard URI.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset,
+&nbsp;			Collection&lt;String&gt; fileExtensions, IRI standardURI) {
+<b class="nc">&nbsp;		this(name, mimeTypes, charset, fileExtensions, standardURI, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TupleQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name            The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeTypes       The MIME types of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                        SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+&nbsp;	 *                        the format.
+&nbsp;	 * @param charset         The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExtensions  The format&#39;s file extensions, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML files. The first item in
+&nbsp;	 *                        the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param standardURI     The standard URI that has been assigned to this format by a standards organisation or null
+&nbsp;	 *                        if it does not currently have a standard URI.
+&nbsp;	 * @param supportsRDFStar &lt;var&gt;True&lt;/var&gt; if the TupleQueryResultFormat supports the encoding of RDF-star triples
+&nbsp;	 *                        natively and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset,
+&nbsp;			Collection&lt;String&gt; fileExtensions, IRI standardURI, boolean supportsRDFStar) {
+<b class="fc">&nbsp;		super(name, mimeTypes, charset, fileExtensions, standardURI);</b>
+<b class="fc">&nbsp;		this.supportsRDFStar = supportsRDFStar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return &lt;var&gt;true&lt;/var&gt; if the TupleQueryResultFormat supports the encoding of RDF-star triples natively.
+&nbsp;	 *
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	public boolean supportsRDFStar() {
+<b class="nc">&nbsp;		return supportsRDFStar;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

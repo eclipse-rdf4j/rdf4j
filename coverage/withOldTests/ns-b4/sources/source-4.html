@@ -1,0 +1,673 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TurtleUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.turtle</a>
+</div>
+
+<h1>Coverage Summary for Class: TurtleUtil (org.eclipse.rdf4j.rio.turtle)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TurtleUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (14/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    29.6%
+  </span>
+  <span class="absValue">
+    (71/240)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    26.5%
+  </span>
+  <span class="absValue">
+    (48/181)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.turtle;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.text.ASCIIUtil;
+&nbsp;import org.eclipse.rdf4j.common.text.StringUtil;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for Turtle encoding/decoding.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/turtle/&quot;&gt;Turtle: Terse RDF Triple Language&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;public class TurtleUtil {</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(TurtleUtil.class);</b>
+&nbsp;
+<b class="fc">&nbsp;	public static final char[] LOCAL_ESCAPED_CHARS = new char[] { &#39;_&#39;, &#39;~&#39;, &#39;.&#39;, &#39;-&#39;, &#39;!&#39;, &#39;$&#39;, &#39;&amp;&#39;, &#39;\&#39;&#39;, &#39;(&#39;, &#39;)&#39;,</b>
+&nbsp;			&#39;*&#39;, &#39;+&#39;, &#39;,&#39;, &#39;;&#39;, &#39;=&#39;, &#39;/&#39;, &#39;?&#39;, &#39;#&#39;, &#39;@&#39;, &#39;%&#39; };
+&nbsp;
+&nbsp;	static {
+&nbsp;		// sorting array to allow simple binary search for char lookup.
+<b class="fc">&nbsp;		Arrays.sort(LOCAL_ESCAPED_CHARS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to find an index where the supplied URI can be split into a namespace and a local name that comply with the
+&nbsp;	 * serialization constraints of the Turtle format.
+&nbsp;	 *
+&nbsp;	 * @param uri The URI to split.
+&nbsp;	 * @return The index where the supplied URI can be split, or &lt;var&gt;-1&lt;/var&gt; if the URI cannot be split.
+&nbsp;	 */
+&nbsp;	public static int findURISplitIndex(String uri) {
+<b class="nc">&nbsp;		int uriLength = uri.length();</b>
+&nbsp;
+<b class="nc">&nbsp;		int idx = uriLength - 1;</b>
+&nbsp;
+&nbsp;		// Search last character that is not a name character
+<b class="nc">&nbsp;		for (; idx &gt;= 0; idx--) {</b>
+<b class="nc">&nbsp;			if (!TurtleUtil.isNameChar(uri.charAt(idx))) {</b>
+&nbsp;				// Found a non-name character
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		idx++;</b>
+&nbsp;
+&nbsp;		// Local names need to start with a &#39;nameStartChar&#39;, skip characters
+&nbsp;		// that are not nameStartChar&#39;s.
+<b class="nc">&nbsp;		for (; idx &lt; uriLength; idx++) {</b>
+<b class="nc">&nbsp;			if (TurtleUtil.isNameStartChar(uri.charAt(idx))) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Last character cannot be a period
+<b class="nc">&nbsp;		if (!TurtleUtil.isNameEndChar(uri.charAt(uriLength - 1))) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (idx &gt; 0 &amp;&amp; idx &lt; uriLength) {</b>
+&nbsp;			// A valid split index has been found
+<b class="nc">&nbsp;			return idx;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// No valid local name has been found
+<b class="nc">&nbsp;		return -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a whitespace character
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a whitespace character, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isWhitespace(int codePoint) {
+&nbsp;		// Whitespace character are space, tab, newline and carriage return:
+<b class="pc">&nbsp;		return codePoint == 0x20 || codePoint == 0x9 || codePoint == 0xA || codePoint == 0xD;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid prefixed name base character.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * From Turtle Spec:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS_BASE
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * [163s] PN_CHARS_BASE ::= [A-Z] | [a-z] | [#x00C0-#x00D6] | [#x00D8-#x00F6] | [#x00F8-#x02FF] | [#x0370-#x037D] |
+&nbsp;	 * [#x037F-#x1FFF] | [#x200C-#x200D] | [#x2070-#x218F] | [#x2C00-#x2FEF] | [#x3001-#xD7FF] | [#xF900-#xFDCF] |
+&nbsp;	 * [#xFDF0-#xFFFD] | [#x10000-#xEFFFF]
+&nbsp;	 */
+&nbsp;	public static boolean isPN_CHARS_BASE(int codePoint) {
+<b class="pc">&nbsp;		return ASCIIUtil.isLetter(codePoint) || codePoint &gt;= 0x00C0 &amp;&amp; codePoint &lt;= 0x00D6</b>
+&nbsp;				|| codePoint &gt;= 0x00D8 &amp;&amp; codePoint &lt;= 0x00F6 || codePoint &gt;= 0x00F8 &amp;&amp; codePoint &lt;= 0x02FF
+&nbsp;				|| codePoint &gt;= 0x0370 &amp;&amp; codePoint &lt;= 0x037D || codePoint &gt;= 0x037F &amp;&amp; codePoint &lt;= 0x1FFF
+&nbsp;				|| codePoint &gt;= 0x200C &amp;&amp; codePoint &lt;= 0x200D || codePoint &gt;= 0x2070 &amp;&amp; codePoint &lt;= 0x218F
+&nbsp;				|| codePoint &gt;= 0x2C00 &amp;&amp; codePoint &lt;= 0x2FEF || codePoint &gt;= 0x3001 &amp;&amp; codePoint &lt;= 0xD7FF
+&nbsp;				|| codePoint &gt;= 0xF900 &amp;&amp; codePoint &lt;= 0xFDCF || codePoint &gt;= 0xFDF0 &amp;&amp; codePoint &lt;= 0xFFFD
+&nbsp;				|| codePoint &gt;= 0x10000 &amp;&amp; codePoint &lt;= 0xEFFFF;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents either a valid prefixed name base character or an underscore.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * From Turtle Spec:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS_U
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * [164s] PN_CHARS_U ::= PN_CHARS_BASE | &#39;_&#39;
+&nbsp;	 */
+&nbsp;	public static boolean isPN_CHARS_U(int codePoint) {
+<b class="fc">&nbsp;		return isPN_CHARS_BASE(codePoint) || codePoint == &#39;_&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid prefixed name character.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * From Turtle Spec:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * http://www.w3.org/TR/turtle/#grammar-production-PN_CHARS
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * [166s] PN_CHARS ::= PN_CHARS_U | &#39;-&#39; | [0-9] | #x00B7 | [#x0300-#x036F] | [#x203F-#x2040]
+&nbsp;	 */
+&nbsp;	public static boolean isPN_CHARS(int codePoint) {
+<b class="pc">&nbsp;		return isPN_CHARS_U(codePoint) || ASCIIUtil.isNumber(codePoint) || codePoint == &#39;-&#39; || codePoint == 0x00B7</b>
+&nbsp;				|| codePoint &gt;= 0x0300 &amp;&amp; codePoint &lt;= 0x036F || codePoint &gt;= 0x203F &amp;&amp; codePoint &lt;= 0x2040;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid prefixed name start character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid prefixed name start char, false
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isPrefixStartChar(int codePoint) {
+<b class="fc">&nbsp;		return isPN_CHARS_BASE(codePoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid start character for a blank node label.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid blank node label start char,
+&nbsp;	 *         &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isBLANK_NODE_LABEL_StartChar(int codePoint) {
+<b class="pc">&nbsp;		return isPN_CHARS_U(codePoint) || ASCIIUtil.isNumber(codePoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid blank node label character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid blank node label char, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isBLANK_NODE_LABEL_Char(int codePoint) {
+<b class="fc">&nbsp;		return isPN_CHARS(codePoint) || codePoint == &#39;.&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid blank node label end character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid blank node label end char,
+&nbsp;	 *         &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isBLANK_NODE_LABEL_EndChar(int codePoint) {
+<b class="nc">&nbsp;		return isPN_CHARS(codePoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid name start character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid name start char, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isNameStartChar(int codePoint) {
+<b class="pc">&nbsp;		return isPN_CHARS_U(codePoint) || codePoint == &#39;:&#39; || ASCIIUtil.isNumber(codePoint) || codePoint == &#39;\\&#39;</b>
+&nbsp;				|| codePoint == &#39;%&#39;;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid name character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid name char, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isNameChar(int codePoint) {
+<b class="pc">&nbsp;		return isPN_CHARS(codePoint) || codePoint == &#39;.&#39; || codePoint == &#39;:&#39; | codePoint == &#39;\\&#39; || codePoint == &#39;%&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid name end character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid name end char, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isNameEndChar(int codePoint) {
+<b class="nc">&nbsp;		return isPN_CHARS(codePoint) || codePoint == &#39;:&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid local escaped character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid local escaped char, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isLocalEscapedChar(int codePoint) {
+<b class="nc">&nbsp;		return Arrays.binarySearch(LOCAL_ESCAPED_CHARS, (char) codePoint) &gt; -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid prefix character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid prefix char, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isPrefixChar(int codePoint) {
+<b class="pc">&nbsp;		return isPN_CHARS_BASE(codePoint) || isPN_CHARS(codePoint) || codePoint == &#39;.&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid language tag start character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid language tag start char,
+&nbsp;	 *         &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isLanguageStartChar(int codePoint) {
+<b class="fc">&nbsp;		return ASCIIUtil.isLetter(codePoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the supplied code point represents a valid language tag character.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a Unicode code point.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the supplied code point represents a valid language tag char, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isLanguageChar(int codePoint) {
+<b class="pc">&nbsp;		return ASCIIUtil.isLetter(codePoint) || ASCIIUtil.isNumber(codePoint) || codePoint == &#39;-&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the supplied prefix string is a valid Turtle namespace prefix. From Turtle Spec:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * http://www.w3.org/TR/turtle/#grammar-production-PN_PREFIX
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * [167s] PN_PREFIX ::= PN_CHARS_BASE ((PN_CHARS | &#39;.&#39;)* PN_CHARS)?
+&nbsp;	 *
+&nbsp;	 * @param prefix a prefix string.
+&nbsp;	 * @return true if the supplied prefix conforms to Turtle grammar rules
+&nbsp;	 */
+&nbsp;	public static boolean isPN_PREFIX(String prefix) {
+&nbsp;		// Empty prefixes are not legal, they should always have a colon
+<b class="nc">&nbsp;		if (prefix.length() == 0) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;PN_PREFIX was not valid (empty)&quot;);</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!isPN_CHARS_BASE(prefix.charAt(0))) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;PN_PREFIX was not valid (start character invalid) i=0 nextchar={} prefix=&quot;, prefix.charAt(0),</b>
+&nbsp;					prefix);
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final int numberOfCodePoints = prefix.codePointCount(0, prefix.length());</b>
+<b class="nc">&nbsp;		for (int i = 1; i &lt; numberOfCodePoints; i++) {</b>
+<b class="nc">&nbsp;			final int codePoint = prefix.codePointAt(i);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!isPN_CHARS(codePoint) || (codePoint == &#39;.&#39; &amp;&amp; i &lt; (numberOfCodePoints - 1))) {</b>
+<b class="nc">&nbsp;				logger.debug(</b>
+&nbsp;						&quot;PN_PREFIX was not valid (intermediate character invalid) i=&quot; + i + &quot; nextchar={} prefix={}&quot;,
+<b class="nc">&nbsp;						Character.toChars(codePoint), prefix);</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Check if the percent encoding was less than two characters from the
+&nbsp;			// end of the prefix, in which case it is invalid
+<b class="nc">&nbsp;			if (codePoint == &#39;%&#39; &amp;&amp; (prefix.length() - i) &lt; 2) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;PN_PREFIX was not valid (percent encoding) i=&quot; + i + &quot; nextchar={} prefix={}&quot;,</b>
+<b class="nc">&nbsp;						Character.toChars(codePoint), prefix);</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (Character.isHighSurrogate((char) codePoint)) {</b>
+&nbsp;				// surrogate pair, skip second member in char sequence.
+<b class="nc">&nbsp;				i++;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isPLX_START(String name) {
+<b class="nc">&nbsp;		if (name.length() &gt;= 3 &amp;&amp; isPERCENT(name.substring(0, 3))) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (name.length() &gt;= 2 &amp;&amp; isPN_LOCAL_ESC(name.substring(0, 2))) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isPERCENT(String name) {
+<b class="nc">&nbsp;		if (name.length() != 3) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (name.charAt(0) != &#39;%&#39;) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!ASCIIUtil.isHex(name.charAt(1)) || !ASCIIUtil.isHex(name.charAt(2))) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isPLX_INTERNAL(String name) {
+<b class="nc">&nbsp;		if (name.length() == 3 &amp;&amp; isPERCENT(name)) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (name.length() == 2 &amp;&amp; isPN_LOCAL_ESC(name)) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isPN_LOCAL_ESC(String name) {
+<b class="nc">&nbsp;		if (name.length() != 2) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!name.startsWith(&quot;\\&quot;)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(Arrays.binarySearch(LOCAL_ESCAPED_CHARS, name.charAt(1)) &gt; -1)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isPN_LOCAL(String name) {
+&nbsp;		// Empty names are legal
+<b class="nc">&nbsp;		if (name.length() == 0) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!isPN_CHARS_U(name.charAt(0)) &amp;&amp; name.charAt(0) != &#39;:&#39; &amp;&amp; !ASCIIUtil.isNumber(name.charAt(0))</b>
+<b class="nc">&nbsp;				&amp;&amp; !isPLX_START(name)) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;PN_LOCAL was not valid (start characters invalid) i=&quot; + 0 + &quot; nextchar=&quot;</b>
+<b class="nc">&nbsp;					+ name.charAt(0) + &quot; name=&quot; + name);</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!isNameStartChar(name.charAt(0))) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;name was not valid (start character invalid) i=&quot; + 0 + &quot; nextchar=&quot; + name.charAt(0)</b>
+&nbsp;					+ &quot; name=&quot; + name);
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 1; i &lt; name.length(); i++) {</b>
+<b class="nc">&nbsp;			if (!isNameChar(name.charAt(i))) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;name was not valid (intermediate character invalid) i=&quot; + i + &quot; nextchar=&quot;</b>
+<b class="nc">&nbsp;						+ name.charAt(i) + &quot; name=&quot; + name);</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Check if the percent encoding was less than two characters from the
+&nbsp;			// end of the prefix, in which case it is invalid
+<b class="nc">&nbsp;			if (name.charAt(i) == &#39;%&#39; &amp;&amp; (name.length() - i) &lt; 3) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;name was not valid (short percent escape) i=&quot; + i + &quot; nextchar=&quot; + name.charAt(i)</b>
+&nbsp;						+ &quot; name=&quot; + name);
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// public static boolean isLegalName(String name) {
+&nbsp;	// return isPN_LOCAL(name);
+&nbsp;	// }
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encodes the supplied string for inclusion as a &#39;normal&#39; string in a Turtle document.
+&nbsp;	 *
+&nbsp;	 * @param s
+&nbsp;	 * @return encoded string
+&nbsp;	 */
+&nbsp;	public static String encodeString(String s) {
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\\&quot;, &quot;\\\\&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\t&quot;, &quot;\\t&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\n&quot;, &quot;\\n&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\r&quot;, &quot;\\r&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;, s);</b>
+<b class="nc">&nbsp;		return s;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encodes the supplied string for inclusion as a long string in a Turtle document.
+&nbsp;	 *
+&nbsp;	 * @param s
+&nbsp;	 * @return encoded long string
+&nbsp;	 */
+&nbsp;	public static String encodeLongString(String s) {
+&nbsp;		// TODO: not all double quotes need to be escaped. It suffices to encode
+&nbsp;		// the ones that form sequences of 3 or more double quotes, and the ones
+&nbsp;		// at the end of a string.
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\\&quot;, &quot;\\\\&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;, s);</b>
+<b class="nc">&nbsp;		return s;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encodes the supplied string for inclusion as a (relative) URI in a Turtle document.
+&nbsp;	 *
+&nbsp;	 * @param s
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static String encodeURIString(String s) {
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\\&quot;, &quot;\\u005C&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\t&quot;, &quot;\\u0009&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\n&quot;, &quot;\\u000A&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\r&quot;, &quot;\\u000D&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\&quot;&quot;, &quot;\\u0022&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;`&quot;, &quot;\\u0060&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;^&quot;, &quot;\\u005E&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;|&quot;, &quot;\\u007C&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;&lt;&quot;, &quot;\\u003C&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;&gt;&quot;, &quot;\\u003E&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot; &quot;, &quot;\\u0020&quot;, s);</b>
+<b class="nc">&nbsp;		return s;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decodes an encoded Turtle string. Any \-escape sequences are substituted with their decoded value.
+&nbsp;	 *
+&nbsp;	 * @param s An encoded Turtle string.
+&nbsp;	 * @return The unencoded string.
+&nbsp;	 * @exception IllegalArgumentException If the supplied string is not a correctly encoded Turtle string.
+&nbsp;	 **/
+&nbsp;	public static String decodeString(String s) {
+<b class="fc">&nbsp;		int backSlashIdx = s.indexOf(&#39;\\&#39;);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (backSlashIdx == -1) {</b>
+&nbsp;			// No escaped characters found
+<b class="fc">&nbsp;			return s;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		int startIdx = 0;</b>
+<b class="fc">&nbsp;		int sLength = s.length();</b>
+<b class="fc">&nbsp;		StringBuilder sb = new StringBuilder(sLength);</b>
+&nbsp;
+<b class="fc">&nbsp;		while (backSlashIdx != -1) {</b>
+<b class="fc">&nbsp;			sb.append(s.substring(startIdx, backSlashIdx));</b>
+&nbsp;
+<b class="pc">&nbsp;			if (backSlashIdx + 1 &gt;= sLength) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			char c = s.charAt(backSlashIdx + 1);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (c == &#39;t&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\t&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;b&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\b&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;n&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\n&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;r&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\r&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;f&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\f&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="fc">&nbsp;			} else if (c == &#39;&quot;&#39;) {</b>
+<b class="fc">&nbsp;				sb.append(&#39;&quot;&#39;);</b>
+<b class="fc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;\&#39;&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\&#39;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;&gt;&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;&gt;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\\&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;u&#39;) {</b>
+&nbsp;				// \\uxxxx
+<b class="pc">&nbsp;				if (backSlashIdx + 5 &gt;= sLength) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Incomplete Unicode escape sequence in: &quot; + s);</b>
+&nbsp;				}
+<b class="fc">&nbsp;				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);</b>
+&nbsp;
+&nbsp;				try {
+<b class="fc">&nbsp;					final int codePoint = Integer.parseInt(xx, 16);</b>
+<b class="fc">&nbsp;					sb.append(Character.toChars(codePoint));</b>
+&nbsp;
+<b class="fc">&nbsp;					startIdx = backSlashIdx + 6;</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Illegal Unicode escape sequence &#39;\\u&quot; + xx + &quot;&#39; in: &quot; + s);</b>
+<b class="fc">&nbsp;				}</b>
+<b class="pc">&nbsp;			} else if (c == &#39;U&#39;) {</b>
+&nbsp;				// \\Uxxxxxxxx
+<b class="nc">&nbsp;				if (backSlashIdx + 9 &gt;= sLength) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Incomplete Unicode escape sequence in: &quot; + s);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					final int codePoint = Integer.parseInt(xx, 16);</b>
+<b class="nc">&nbsp;					sb.append(Character.toChars(codePoint));</b>
+&nbsp;
+<b class="nc">&nbsp;					startIdx = backSlashIdx + 10;</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Illegal Unicode escape sequence &#39;\\U&quot; + xx + &quot;&#39; in: &quot; + s);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			backSlashIdx = s.indexOf(&#39;\\&#39;, startIdx);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		sb.append(s.substring(startIdx));</b>
+&nbsp;
+<b class="fc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

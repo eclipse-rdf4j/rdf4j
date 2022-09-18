@@ -1,0 +1,179 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CalendarMemLiteral</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: CalendarMemLiteral (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CalendarMemLiteral</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    41.7%
+  </span>
+  <span class="absValue">
+    (5/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * An extension of MemLiteral that stores a Calendar value to avoid parsing.
+&nbsp; *
+&nbsp; * @author David Huynh
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class CalendarMemLiteral extends MemLiteral {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -7903843639313451580L;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	transient private XMLGregorianCalendar calendar;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public CalendarMemLiteral(Object creator, XMLGregorianCalendar calendar) {
+<b class="fc">&nbsp;		this(creator, calendar.toXMLFormat(), calendar);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CalendarMemLiteral(Object creator, String label, XMLGregorianCalendar calendar) {
+<b class="fc">&nbsp;		this(creator, label, XMLDatatypeUtil.qnameToCoreDatatype(calendar.getXMLSchemaType()), calendar);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CalendarMemLiteral(Object creator, String label, IRI datatype, XMLGregorianCalendar calendar) {
+<b class="nc">&nbsp;		super(creator, label, datatype);</b>
+<b class="nc">&nbsp;		this.calendar = calendar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CalendarMemLiteral(Object creator, String label, CoreDatatype datatype, XMLGregorianCalendar calendar) {
+<b class="fc">&nbsp;		super(creator, label, datatype);</b>
+<b class="fc">&nbsp;		this.calendar = calendar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public XMLGregorianCalendar calendarValue() {
+<b class="fc">&nbsp;		return calendar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void readObject(java.io.ObjectInputStream in) throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			in.defaultReadObject();</b>
+<b class="nc">&nbsp;			calendar = XMLDatatypeUtil.parseCalendar(this.getLabel());</b>
+<b class="nc">&nbsp;		} catch (ClassNotFoundException e) {</b>
+<b class="nc">&nbsp;			throw new IOException(e.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

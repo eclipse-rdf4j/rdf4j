@@ -1,0 +1,152 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RuleProperty</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spin</a>
+</div>
+
+<h1>Coverage Summary for Class: RuleProperty (org.eclipse.rdf4j.spin)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RuleProperty</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.spin;
+&nbsp;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;public class RuleProperty {
+&nbsp;
+&nbsp;	private final IRI IRI;
+&nbsp;
+<b class="nc">&nbsp;	private List&lt;IRI&gt; nextRules = Collections.emptyList();</b>
+&nbsp;
+<b class="nc">&nbsp;	private int maxIterCount = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	public RuleProperty(IRI ruleUri) {</b>
+<b class="nc">&nbsp;		this.IRI = ruleUri;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getUri() {
+<b class="nc">&nbsp;		return IRI;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;IRI&gt; getNextRules() {
+<b class="nc">&nbsp;		return nextRules;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setNextRules(List&lt;IRI&gt; nextRules) {
+<b class="nc">&nbsp;		this.nextRules = nextRules;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getMaxIterationCount() {
+<b class="nc">&nbsp;		return maxIterCount;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setMaxIterationCount(int maxIterCount) {
+<b class="nc">&nbsp;		this.maxIterCount = maxIterCount;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

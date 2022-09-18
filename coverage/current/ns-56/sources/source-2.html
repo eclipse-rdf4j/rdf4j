@@ -1,0 +1,663 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Transaction</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: Transaction (org.eclipse.rdf4j.http.server.repository.transaction)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Transaction</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/108)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Transaction$WildcardRDFRemover</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/126)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.transaction;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.Callable;
+&nbsp;import java.util.concurrent.ExecutionException;
+&nbsp;import java.util.concurrent.ExecutorService;
+&nbsp;import java.util.concurrent.Executors;
+&nbsp;import java.util.concurrent.Future;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;import java.util.concurrent.atomic.AtomicInteger;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SESAME;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.util.RDFInserter;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.util.concurrent.ThreadFactoryBuilder;
+&nbsp;
+&nbsp;/**
+&nbsp; * A transaction encapsulates a single {@link Thread} and a {@link RepositoryConnection}, to enable executing all
+&nbsp; * operations that are part of the transaction from a single, dedicated thread. This is necessary because
+&nbsp; * {@link RepositoryConnection} is not guaranteed thread-safe and we may run into concurrency issues if we attempt to
+&nbsp; * share it between the various HTTP Request worker threads.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;class Transaction implements AutoCloseable {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(Transaction.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set to true when entering the {@link #close()} method for the first time, to ensure that only a single thread
+&nbsp;	 * executes the close operations.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final AtomicBoolean isClosed = new AtomicBoolean(false);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set to true when the {@link #close()} method is about to complete for the first invocation.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final AtomicBoolean closeCompleted = new AtomicBoolean(false);</b>
+&nbsp;
+&nbsp;	private final UUID id;
+&nbsp;
+&nbsp;	private final Repository rep;
+&nbsp;
+&nbsp;	private final RepositoryConnection txnConnection;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The {@link ExecutorService} that performs all of the operations related to this Transaction.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final ExecutorService executor = Executors</b>
+<b class="nc">&nbsp;			.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat(&quot;rdf4j-transaction-%d&quot;).build());</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Counter of the active operations submitted to the executor
+&nbsp;	 */
+<b class="nc">&nbsp;	private final AtomicInteger activeOperations = new AtomicInteger();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new Transaction for the given {@link Repository}.
+&nbsp;	 *
+&nbsp;	 * @param repository the {@link Repository} on which to open a transaction.
+&nbsp;	 * @throws InterruptedException if the transaction thread is interrupted while opening a connection.
+&nbsp;	 * @throws ExecutionException   if an error occurs while opening the connection.
+&nbsp;	 */
+<b class="nc">&nbsp;	Transaction(Repository repository) throws InterruptedException, ExecutionException {</b>
+<b class="nc">&nbsp;		this.id = UUID.randomUUID();</b>
+<b class="nc">&nbsp;		this.rep = repository;</b>
+<b class="nc">&nbsp;		this.txnConnection = getTransactionConnection();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The identifier of this transaction object.
+&nbsp;	 *
+&nbsp;	 * @return a {@link UUID} that identifies this Transaction.
+&nbsp;	 */
+&nbsp;	UUID getID() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Start the transaction.
+&nbsp;	 *
+&nbsp;	 * @param settings the {@link TransactionSetting}s to use for this transaction (including {@link IsolationLevel}).
+&nbsp;	 *                 Optional vararg argument.
+&nbsp;	 * @throws InterruptedException if the transaction thread is interrupted
+&nbsp;	 * @throws ExecutionException   if an error occurs while starting the transaction.
+&nbsp;	 */
+&nbsp;	void begin(TransactionSetting... settings) throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			txnConnection.begin(settings);</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Rolls back all updates in the transaction.
+&nbsp;	 *
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	void rollback() throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			txnConnection.rollback();</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	void prepare() throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			txnConnection.prepare();</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	void commit() throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			txnConnection.commit();</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepares a query for evaluation on this transaction.
+&nbsp;	 *
+&nbsp;	 * @param queryLanguage The {@link QueryLanguage query language} in which the query is formulated.
+&nbsp;	 * @param query         The query string.
+&nbsp;	 * @param baseURI       The base URI to resolve any relative URIs that are in the query against, can be
+&nbsp;	 *                      &lt;var&gt;null&lt;/var&gt; if the query does not contain any relative URIs.
+&nbsp;	 * @return A query ready to be evaluated on this repository.
+&nbsp;	 * @throws InterruptedException if the transaction thread is interrupted
+&nbsp;	 * @throws ExecutionException   if an error occurs while executing the operation.
+&nbsp;	 */
+&nbsp;	Query prepareQuery(QueryLanguage queryLanguage, String query, String baseURI)
+&nbsp;			throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Query&gt; result = submit(() -&gt; txnConnection.prepareQuery(queryLanguage, query, baseURI));</b>
+<b class="nc">&nbsp;		return getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a TupleQuery in this transaction and return the result.
+&nbsp;	 *
+&nbsp;	 * @param tQuery a {@link TupleQuery} prepared on this transaction.
+&nbsp;	 * @return a {@link TupleQueryResult}
+&nbsp;	 * @throws InterruptedException if the transaction thread is interrupted
+&nbsp;	 * @throws ExecutionException   if an error occurs while executing the operation.
+&nbsp;	 */
+&nbsp;	TupleQueryResult evaluate(TupleQuery tQuery) throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;TupleQueryResult&gt; result = submit(tQuery::evaluate);</b>
+<b class="nc">&nbsp;		return getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a {@link GraphQuery} in this transaction and return the result.
+&nbsp;	 *
+&nbsp;	 * @param gQuery a {@link GraphQuery} prepared on this transaction.
+&nbsp;	 * @return a {@link GraphQueryResult}
+&nbsp;	 * @throws InterruptedException if the transaction thread is interrupted
+&nbsp;	 * @throws ExecutionException   if an error occurs while executing the operation.
+&nbsp;	 */
+&nbsp;	GraphQueryResult evaluate(GraphQuery gQuery) throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;GraphQueryResult&gt; result = submit(gQuery::evaluate);</b>
+<b class="nc">&nbsp;		return getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a {@link BooleanQuery} in this transaction and return the result.
+&nbsp;	 *
+&nbsp;	 * @param bQuery a {@link BooleanQuery} prepared on this transaction.
+&nbsp;	 * @return the query result as a boolean
+&nbsp;	 * @throws InterruptedException if the transaction thread is interrupted
+&nbsp;	 * @throws ExecutionException   if an error occurs while executing the operation.
+&nbsp;	 */
+&nbsp;	boolean evaluate(BooleanQuery bQuery) throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; bQuery.evaluate());</b>
+<b class="nc">&nbsp;		return getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param subj
+&nbsp;	 * @param pred
+&nbsp;	 * @param obj
+&nbsp;	 * @param useInferencing
+&nbsp;	 * @param rdfWriter
+&nbsp;	 * @param contexts
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	void exportStatements(Resource subj, IRI pred, Value obj, boolean useInferencing, RDFWriter rdfWriter,
+&nbsp;			Resource... contexts) throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			txnConnection.exportStatements(subj, pred, obj, useInferencing, rdfWriter, contexts);</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the number of (explicit) statements that are in the specified contexts in this transaction.
+&nbsp;	 *
+&nbsp;	 * @param contexts The context(s) to get the data from. Note that this parameter is a vararg and as such is
+&nbsp;	 *                 optional. If no contexts are supplied the method operates on the entire repository.
+&nbsp;	 * @return The number of explicit statements from the specified contexts in this transaction.
+&nbsp;	 */
+&nbsp;	long getSize(Resource[] contexts) throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Long&gt; result = submit(() -&gt; txnConnection.size(contexts));</b>
+<b class="nc">&nbsp;		return getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from an {@link InputStream} to the transaction.
+&nbsp;	 *
+&nbsp;	 * @param inputStream
+&nbsp;	 * @param baseURI
+&nbsp;	 * @param format
+&nbsp;	 * @param contexts
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	void add(InputStream inputStream, String baseURI, RDFFormat format, boolean preserveBNodes, Resource... contexts)
+&nbsp;			throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;executing add operation&quot;);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (preserveBNodes) {</b>
+&nbsp;					// create a reconfigured parser + inserter instead of
+&nbsp;					// relying on standard
+&nbsp;					// repositoryconn add method.
+<b class="nc">&nbsp;					RDFParser parser = Rio.createParser(format);</b>
+<b class="nc">&nbsp;					parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);</b>
+<b class="nc">&nbsp;					RDFInserter inserter = new RDFInserter(txnConnection);</b>
+<b class="nc">&nbsp;					inserter.setPreserveBNodeIDs(true);</b>
+<b class="nc">&nbsp;					if (contexts.length &gt; 0) {</b>
+<b class="nc">&nbsp;						inserter.enforceContext(contexts);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					parser.setRDFHandler(inserter);</b>
+<b class="nc">&nbsp;					parser.parse(inputStream, baseURI);</b>
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					txnConnection.add(inputStream, baseURI, format, contexts);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+&nbsp;			}
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param contentType
+&nbsp;	 * @param inputStream
+&nbsp;	 * @param baseURI
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	void delete(RDFFormat contentType, InputStream inputStream, String baseURI)
+&nbsp;			throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;executing delete operation&quot;);</b>
+<b class="nc">&nbsp;			RDFParser parser = Rio.createParser(contentType, txnConnection.getValueFactory());</b>
+&nbsp;
+<b class="nc">&nbsp;			parser.setRDFHandler(new WildcardRDFRemover(txnConnection));</b>
+<b class="nc">&nbsp;			parser.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				parser.parse(inputStream, baseURI);</b>
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;error during txn delete operation&quot;, e);</b>
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+&nbsp;			}
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param queryLn
+&nbsp;	 * @param sparqlUpdateString
+&nbsp;	 * @param baseURI
+&nbsp;	 * @param includeInferred
+&nbsp;	 * @param dataset
+&nbsp;	 * @param bindings
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	void executeUpdate(QueryLanguage queryLn, String sparqlUpdateString, String baseURI, boolean includeInferred,
+&nbsp;			Dataset dataset, Map&lt;String, Value&gt; bindings) throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Future&lt;Boolean&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString, baseURI);</b>
+<b class="nc">&nbsp;			update.setIncludeInferred(includeInferred);</b>
+<b class="nc">&nbsp;			if (dataset != null) {</b>
+<b class="nc">&nbsp;				update.setDataset(dataset);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			for (String bindingName : bindings.keySet()) {</b>
+<b class="nc">&nbsp;				update.setBinding(bindingName, bindings.get(bindingName));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			update.execute();</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the user has any scheduled tasks for this transaction that have not yet completed.
+&nbsp;	 *
+&nbsp;	 * @return True if there are currently no active tasks being executed for this transaction and false otherwise.
+&nbsp;	 */
+&nbsp;	boolean hasActiveOperations() {
+<b class="nc">&nbsp;		return activeOperations.get() &gt; 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if close has been called for this transaction.
+&nbsp;	 *
+&nbsp;	 * @return True if the close method has been called for this transaction.
+&nbsp;	 */
+&nbsp;	boolean isClosed() {
+<b class="nc">&nbsp;		return isClosed.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if close has been completed for this transaction.
+&nbsp;	 *
+&nbsp;	 * @return True if the close operations have been completed.
+&nbsp;	 */
+&nbsp;	boolean isComplete() {
+<b class="nc">&nbsp;		return closeCompleted.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Close this transaction.
+&nbsp;	 *
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 * @throws ExecutionException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void close() throws InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		if (isClosed.compareAndSet(false, true)) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				txnConnection.close();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				try {</b>
+<b class="nc">&nbsp;					if (!executor.isTerminated()) {</b>
+<b class="nc">&nbsp;						executor.shutdownNow();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					closeCompleted.set(true);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains a {@link RepositoryConnection} through the {@link ExecutorService}.
+&nbsp;	 *
+&nbsp;	 * @return A new {@link RepositoryConnection} to use for this Transaction.
+&nbsp;	 * @throws InterruptedException If the execution of the task was interrupted.
+&nbsp;	 * @throws ExecutionException   If the execution of the task failed for any reason.
+&nbsp;	 */
+&nbsp;	private RepositoryConnection getTransactionConnection() throws InterruptedException, ExecutionException {
+&nbsp;		// create a new RepositoryConnection with correct parser settings
+<b class="nc">&nbsp;		Future&lt;RepositoryConnection&gt; result = submit(() -&gt; {</b>
+<b class="nc">&nbsp;			RepositoryConnection conn = rep.getConnection();</b>
+<b class="nc">&nbsp;			ParserConfig config = conn.getParserConfig();</b>
+<b class="nc">&nbsp;			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+<b class="nc">&nbsp;			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);</b>
+&nbsp;
+<b class="nc">&nbsp;			return conn;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		return getFromFuture(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Atomically submit the task to the executor and add to our local list used to track whether there are outstanding
+&nbsp;	 * operations for the executor.
+&nbsp;	 *
+&nbsp;	 * @param callable The task to submit
+&nbsp;	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the result.
+&nbsp;	 */
+&nbsp;	private &lt;T&gt; Future&lt;T&gt; submit(final Callable&lt;T&gt; callable) {
+<b class="nc">&nbsp;		final Future&lt;T&gt; result = executor.submit(callable);</b>
+&nbsp;		// increment the counter of the active operations
+&nbsp;		// note that it need to be decremented once the Future completes
+<b class="nc">&nbsp;		activeOperations.incrementAndGet();</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Atomically submit the task to the executor and add to our local list used to track whether there are outstanding
+&nbsp;	 * operations for the executor. In addition, this atomically shuts down the ExecutorService to prevent future
+&nbsp;	 * submissions from succeeding.
+&nbsp;	 *
+&nbsp;	 * @param callable The task to submit
+&nbsp;	 * @return A {@link Future} that can be used to track whether the operation has succeeded and get the result.
+&nbsp;	 */
+&nbsp;	private &lt;T&gt; Future&lt;T&gt; submitAndShutdown(final Callable&lt;T&gt; callable) {
+<b class="nc">&nbsp;		final Future&lt;T&gt; result = executor.submit(callable);</b>
+&nbsp;		// increment the counter of the active operations
+&nbsp;		// note that it need to be decremented once the Future completes
+<b class="nc">&nbsp;		activeOperations.incrementAndGet();</b>
+<b class="nc">&nbsp;		executor.shutdown();</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T&gt; T getFromFuture(Future&lt;T&gt; result) throws InterruptedException, ExecutionException {
+&nbsp;		try {
+<b class="nc">&nbsp;			return result.get();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			activeOperations.decrementAndGet();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class WildcardRDFRemover extends AbstractRDFHandler {
+&nbsp;
+<b class="nc">&nbsp;		private static final Resource[] ALL_CONTEXT = {};</b>
+<b class="nc">&nbsp;		private static final Resource[] DEFAULT_CONTEXT = { null };</b>
+&nbsp;
+&nbsp;		private final RepositoryConnection conn;
+&nbsp;
+&nbsp;		public WildcardRDFRemover(RepositoryConnection conn) {
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.conn = conn;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;			Resource subject = SESAME.WILDCARD.equals(st.getSubject()) ? null : st.getSubject();</b>
+<b class="nc">&nbsp;			IRI predicate = SESAME.WILDCARD.equals(st.getPredicate()) ? null : st.getPredicate();</b>
+<b class="nc">&nbsp;			Value object = SESAME.WILDCARD.equals(st.getObject()) ? null : st.getObject();</b>
+&nbsp;
+&nbsp;			Resource[] context;
+<b class="nc">&nbsp;			if (st.getContext() == null) {</b>
+<b class="nc">&nbsp;				context = ALL_CONTEXT;</b>
+<b class="nc">&nbsp;			} else if (RDF4J.NIL.equals(st.getContext())) {</b>
+<b class="nc">&nbsp;				context = DEFAULT_CONTEXT;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				context = new Resource[] { st.getContext() };</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				if (subject == null &amp;&amp; predicate == null &amp;&amp; object == null) {</b>
+&nbsp;					// use the RepositoryConnection.clear operation if we&#39;re removing all statements
+<b class="nc">&nbsp;					conn.clear(context);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					conn.remove(subject, predicate, object, context);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,250 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AddServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.commands</a>
+</div>
+
+<h1>Coverage Summary for Class: AddServlet (org.eclipse.rdf4j.workbench.commands)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AddServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.commands;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.apache.commons.fileupload.FileUploadException;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public class AddServlet extends TransformationServlet {</b>
+&nbsp;
+&nbsp;	private static final String URL = &quot;url&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(AddServlet.class);</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+&nbsp;			throws IOException, RepositoryException, FileUploadException, QueryResultHandlerException {
+&nbsp;		try {
+<b class="nc">&nbsp;			String baseURI = req.getParameter(&quot;baseURI&quot;);</b>
+<b class="nc">&nbsp;			String contentType = req.getParameter(&quot;Content-Type&quot;);</b>
+<b class="nc">&nbsp;			if (req.isParameterPresent(CONTEXT)) {</b>
+<b class="nc">&nbsp;				Resource context = req.getResource(CONTEXT);</b>
+<b class="nc">&nbsp;				if (req.isParameterPresent(URL)) {</b>
+<b class="nc">&nbsp;					add(req.getUrl(URL), baseURI, contentType, context);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					add(req.getContentParameter(), baseURI, contentType, req.getContentFileName(), context);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				if (req.isParameterPresent(URL)) {</b>
+<b class="nc">&nbsp;					add(req.getUrl(URL), baseURI, contentType);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					add(req.getContentParameter(), baseURI, contentType, req.getContentFileName());</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			resp.sendRedirect(&quot;summary&quot;);</b>
+<b class="nc">&nbsp;		} catch (BadRequestException exc) {</b>
+<b class="nc">&nbsp;			logger.warn(exc.toString(), exc);</b>
+<b class="nc">&nbsp;			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;			builder.transform(xslPath, &quot;add.xsl&quot;);</b>
+<b class="nc">&nbsp;			builder.start(&quot;error-message&quot;, &quot;baseURI&quot;, CONTEXT, &quot;Content-Type&quot;);</b>
+<b class="nc">&nbsp;			builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;			String baseURI = req.getParameter(&quot;baseURI&quot;);</b>
+<b class="nc">&nbsp;			String context = req.getParameter(CONTEXT);</b>
+<b class="nc">&nbsp;			String contentType = req.getParameter(&quot;Content-Type&quot;);</b>
+<b class="nc">&nbsp;			builder.result(exc.getMessage(), baseURI, context, contentType);</b>
+<b class="nc">&nbsp;			builder.end();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void add(InputStream stream, String baseURI, String contentType, String contentFileName,
+&nbsp;			Resource... context) throws BadRequestException, RepositoryException, IOException {
+<b class="nc">&nbsp;		if (contentType == null) {</b>
+<b class="nc">&nbsp;			throw new BadRequestException(&quot;No Content-Type provided&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		RDFFormat format;
+<b class="nc">&nbsp;		if (&quot;autodetect&quot;.equals(contentType)) {</b>
+<b class="nc">&nbsp;			format = Rio.getParserFormatForFileName(contentFileName)</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new BadRequestException(</b>
+&nbsp;							&quot;Could not automatically determine Content-Type for content: &quot; + contentFileName));
+&nbsp;		} else {
+<b class="nc">&nbsp;			format = Rio.getParserFormatForMIMEType(contentType)</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new BadRequestException(&quot;Unknown Content-Type: &quot; + contentType));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			con.add(stream, baseURI, format, context);</b>
+<b class="nc">&nbsp;		} catch (RDFParseException | IllegalArgumentException exc) {</b>
+<b class="nc">&nbsp;			throw new BadRequestException(exc.getMessage(), exc);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void add(URL url, String baseURI, String contentType, Resource... context)
+&nbsp;			throws BadRequestException, RepositoryException, IOException {
+<b class="nc">&nbsp;		if (contentType == null) {</b>
+<b class="nc">&nbsp;			throw new BadRequestException(&quot;No Content-Type provided&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		RDFFormat format;
+<b class="nc">&nbsp;		if (&quot;autodetect&quot;.equals(contentType)) {</b>
+<b class="nc">&nbsp;			format = Rio.getParserFormatForFileName(url.getFile())</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new BadRequestException(</b>
+<b class="nc">&nbsp;							&quot;Could not automatically determine Content-Type for content: &quot; + url.getFile()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			format = Rio.getParserFormatForMIMEType(contentType)</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new BadRequestException(&quot;Unknown Content-Type: &quot; + contentType));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;				con.add(url, baseURI, format, context);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (RDFParseException | MalformedURLException | IllegalArgumentException exc) {</b>
+<b class="nc">&nbsp;			throw new BadRequestException(exc.getMessage(), exc);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void service(TupleResultBuilder builder, String xslPath)
+&nbsp;			throws RepositoryException, QueryResultHandlerException {
+&nbsp;		// TupleResultBuilder builder = getTupleResultBuilder(req, resp);
+<b class="nc">&nbsp;		builder.transform(xslPath, &quot;add.xsl&quot;);</b>
+<b class="nc">&nbsp;		builder.start();</b>
+<b class="nc">&nbsp;		builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;		builder.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

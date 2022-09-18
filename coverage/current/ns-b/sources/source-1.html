@@ -1,0 +1,270 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LogConfigurator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.app.logging.logback</a>
+</div>
+
+<h1>Coverage Summary for Class: LogConfigurator (org.eclipse.rdf4j.common.app.logging.logback)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LogConfigurator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LogConfigurator$LogReaderAction</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.app.logging.logback;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogReader;
+&nbsp;import org.xml.sax.Attributes;
+&nbsp;
+&nbsp;import ch.qos.logback.classic.joran.JoranConfigurator;
+&nbsp;import ch.qos.logback.core.Appender;
+&nbsp;import ch.qos.logback.core.joran.action.Action;
+&nbsp;import ch.qos.logback.core.joran.spi.ElementSelector;
+&nbsp;import ch.qos.logback.core.joran.spi.InterpretationContext;
+&nbsp;import ch.qos.logback.core.joran.spi.RuleStore;
+&nbsp;import ch.qos.logback.core.util.OptionHelper;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author alex
+&nbsp; */
+<b class="nc">&nbsp;public class LogConfigurator extends JoranConfigurator {</b>
+&nbsp;
+<b class="nc">&nbsp;	Map&lt;String, String&gt; logReaderClassNames = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	Map&lt;String, Appender&lt;?&gt;&gt; appenders = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	String defaultAppender = null;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get default log reader
+&nbsp;	 *
+&nbsp;	 * @return log reader
+&nbsp;	 */
+&nbsp;	public LogReader getDefaultLogReader() {
+<b class="nc">&nbsp;		if (defaultAppender == null) {</b>
+<b class="nc">&nbsp;			if (appenders.keySet().iterator().hasNext()) {</b>
+<b class="nc">&nbsp;				defaultAppender = appenders.keySet().iterator().next();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return this.getLogReader(defaultAppender);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param appenderName
+&nbsp;	 * @return log reader
+&nbsp;	 */
+&nbsp;	public LogReader getLogReader(String appenderName) {
+<b class="nc">&nbsp;		if (appenderName != null) {</b>
+<b class="nc">&nbsp;			String className = logReaderClassNames.get(appenderName);</b>
+<b class="nc">&nbsp;			if (className != null) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					LogReader logReader = (LogReader) OptionHelper.instantiateByClassName(className,</b>
+&nbsp;							org.eclipse.rdf4j.common.logging.LogReader.class, context);
+<b class="nc">&nbsp;					logReader.setAppender(appenders.get(appenderName));</b>
+<b class="nc">&nbsp;					return logReader;</b>
+<b class="nc">&nbsp;				} catch (Exception ex) {</b>
+<b class="nc">&nbsp;					System.err.println(&quot;Could not create logreader of type &quot; + className + &quot; !&quot;);</b>
+<b class="nc">&nbsp;					ex.printStackTrace();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				System.err.println(&quot;Could not find logreader for appender &quot; + appenderName + &quot; !&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addInstanceRules(RuleStore rs) {
+&nbsp;		// parent rules already added
+<b class="nc">&nbsp;		super.addInstanceRules(rs);</b>
+<b class="nc">&nbsp;		rs.addRule(new ElementSelector(&quot;configuration/appender/logreader&quot;), new LogReaderAction());</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public class LogReaderAction extends Action {</b>
+&nbsp;
+&nbsp;		String className;
+&nbsp;
+<b class="nc">&nbsp;		boolean def = false;</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void begin(InterpretationContext ec, String name, Attributes attributes) {
+<b class="nc">&nbsp;			className = attributes.getValue(CLASS_ATTRIBUTE);</b>
+<b class="nc">&nbsp;			def = (attributes.getValue(&quot;default&quot;) != null) &amp;&amp; attributes.getValue(&quot;default&quot;).equalsIgnoreCase(&quot;true&quot;);</b>
+<b class="nc">&nbsp;			ec.pushObject(className);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void end(InterpretationContext ec, String arg1) {
+<b class="nc">&nbsp;			Object o = ec.peekObject();</b>
+<b class="nc">&nbsp;			if (o != className) {</b>
+<b class="nc">&nbsp;				addWarn(&quot;The object on the top the of the stack is not the logreader classname pushed earlier.&quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				ec.popObject();</b>
+<b class="nc">&nbsp;				Appender&lt;?&gt; appender = (Appender&lt;?&gt;) ec.peekObject();</b>
+<b class="nc">&nbsp;				logReaderClassNames.put(appender.getName(), className);</b>
+<b class="nc">&nbsp;				appenders.put(appender.getName(), appender);</b>
+<b class="nc">&nbsp;				if (def) {</b>
+<b class="nc">&nbsp;					defaultAppender = appender.getName();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

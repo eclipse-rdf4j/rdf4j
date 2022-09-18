@@ -1,0 +1,494 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ShaclSailBaseConfiguration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl</a>
+</div>
+
+<h1>Coverage Summary for Class: ShaclSailBaseConfiguration (org.eclipse.rdf4j.sail.shacl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ShaclSailBaseConfiguration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSail;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.config.ShaclSailConfig;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ShaclSailBaseConfiguration.class);</b>
+&nbsp;
+&nbsp;	// Field used to control if the new SPARQL based validation should be enabled or disabled. Enabled by default.
+&nbsp;	final boolean sparqlValidation;
+&nbsp;
+<b class="nc">&nbsp;	private boolean parallelValidation = ShaclSailConfig.PARALLEL_VALIDATION_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean logValidationPlans = ShaclSailConfig.LOG_VALIDATION_PLANS_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean logValidationViolations = ShaclSailConfig.LOG_VALIDATION_VIOLATIONS_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean validationEnabled = ShaclSailConfig.VALIDATION_ENABLED_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean cacheSelectNodes = ShaclSailConfig.CACHE_SELECT_NODES_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean rdfsSubClassReasoning = ShaclSailConfig.RDFS_SUB_CLASS_REASONING_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean serializableValidation = ShaclSailConfig.SERIALIZABLE_VALIDATION_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean performanceLogging = ShaclSailConfig.PERFORMANCE_LOGGING_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean eclipseRdf4jShaclExtensions = ShaclSailConfig.ECLIPSE_RDF4J_SHACL_EXTENSIONS_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean dashDataShapes = ShaclSailConfig.DASH_DATA_SHAPES_DEFAULT;</b>
+<b class="nc">&nbsp;	private long validationResultsLimitTotal = ShaclSailConfig.VALIDATION_RESULTS_LIMIT_TOTAL_DEFAULT;</b>
+<b class="nc">&nbsp;	private long validationResultsLimitPerConstraint = ShaclSailConfig.VALIDATION_RESULTS_LIMIT_PER_CONSTRAINT_DEFAULT;</b>
+<b class="nc">&nbsp;	private long transactionalValidationLimit = ShaclSailConfig.TRANSACTIONAL_VALIDATION_LIMIT_DEFAULT;</b>
+<b class="nc">&nbsp;	private boolean logValidationExecution = false;</b>
+<b class="nc">&nbsp;	private Set&lt;IRI&gt; shapesGraphs = ShaclSailConfig.SHAPES_GRAPHS_DEFAULT;</b>
+&nbsp;
+&nbsp;	public ShaclSailBaseConfiguration(NotifyingSail baseSail) {
+<b class="nc">&nbsp;		super(baseSail);</b>
+<b class="nc">&nbsp;		this.sparqlValidation = !&quot;false&quot;</b>
+<b class="nc">&nbsp;				.equalsIgnoreCase(System.getProperty(&quot;org.eclipse.rdf4j.sail.shacl.sparqlValidation&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ShaclSailBaseConfiguration() {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.sparqlValidation = !&quot;false&quot;</b>
+<b class="nc">&nbsp;				.equalsIgnoreCase(System.getProperty(&quot;org.eclipse.rdf4j.sail.shacl.sparqlValidation&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if logging of every execution steps is enabled.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if enabled, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 * @see #setGlobalLogValidationExecution(boolean)
+&nbsp;	 */
+&nbsp;	public boolean isGlobalLogValidationExecution() {
+<b class="nc">&nbsp;		return logValidationExecution;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Log (INFO) every execution step of the SHACL validation. This is fairly costly and should not be used in
+&nbsp;	 * production. Recommended to disable parallel validation with setParallelValidation(false)
+&nbsp;	 *
+&nbsp;	 * @param loggingEnabled
+&nbsp;	 */
+&nbsp;	public void setGlobalLogValidationExecution(boolean loggingEnabled) {
+<b class="nc">&nbsp;		logValidationExecution = loggingEnabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if logging a list of violations and the triples that caused the violations is enabled. It is recommended to
+&nbsp;	 * disable parallel validation with {@link #setParallelValidation(boolean)}
+&nbsp;	 *
+&nbsp;	 * @see #setLogValidationViolations(boolean)
+&nbsp;	 */
+&nbsp;	public boolean isLogValidationViolations() {
+<b class="nc">&nbsp;		return this.logValidationViolations;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Log (INFO) a list of violations and the triples that caused the violations (BETA). Recommended to disable
+&nbsp;	 * parallel validation with setParallelValidation(false)
+&nbsp;	 *
+&nbsp;	 * @param logValidationViolations
+&nbsp;	 */
+&nbsp;	public void setLogValidationViolations(boolean logValidationViolations) {
+<b class="nc">&nbsp;		this.logValidationViolations = logValidationViolations;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if SHACL validation is run in parellel.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if enabled, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean isParallelValidation() {
+<b class="nc">&nbsp;		return this.parallelValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * EXPERIMENTAL! Run SHACL validation in parallel. Default: false
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * May cause deadlock, especially when using NativeStore.
+&nbsp;	 *
+&nbsp;	 * @param parallelValidation default true
+&nbsp;	 */
+&nbsp;	public void setParallelValidation(boolean parallelValidation) {
+<b class="nc">&nbsp;		this.parallelValidation = parallelValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if selected nodes caches is enabled.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if enabled, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 * @see #setCacheSelectNodes(boolean)
+&nbsp;	 */
+&nbsp;	public boolean isCacheSelectNodes() {
+<b class="nc">&nbsp;		return this.cacheSelectNodes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The ShaclSail retries a lot of its relevant data through running SPARQL Select queries against the underlying
+&nbsp;	 * sail and against the changes in the transaction. This is usually good for performance, but while validating large
+&nbsp;	 * amounts of data disabling this cache will use less memory. Default: true
+&nbsp;	 *
+&nbsp;	 * @param cacheSelectNodes default true
+&nbsp;	 */
+&nbsp;	public void setCacheSelectNodes(boolean cacheSelectNodes) {
+<b class="nc">&nbsp;		this.cacheSelectNodes = cacheSelectNodes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isRdfsSubClassReasoning() {
+<b class="nc">&nbsp;		return rdfsSubClassReasoning;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setRdfsSubClassReasoning(boolean rdfsSubClassReasoning) {
+<b class="nc">&nbsp;		this.rdfsSubClassReasoning = rdfsSubClassReasoning;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Disable the SHACL validation on commit()
+&nbsp;	 */
+&nbsp;	public void disableValidation() {
+<b class="nc">&nbsp;		this.validationEnabled = false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enabled the SHACL validation on commit()
+&nbsp;	 */
+&nbsp;	public void enableValidation() {
+<b class="nc">&nbsp;		this.validationEnabled = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if SHACL validation on commit() is enabled.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if validation is enabled, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean isValidationEnabled() {
+<b class="nc">&nbsp;		return validationEnabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if logging of validation plans is enabled.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if validation plan logging is enabled, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean isLogValidationPlans() {
+<b class="nc">&nbsp;		return this.logValidationPlans;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Log (INFO) the executed validation plans as GraphViz DOT Recommended to disable parallel validation with
+&nbsp;	 * setParallelValidation(false)
+&nbsp;	 *
+&nbsp;	 * @param logValidationPlans
+&nbsp;	 */
+&nbsp;	public void setLogValidationPlans(boolean logValidationPlans) {
+<b class="nc">&nbsp;		this.logValidationPlans = logValidationPlans;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isPerformanceLogging() {
+<b class="nc">&nbsp;		return performanceLogging;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// @formatter:off
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Log (INFO) the execution time per shape. Recommended to disable the following:
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * 		&lt;li&gt;setParallelValidation(false)&lt;/li&gt;
+&nbsp;	 * 		&lt;li&gt;setCacheSelectNodes(false)&lt;/li&gt;
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 *
+&nbsp;	 * @param performanceLogging default false
+&nbsp;	 */
+&nbsp;	// @formatter:on
+&nbsp;	public void setPerformanceLogging(boolean performanceLogging) {
+<b class="nc">&nbsp;		this.performanceLogging = performanceLogging;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * On transactions using SNAPSHOT isolation the ShaclSail can run the validation serializably. This stops the sail
+&nbsp;	 * from becoming inconsistent due to race conditions between two transactions. Serializable validation limits TPS
+&nbsp;	 * (transactions per second), it is however considerably faster than actually using SERIALIZABLE isolation.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if serializable validation is enabled, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean isSerializableValidation() {
+<b class="nc">&nbsp;		if (getBaseSail() instanceof SchemaCachingRDFSInferencer) {</b>
+<b class="nc">&nbsp;			if (serializableValidation) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;SchemaCachingRDFSInferencer is not supported when using serializable validation!&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return serializableValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enable or disable serializable validation.On transactions using SNAPSHOT isolation the ShaclSail can run the
+&nbsp;	 * validation serializably. This stops the sail from becoming inconsistent due to race conditions between two
+&nbsp;	 * transactions. Serializable validation limits TPS (transactions per second), it is however considerably faster
+&nbsp;	 * than actually using SERIALIZABLE isolation.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * To increase TPS, serializable validation can be disabled. Validation will then be limited to the semantics of the
+&nbsp;	 * SNAPSHOT isolation level (or whichever is specified). If you use any other isolation level than SNAPSHOT,
+&nbsp;	 * disabling serializable validation will make no difference on performance.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param serializableValidation default true
+&nbsp;	 */
+&nbsp;	public void setSerializableValidation(boolean serializableValidation) {
+<b class="nc">&nbsp;		this.serializableValidation = serializableValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+&nbsp;	 * support for rsx:targetShape.
+&nbsp;	 *
+&nbsp;	 * EXPERIMENTAL!
+&nbsp;	 *
+&nbsp;	 * @return true if enabled
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public boolean isEclipseRdf4jShaclExtensions() {
+<b class="nc">&nbsp;		return eclipseRdf4jShaclExtensions;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
+&nbsp;	 * support for rsx:targetShape.
+&nbsp;	 *
+&nbsp;	 * EXPERIMENTAL!
+&nbsp;	 *
+&nbsp;	 * @param eclipseRdf4jShaclExtensions true to enable (default: false)
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public void setEclipseRdf4jShaclExtensions(boolean eclipseRdf4jShaclExtensions) {
+<b class="nc">&nbsp;		this.eclipseRdf4jShaclExtensions = eclipseRdf4jShaclExtensions;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+&nbsp;	 * support for dash:hasValueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
+&nbsp;	 *
+&nbsp;	 * EXPERIMENTAL!
+&nbsp;	 *
+&nbsp;	 * @return true if enabled
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public boolean isDashDataShapes() {
+<b class="nc">&nbsp;		return dashDataShapes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
+&nbsp;	 * support for dash:hasValueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
+&nbsp;	 *
+&nbsp;	 * EXPERIMENTAL!
+&nbsp;	 *
+&nbsp;	 * @param dashDataShapes true to enable (default: false)
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public void setDashDataShapes(boolean dashDataShapes) {
+<b class="nc">&nbsp;		this.dashDataShapes = dashDataShapes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+&nbsp;	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+&nbsp;	 * and reduces memory usage.
+&nbsp;	 *
+&nbsp;	 * @return the limit for validation results per validation report per constraint, -1 for no limit
+&nbsp;	 */
+&nbsp;	public long getValidationResultsLimitPerConstraint() {
+<b class="nc">&nbsp;		return validationResultsLimitPerConstraint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+&nbsp;	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+&nbsp;	 * and reduces memory usage.
+&nbsp;	 *
+&nbsp;	 * @param validationResultsLimitPerConstraint the limit for the number of validation results per report per
+&nbsp;	 *                                            constraint, -1 for no limit
+&nbsp;	 */
+&nbsp;	public void setValidationResultsLimitPerConstraint(long validationResultsLimitPerConstraint) {
+<b class="nc">&nbsp;		this.validationResultsLimitPerConstraint = validationResultsLimitPerConstraint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the effective limit per constraint with an upper bound of the total limit
+&nbsp;	 */
+&nbsp;	public long getEffectiveValidationResultsLimitPerConstraint() {
+<b class="nc">&nbsp;		if (validationResultsLimitPerConstraint &lt; 0) {</b>
+<b class="nc">&nbsp;			return validationResultsLimitTotal;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (validationResultsLimitTotal &gt;= 0) {</b>
+<b class="nc">&nbsp;			return Math.min(validationResultsLimitTotal, validationResultsLimitPerConstraint);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return validationResultsLimitPerConstraint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+&nbsp;	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+&nbsp;	 * and reduces memory usage.
+&nbsp;	 *
+&nbsp;	 * @return the limit for validation results per validation report in total, -1 for no limit
+&nbsp;	 */
+&nbsp;	public long getValidationResultsLimitTotal() {
+<b class="nc">&nbsp;		return validationResultsLimitTotal;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * ValidationReports contain validation results. The number of validation results can be limited by the user. This
+&nbsp;	 * can be useful to reduce the size of reports when there are a lot of failures, which increases validation speed
+&nbsp;	 * and reduces memory usage.
+&nbsp;	 *
+&nbsp;	 * @param validationResultsLimitTotal the limit for the number of validation results per report in total, -1 for no
+&nbsp;	 *                                    limit
+&nbsp;	 */
+&nbsp;	public void setValidationResultsLimitTotal(long validationResultsLimitTotal) {
+<b class="nc">&nbsp;		this.validationResultsLimitTotal = validationResultsLimitTotal;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IsolationLevel getDefaultIsolationLevel() {
+<b class="nc">&nbsp;		return super.getDefaultIsolationLevel();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getTransactionalValidationLimit() {
+<b class="nc">&nbsp;		return transactionalValidationLimit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setTransactionalValidationLimit(long transactionalValidationLimit) {
+<b class="nc">&nbsp;		this.transactionalValidationLimit = transactionalValidationLimit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;IRI&gt; getShapesGraphs() {
+<b class="nc">&nbsp;		return shapesGraphs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setShapesGraphs(Set&lt;IRI&gt; shapesGraphs) {
+<b class="nc">&nbsp;		this.shapesGraphs = shapesGraphs;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

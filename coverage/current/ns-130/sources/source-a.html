@@ -1,0 +1,236 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValueDecoder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.util</a>
+</div>
+
+<h1>Coverage Summary for Class: ValueDecoder (org.eclipse.rdf4j.workbench.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValueDecoder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.util;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Decodes strings into values for {@link WorkbenchRequst}.
+&nbsp; */
+&nbsp;class ValueDecoder {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger LOGGER = LoggerFactory.getLogger(ValueDecoder.class);</b>
+&nbsp;
+&nbsp;	private final ValueFactory factory;
+&nbsp;
+&nbsp;	private final Repository repository;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an instance of ValueDecoder.
+&nbsp;	 *
+&nbsp;	 * @param repository to get namespaces from
+&nbsp;	 * @param factory    to generate values
+&nbsp;	 */
+<b class="nc">&nbsp;	protected ValueDecoder(Repository repository, ValueFactory factory) {</b>
+<b class="nc">&nbsp;		this.repository = repository;</b>
+<b class="nc">&nbsp;		this.factory = factory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decode the given string into a {@link org.eclipse.rdf4j.model.Value}.
+&nbsp;	 *
+&nbsp;	 * @param string representation of an RDF value
+&nbsp;	 * @return the parsed value, or null if the string is null, empty, only whitespace, or
+&nbsp;	 *         {@link java.lang.String#equals(Object)} &quot;null&quot;.
+&nbsp;	 * @throws BadRequestException if a problem occurs during parsing
+&nbsp;	 */
+&nbsp;	protected Value decodeValue(String string) throws BadRequestException {
+<b class="nc">&nbsp;		Value result = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (string != null) {</b>
+<b class="nc">&nbsp;				String value = string.trim();</b>
+<b class="nc">&nbsp;				if (!value.isEmpty() &amp;&amp; !&quot;null&quot;.equals(value)) {</b>
+<b class="nc">&nbsp;					if (value.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;						String label = value.substring(&quot;_:&quot;.length());</b>
+<b class="nc">&nbsp;						result = factory.createBNode(label);</b>
+<b class="nc">&nbsp;					} else {</b>
+<b class="nc">&nbsp;						if (value.charAt(0) == &#39;&lt;&#39; &amp;&amp; value.endsWith(&quot;&gt;&quot;)) {</b>
+<b class="nc">&nbsp;							result = factory.createIRI(value.substring(1, value.length() - 1));</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							if (value.charAt(0) == &#39;&quot;&#39;) {</b>
+<b class="nc">&nbsp;								result = parseLiteral(value);</b>
+&nbsp;							} else {
+<b class="nc">&nbsp;								result = parseURI(value);</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (Exception exc) {</b>
+<b class="nc">&nbsp;			LOGGER.warn(exc.toString(), exc);</b>
+<b class="nc">&nbsp;			throw new BadRequestException(&quot;Malformed value: &quot; + string, exc);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Value parseURI(String value) throws RepositoryException, BadRequestException {
+<b class="nc">&nbsp;		String prefix = value.substring(0, value.indexOf(&#39;:&#39;));</b>
+<b class="nc">&nbsp;		String localPart = value.substring(prefix.length() + 1);</b>
+<b class="nc">&nbsp;		String namespace = getNamespace(prefix);</b>
+<b class="nc">&nbsp;		if (namespace == null) {</b>
+<b class="nc">&nbsp;			throw new BadRequestException(&quot;Undefined prefix: &quot; + value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return factory.createIRI(namespace, localPart);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Value parseLiteral(String value) throws BadRequestException {
+<b class="nc">&nbsp;		String label = value.substring(1, value.lastIndexOf(&#39;&quot;&#39;));</b>
+&nbsp;		Value result;
+<b class="nc">&nbsp;		if (value.length() == (label.length() + 2)) {</b>
+<b class="nc">&nbsp;			result = factory.createLiteral(label);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			String rest = value.substring(label.length() + 2);</b>
+<b class="nc">&nbsp;			if (rest.startsWith(&quot;^^&quot;)) {</b>
+<b class="nc">&nbsp;				Value datatype = decodeValue(rest.substring(2));</b>
+<b class="nc">&nbsp;				if (datatype instanceof IRI) {</b>
+<b class="nc">&nbsp;					result = factory.createLiteral(label, (IRI) datatype);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new BadRequestException(&quot;Malformed datatype: &quot; + value);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (rest.charAt(0) == &#39;@&#39;) {</b>
+<b class="nc">&nbsp;				result = factory.createLiteral(label, rest.substring(1));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new BadRequestException(&quot;Malformed language tag or datatype: &quot; + value);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getNamespace(String prefix) throws RepositoryException {
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			return con.getNamespace(prefix);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

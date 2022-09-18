@@ -1,0 +1,462 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConsoleIO</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console</a>
+</div>
+
+<h1>Coverage Summary for Class: ConsoleIO (org.eclipse.rdf4j.console)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConsoleIO</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/91)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.nio.file.Paths;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.jline.reader.EndOfFileException;
+&nbsp;import org.jline.reader.History;
+&nbsp;import org.jline.reader.LineReader;
+&nbsp;import org.jline.reader.LineReaderBuilder;
+&nbsp;import org.jline.reader.impl.history.DefaultHistory;
+&nbsp;import org.jline.terminal.Terminal;
+&nbsp;import org.jline.terminal.TerminalBuilder;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Dale Visser
+&nbsp; */
+&nbsp;public class ConsoleIO {
+&nbsp;	private static final String PLEASE_OPEN_FIRST = &quot;please open a repository first&quot;;
+&nbsp;
+&nbsp;	private final Terminal terminal;
+&nbsp;	private final LineReader input;
+&nbsp;	private final ConsoleState appInfo;
+&nbsp;
+<b class="nc">&nbsp;	private boolean echo = false;</b>
+<b class="nc">&nbsp;	private boolean quiet = false;</b>
+<b class="nc">&nbsp;	private boolean force = false;</b>
+<b class="nc">&nbsp;	private boolean cautious = false;</b>
+&nbsp;	private boolean errorWritten;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param input
+&nbsp;	 * @param out
+&nbsp;	 * @param info
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+<b class="nc">&nbsp;	public ConsoleIO(InputStream input, OutputStream out, ConsoleState info) throws IOException {</b>
+<b class="nc">&nbsp;		this.terminal = TerminalBuilder.builder().system(false).streams(input, out).build();</b>
+<b class="nc">&nbsp;		this.appInfo = info;</b>
+<b class="nc">&nbsp;		this.input = buildLineReader();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param info
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+<b class="nc">&nbsp;	public ConsoleIO(ConsoleState info) throws IOException {</b>
+<b class="nc">&nbsp;		this.terminal = TerminalBuilder.terminal();</b>
+<b class="nc">&nbsp;		this.appInfo = info;</b>
+<b class="nc">&nbsp;		this.input = buildLineReader();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Build JLine line reader with default history
+&nbsp;	 *
+&nbsp;	 * @return line reader
+&nbsp;	 */
+&nbsp;	private LineReader buildLineReader() {
+<b class="nc">&nbsp;		History history = new DefaultHistory();</b>
+<b class="nc">&nbsp;		LineReader reader = LineReaderBuilder.builder().terminal(this.terminal).history(history).build();</b>
+&nbsp;
+<b class="nc">&nbsp;		Path file = Paths.get(appInfo.getDataDirectory().toString(), &quot;history.txt&quot;);</b>
+<b class="nc">&nbsp;		reader.setVariable(LineReader.HISTORY_FILE, file);</b>
+&nbsp;
+<b class="nc">&nbsp;		return reader;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the JLine line reader
+&nbsp;	 *
+&nbsp;	 * @return line reader
+&nbsp;	 */
+&nbsp;	public LineReader getLineReader() {
+<b class="nc">&nbsp;		return this.input;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get JLine terminal output stream
+&nbsp;	 *
+&nbsp;	 * @return output stream
+&nbsp;	 */
+&nbsp;	public OutputStream getOutputStream() {
+<b class="nc">&nbsp;		return terminal.output();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read a command from input
+&nbsp;	 *
+&nbsp;	 * @return one line of input, or null on error
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected String readCommand() throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			String line = input.readLine(getPrompt());</b>
+<b class="nc">&nbsp;			if (line == null) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			line = line.trim();</b>
+<b class="nc">&nbsp;			if (line.endsWith(&quot;.&quot;)) {</b>
+<b class="nc">&nbsp;				line = line.substring(0, line.length() - 1);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return line;</b>
+<b class="nc">&nbsp;		} catch (EndOfFileException e) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get command prompt.
+&nbsp;	 *
+&nbsp;	 * Contains the name of the current repository when connected.
+&nbsp;	 *
+&nbsp;	 * @return command prompt string
+&nbsp;	 */
+&nbsp;	private String getPrompt() {
+<b class="nc">&nbsp;		String repositoryID = appInfo.getRepositoryID();</b>
+<b class="nc">&nbsp;		if (quiet) {</b>
+<b class="nc">&nbsp;			return &quot;&quot;;</b>
+<b class="nc">&nbsp;		} else if (repositoryID != null) {</b>
+<b class="nc">&nbsp;			return repositoryID + &quot;&gt; &quot;;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return &quot;&gt; &quot;;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads multiple lines from the input until a line that with a &#39;.&#39; on its own is read.
+&nbsp;	 *
+&nbsp;	 * @return input string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public String readMultiLineInput() throws IOException {
+<b class="nc">&nbsp;		return readMultiLineInput(&quot;&gt; &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads multiple lines from the input until a line that with a &#39;.&#39; on its own is read.
+&nbsp;	 *
+&nbsp;	 * @param prompt
+&nbsp;	 * @return input string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public String readMultiLineInput(String prompt) throws IOException {
+<b class="nc">&nbsp;		String line = input.readLine(prompt);</b>
+<b class="nc">&nbsp;		String result = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (line != null) {</b>
+<b class="nc">&nbsp;			final StringBuilder buf = new StringBuilder(256);</b>
+<b class="nc">&nbsp;			buf.append(line);</b>
+&nbsp;
+<b class="nc">&nbsp;			while (line != null &amp;&amp; !(line.length() == 1 &amp;&amp; line.endsWith(&quot;.&quot;))) {</b>
+<b class="nc">&nbsp;				line = input.readLine(&quot;&gt; &quot;);</b>
+<b class="nc">&nbsp;				buf.append(&#39;\n&#39;);</b>
+<b class="nc">&nbsp;				buf.append(line);</b>
+&nbsp;			}
+&nbsp;			// Remove closing dot
+<b class="nc">&nbsp;			buf.setLength(buf.length() - 1);</b>
+<b class="nc">&nbsp;			result = buf.toString().trim();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (echo) {</b>
+<b class="nc">&nbsp;			writeln(result);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read message from input
+&nbsp;	 *
+&nbsp;	 * @param message one or multiple messages
+&nbsp;	 * @return input string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public String readln(String... message) throws IOException {
+<b class="nc">&nbsp;		String prompt = !quiet &amp;&amp; message.length &gt; 0 &amp;&amp; message[0] != null ? message[0] : &quot;&quot;;</b>
+<b class="nc">&nbsp;		String result = input.readLine(prompt);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (echo) {</b>
+<b class="nc">&nbsp;			writeln(result);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read password from input
+&nbsp;	 *
+&nbsp;	 * @param prompt prompt to display
+&nbsp;	 * @return password string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public String readPassword(final String prompt) throws IOException {
+<b class="nc">&nbsp;		String result = input.readLine(prompt, &#39;*&#39;);</b>
+<b class="nc">&nbsp;		if (echo &amp;&amp; !result.isEmpty()) {</b>
+<b class="nc">&nbsp;			writeln(&quot;************&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a string
+&nbsp;	 *
+&nbsp;	 * @param string string to write
+&nbsp;	 */
+&nbsp;	public void write(final String string) {
+<b class="nc">&nbsp;		terminal.writer().print(string);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a newline
+&nbsp;	 */
+&nbsp;	public void writeln() {
+<b class="nc">&nbsp;		terminal.writer().println();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a string, followed by a newline
+&nbsp;	 *
+&nbsp;	 * @param string string to write
+&nbsp;	 */
+&nbsp;	public void writeln(final String string) {
+<b class="nc">&nbsp;		terminal.writer().println(string);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write an error message
+&nbsp;	 *
+&nbsp;	 * @param errMsg error message
+&nbsp;	 */
+&nbsp;	public void writeError(final String errMsg) {
+<b class="nc">&nbsp;		terminal.writer().println(errMsg);</b>
+<b class="nc">&nbsp;		errorWritten = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a &quot;please open first&quot; error message
+&nbsp;	 */
+&nbsp;	public void writeUnopenedError() {
+<b class="nc">&nbsp;		writeError(PLEASE_OPEN_FIRST);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write parser error
+&nbsp;	 *
+&nbsp;	 * @param prefix
+&nbsp;	 * @param lineNo line number
+&nbsp;	 * @param colNo  column number
+&nbsp;	 * @param msg    message to write
+&nbsp;	 */
+&nbsp;	public void writeParseError(String prefix, long lineNo, long colNo, String msg) {
+<b class="nc">&nbsp;		String locationString = RDFParseException.getLocationString(lineNo, colNo);</b>
+<b class="nc">&nbsp;		int locSize = locationString.length();</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder builder = new StringBuilder(locSize + prefix.length() + msg.length() + 3);</b>
+<b class="nc">&nbsp;		builder.append(prefix).append(&quot;: &quot;).append(msg);</b>
+<b class="nc">&nbsp;		if (locSize &gt; 0) {</b>
+<b class="nc">&nbsp;			builder.append(&quot; &quot;).append(locationString);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		writeError(builder.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Ask if the user wants to continue
+&nbsp;	 *
+&nbsp;	 * @param msg          confirmation question
+&nbsp;	 * @param defaultValue true when default is yes
+&nbsp;	 * @return true when continue
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public boolean askProceed(String msg, boolean defaultValue) throws IOException {
+<b class="nc">&nbsp;		final String defaultString = defaultValue ? &quot;yes&quot; : &quot;no&quot;;</b>
+<b class="nc">&nbsp;		boolean result = force ? true : (cautious ? false : defaultValue);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!force &amp;&amp; !cautious) {</b>
+&nbsp;			while (true) {
+<b class="nc">&nbsp;				writeln(msg);</b>
+<b class="nc">&nbsp;				final String reply = readln(&quot;Proceed? (yes|no) [&quot; + defaultString + &quot;]: &quot;);</b>
+<b class="nc">&nbsp;				if (&quot;no&quot;.equalsIgnoreCase(reply) || &quot;no.&quot;.equalsIgnoreCase(reply)) {</b>
+<b class="nc">&nbsp;					result = false;</b>
+<b class="nc">&nbsp;					break;</b>
+<b class="nc">&nbsp;				} else if (&quot;yes&quot;.equalsIgnoreCase(reply) || &quot;yes.&quot;.equalsIgnoreCase(reply)) {</b>
+<b class="nc">&nbsp;					result = true;</b>
+<b class="nc">&nbsp;					break;</b>
+<b class="nc">&nbsp;				} else if (reply.trim().isEmpty()) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Whether to echo user input to output stream
+&nbsp;	 *
+&nbsp;	 * @param echo true to echo input
+&nbsp;	 */
+&nbsp;	protected void setEcho(boolean echo) {
+<b class="nc">&nbsp;		this.echo = echo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Whether to suppress printing of prompts to output
+&nbsp;	 *
+&nbsp;	 * @param quiet true to suppress printing
+&nbsp;	 */
+&nbsp;	public void setQuiet(boolean quiet) {
+<b class="nc">&nbsp;		this.quiet = quiet;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Force commands to proceed
+&nbsp;	 */
+&nbsp;	public void setForce() {
+<b class="nc">&nbsp;		this.force = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Be cautious when executing commands, opposite of force
+&nbsp;	 */
+&nbsp;	public void setCautious() {
+<b class="nc">&nbsp;		this.cautious = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if an error was written to the console
+&nbsp;	 *
+&nbsp;	 * @return true when error was written
+&nbsp;	 */
+&nbsp;	public boolean wasErrorWritten() {
+<b class="nc">&nbsp;		return errorWritten;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

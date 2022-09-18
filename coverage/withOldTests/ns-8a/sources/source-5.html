@@ -1,0 +1,329 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PropertyPathSerializer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql.experimental</a>
+</div>
+
+<h1>Coverage Summary for Class: PropertyPathSerializer (org.eclipse.rdf4j.queryrender.sparql.experimental)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PropertyPathSerializer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/81)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">PropertyPathSerializer$VarInfo</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/84)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql.experimental;
+&nbsp;
+&nbsp;import java.util.Stack;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.queryrender.RenderUtils;
+&nbsp;
+<b class="nc">&nbsp;class PropertyPathSerializer extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;	private StringBuilder builder;
+<b class="nc">&nbsp;	private final Stack&lt;VarInfo&gt; currentSubjectVarStack = new Stack&lt;&gt;();</b>
+&nbsp;	private AbstractSerializableParsedQuery currentQueryProfile;
+&nbsp;
+&nbsp;	public String serialize(ArbitraryLengthPath path, AbstractSerializableParsedQuery currentQueryProfile) {
+<b class="nc">&nbsp;		this.builder = new StringBuilder();</b>
+<b class="nc">&nbsp;		this.currentQueryProfile = currentQueryProfile;</b>
+&nbsp;
+<b class="nc">&nbsp;		Var subjVar = path.getSubjectVar();</b>
+<b class="nc">&nbsp;		Var objVar = path.getObjectVar();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (path.getContextVar() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			path.getContextVar().visit(this);</b>
+<b class="nc">&nbsp;			builder.append(&quot; {&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		subjVar.visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		path.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		objVar.visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; .&quot;);</b>
+<b class="nc">&nbsp;		if (path.getContextVar() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot; }&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot; \n&quot;);</b>
+<b class="nc">&nbsp;		return this.builder.toString().trim();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ArbitraryLengthPath node) throws RuntimeException {
+<b class="nc">&nbsp;		currentSubjectVarStack.push(new VarInfo(node.getSubjectVar(), false));</b>
+<b class="nc">&nbsp;		builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		node.getPathExpression().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (!currentSubjectVarStack.isEmpty()) {</b>
+<b class="nc">&nbsp;			VarInfo currentSubjectVar = currentSubjectVarStack.pop();</b>
+<b class="nc">&nbsp;			if (currentSubjectVar.inverse) {</b>
+<b class="nc">&nbsp;				builder.append(&quot;)&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot;)&quot;);</b>
+<b class="nc">&nbsp;		if (node.getMinLength() == 0) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;*&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;+&quot;);</b>
+&nbsp;		}
+&nbsp;		// super.meet(node);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Join node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot;/&quot;);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Union node) throws RuntimeException {
+<b class="nc">&nbsp;		VarInfo currentSubjectVar = currentSubjectVarStack.peek();</b>
+<b class="nc">&nbsp;		boolean containsZeroLength = (node.getLeftArg() instanceof ZeroLengthPath);</b>
+<b class="nc">&nbsp;		if (!containsZeroLength) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;(&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		currentSubjectVarStack.push(currentSubjectVar);</b>
+&nbsp;		VarInfo currentObjectVarLeft, currentObjectVarRight;
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		currentObjectVarLeft = currentSubjectVarStack.pop();</b>
+<b class="nc">&nbsp;		if (!containsZeroLength) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;|&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		currentSubjectVarStack.push(currentSubjectVar);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		currentObjectVarRight = currentSubjectVarStack.pop();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (currentObjectVarRight.inverse) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;)&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!containsZeroLength) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;)&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;?&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		currentSubjectVarStack.push(currentObjectVarLeft);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(StatementPattern node) throws RuntimeException {
+<b class="nc">&nbsp;		VarInfo subjVar = currentSubjectVarStack.peek();</b>
+&nbsp;
+<b class="nc">&nbsp;		Var predicate = node.getPredicateVar();</b>
+<b class="nc">&nbsp;		if (subjVar.var.getName().equals(node.getObjectVar().getName())) {</b>
+&nbsp;			// =&gt; push inverse marker to stack
+<b class="nc">&nbsp;			builder.append(&quot;^(&quot;);</b>
+<b class="nc">&nbsp;			currentSubjectVarStack.push(new VarInfo(node.getSubjectVar(), true));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			currentSubjectVarStack.push(new VarInfo(node.getObjectVar(), false));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (predicate.hasValue()) {</b>
+<b class="nc">&nbsp;			builder.append(RenderUtils.toSPARQL(node.getPredicateVar().getValue()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;			builder.append(predicate.getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Var node) throws RuntimeException {
+<b class="nc">&nbsp;		if (node.hasValue()) {</b>
+<b class="nc">&nbsp;			builder.append(RenderUtils.toSPARQL(node.getValue()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (node.isAnonymous()) {</b>
+<b class="nc">&nbsp;				if (currentQueryProfile.extensionElements.containsKey(node.getName())) {</b>
+<b class="nc">&nbsp;					ExtensionElem elem = currentQueryProfile.extensionElements.get(node.getName());</b>
+<b class="nc">&nbsp;					elem.getExpr().visit(this);</b>
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					builder.append(&quot;_:&quot;);</b>
+<b class="nc">&nbsp;					builder.append(node.getName());</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;				builder.append(node.getName());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ZeroLengthPath node) throws RuntimeException {
+<b class="nc">&nbsp;		VarInfo subjVar = currentSubjectVarStack.pop();</b>
+<b class="nc">&nbsp;		if (subjVar.inverse) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;)&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		currentSubjectVarStack.push(new VarInfo(node.getObjectVar(), false));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	static class VarInfo {
+&nbsp;		Var var;
+&nbsp;		boolean inverse;
+&nbsp;
+&nbsp;		VarInfo(Var var, boolean inverse) {
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.var = var;</b>
+<b class="nc">&nbsp;			this.inverse = inverse;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

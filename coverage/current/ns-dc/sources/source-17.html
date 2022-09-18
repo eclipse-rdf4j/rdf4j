@@ -1,0 +1,646 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > InnerJoin</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: InnerJoin (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">InnerJoin</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">InnerJoin$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/94)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">InnerJoin$NotifyingPushablePlanNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/39)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/150)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/169)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.StringUtils;
+&nbsp;import org.apache.commons.text.StringEscapeUtils;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Håvard Ottestad
+&nbsp; *         &lt;p&gt;
+&nbsp; *         This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same
+&nbsp; *         value at index 0. The right iterator is allowed to contain duplicates.
+&nbsp; */
+&nbsp;public class InnerJoin implements MultiStreamPlanNode, PlanNode {
+&nbsp;
+<b class="nc">&nbsp;	static private final Logger logger = LoggerFactory.getLogger(InnerJoin.class);</b>
+&nbsp;	private StackTraceElement[] stackTrace;
+<b class="nc">&nbsp;	private boolean printed = false;</b>
+&nbsp;
+&nbsp;	private final PlanNode left;
+&nbsp;	private final PlanNode right;
+&nbsp;	private CloseableIteration&lt;ValidationTuple, SailException&gt; iterator;
+&nbsp;	private NotifyingPushablePlanNode joined;
+&nbsp;	private NotifyingPushablePlanNode discardedLeft;
+&nbsp;	private NotifyingPushablePlanNode discardedRight;
+&nbsp;
+<b class="nc">&nbsp;	public InnerJoin(PlanNode left, PlanNode right) {</b>
+<b class="nc">&nbsp;		this.left = PlanNodeHelper.handleSorting(this, left);</b>
+<b class="nc">&nbsp;		this.right = PlanNodeHelper.handleSorting(this, right);</b>
+&nbsp;
+&nbsp;		// this.stackTrace = Thread.currentThread().getStackTrace();
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;PlanNode&gt; parent() {
+<b class="nc">&nbsp;		return Arrays.asList(left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public PlanNode getJoined(Class&lt;? extends PushablePlanNode&gt; type) {
+<b class="nc">&nbsp;		if (joined != null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (type == BufferedPlanNode.class) {</b>
+<b class="nc">&nbsp;			joined = new NotifyingPushablePlanNode(new BufferedPlanNode&lt;&gt;(this, &quot;Joined&quot;));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			joined = new NotifyingPushablePlanNode(new UnBufferedPlanNode&lt;&gt;(this, &quot;Joined&quot;));</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return joined;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public PlanNode getDiscardedLeft(Class&lt;? extends PushablePlanNode&gt; type) {
+<b class="nc">&nbsp;		if (discardedLeft != null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (type == BufferedPlanNode.class) {</b>
+<b class="nc">&nbsp;			discardedLeft = new NotifyingPushablePlanNode(new BufferedPlanNode&lt;&gt;(this, &quot;DiscardedLeft&quot;));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;All discarded nodes need to use buffered nodes&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return discardedLeft;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public PlanNode getDiscardedRight(Class&lt;? extends PushablePlanNode&gt; type) {
+<b class="nc">&nbsp;		if (discardedRight != null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (type == BufferedPlanNode.class) {</b>
+<b class="nc">&nbsp;			discardedRight = new NotifyingPushablePlanNode(new BufferedPlanNode&lt;&gt;(this, &quot;DiscardedRight&quot;));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;All discarded nodes need to use buffered nodes&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return discardedRight;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator() {
+<b class="nc">&nbsp;		throw new IllegalStateException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;ValidationTuple, SailException&gt; internalIterator() {
+&nbsp;
+<b class="nc">&nbsp;		return new CloseableIteration&lt;ValidationTuple, SailException&gt;() {</b>
+&nbsp;
+<b class="nc">&nbsp;			final CloseableIteration&lt;? extends ValidationTuple, SailException&gt; leftIterator = left.iterator();</b>
+<b class="nc">&nbsp;			final CloseableIteration&lt;? extends ValidationTuple, SailException&gt; rightIterator = right.iterator();</b>
+&nbsp;
+&nbsp;			ValidationTuple next;
+&nbsp;			ValidationTuple nextLeft;
+&nbsp;			ValidationTuple nextRight;
+&nbsp;			ValidationTuple joinedLeft;
+&nbsp;
+&nbsp;			void calculateNext() {
+<b class="nc">&nbsp;				if (next != null) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				ValidationTuple prevLeft = nextLeft;</b>
+<b class="nc">&nbsp;				if (nextLeft == null &amp;&amp; leftIterator.hasNext()) {</b>
+<b class="nc">&nbsp;					nextLeft = leftIterator.next();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (nextRight == null &amp;&amp; rightIterator.hasNext()) {</b>
+<b class="nc">&nbsp;					nextRight = rightIterator.next();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (nextRight == null &amp;&amp; prevLeft == null &amp;&amp; nextLeft != null) {</b>
+<b class="nc">&nbsp;					if (discardedLeft != null) {</b>
+<b class="nc">&nbsp;						discardedLeft.push(nextLeft);</b>
+<b class="nc">&nbsp;						while (leftIterator.hasNext()) {</b>
+<b class="nc">&nbsp;							discardedLeft.push(leftIterator.next());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						assert !leftIterator.hasNext() : leftIterator.toString();</b>
+&nbsp;					}
+<b class="nc">&nbsp;					nextLeft = null;</b>
+&nbsp;
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (nextLeft == null &amp;&amp; nextRight != null) {</b>
+<b class="nc">&nbsp;					if (discardedRight != null) {</b>
+<b class="nc">&nbsp;						discardedRight.push(nextRight);</b>
+<b class="nc">&nbsp;						while (rightIterator.hasNext()) {</b>
+<b class="nc">&nbsp;							discardedRight.push(rightIterator.next());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						assert !rightIterator.hasNext() : rightIterator.toString();</b>
+&nbsp;
+&nbsp;					}
+<b class="nc">&nbsp;					nextRight = null;</b>
+&nbsp;
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				while (next == null) {</b>
+<b class="nc">&nbsp;					if (nextRight != null) {</b>
+&nbsp;
+<b class="nc">&nbsp;						if (nextLeft.sameTargetAs(nextRight)) {</b>
+<b class="nc">&nbsp;							next = ValidationTupleHelper.join(nextLeft, nextRight);</b>
+<b class="nc">&nbsp;							joinedLeft = nextLeft;</b>
+<b class="nc">&nbsp;							nextRight = null;</b>
+&nbsp;						} else {
+&nbsp;
+<b class="nc">&nbsp;							int compareTo = nextLeft.compareActiveTarget(nextRight);</b>
+&nbsp;
+<b class="nc">&nbsp;							if (compareTo &lt; 0) {</b>
+<b class="nc">&nbsp;								if (joinedLeft != nextLeft &amp;&amp; discardedLeft != null) {</b>
+<b class="nc">&nbsp;									discardedLeft.push(nextLeft);</b>
+&nbsp;								}
+<b class="nc">&nbsp;								if (leftIterator.hasNext()) {</b>
+<b class="nc">&nbsp;									nextLeft = leftIterator.next();</b>
+&nbsp;								} else {
+<b class="nc">&nbsp;									nextLeft = null;</b>
+<b class="nc">&nbsp;									break;</b>
+&nbsp;								}
+&nbsp;							} else {
+<b class="nc">&nbsp;								if (discardedRight != null) {</b>
+<b class="nc">&nbsp;									discardedRight.push(nextRight);</b>
+&nbsp;								}
+<b class="nc">&nbsp;								if (rightIterator.hasNext()) {</b>
+<b class="nc">&nbsp;									nextRight = rightIterator.next();</b>
+&nbsp;								} else {
+<b class="nc">&nbsp;									nextRight = null;</b>
+<b class="nc">&nbsp;									break;</b>
+&nbsp;								}
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;						}</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						if (discardedLeft != null) {</b>
+<b class="nc">&nbsp;							while (leftIterator.hasNext()) {</b>
+<b class="nc">&nbsp;								discardedLeft.push(leftIterator.next());</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							assert nextLeft == null;</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						assert !rightIterator.hasNext() : rightIterator.toString();</b>
+&nbsp;
+&nbsp;						return;
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (next == null) {</b>
+<b class="nc">&nbsp;					if (nextLeft != null &amp;&amp; discardedLeft != null) {</b>
+<b class="nc">&nbsp;						discardedLeft.push(nextLeft);</b>
+<b class="nc">&nbsp;						nextLeft = null;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (nextRight != null &amp;&amp; discardedRight != null) {</b>
+<b class="nc">&nbsp;						discardedRight.push(nextRight);</b>
+<b class="nc">&nbsp;						nextRight = null;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (discardedLeft != null) {</b>
+&nbsp;
+<b class="nc">&nbsp;						while (leftIterator.hasNext()) {</b>
+<b class="nc">&nbsp;							discardedLeft.push(leftIterator.next());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						assert !leftIterator.hasNext() : leftIterator.toString();</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (discardedRight != null) {</b>
+&nbsp;
+<b class="nc">&nbsp;						while (rightIterator.hasNext()) {</b>
+<b class="nc">&nbsp;							discardedRight.push(rightIterator.next());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						assert !rightIterator.hasNext() : rightIterator.toString();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void close() throws SailException {
+&nbsp;				try {
+<b class="nc">&nbsp;					leftIterator.close();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					rightIterator.close();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean hasNext() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				return next != null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public ValidationTuple next() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				ValidationTuple temp = next;</b>
+<b class="nc">&nbsp;				next = null;</b>
+<b class="nc">&nbsp;				return temp;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void remove() throws SailException {
+<b class="nc">&nbsp;				throw new UnsupportedOperationException();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int depth() {
+<b class="nc">&nbsp;		return Math.max(left.depth(), right.depth());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+<b class="nc">&nbsp;		if (printed) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		printed = true;</b>
+<b class="nc">&nbsp;		left.getPlanAsGraphvizDot(stringBuilder);</b>
+&nbsp;
+<b class="nc">&nbsp;		stringBuilder.append(getId() + &quot; [label=\&quot;&quot; + StringEscapeUtils.escapeJava(this.toString()) + &quot;\&quot;];&quot;)</b>
+<b class="nc">&nbsp;				.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		stringBuilder.append(left.getId() + &quot; -&gt; &quot; + getId() + &quot; [label=\&quot;left\&quot;];&quot;).append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		stringBuilder.append(right.getId() + &quot; -&gt; &quot; + getId() + &quot; [label=\&quot;right\&quot;];&quot;).append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		right.getPlanAsGraphvizDot(stringBuilder);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (discardedRight != null) {</b>
+<b class="nc">&nbsp;			stringBuilder.append(getId() + &quot; -&gt; &quot; + (discardedRight).getId() + &quot; [label=\&quot;discardedRight\&quot;];&quot;)</b>
+<b class="nc">&nbsp;					.append(&quot;\n&quot;);</b>
+&nbsp;
+&nbsp;		}
+<b class="nc">&nbsp;		if (discardedLeft != null) {</b>
+<b class="nc">&nbsp;			stringBuilder.append(getId() + &quot; -&gt; &quot; + (discardedLeft).getId() + &quot; [label=\&quot;discardedLeft\&quot;];&quot;)</b>
+<b class="nc">&nbsp;					.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (joined != null) {</b>
+<b class="nc">&nbsp;			stringBuilder.append(getId() + &quot; -&gt; &quot; + (joined).getId() + &quot; [label=\&quot;joined\&quot;];&quot;).append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return System.identityHashCode(this) + &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;InnerJoin(&quot; + left.toString() + &quot; : &quot; + right.toString() + &quot;)&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String leadingSpace() {
+<b class="nc">&nbsp;		return StringUtils.leftPad(&quot;&quot;, depth(), &quot;    &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() {
+<b class="nc">&nbsp;		if (iterator == null) {</b>
+<b class="nc">&nbsp;			iterator = internalIterator();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() {
+&nbsp;
+<b class="nc">&nbsp;		if ((discardedLeft == null || discardedLeft.isClosed()) &amp;&amp; (discardedRight == null || discardedRight.isClosed())</b>
+<b class="nc">&nbsp;				&amp;&amp; (joined == null || joined.isClosed())) {</b>
+<b class="nc">&nbsp;			iterator.close();</b>
+<b class="nc">&nbsp;			iterator = null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean incrementIterator() {
+&nbsp;
+<b class="nc">&nbsp;		if (discardedLeft != null) {</b>
+<b class="nc">&nbsp;			discardedLeft.resetNotification();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (discardedRight != null) {</b>
+<b class="nc">&nbsp;			discardedRight.resetNotification();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		while (true) {
+<b class="nc">&nbsp;			if (iterator.hasNext()) {</b>
+<b class="nc">&nbsp;				ValidationTuple next = iterator.next();</b>
+<b class="nc">&nbsp;				if (joined != null) {</b>
+<b class="nc">&nbsp;					joined.push(next);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (discardedRight != null) {</b>
+<b class="nc">&nbsp;					if (!discardedRight.wasRecentlyPushed()) {</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (discardedLeft != null) {</b>
+<b class="nc">&nbsp;					if (!discardedLeft.wasRecentlyPushed()) {</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+<b class="nc">&nbsp;		Stream.of(joined, discardedLeft, discardedRight, left, right)</b>
+<b class="nc">&nbsp;				.filter(Objects::nonNull)</b>
+<b class="nc">&nbsp;				.forEach(p -&gt; p.receiveLogger(validationExecutionLogger));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean producesSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean requiresSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	class NotifyingPushablePlanNode implements PushablePlanNode {
+&nbsp;		PushablePlanNode delegate;
+&nbsp;
+<b class="nc">&nbsp;		boolean recentlyPushed = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		public NotifyingPushablePlanNode(PushablePlanNode delegate) {</b>
+<b class="nc">&nbsp;			this.delegate = delegate;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator() {
+<b class="nc">&nbsp;			return delegate.iterator();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int depth() {
+<b class="nc">&nbsp;			return delegate.depth();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+<b class="nc">&nbsp;			delegate.getPlanAsGraphvizDot(stringBuilder);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String getId() {
+<b class="nc">&nbsp;			return delegate.getId();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+<b class="nc">&nbsp;			delegate.receiveLogger(validationExecutionLogger);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean producesSorted() {
+<b class="nc">&nbsp;			return delegate.producesSorted();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean requiresSorted() {
+<b class="nc">&nbsp;			return delegate.requiresSorted();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void push(ValidationTuple tuple) {
+<b class="nc">&nbsp;			recentlyPushed = true;</b>
+<b class="nc">&nbsp;			delegate.push(tuple);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isClosed() {
+<b class="nc">&nbsp;			return delegate.isClosed();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void resetNotification() {
+<b class="nc">&nbsp;			this.recentlyPushed = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean wasRecentlyPushed() {
+<b class="nc">&nbsp;			return recentlyPushed;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean equals(Object o) {
+<b class="nc">&nbsp;			if (this == o) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			NotifyingPushablePlanNode that = (NotifyingPushablePlanNode) o;</b>
+<b class="nc">&nbsp;			return delegate.equals(that.delegate);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int hashCode() {
+<b class="nc">&nbsp;			return Objects.hash(delegate);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

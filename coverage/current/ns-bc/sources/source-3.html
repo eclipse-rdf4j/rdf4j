@@ -1,0 +1,884 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ElasticsearchDataStructure</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.elasticsearchstore</a>
+</div>
+
+<h1>Coverage Summary for Class: ElasticsearchDataStructure (org.eclipse.rdf4j.sail.elasticsearchstore)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ElasticsearchDataStructure</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/150)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/289)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ElasticsearchDataStructure$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/160)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/308)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.elasticsearchstore;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.security.MessageDigest;
+&nbsp;import java.security.NoSuchAlgorithmException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.apache.commons.io.IOUtils;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.DataStructureInterface;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+&nbsp;import org.elasticsearch.action.DocWriteRequest;
+&nbsp;import org.elasticsearch.action.admin.indices.create.CreateIndexRequest;
+&nbsp;import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest;
+&nbsp;import org.elasticsearch.action.admin.indices.stats.IndicesStatsResponse;
+&nbsp;import org.elasticsearch.action.bulk.BulkItemResponse;
+&nbsp;import org.elasticsearch.action.bulk.BulkRequestBuilder;
+&nbsp;import org.elasticsearch.action.bulk.BulkResponse;
+&nbsp;import org.elasticsearch.client.Client;
+&nbsp;import org.elasticsearch.client.IndicesAdminClient;
+&nbsp;import org.elasticsearch.common.xcontent.XContentType;
+&nbsp;import org.elasticsearch.index.engine.VersionConflictEngineException;
+&nbsp;import org.elasticsearch.index.query.BoolQueryBuilder;
+&nbsp;import org.elasticsearch.index.query.QueryBuilder;
+&nbsp;import org.elasticsearch.index.query.QueryBuilders;
+&nbsp;import org.elasticsearch.index.reindex.BulkByScrollResponse;
+&nbsp;import org.elasticsearch.index.reindex.DeleteByQueryAction;
+&nbsp;import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
+&nbsp;import org.elasticsearch.search.SearchHit;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Håvard Mikkelsen Ottestad
+&nbsp; */
+&nbsp;class ElasticsearchDataStructure implements DataStructureInterface {
+&nbsp;
+&nbsp;	private static final String MAPPING;
+&nbsp;
+<b class="nc">&nbsp;	private int BUFFER_THRESHOLD = 1024 * 16;</b>
+&nbsp;	private final ClientProvider clientProvider;
+<b class="nc">&nbsp;	private Set&lt;ExtensibleStatement&gt; addStatementBuffer = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;	private Set&lt;ElasticsearchId&gt; deleteStatementBuffer = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private final static ElasticsearchValueFactory vf = (ElasticsearchValueFactory) ElasticsearchValueFactory
+<b class="nc">&nbsp;			.getInstance();</b>
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="nc">&nbsp;			MAPPING = IOUtils.toString(ElasticsearchDataStructure.class.getClassLoader()</b>
+<b class="nc">&nbsp;					.getResourceAsStream(&quot;elasticsearchStoreMapping.json&quot;), StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchDataStructure.class);</b>
+&nbsp;
+&nbsp;	private static final String ELASTICSEARCH_TYPE = &quot;statement&quot;;
+&nbsp;	private final String index;
+<b class="nc">&nbsp;	private int scrollTimeout = 60000;</b>
+&nbsp;
+&nbsp;	ElasticsearchDataStructure(ClientProvider clientProvider, String index) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.index = index;</b>
+<b class="nc">&nbsp;		this.clientProvider = clientProvider;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	synchronized public void addStatement(ExtensibleStatement statement) {
+<b class="nc">&nbsp;		if (addStatementBuffer.size() &gt;= BUFFER_THRESHOLD) {</b>
+<b class="nc">&nbsp;			flushAddStatementBuffer();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		addStatementBuffer.add(statement);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	synchronized public void removeStatement(ExtensibleStatement statement) {
+&nbsp;
+&nbsp;		ElasticsearchId elasticsearchIdStatement;
+&nbsp;
+<b class="nc">&nbsp;		if (statement instanceof ElasticsearchId) {</b>
+&nbsp;
+<b class="nc">&nbsp;			elasticsearchIdStatement = (ElasticsearchId) statement;</b>
+&nbsp;
+&nbsp;		} else {
+&nbsp;
+<b class="nc">&nbsp;			String id = sha256(statement);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (statement.getContext() == null) {</b>
+<b class="nc">&nbsp;				elasticsearchIdStatement = vf.createStatement(id, statement.getSubject(), statement.getPredicate(),</b>
+<b class="nc">&nbsp;						statement.getPredicate(), statement.isInferred());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				elasticsearchIdStatement = vf.createStatement(id, statement.getSubject(), statement.getPredicate(),</b>
+<b class="nc">&nbsp;						statement.getPredicate(), statement.getContext(), statement.isInferred());</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (deleteStatementBuffer.size() &gt;= BUFFER_THRESHOLD) {</b>
+<b class="nc">&nbsp;			flushRemoveStatementBuffer();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		deleteStatementBuffer.add(elasticsearchIdStatement);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(Collection&lt;ExtensibleStatement&gt; statements) {
+<b class="nc">&nbsp;		addStatementBuffer.addAll(statements);</b>
+<b class="nc">&nbsp;		if (addStatementBuffer.size() &gt;= BUFFER_THRESHOLD) {</b>
+<b class="nc">&nbsp;			flushAddStatementBuffer();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	synchronized public void clear(boolean inferred, Resource[] contexts) {
+&nbsp;
+<b class="nc">&nbsp;		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),</b>
+&nbsp;				DeleteByQueryAction.INSTANCE)
+<b class="nc">&nbsp;						.filter(getQueryBuilder(null, null, null, inferred, contexts))</b>
+<b class="nc">&nbsp;						.abortOnVersionConflict(false)</b>
+<b class="nc">&nbsp;						.source(index)</b>
+<b class="nc">&nbsp;						.get();</b>
+&nbsp;
+<b class="nc">&nbsp;		long deleted = response.getDeleted();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushForCommit() {
+&nbsp;		// no underlying store to flush to
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; getStatements(Resource subject,
+&nbsp;			IRI predicate,
+&nbsp;			Value object, boolean inferred, Resource... context) {
+&nbsp;
+<b class="nc">&nbsp;		QueryBuilder queryBuilder = getQueryBuilder(subject, predicate, object, inferred, context);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new LookAheadIteration&lt;ExtensibleStatement, SailException&gt;() {</b>
+&nbsp;
+<b class="nc">&nbsp;			final CloseableIteration&lt;SearchHit, RuntimeException&gt; iterator = ElasticsearchHelper</b>
+<b class="nc">&nbsp;					.getScrollingIterator(queryBuilder, clientProvider.getClient(), index, scrollTimeout);</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected ExtensibleStatement getNextElement() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;				ExtensibleStatement next = null;</b>
+&nbsp;
+<b class="nc">&nbsp;				while (next == null &amp;&amp; iterator.hasNext()) {</b>
+<b class="nc">&nbsp;					SearchHit nextSearchHit = iterator.next();</b>
+&nbsp;
+<b class="nc">&nbsp;					Map&lt;String, Object&gt; sourceAsMap = nextSearchHit.getSourceAsMap();</b>
+&nbsp;
+<b class="nc">&nbsp;					String id = nextSearchHit.getId();</b>
+&nbsp;
+<b class="nc">&nbsp;					ExtensibleStatement statement = sourceToStatement(sourceAsMap, id, subject, predicate, object);</b>
+&nbsp;
+&nbsp;					// we use hash to lookup the object value because the object can be bigger than what elasticsearch
+&nbsp;					// allows as max for keyword (32766 bytes), so it needs to be stored in a text field that is not
+&nbsp;					// index. The hash is stored in an integer field and is index. The code below does hash collision
+&nbsp;					// check.
+<b class="nc">&nbsp;					if (object != null</b>
+<b class="nc">&nbsp;							&amp;&amp; object.stringValue().hashCode() == statement.getObject().stringValue().hashCode()</b>
+<b class="nc">&nbsp;							&amp;&amp; !object.equals(statement.getObject())) {</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					next = statement;</b>
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				return next;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void remove() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;Does not support removing from iterator&quot;);</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void handleClose() throws SailException {
+<b class="nc">&nbsp;				super.handleClose();</b>
+<b class="nc">&nbsp;				iterator.close();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryBuilder getQueryBuilder(Resource subject, IRI predicate, Value object, boolean inferred,
+&nbsp;			Resource[] contexts) {
+&nbsp;
+<b class="nc">&nbsp;		BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (subject != null) {</b>
+<b class="nc">&nbsp;			boolQueryBuilder.must(QueryBuilders.termQuery(&quot;subject&quot;, subject.stringValue()));</b>
+<b class="nc">&nbsp;			if (subject instanceof IRI) {</b>
+<b class="nc">&nbsp;				boolQueryBuilder.must(QueryBuilders.termQuery(&quot;subject_IRI&quot;, true));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				boolQueryBuilder.must(QueryBuilders.termQuery(&quot;subject_BNode&quot;, true));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (predicate != null) {</b>
+<b class="nc">&nbsp;			boolQueryBuilder.must(QueryBuilders.termQuery(&quot;predicate&quot;, predicate.stringValue()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (object != null) {</b>
+<b class="nc">&nbsp;			boolQueryBuilder.must(QueryBuilders.termQuery(&quot;object_Hash&quot;, object.stringValue().hashCode()));</b>
+<b class="nc">&nbsp;			if (object instanceof IRI) {</b>
+<b class="nc">&nbsp;				boolQueryBuilder.must(QueryBuilders.termQuery(&quot;object_IRI&quot;, true));</b>
+<b class="nc">&nbsp;			} else if (object instanceof BNode) {</b>
+<b class="nc">&nbsp;				boolQueryBuilder.must(QueryBuilders.termQuery(&quot;object_BNode&quot;, true));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				boolQueryBuilder.must(</b>
+<b class="nc">&nbsp;						QueryBuilders.termQuery(&quot;object_Datatype&quot;, ((Literal) object).getDatatype().stringValue()));</b>
+<b class="nc">&nbsp;				if (((Literal) object).getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;					boolQueryBuilder</b>
+<b class="nc">&nbsp;							.must(QueryBuilders.termQuery(&quot;object_Lang&quot;, ((Literal) object).getLanguage().get()));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (contexts != null &amp;&amp; contexts.length &gt; 0) {</b>
+&nbsp;
+<b class="nc">&nbsp;			BoolQueryBuilder contextQueryBuilder = new BoolQueryBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Resource context : contexts) {</b>
+&nbsp;
+<b class="nc">&nbsp;				if (context == null) {</b>
+&nbsp;
+<b class="nc">&nbsp;					contextQueryBuilder.should(new BoolQueryBuilder().mustNot(QueryBuilders.existsQuery(&quot;context&quot;)));</b>
+&nbsp;
+<b class="nc">&nbsp;				} else if (context instanceof IRI) {</b>
+&nbsp;
+<b class="nc">&nbsp;					contextQueryBuilder.should(</b>
+&nbsp;							new BoolQueryBuilder()
+<b class="nc">&nbsp;									.must(QueryBuilders.termQuery(&quot;context&quot;, context.stringValue()))</b>
+<b class="nc">&nbsp;									.must(QueryBuilders.termQuery(&quot;context_IRI&quot;, true)));</b>
+&nbsp;
+&nbsp;				} else { // BNode
+<b class="nc">&nbsp;					contextQueryBuilder.should(</b>
+&nbsp;							new BoolQueryBuilder()
+<b class="nc">&nbsp;									.must(QueryBuilders.termQuery(&quot;context&quot;, context.stringValue()))</b>
+<b class="nc">&nbsp;									.must(QueryBuilders.termQuery(&quot;context_BNode&quot;, true)));</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolQueryBuilder.must(contextQueryBuilder);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolQueryBuilder.must(QueryBuilders.termQuery(&quot;inferred&quot;, inferred));</b>
+&nbsp;
+<b class="nc">&nbsp;		return QueryBuilders.constantScoreQuery(boolQueryBuilder);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushForReading() {
+&nbsp;
+<b class="nc">&nbsp;		flushAddStatementBuffer();</b>
+<b class="nc">&nbsp;		flushRemoveStatementBuffer();</b>
+&nbsp;
+<b class="nc">&nbsp;		refreshIndex();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void flushAddStatementBuffer() {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;ExtensibleStatement&gt; workingBuffer = null;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				if (addStatementBuffer.isEmpty()) {</b>
+<b class="nc">&nbsp;					return;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				workingBuffer = new HashSet&lt;&gt;(addStatementBuffer);</b>
+<b class="nc">&nbsp;				addStatementBuffer = new HashSet&lt;&gt;(Math.min(addStatementBuffer.size(), BUFFER_THRESHOLD));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			int failures = 0;</b>
+&nbsp;
+&nbsp;			do {
+<b class="nc">&nbsp;				BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();</b>
+&nbsp;
+<b class="nc">&nbsp;				workingBuffer</b>
+&nbsp;
+<b class="nc">&nbsp;						.stream()</b>
+<b class="nc">&nbsp;						.parallel()</b>
+<b class="nc">&nbsp;						.map(statement -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;							Map&lt;String, Object&gt; jsonMap = statementToJsonMap(statement);</b>
+&nbsp;
+<b class="nc">&nbsp;							return new BuilderAndSha(sha256(statement), jsonMap);</b>
+&nbsp;
+&nbsp;						})
+<b class="nc">&nbsp;						.collect(Collectors.toList())</b>
+<b class="nc">&nbsp;						.forEach(builderAndSha -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;							bulkRequest.add(clientProvider.getClient()</b>
+<b class="nc">&nbsp;									.prepareIndex(index, ELASTICSEARCH_TYPE, builderAndSha.getSha256())</b>
+<b class="nc">&nbsp;									.setSource(builderAndSha.getMap())</b>
+<b class="nc">&nbsp;									.setOpType(DocWriteRequest.OpType.CREATE));</b>
+&nbsp;
+&nbsp;						});
+&nbsp;
+<b class="nc">&nbsp;				BulkResponse bulkResponse = bulkRequest.get();</b>
+<b class="nc">&nbsp;				if (bulkResponse.hasFailures()) {</b>
+&nbsp;
+<b class="nc">&nbsp;					List&lt;BulkItemResponse&gt; bulkItemResponses = getBulkItemResponses(bulkResponse);</b>
+&nbsp;
+<b class="nc">&nbsp;					boolean onlyVersionConflicts = bulkItemResponses.stream()</b>
+<b class="nc">&nbsp;							.filter(BulkItemResponse::isFailed)</b>
+<b class="nc">&nbsp;							.allMatch(resp -&gt; resp.getFailure().getCause() instanceof VersionConflictEngineException);</b>
+<b class="nc">&nbsp;					if (onlyVersionConflicts) {</b>
+&nbsp;						// probably trying to add duplicates, or we have a hash conflict
+&nbsp;
+<b class="nc">&nbsp;						Set&lt;String&gt; failedIDs = bulkItemResponses.stream()</b>
+<b class="nc">&nbsp;								.filter(BulkItemResponse::isFailed)</b>
+<b class="nc">&nbsp;								.map(BulkItemResponse::getId)</b>
+<b class="nc">&nbsp;								.collect(Collectors.toSet());</b>
+&nbsp;
+&nbsp;						// clean up addedStatements
+<b class="nc">&nbsp;						workingBuffer = workingBuffer.stream()</b>
+<b class="nc">&nbsp;								.filter(statement -&gt; failedIDs.contains(sha256(statement))) // we only want to retry</b>
+&nbsp;								// failed
+&nbsp;								// statements
+&nbsp;								// filter out duplicates
+<b class="nc">&nbsp;								.filter(statement -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;									String sha256 = sha256(statement);</b>
+<b class="nc">&nbsp;									ExtensibleStatement statementById = getStatementById(sha256);</b>
+&nbsp;
+<b class="nc">&nbsp;									return !statement.equals(statementById);</b>
+&nbsp;								})
+&nbsp;
+&nbsp;								// now we only have conflicts
+<b class="nc">&nbsp;								.map(statement -&gt; {</b>
+&nbsp;									// TODO handle conflict. Probably by doing something to change to id, mark it as a
+&nbsp;									// conflict. Store all the conflicts in memory, to check against and refresh them
+&nbsp;									// from
+&nbsp;									// disc when we boot
+&nbsp;
+<b class="nc">&nbsp;									return statement;</b>
+&nbsp;
+&nbsp;								})
+<b class="nc">&nbsp;								.collect(Collectors.toSet());</b>
+&nbsp;
+<b class="nc">&nbsp;						if (!workingBuffer.isEmpty()) {</b>
+<b class="nc">&nbsp;							failures++;</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;					} else {</b>
+<b class="nc">&nbsp;						failures++;</b>
+&nbsp;
+<b class="nc">&nbsp;						logger.info(&quot;Elasticsearch has failures when adding data, retrying. Message: {}&quot;,</b>
+<b class="nc">&nbsp;								bulkResponse.buildFailureMessage());</b>
+&nbsp;
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (failures &gt; 10) {</b>
+<b class="nc">&nbsp;						throw new RuntimeException(&quot;Elasticsearch has failed &quot; + failures</b>
+&nbsp;								+ &quot; times when adding data, retrying. Message: &quot;
+<b class="nc">&nbsp;								+ bulkResponse.buildFailureMessage());</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					try {
+<b class="nc">&nbsp;						Thread.sleep(failures * 100);</b>
+<b class="nc">&nbsp;					} catch (InterruptedException ignored) {</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					failures = 0;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			} while (failures &gt; 0);</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;Added {} statements&quot;, workingBuffer.size());</b>
+&nbsp;
+<b class="nc">&nbsp;			workingBuffer = Collections.emptySet();</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (workingBuffer != null &amp;&amp; !workingBuffer.isEmpty()) {</b>
+<b class="nc">&nbsp;				synchronized (this) {</b>
+<b class="nc">&nbsp;					addStatementBuffer.addAll(workingBuffer);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Map&lt;String, Object&gt; statementToJsonMap(ExtensibleStatement statement) {
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; jsonMap = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		jsonMap.put(&quot;subject&quot;, statement.getSubject().stringValue());</b>
+<b class="nc">&nbsp;		jsonMap.put(&quot;predicate&quot;, statement.getPredicate().stringValue());</b>
+<b class="nc">&nbsp;		jsonMap.put(&quot;object&quot;, statement.getObject().stringValue());</b>
+<b class="nc">&nbsp;		jsonMap.put(&quot;object_Hash&quot;, statement.getObject().stringValue().hashCode());</b>
+<b class="nc">&nbsp;		jsonMap.put(&quot;inferred&quot;, statement.isInferred());</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource context = statement.getContext();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (context != null) {</b>
+<b class="nc">&nbsp;			jsonMap.put(&quot;context&quot;, context.stringValue());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (context instanceof IRI) {</b>
+<b class="nc">&nbsp;				jsonMap.put(&quot;context_IRI&quot;, true);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				jsonMap.put(&quot;context_BNode&quot;, true);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (statement.getSubject() instanceof IRI) {</b>
+<b class="nc">&nbsp;			jsonMap.put(&quot;subject_IRI&quot;, true);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			jsonMap.put(&quot;subject_BNode&quot;, true);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (statement.getObject() instanceof IRI) {</b>
+<b class="nc">&nbsp;			jsonMap.put(&quot;object_IRI&quot;, true);</b>
+<b class="nc">&nbsp;		} else if (statement.getObject() instanceof BNode) {</b>
+<b class="nc">&nbsp;			jsonMap.put(&quot;object_BNode&quot;, true);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			jsonMap.put(&quot;object_Datatype&quot;,</b>
+<b class="nc">&nbsp;					((Literal) statement.getObject()).getDatatype().stringValue());</b>
+<b class="nc">&nbsp;			if (((Literal) statement.getObject()).getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;				jsonMap.put(&quot;object_Lang&quot;, ((Literal) statement.getObject()).getLanguage().get());</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return jsonMap;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ExtensibleStatement getStatementById(String sha256) {
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; source = clientProvider.getClient()</b>
+<b class="nc">&nbsp;				.prepareGet(index, ELASTICSEARCH_TYPE, sha256)</b>
+<b class="nc">&nbsp;				.get()</b>
+<b class="nc">&nbsp;				.getSource();</b>
+&nbsp;
+<b class="nc">&nbsp;		return sourceToStatement(source, sha256, null, null, null);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private List&lt;BulkItemResponse&gt; getBulkItemResponses(BulkResponse bulkResponse) {
+<b class="nc">&nbsp;		return Arrays.asList(bulkResponse.getItems());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	synchronized private void flushRemoveStatementBuffer() {
+&nbsp;
+<b class="nc">&nbsp;		if (deleteStatementBuffer.isEmpty()) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		BulkRequestBuilder bulkRequest = clientProvider.getClient().prepareBulk();</b>
+&nbsp;
+<b class="nc">&nbsp;		int failures = 0;</b>
+&nbsp;
+&nbsp;		do {
+&nbsp;
+<b class="nc">&nbsp;			deleteStatementBuffer.forEach(statement -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;				bulkRequest.add(clientProvider.getClient()</b>
+<b class="nc">&nbsp;						.prepareDelete(index, ELASTICSEARCH_TYPE, statement.getElasticsearchId()));</b>
+&nbsp;
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			BulkResponse bulkResponse = bulkRequest.get();</b>
+<b class="nc">&nbsp;			if (bulkResponse.hasFailures()) {</b>
+<b class="nc">&nbsp;				failures++;</b>
+<b class="nc">&nbsp;				if (failures &lt; 10) {</b>
+<b class="nc">&nbsp;					logger.warn(&quot;Elasticsearch has failures when adding data, retrying. Message: {}&quot;,</b>
+<b class="nc">&nbsp;							bulkResponse.buildFailureMessage());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new RuntimeException(&quot;Elasticsearch has failed &quot; + failures</b>
+<b class="nc">&nbsp;							+ &quot; times when adding data, retrying. Message: &quot; + bulkResponse.buildFailureMessage());</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			} else {
+<b class="nc">&nbsp;				failures = 0;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} while (failures &gt; 0);</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;Removed {} statements&quot;, deleteStatementBuffer.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		deleteStatementBuffer = Collections.synchronizedSet(new HashSet&lt;&gt;(BUFFER_THRESHOLD));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() {
+&nbsp;
+<b class="nc">&nbsp;		boolean indexExistsAlready = clientProvider.getClient()</b>
+<b class="nc">&nbsp;				.admin()</b>
+<b class="nc">&nbsp;				.indices()</b>
+<b class="nc">&nbsp;				.exists(new IndicesExistsRequest(index))</b>
+<b class="nc">&nbsp;				.actionGet()</b>
+<b class="nc">&nbsp;				.isExists();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!indexExistsAlready) {</b>
+<b class="nc">&nbsp;			CreateIndexRequest request = new CreateIndexRequest(index);</b>
+<b class="nc">&nbsp;			request.mapping(ELASTICSEARCH_TYPE, MAPPING, XContentType.JSON);</b>
+<b class="nc">&nbsp;			clientProvider.getClient().admin().indices().create(request).actionGet();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		refreshIndex();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void refreshIndex() {
+<b class="nc">&nbsp;		clientProvider.getClient().admin().indices().prepareRefresh(index).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void setElasticsearchScrollTimeout(int timeout) {
+<b class="nc">&nbsp;		this.scrollTimeout = timeout;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj,
+&nbsp;			boolean inferred, Resource[] contexts) {
+&nbsp;
+&nbsp;		// delete single statement
+<b class="nc">&nbsp;		if (subj != null &amp;&amp; pred != null &amp;&amp; obj != null &amp;&amp; contexts.length == 1) {</b>
+&nbsp;			ExtensibleStatement statement;
+&nbsp;
+<b class="nc">&nbsp;			if (contexts[0] == null) {</b>
+<b class="nc">&nbsp;				statement = vf.createStatement(subj, pred, obj, inferred);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				statement = vf.createStatement(subj, pred, obj, contexts[0], inferred);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			String id = sha256(statement);</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean exists = clientProvider.getClient().prepareGet(index, ELASTICSEARCH_TYPE, id).get().isExists();</b>
+<b class="nc">&nbsp;			if (exists) {</b>
+&nbsp;
+<b class="nc">&nbsp;				if (contexts[0] == null) {</b>
+<b class="nc">&nbsp;					statement = vf.createStatement(id, subj, pred, obj, inferred);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					statement = vf.createStatement(id, subj, pred, obj, contexts[0], inferred);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// don&#39;t actually delete it just yet, we can just call remove and it will be removed at some point
+&nbsp;				// before or during flush
+<b class="nc">&nbsp;				removeStatement(statement);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return exists;</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		// Elasticsearch delete by query is slow. It&#39;s still faster when deleting a lot of data. We assume that
+&nbsp;		// getStatement and bulk delete is faster up to 1000 statements. If there are more, then we instead use
+&nbsp;		// elasticsearch delete by query.
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; statements = getStatements(subj, pred,</b>
+&nbsp;				obj,
+&nbsp;				inferred, contexts)) {
+<b class="nc">&nbsp;			List&lt;ExtensibleStatement&gt; statementsToDelete = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; 1000 &amp;&amp; statements.hasNext(); i++) {</b>
+<b class="nc">&nbsp;				statementsToDelete.add(statements.next());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!statements.hasNext()) {</b>
+<b class="nc">&nbsp;				for (ExtensibleStatement statement : statementsToDelete) {</b>
+<b class="nc">&nbsp;					removeStatement(statement);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				return !statementsToDelete.isEmpty();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		BulkByScrollResponse response = new DeleteByQueryRequestBuilder(clientProvider.getClient(),</b>
+&nbsp;				DeleteByQueryAction.INSTANCE)
+<b class="nc">&nbsp;						.filter(getQueryBuilder(subj, pred, obj, inferred, contexts))</b>
+<b class="nc">&nbsp;						.source(index)</b>
+<b class="nc">&nbsp;						.abortOnVersionConflict(false)</b>
+<b class="nc">&nbsp;						.get();</b>
+&nbsp;
+<b class="nc">&nbsp;		long deleted = response.getDeleted();</b>
+<b class="nc">&nbsp;		return deleted &gt; 0;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	String sha256(ExtensibleStatement statement) {
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder stringBuilder = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		Stream</b>
+<b class="nc">&nbsp;				.of(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext(),</b>
+<b class="nc">&nbsp;						statement.isInferred())</b>
+<b class="nc">&nbsp;				.forEachOrdered(o -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;					if (o instanceof IRI) {</b>
+<b class="nc">&nbsp;						stringBuilder.append(&quot;IRI&lt;&quot;).append(o.toString()).append(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;					} else if (o instanceof BNode) {</b>
+<b class="nc">&nbsp;						stringBuilder.append(&quot;Bnode&lt;&quot;).append(o.toString()).append(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;					} else if (o instanceof Literal) {</b>
+<b class="nc">&nbsp;						stringBuilder.append(&quot;Literal&lt;&quot;).append(o.toString()).append(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;					} else if (o instanceof Boolean) {</b>
+<b class="nc">&nbsp;						stringBuilder.append(&quot;Boolean&lt;&quot;).append(o).append(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;					} else if (o == null) {</b>
+<b class="nc">&nbsp;						stringBuilder.append(&quot;Null&lt;&gt;&quot;);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						throw new IllegalStateException();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				});
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			MessageDigest digest = MessageDigest.getInstance(&quot;SHA-256&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			byte[] hash = digest.digest(stringBuilder.toString().getBytes(StandardCharsets.UTF_8));</b>
+&nbsp;
+<b class="nc">&nbsp;			StringBuilder hexString = new StringBuilder();</b>
+<b class="nc">&nbsp;			for (byte b : hash) {</b>
+<b class="nc">&nbsp;				String hex = Integer.toHexString(0xff &amp; b);</b>
+<b class="nc">&nbsp;				if (hex.length() == 1) {</b>
+<b class="nc">&nbsp;					hexString.append(&#39;0&#39;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				hexString.append(hex);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return hexString.toString();</b>
+<b class="nc">&nbsp;		} catch (NoSuchAlgorithmException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static ExtensibleStatement sourceToStatement(Map&lt;String, Object&gt; sourceAsMap, String id, Resource subject,
+&nbsp;			IRI predicate, Value object) {
+&nbsp;
+<b class="nc">&nbsp;		Resource subjectRes = subject;</b>
+<b class="nc">&nbsp;		if (subjectRes == null &amp;&amp; sourceAsMap.containsKey(&quot;subject_IRI&quot;)) {</b>
+<b class="nc">&nbsp;			subjectRes = vf.createIRI((String) sourceAsMap.get(&quot;subject&quot;));</b>
+<b class="nc">&nbsp;		} else if (subjectRes == null) {</b>
+<b class="nc">&nbsp;			subjectRes = vf.createBNode((String) sourceAsMap.get(&quot;subject&quot;));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		IRI predicateRes = predicate != null ? predicate : vf.createIRI((String) sourceAsMap.get(&quot;predicate&quot;));</b>
+&nbsp;
+&nbsp;		Value objectRes;
+&nbsp;
+<b class="nc">&nbsp;		String objectString = (String) sourceAsMap.get(&quot;object&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (sourceAsMap.containsKey(&quot;object_IRI&quot;)) {</b>
+<b class="nc">&nbsp;			objectRes = vf.createIRI(objectString);</b>
+<b class="nc">&nbsp;		} else if (sourceAsMap.containsKey(&quot;object_BNode&quot;)) {</b>
+<b class="nc">&nbsp;			objectRes = vf.createBNode(objectString);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (sourceAsMap.containsKey(&quot;object_Lang&quot;)) {</b>
+<b class="nc">&nbsp;				objectRes = vf.createLiteral(objectString, (String) sourceAsMap.get(&quot;object_Lang&quot;));</b>
+&nbsp;
+&nbsp;			} else {
+<b class="nc">&nbsp;				objectRes = vf.createLiteral(objectString,</b>
+<b class="nc">&nbsp;						vf.createIRI((String) sourceAsMap.get(&quot;object_Datatype&quot;)));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Resource contextRes = null;</b>
+<b class="nc">&nbsp;		if (sourceAsMap.containsKey(&quot;context_IRI&quot;)) {</b>
+<b class="nc">&nbsp;			contextRes = vf.createIRI((String) sourceAsMap.get(&quot;context&quot;));</b>
+<b class="nc">&nbsp;		} else if (sourceAsMap.containsKey(&quot;context_BNode&quot;)) {</b>
+<b class="nc">&nbsp;			contextRes = vf.createBNode((String) sourceAsMap.get(&quot;context&quot;));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Object inferredNullable = sourceAsMap.get(&quot;inferred&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean inferred = false;</b>
+<b class="nc">&nbsp;		if (inferredNullable != null) {</b>
+<b class="nc">&nbsp;			inferred = ((Boolean) inferredNullable);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (contextRes != null) {</b>
+<b class="nc">&nbsp;			return vf.createStatement(id, subjectRes, predicateRes, objectRes, contextRes, inferred);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return vf.createStatement(id, subjectRes, predicateRes, objectRes, inferred);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setElasticsearchBulkSize(int size) {
+<b class="nc">&nbsp;		this.BUFFER_THRESHOLD = size;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long getEstimatedSize() {
+<b class="nc">&nbsp;		Client client = clientProvider.getClient();</b>
+&nbsp;
+<b class="nc">&nbsp;		IndicesAdminClient indices = client.admin().indices();</b>
+<b class="nc">&nbsp;		IndicesStatsResponse indicesStatsResponse = indices.prepareStats(index).get();</b>
+&nbsp;
+<b class="nc">&nbsp;		return indicesStatsResponse.getTotal().docs.getCount();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

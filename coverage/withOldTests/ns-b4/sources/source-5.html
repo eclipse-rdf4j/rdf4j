@@ -1,0 +1,1099 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TurtleWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.turtle</a>
+</div>
+
+<h1>Coverage Summary for Class: TurtleWriter (org.eclipse.rdf4j.rio.turtle)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TurtleWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/264)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/395)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TurtleWriter$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TurtleWriter$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/47)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/264)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/397)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.turtle;
+&nbsp;
+&nbsp;import java.io.BufferedWriter;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Deque;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.StringTokenizer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.common.io.IndentingWriter;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.common.text.StringUtil;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleIRI;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.util.RDFCollections;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the RDFWriter interface that writes RDF documents in Turtle format. The Turtle format is defined
+&nbsp; * in &lt;a href=&quot;http://www.dajobe.org/2004/01/turtle/&quot;&gt;in this document&lt;/a&gt;.
+&nbsp; */
+<b class="nc">&nbsp;public class TurtleWriter extends AbstractRDFWriter implements CharSink {</b>
+&nbsp;
+&nbsp;	private static final int LINE_WRAP = 80;
+&nbsp;
+&nbsp;	private static final long DEFAULT_BUFFER_SIZE = 1000l;
+&nbsp;
+<b class="nc">&nbsp;	private static final IRI FIRST = new SimpleIRI(RDF.FIRST.stringValue()) {</b>
+&nbsp;		private static final long serialVersionUID = -7951518099940758898L;
+&nbsp;	};
+&nbsp;
+<b class="nc">&nbsp;	private static final IRI REST = new SimpleIRI(RDF.REST.stringValue()) {</b>
+&nbsp;		private static final long serialVersionUID = -7951518099940758898L;
+&nbsp;	};
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Size of statement buffer used for pretty printing and blank node inlining. Set to Long.MAX_VALUE to buffer
+&nbsp;	 * everything until the end (necessary when blank node inlining).
+&nbsp;	 */
+<b class="nc">&nbsp;	private long bufferSize = DEFAULT_BUFFER_SIZE;</b>
+&nbsp;	protected Model bufferedStatements;
+<b class="nc">&nbsp;	private final Object bufferLock = new Object();</b>
+&nbsp;
+&nbsp;	protected ParsedIRI baseIRI;
+&nbsp;	protected IndentingWriter writer;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the last written statement has been closed.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected boolean statementClosed = true;</b>
+&nbsp;	protected Resource lastWrittenSubject;
+&nbsp;	protected IRI lastWrittenPredicate;
+&nbsp;
+<b class="nc">&nbsp;	private final Deque&lt;Resource&gt; stack = new ArrayDeque&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Deque&lt;IRI&gt; path = new ArrayDeque&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private Boolean xsdStringToPlainLiteral;
+&nbsp;	private Boolean prettyPrint;
+&nbsp;	private boolean inlineBNodes;
+&nbsp;	private Boolean abbreviateNumbers;
+&nbsp;
+<b class="nc">&nbsp;	private ModelFactory modelFactory = new LinkedHashModelFactory();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out The OutputStream to write the Turtle document to.
+&nbsp;	 */
+&nbsp;	public TurtleWriter(OutputStream out) {
+<b class="nc">&nbsp;		this(out, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out     The OutputStream to write the Turtle document to.
+&nbsp;	 * @param baseIRI
+&nbsp;	 */
+<b class="nc">&nbsp;	public TurtleWriter(OutputStream out, ParsedIRI baseIRI) {</b>
+<b class="nc">&nbsp;		this.baseIRI = baseIRI;</b>
+&nbsp;		// The BufferedWriter is here to avoid to many calls to the CharEncoder
+&nbsp;		// see javadoc of OutputStreamWriter.
+<b class="nc">&nbsp;		this.writer = new IndentingWriter(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer The Writer to write the Turtle document to.
+&nbsp;	 */
+&nbsp;	public TurtleWriter(Writer writer) {
+<b class="nc">&nbsp;		this(writer, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer  The Writer to write the Turtle document to.
+&nbsp;	 * @param baseIRI
+&nbsp;	 */
+<b class="nc">&nbsp;	public TurtleWriter(Writer writer, ParsedIRI baseIRI) {</b>
+<b class="nc">&nbsp;		this.baseIRI = baseIRI;</b>
+<b class="nc">&nbsp;		this.writer = new IndentingWriter(writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.TURTLE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		final Collection&lt;RioSetting&lt;?&gt;&gt; settings = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+<b class="nc">&nbsp;		settings.add(BasicWriterSettings.BASE_DIRECTIVE);</b>
+<b class="nc">&nbsp;		settings.add(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);</b>
+<b class="nc">&nbsp;		settings.add(BasicWriterSettings.PRETTY_PRINT);</b>
+<b class="nc">&nbsp;		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);</b>
+<b class="nc">&nbsp;		settings.add(TurtleWriterSettings.ABBREVIATE_NUMBERS);</b>
+<b class="nc">&nbsp;		return settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		super.startRDF();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			xsdStringToPlainLiteral = getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);</b>
+<b class="nc">&nbsp;			prettyPrint = getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT);</b>
+<b class="nc">&nbsp;			inlineBNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);</b>
+<b class="nc">&nbsp;			abbreviateNumbers = getWriterConfig().get(TurtleWriterSettings.ABBREVIATE_NUMBERS);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isBuffering()) {</b>
+<b class="nc">&nbsp;				this.bufferedStatements = getModelFactory().createEmptyModel();</b>
+<b class="nc">&nbsp;				this.bufferSize = inlineBNodes ? Long.MAX_VALUE : DEFAULT_BUFFER_SIZE;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (prettyPrint) {</b>
+<b class="nc">&nbsp;				writer.setIndentationString(&quot;  &quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writer.setIndentationString(&quot;&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (baseIRI != null &amp;&amp; getWriterConfig().get(BasicWriterSettings.BASE_DIRECTIVE)) {</b>
+<b class="nc">&nbsp;				writeBase(baseIRI.toString());</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Write namespace declarations
+<b class="nc">&nbsp;			for (Map.Entry&lt;String, String&gt; entry : namespaceTable.entrySet()) {</b>
+<b class="nc">&nbsp;				String name = entry.getKey();</b>
+<b class="nc">&nbsp;				String prefix = entry.getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;				writeNamespace(prefix, name);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!namespaceTable.isEmpty()) {</b>
+<b class="nc">&nbsp;				writer.writeEOL();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+<b class="nc">&nbsp;		synchronized (bufferLock) {</b>
+<b class="nc">&nbsp;			processBuffer();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			closePreviousStatement();</b>
+<b class="nc">&nbsp;			writer.flush();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String name) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!namespaceTable.containsKey(name)) {</b>
+&nbsp;				// Namespace not yet mapped to a prefix, try to give it the
+&nbsp;				// specified prefix
+&nbsp;
+<b class="nc">&nbsp;				boolean isLegalPrefix = prefix.length() == 0 || TurtleUtil.isPN_PREFIX(prefix);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (!isLegalPrefix || namespaceTable.containsValue(prefix)) {</b>
+&nbsp;					// Specified prefix is not legal or the prefix is already in
+&nbsp;					// use,
+&nbsp;					// generate a legal unique prefix
+&nbsp;
+<b class="nc">&nbsp;					if (prefix.length() == 0 || !isLegalPrefix) {</b>
+<b class="nc">&nbsp;						prefix = &quot;ns&quot;;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					int number = 1;</b>
+&nbsp;
+<b class="nc">&nbsp;					while (namespaceTable.containsValue(prefix + number)) {</b>
+<b class="nc">&nbsp;						number++;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					prefix += number;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				namespaceTable.put(name, prefix);</b>
+&nbsp;
+<b class="nc">&nbsp;				closePreviousStatement();</b>
+&nbsp;
+<b class="nc">&nbsp;				writeNamespace(prefix, name);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a {@link ModelFactory} to use for creating internal Models for statement processing/buffering purposes.
+&nbsp;	 *
+&nbsp;	 * @param modelFactory a {@link ModelFactory} to use for internal buffering / statement processing purposes. May not
+&nbsp;	 *                     be null.
+&nbsp;	 */
+&nbsp;	public void setModelFactory(ModelFactory modelFactory) {
+<b class="nc">&nbsp;		this.modelFactory = Objects.requireNonNull(modelFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected ModelFactory getModelFactory() {
+<b class="nc">&nbsp;		return modelFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void consumeStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		if (isBuffering()) {</b>
+<b class="nc">&nbsp;			synchronized (bufferLock) {</b>
+<b class="nc">&nbsp;				bufferedStatements.add(st);</b>
+<b class="nc">&nbsp;				if (bufferedStatements.size() &gt;= this.bufferSize) {</b>
+<b class="nc">&nbsp;					processBuffer();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			handleStatementInternal(st, false, false, false);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Internal method that differentiates between the pretty-print and streaming writer cases.
+&nbsp;	 *
+&nbsp;	 * @param st                     The next statement to write
+&nbsp;	 * @param endRDFCalled           True if endRDF has been called before this method is called. This is used to buffer
+&nbsp;	 *                               statements for pretty-printing before dumping them when all statements have been
+&nbsp;	 *                               delivered to us.
+&nbsp;	 * @param canShortenSubjectBNode True if, in the current context, we may be able to shorten the subject of this
+&nbsp;	 *                               statement iff it is an instance of {@link BNode}.
+&nbsp;	 * @param canShortenObjectBNode  True if, in the current context, we may be able to shorten the object of this
+&nbsp;	 *                               statement iff it is an instance of {@link BNode}.
+&nbsp;	 */
+&nbsp;	protected void handleStatementInternal(Statement st, boolean endRDFCalled, boolean canShortenSubjectBNode,
+&nbsp;			boolean canShortenObjectBNode) {
+<b class="nc">&nbsp;		Resource subj = st.getSubject();</b>
+<b class="nc">&nbsp;		IRI pred = st.getPredicate();</b>
+<b class="nc">&nbsp;		Value obj = st.getObject();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (inlineBNodes) {</b>
+<b class="nc">&nbsp;				if ((pred.equals(RDF.FIRST) || pred.equals(RDF.REST)) &amp;&amp; isWellFormedCollection(subj)) {</b>
+&nbsp;					// we only use list shorthand syntax if the collection is considered well-formed
+<b class="nc">&nbsp;					handleList(st, canShortenObjectBNode);</b>
+<b class="nc">&nbsp;				} else if (!subj.equals(lastWrittenSubject) &amp;&amp; stack.contains(subj)) {</b>
+<b class="nc">&nbsp;					handleInlineNode(st, canShortenSubjectBNode, canShortenObjectBNode);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					writeStatement(subj, pred, obj, st.getContext(), canShortenSubjectBNode, canShortenObjectBNode);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeStatement(subj, pred, obj, st.getContext(), canShortenSubjectBNode, canShortenObjectBNode);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check that the collection started with the supplied subject node is a well-formed RDF Collection.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * It specifically checks that any collection subject blank nodes (the subjects of the rdf:first and rdf:rest
+&nbsp;	 * statements) are _not_ reused for any other, unrelated statements, and there are no things like multiple rdf:first
+&nbsp;	 * or rdf:rest statements for the same subject.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @return true if the collection is considered well-formed false otherwise.
+&nbsp;	 */
+&nbsp;	private boolean isWellFormedCollection(Resource subj) {
+&nbsp;		try {
+&nbsp;			// first check is if we can process as a collection. This is not enough to establish it&#39;s well-formed but a
+&nbsp;			// useful first step.
+<b class="nc">&nbsp;			final Model collection = RDFCollections.getCollection(bufferedStatements, subj,</b>
+<b class="nc">&nbsp;					getModelFactory().createEmptyModel());</b>
+&nbsp;
+&nbsp;			// check that collection subject nodes are not re-used for non-collection purposes
+<b class="nc">&nbsp;			for (Resource s : Models.subjectBNodes(collection)) {</b>
+<b class="nc">&nbsp;				boolean firstFound = false, restFound = false;</b>
+<b class="nc">&nbsp;				for (Statement st : bufferedStatements.getStatements(s, null, null)) {</b>
+<b class="nc">&nbsp;					IRI pred = st.getPredicate();</b>
+<b class="nc">&nbsp;					if (pred.equals(RDF.FIRST)) {</b>
+<b class="nc">&nbsp;						if (!firstFound) {</b>
+<b class="nc">&nbsp;							firstFound = true;</b>
+&nbsp;						} else {
+&nbsp;							// second rdf:first statement on same subject is invalid.
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} else if (pred.equals(RDF.REST)) {</b>
+<b class="nc">&nbsp;						if (!restFound) {</b>
+<b class="nc">&nbsp;							restFound = true;</b>
+&nbsp;						} else {
+&nbsp;							// second rdf:rest statement on same subject is invalid.
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+&nbsp;					} else {
+&nbsp;						// non-list-structure statement connected to collection subject blank node
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (ModelException e) {</b>
+&nbsp;			// collection util could not process the collection
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeStatement(Resource subj, IRI pred, Value obj, Resource context, boolean canShortenSubjectBNode,
+&nbsp;			boolean canShortenObjectBNode) throws IOException {
+<b class="nc">&nbsp;		closeHangingResource();</b>
+<b class="nc">&nbsp;		if (subj.equals(lastWrittenSubject)) {</b>
+<b class="nc">&nbsp;			if (pred.equals(lastWrittenPredicate)) {</b>
+&nbsp;				// Identical subject and predicate
+<b class="nc">&nbsp;				writer.write(&quot;,&quot;);</b>
+<b class="nc">&nbsp;				wrapLine(prettyPrint);</b>
+&nbsp;			} else {
+&nbsp;				// Identical subject, new predicate
+<b class="nc">&nbsp;				writer.write(&quot;;&quot;);</b>
+<b class="nc">&nbsp;				writer.writeEOL();</b>
+&nbsp;
+&nbsp;				// Write new predicate
+<b class="nc">&nbsp;				writer.decreaseIndentation();</b>
+<b class="nc">&nbsp;				writePredicate(pred);</b>
+<b class="nc">&nbsp;				writer.increaseIndentation();</b>
+<b class="nc">&nbsp;				wrapLine(true);</b>
+<b class="nc">&nbsp;				path.removeLast();</b>
+<b class="nc">&nbsp;				path.addLast(pred);</b>
+<b class="nc">&nbsp;				lastWrittenPredicate = pred;</b>
+&nbsp;			}
+&nbsp;		} else {
+&nbsp;			// New subject
+<b class="nc">&nbsp;			closePreviousStatement();</b>
+<b class="nc">&nbsp;			stack.addLast(subj);</b>
+&nbsp;
+&nbsp;			// Write new subject:
+<b class="nc">&nbsp;			if (prettyPrint) {</b>
+<b class="nc">&nbsp;				writer.writeEOL();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writeResource(subj, canShortenSubjectBNode);</b>
+<b class="nc">&nbsp;			wrapLine(true);</b>
+<b class="nc">&nbsp;			writer.increaseIndentation();</b>
+<b class="nc">&nbsp;			lastWrittenSubject = subj;</b>
+&nbsp;
+&nbsp;			// Write new predicate
+<b class="nc">&nbsp;			writePredicate(pred);</b>
+<b class="nc">&nbsp;			wrapLine(true);</b>
+<b class="nc">&nbsp;			path.addLast(pred);</b>
+<b class="nc">&nbsp;			lastWrittenPredicate = pred;</b>
+&nbsp;
+<b class="nc">&nbsp;			statementClosed = false;</b>
+<b class="nc">&nbsp;			writer.increaseIndentation();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writeValue(obj, canShortenObjectBNode);</b>
+&nbsp;
+&nbsp;		// Don&#39;t close the line just yet. Maybe the next
+&nbsp;		// statement has the same subject and/or predicate.
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			closePreviousStatement();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (comment.indexOf(&#39;\r&#39;) != -1 || comment.indexOf(&#39;\n&#39;) != -1) {</b>
+&nbsp;				// Comment is not allowed to contain newlines or line feeds.
+&nbsp;				// Split comment in individual lines and write comment lines
+&nbsp;				// for each of them.
+<b class="nc">&nbsp;				StringTokenizer st = new StringTokenizer(comment, &quot;\r\n&quot;);</b>
+<b class="nc">&nbsp;				while (st.hasMoreTokens()) {</b>
+<b class="nc">&nbsp;					writeCommentLine(st.nextToken());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				writeCommentLine(comment);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeCommentLine(String line) throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;# &quot;);</b>
+<b class="nc">&nbsp;		writer.write(line);</b>
+<b class="nc">&nbsp;		writer.writeEOL();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeBase(String baseURI) throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;@base &lt;&quot;);</b>
+<b class="nc">&nbsp;		StringUtil.simpleEscapeIRI(baseURI, writer, false);</b>
+<b class="nc">&nbsp;		writer.write(&quot;&gt; .&quot;);</b>
+<b class="nc">&nbsp;		writer.writeEOL();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeNamespace(String prefix, String name) throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;@prefix &quot;);</b>
+<b class="nc">&nbsp;		writer.write(prefix);</b>
+<b class="nc">&nbsp;		writer.write(&quot;: &lt;&quot;);</b>
+<b class="nc">&nbsp;		StringUtil.simpleEscapeIRI(name, writer, false);</b>
+<b class="nc">&nbsp;		writer.write(&quot;&gt; .&quot;);</b>
+<b class="nc">&nbsp;		writer.writeEOL();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writePredicate(IRI predicate) throws IOException {
+<b class="nc">&nbsp;		if (predicate.equals(RDF.TYPE)) {</b>
+&nbsp;			// Write short-cut for rdf:type
+<b class="nc">&nbsp;			writer.write(&quot;a&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeURI(predicate);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param val The {@link Value} to write.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @deprecated Use {@link #writeValue(Value, boolean)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	protected void writeValue(Value val) throws IOException {
+<b class="nc">&nbsp;		writeValue(val, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a value, optionally shortening it if it is an {@link IRI} and has a namespace definition that is suitable
+&nbsp;	 * for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be shortened in
+&nbsp;	 * this context.
+&nbsp;	 *
+&nbsp;	 * @param val        The {@link Value} to write.
+&nbsp;	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
+&nbsp;	 *                   {@link BNode} .
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeValue(Value val, boolean canShorten) throws IOException {
+<b class="nc">&nbsp;		if (val instanceof BNode &amp;&amp; canShorten &amp;&amp; !val.equals(stack.peekLast()) &amp;&amp; !val.equals(lastWrittenSubject)) {</b>
+<b class="nc">&nbsp;			stack.addLast((BNode) val);</b>
+<b class="nc">&nbsp;		} else if (val instanceof Resource) {</b>
+<b class="nc">&nbsp;			writeResource((Resource) val, canShorten);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeLiteral((Literal) val);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param res The {@link Resource} to write.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @deprecated Use {@link #writeResource(Resource, boolean)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	protected void writeResource(Resource res) throws IOException {
+<b class="nc">&nbsp;		writeResource(res, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a {@link Resource}, optionally shortening it if it is an {@link IRI} and has a namespace definition that
+&nbsp;	 * is suitable for use in this context for shortening or a {@link BNode} that has been confirmed to be able to be
+&nbsp;	 * shortened in this context.
+&nbsp;	 *
+&nbsp;	 * @param res        The {@link Resource} to write.
+&nbsp;	 * @param canShorten True if, in the current context, we can shorten this value if it is an instance of
+&nbsp;	 *                   {@link BNode} .
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeResource(Resource res, boolean canShorten) throws IOException {
+<b class="nc">&nbsp;		if (res instanceof IRI) {</b>
+<b class="nc">&nbsp;			writeURI((IRI) res);</b>
+<b class="nc">&nbsp;		} else if (res instanceof BNode) {</b>
+<b class="nc">&nbsp;			writeBNode((BNode) res, canShorten);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeTriple((Triple) res, canShorten);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeURI(IRI uri) throws IOException {
+<b class="nc">&nbsp;		String uriString = uri.toString();</b>
+&nbsp;
+&nbsp;		// Try to find a prefix for the URI&#39;s namespace
+<b class="nc">&nbsp;		String prefix = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		int splitIdx = TurtleUtil.findURISplitIndex(uriString);</b>
+<b class="nc">&nbsp;		if (splitIdx &gt; 0) {</b>
+<b class="nc">&nbsp;			String namespace = uriString.substring(0, splitIdx);</b>
+<b class="nc">&nbsp;			prefix = namespaceTable.get(namespace);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (prefix != null) {</b>
+&nbsp;			// Namespace is mapped to a prefix; write abbreviated URI
+<b class="nc">&nbsp;			writer.write(prefix);</b>
+<b class="nc">&nbsp;			writer.write(&quot;:&quot;);</b>
+<b class="nc">&nbsp;			writer.write(uriString.substring(splitIdx));</b>
+<b class="nc">&nbsp;		} else if (baseIRI != null) {</b>
+&nbsp;			// Write relative URI
+<b class="nc">&nbsp;			writer.write(&quot;&lt;&quot;);</b>
+<b class="nc">&nbsp;			StringUtil.simpleEscapeIRI(baseIRI.relativize(uriString), writer, false);</b>
+<b class="nc">&nbsp;			writer.write(&quot;&gt;&quot;);</b>
+&nbsp;		} else {
+&nbsp;			// Write full URI
+<b class="nc">&nbsp;			writer.write(&quot;&lt;&quot;);</b>
+<b class="nc">&nbsp;			StringUtil.simpleEscapeIRI(uriString, writer, false);</b>
+<b class="nc">&nbsp;			writer.write(&quot;&gt;&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param bNode The {@link BNode} to write.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @deprecated Use {@link #writeBNode(BNode, boolean)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	protected void writeBNode(BNode bNode) throws IOException {
+<b class="nc">&nbsp;		writeBNode(bNode, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeBNode(BNode bNode, boolean canShorten) throws IOException {
+<b class="nc">&nbsp;		if (canShorten) {</b>
+<b class="nc">&nbsp;			writer.write(&quot;[]&quot;);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writer.write(&quot;_:&quot;);</b>
+<b class="nc">&nbsp;		String id = bNode.getID();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (id.isEmpty()) {</b>
+<b class="nc">&nbsp;			if (this.getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS)) {</b>
+<b class="nc">&nbsp;				throw new IOException(&quot;Cannot consistently write blank nodes with empty internal identifiers&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writer.write(&quot;genid-hash-&quot;);</b>
+<b class="nc">&nbsp;			writer.write(Integer.toHexString(System.identityHashCode(bNode)));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (!TurtleUtil.isNameStartChar(id.charAt(0))) {</b>
+<b class="nc">&nbsp;				writer.write(&quot;genid-start-&quot;);</b>
+<b class="nc">&nbsp;				writer.write(Integer.toHexString(id.charAt(0)));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writer.write(id.charAt(0));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			for (int i = 1; i &lt; id.length() - 1; i++) {</b>
+<b class="nc">&nbsp;				if (TurtleUtil.isPN_CHARS(id.charAt(i))) {</b>
+<b class="nc">&nbsp;					writer.write(id.charAt(i));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					writer.write(Integer.toHexString(id.charAt(i)));</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (id.length() &gt; 1) {</b>
+<b class="nc">&nbsp;				if (!TurtleUtil.isNameEndChar(id.charAt(id.length() - 1))) {</b>
+<b class="nc">&nbsp;					writer.write(Integer.toHexString(id.charAt(id.length() - 1)));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					writer.write(id.charAt(id.length() - 1));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeTriple(Triple triple, boolean canShorten) throws IOException {
+<b class="nc">&nbsp;		throw new IOException(getRDFFormat().getName() + &quot; does not support RDF-star triples&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeTripleRDFStar(Triple triple, boolean canShorten) throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;&lt;&lt;&quot;);</b>
+<b class="nc">&nbsp;		writeResource(triple.getSubject());</b>
+<b class="nc">&nbsp;		writer.write(&quot; &quot;);</b>
+<b class="nc">&nbsp;		writeURI(triple.getPredicate());</b>
+<b class="nc">&nbsp;		writer.write(&quot; &quot;);</b>
+<b class="nc">&nbsp;		Value object = triple.getObject();</b>
+<b class="nc">&nbsp;		if (object instanceof Literal) {</b>
+<b class="nc">&nbsp;			writeLiteral((Literal) object);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeResource((Resource) object, canShorten);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		writer.write(&quot;&gt;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeLiteral(Literal lit) throws IOException {
+<b class="nc">&nbsp;		String label = lit.getLabel();</b>
+<b class="nc">&nbsp;		IRI datatype = lit.getDatatype();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (prettyPrint &amp;&amp; abbreviateNumbers) {</b>
+<b class="nc">&nbsp;			if (XSD.INTEGER.equals(datatype) || XSD.DECIMAL.equals(datatype)</b>
+<b class="nc">&nbsp;					|| XSD.DOUBLE.equals(datatype) || XSD.BOOLEAN.equals(datatype)) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					String normalized = XMLDatatypeUtil.normalize(label, datatype);</b>
+<b class="nc">&nbsp;					if (!normalized.equals(XMLDatatypeUtil.POSITIVE_INFINITY)</b>
+<b class="nc">&nbsp;							&amp;&amp; !normalized.equals(XMLDatatypeUtil.NEGATIVE_INFINITY)</b>
+<b class="nc">&nbsp;							&amp;&amp; !normalized.equals(XMLDatatypeUtil.NaN)) {</b>
+<b class="nc">&nbsp;						writer.write(normalized);</b>
+&nbsp;						return; // done
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+&nbsp;					// not a valid numeric typed literal. ignore error and write
+&nbsp;					// as
+&nbsp;					// quoted string instead.
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (label.indexOf(&#39;\n&#39;) != -1 || label.indexOf(&#39;\r&#39;) != -1 || label.indexOf(&#39;\t&#39;) != -1) {</b>
+&nbsp;			// Write label as long string
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;\&quot;\&quot;&quot;);</b>
+<b class="nc">&nbsp;			writer.write(TurtleUtil.encodeLongString(label));</b>
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;\&quot;\&quot;&quot;);</b>
+&nbsp;		} else {
+&nbsp;			// Write label as normal string
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+<b class="nc">&nbsp;			writer.write(TurtleUtil.encodeString(label));</b>
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (Literals.isLanguageLiteral(lit)) {</b>
+&nbsp;			// Append the literal&#39;s language
+<b class="nc">&nbsp;			writer.write(&quot;@&quot;);</b>
+<b class="nc">&nbsp;			writer.write(lit.getLanguage().get());</b>
+<b class="nc">&nbsp;		} else if (!xsdStringToPlainLiteral || !XSD.STRING.equals(datatype)) {</b>
+&nbsp;			// Append the literal&#39;s datatype (possibly written as an abbreviated
+&nbsp;			// URI)
+<b class="nc">&nbsp;			writer.write(&quot;^^&quot;);</b>
+<b class="nc">&nbsp;			writeURI(datatype);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void closePreviousStatement() throws IOException {
+<b class="nc">&nbsp;		closeNestedResources(null);</b>
+<b class="nc">&nbsp;		if (!statementClosed) {</b>
+&nbsp;			// The previous statement still needs to be closed:
+<b class="nc">&nbsp;			writer.write(&quot; .&quot;);</b>
+<b class="nc">&nbsp;			writer.writeEOL();</b>
+<b class="nc">&nbsp;			writer.decreaseIndentation();</b>
+<b class="nc">&nbsp;			writer.decreaseIndentation();</b>
+&nbsp;
+<b class="nc">&nbsp;			stack.pollLast();</b>
+<b class="nc">&nbsp;			path.pollLast();</b>
+<b class="nc">&nbsp;			assert stack.isEmpty();</b>
+<b class="nc">&nbsp;			assert path.isEmpty();</b>
+<b class="nc">&nbsp;			statementClosed = true;</b>
+<b class="nc">&nbsp;			lastWrittenSubject = null;</b>
+<b class="nc">&nbsp;			lastWrittenPredicate = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isHanging() {
+<b class="nc">&nbsp;		return !stack.isEmpty() &amp;&amp; lastWrittenSubject != null &amp;&amp; !lastWrittenSubject.equals(stack.peekLast());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void closeHangingResource() throws IOException {
+<b class="nc">&nbsp;		if (isHanging()) {</b>
+<b class="nc">&nbsp;			Value val = stack.pollLast();</b>
+<b class="nc">&nbsp;			if (val instanceof Resource) {</b>
+<b class="nc">&nbsp;				writeResource((Resource) val, inlineBNodes);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeLiteral((Literal) val);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			assert lastWrittenSubject.equals(stack.peekLast());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void closeNestedResources(Resource subj) throws IOException {
+<b class="nc">&nbsp;		closeHangingResource();</b>
+<b class="nc">&nbsp;		while (stack.size() &gt; 1 &amp;&amp; !stack.peekLast().equals(subj)) {</b>
+<b class="nc">&nbsp;			if (prettyPrint) {</b>
+<b class="nc">&nbsp;				writer.writeEOL();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writer.decreaseIndentation();</b>
+<b class="nc">&nbsp;			writer.decreaseIndentation();</b>
+<b class="nc">&nbsp;			writer.write(&quot;]&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			stack.pollLast();</b>
+<b class="nc">&nbsp;			path.pollLast();</b>
+<b class="nc">&nbsp;			lastWrittenSubject = stack.peekLast();</b>
+<b class="nc">&nbsp;			lastWrittenPredicate = path.peekLast();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void handleInlineNode(Statement st, boolean inlineSubject, boolean inlineObject) throws IOException {
+<b class="nc">&nbsp;		Resource subj = st.getSubject();</b>
+<b class="nc">&nbsp;		IRI pred = st.getPredicate();</b>
+<b class="nc">&nbsp;		if (isHanging() &amp;&amp; subj.equals(stack.peekLast())) {</b>
+&nbsp;			// blank subject
+<b class="nc">&nbsp;			lastWrittenSubject = subj;</b>
+<b class="nc">&nbsp;			writer.write(&quot;[&quot;);</b>
+<b class="nc">&nbsp;			if (prettyPrint &amp;&amp; !RDF.TYPE.equals(pred)) {</b>
+<b class="nc">&nbsp;				writer.writeEOL();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				wrapLine(prettyPrint);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writer.increaseIndentation();</b>
+&nbsp;
+&nbsp;			// Write new predicate
+<b class="nc">&nbsp;			writePredicate(pred);</b>
+<b class="nc">&nbsp;			writer.increaseIndentation();</b>
+<b class="nc">&nbsp;			wrapLine(true);</b>
+<b class="nc">&nbsp;			path.addLast(pred);</b>
+<b class="nc">&nbsp;			lastWrittenPredicate = pred;</b>
+<b class="nc">&nbsp;			writeValue(st.getObject(), inlineObject);</b>
+<b class="nc">&nbsp;		} else if (!subj.equals(lastWrittenSubject) &amp;&amp; stack.contains(subj)) {</b>
+<b class="nc">&nbsp;			closeNestedResources(subj);</b>
+<b class="nc">&nbsp;			writeStatement(subj, pred, st.getObject(), st.getContext(), inlineSubject, inlineObject);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			assert false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void handleList(Statement st, boolean canInlineObjectBNode) throws IOException {
+<b class="nc">&nbsp;		Resource subj = st.getSubject();</b>
+<b class="nc">&nbsp;		boolean first = RDF.FIRST.equals(st.getPredicate());</b>
+<b class="nc">&nbsp;		boolean rest = RDF.REST.equals(st.getPredicate()) &amp;&amp; !RDF.NIL.equals(st.getObject());</b>
+<b class="nc">&nbsp;		boolean nil = RDF.REST.equals(st.getPredicate()) &amp;&amp; RDF.NIL.equals(st.getObject());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (first &amp;&amp; REST != lastWrittenPredicate &amp;&amp; isHanging()) {</b>
+&nbsp;			// new collection
+<b class="nc">&nbsp;			writer.write(&quot;(&quot;);</b>
+<b class="nc">&nbsp;			writer.increaseIndentation();</b>
+<b class="nc">&nbsp;			wrapLine(false);</b>
+<b class="nc">&nbsp;			lastWrittenSubject = subj;</b>
+<b class="nc">&nbsp;			path.addLast(FIRST);</b>
+<b class="nc">&nbsp;			lastWrittenPredicate = FIRST;</b>
+<b class="nc">&nbsp;			writeValue(st.getObject(), canInlineObjectBNode);</b>
+<b class="nc">&nbsp;		} else if (first &amp;&amp; REST == lastWrittenPredicate) {</b>
+&nbsp;			// item in existing collection
+<b class="nc">&nbsp;			lastWrittenSubject = subj;</b>
+<b class="nc">&nbsp;			path.addLast(FIRST);</b>
+<b class="nc">&nbsp;			lastWrittenPredicate = FIRST;</b>
+<b class="nc">&nbsp;			writeValue(st.getObject(), canInlineObjectBNode);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			closeNestedResources(subj);</b>
+<b class="nc">&nbsp;			if (rest &amp;&amp; FIRST == lastWrittenPredicate) {</b>
+&nbsp;				// next item
+<b class="nc">&nbsp;				wrapLine(true);</b>
+<b class="nc">&nbsp;				path.removeLast(); // RDF.FIRST</b>
+<b class="nc">&nbsp;				path.addLast(REST);</b>
+<b class="nc">&nbsp;				lastWrittenPredicate = REST;</b>
+<b class="nc">&nbsp;				writeValue(st.getObject(), inlineBNodes);</b>
+<b class="nc">&nbsp;			} else if (nil &amp;&amp; FIRST == lastWrittenPredicate) {</b>
+<b class="nc">&nbsp;				writer.decreaseIndentation();</b>
+<b class="nc">&nbsp;				writer.write(&quot;)&quot;);</b>
+<b class="nc">&nbsp;				path.removeLast(); // RDF.FIRST</b>
+<b class="nc">&nbsp;				path.addLast(REST);</b>
+<b class="nc">&nbsp;				while (REST == path.peekLast()) {</b>
+<b class="nc">&nbsp;					stack.pollLast();</b>
+<b class="nc">&nbsp;					path.pollLast();</b>
+<b class="nc">&nbsp;					lastWrittenSubject = stack.peekLast();</b>
+<b class="nc">&nbsp;					lastWrittenPredicate = path.peekLast();</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeStatement(subj, st.getPredicate(), st.getObject(), st.getContext(), inlineBNodes,</b>
+&nbsp;						inlineBNodes);
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void wrapLine(boolean space) throws IOException {
+<b class="nc">&nbsp;		if (prettyPrint &amp;&amp; writer.getCharactersSinceEOL() &gt; LINE_WRAP) {</b>
+<b class="nc">&nbsp;			writer.writeEOL();</b>
+<b class="nc">&nbsp;		} else if (space) {</b>
+<b class="nc">&nbsp;			writer.write(&quot; &quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * not synchronized, assumes calling method has obtained a lock on {@link #bufferLock}.
+&nbsp;	 */
+&nbsp;	private void processBuffer() throws RDFHandlerException {
+<b class="nc">&nbsp;		if (!isBuffering()) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (this.getRDFFormat().supportsContexts()) { // to allow use in Turtle extensions such a TriG</b>
+&nbsp;			// primary grouping per context.
+<b class="nc">&nbsp;			for (Resource context : bufferedStatements.contexts()) {</b>
+<b class="nc">&nbsp;				Model contextData = bufferedStatements.filter(null, null, null, context);</b>
+<b class="nc">&nbsp;				Set&lt;Resource&gt; processedSubjects = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;				Optional&lt;Resource&gt; nextSubject = nextSubject(contextData, processedSubjects);</b>
+<b class="nc">&nbsp;				while (nextSubject.isPresent()) {</b>
+<b class="nc">&nbsp;					processSubject(contextData, nextSubject.get(), processedSubjects);</b>
+<b class="nc">&nbsp;					nextSubject = nextSubject(contextData, processedSubjects);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+&nbsp;			// group by subject
+<b class="nc">&nbsp;			Set&lt;Resource&gt; processedSubjects = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			Optional&lt;Resource&gt; nextSubject = nextSubject(bufferedStatements, processedSubjects);</b>
+<b class="nc">&nbsp;			while (nextSubject.isPresent()) {</b>
+<b class="nc">&nbsp;				processSubject(bufferedStatements, nextSubject.get(), processedSubjects);</b>
+<b class="nc">&nbsp;				nextSubject = nextSubject(bufferedStatements, processedSubjects);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		bufferedStatements.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Optional&lt;Resource&gt; nextSubject(Model contextData, Set&lt;Resource&gt; processedSubjects) {
+&nbsp;		// first try finding a subject that has not yet been processed and is not the object of another
+&nbsp;		// unprocessed subject
+<b class="nc">&nbsp;		for (Resource subject : contextData.subjects()) {</b>
+<b class="nc">&nbsp;			if (processedSubjects.contains(subject)) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (subject.isBNode() &amp;&amp; inlineBNodes) {</b>
+<b class="nc">&nbsp;				Set&lt;Resource&gt; otherSubjects = contextData.filter(null, null, subject).subjects();</b>
+<b class="nc">&nbsp;				if (otherSubjects.stream().anyMatch(s -&gt; !processedSubjects.contains(s))) {</b>
+&nbsp;					// Other unprocessed subject using this subject as an object is present. Skip this one for now.
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return Optional.of(subject);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Ensure we did not inadvertently miss any subjects. This can happen when there is a cyclic relation between
+&nbsp;		// blank nodes.
+<b class="nc">&nbsp;		return contextData.subjects().stream().filter(subject -&gt; !processedSubjects.contains(subject)).findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processSubject(Model contextData, Resource subject, Set&lt;Resource&gt; processedSubjects) {
+<b class="nc">&nbsp;		if (processedSubjects.contains(subject)) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;IRI&gt; processedPredicates = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// give rdf:type preference over other predicates.
+<b class="nc">&nbsp;		processPredicate(contextData, subject, RDF.TYPE, processedSubjects, processedPredicates);</b>
+&nbsp;
+&nbsp;		// handle RDF Collection statements separately, to make sure we process them in the correct order
+<b class="nc">&nbsp;		processPredicate(contextData, subject, RDF.FIRST, processedSubjects, processedPredicates);</b>
+&nbsp;
+&nbsp;		// retrieve other statement from this context with the same
+&nbsp;		// subject, and output them grouped by predicate
+<b class="nc">&nbsp;		for (IRI predicate : contextData.filter(subject, null, null).predicates()) {</b>
+<b class="nc">&nbsp;			if (!processedPredicates.contains(predicate)) {</b>
+<b class="nc">&nbsp;				processPredicate(contextData, subject, predicate, processedSubjects, processedPredicates);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		processedSubjects.add(subject);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processPredicate(Model contextData, Resource subject, IRI predicate, Set&lt;Resource&gt; processedSubjects,
+&nbsp;			Set&lt;IRI&gt; processedPredicates) {
+<b class="nc">&nbsp;		for (Statement st : contextData.getStatements(subject, predicate, null)) {</b>
+<b class="nc">&nbsp;			boolean canInlineObject = canInlineValue(contextData, st.getObject());</b>
+<b class="nc">&nbsp;			handleStatementInternal(st, false, canInlineValue(contextData, st.getSubject()), canInlineObject);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (canInlineObject &amp;&amp; st.getObject() instanceof BNode) {</b>
+<b class="nc">&nbsp;				processSubject(contextData, (BNode) st.getObject(), processedSubjects);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		processedPredicates.add(predicate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean canInlineValue(Model contextData, Value v) {
+<b class="nc">&nbsp;		if (!inlineBNodes) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (v instanceof BNode) {</b>
+<b class="nc">&nbsp;			return (contextData.filter(null, null, v).size() &lt;= 1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the writer is configured such that it needs statement buffering.
+&nbsp;	 *
+&nbsp;	 * @return true if the writer is buffering, false otherwise.
+&nbsp;	 */
+&nbsp;	private boolean isBuffering() {
+<b class="nc">&nbsp;		return inlineBNodes || prettyPrint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

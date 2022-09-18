@@ -1,0 +1,315 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Group</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: Group (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Group</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    61.9%
+  </span>
+  <span class="absValue">
+    (13/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    53.6%
+  </span>
+  <span class="absValue">
+    (15/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    52.9%
+  </span>
+  <span class="absValue">
+    (37/70)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import com.google.common.collect.Iterables;
+&nbsp;
+&nbsp;/**
+&nbsp; * A tuple operator that groups tuples that have a specific set of equivalent variable bindings, and that can apply
+&nbsp; * aggregate functions on the grouped results.
+&nbsp; *
+&nbsp; * @author David Huynh
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class Group extends UnaryTupleOperator {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="fc">&nbsp;	private Set&lt;String&gt; groupBindings = Set.of();</b>
+&nbsp;
+<b class="fc">&nbsp;	private List&lt;GroupElem&gt; groupElements = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	public Group() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Group(TupleExpr arg) {
+<b class="fc">&nbsp;		super(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Group(TupleExpr arg, Iterable&lt;String&gt; groupBindingNames) {
+<b class="nc">&nbsp;		this(arg);</b>
+<b class="nc">&nbsp;		setGroupBindingNames(groupBindingNames);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Group(TupleExpr arg, Iterable&lt;String&gt; groupBindingNames, Iterable&lt;GroupElem&gt; groupElements) {
+<b class="nc">&nbsp;		this(arg, groupBindingNames);</b>
+<b class="nc">&nbsp;		setGroupElements(groupElements);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public Set&lt;String&gt; getGroupBindingNames() {
+<b class="fc">&nbsp;		return groupBindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addGroupBindingName(String bindingName) {
+<b class="nc">&nbsp;		if (groupBindings.isEmpty()) {</b>
+<b class="nc">&nbsp;			groupBindings = Set.of(bindingName);</b>
+&nbsp;			return;
+<b class="nc">&nbsp;		} else if (groupBindings.size() == 1) {</b>
+<b class="nc">&nbsp;			groupBindings = new HashSet&lt;&gt;(groupBindings);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		groupBindings.add(bindingName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setGroupBindingNames(List&lt;String&gt; bindingNames) {
+<b class="fc">&nbsp;		if (bindingNames.isEmpty()) {</b>
+<b class="fc">&nbsp;			groupBindings = Set.of();</b>
+<b class="fc">&nbsp;		} else if (bindingNames.size() == 1) {</b>
+<b class="fc">&nbsp;			groupBindings = Set.of(bindingNames.get(0));</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			groupBindings = new LinkedHashSet&lt;&gt;(bindingNames);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setGroupBindingNames(Iterable&lt;String&gt; bindingNames) {
+<b class="nc">&nbsp;		groupBindings = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		Iterables.addAll(groupBindings, bindingNames);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;GroupElem&gt; getGroupElements() {
+<b class="fc">&nbsp;		return groupElements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addGroupElement(GroupElem groupElem) {
+<b class="fc">&nbsp;		groupElem.setParentNode(this);</b>
+<b class="fc">&nbsp;		groupElements.add(groupElem);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setGroupElements(Iterable&lt;GroupElem&gt; elements) {
+<b class="nc">&nbsp;		this.groupElements.clear();</b>
+<b class="nc">&nbsp;		Iterables.addAll(groupElements, elements);</b>
+<b class="nc">&nbsp;		groupElements.forEach(groupElem -&gt; groupElem.setParentNode(this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;String&gt; getAggregateBindingNames() {
+<b class="fc">&nbsp;		Set&lt;String&gt; bindings = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (GroupElem binding : groupElements) {</b>
+<b class="fc">&nbsp;			bindings.add(binding.getName());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="fc">&nbsp;		Set&lt;String&gt; bindingNames = new LinkedHashSet&lt;&gt;(getGroupBindingNames());</b>
+<b class="fc">&nbsp;		bindingNames.addAll(getAggregateBindingNames());</b>
+<b class="fc">&nbsp;		return bindingNames;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getAssuredBindingNames() {
+<b class="nc">&nbsp;		Set&lt;String&gt; bindingNames = new LinkedHashSet&lt;&gt;(getGroupBindingNames());</b>
+<b class="nc">&nbsp;		bindingNames.retainAll(getArg().getAssuredBindingNames());</b>
+<b class="nc">&nbsp;		return bindingNames;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		visitor.meet(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		super.visitChildren(visitor);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (GroupElem ge : groupElements) {</b>
+<b class="fc">&nbsp;			ge.visit(visitor);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+<b class="pc">&nbsp;		if (replaceNodeInList(groupElements, current, replacement)) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="fc">&nbsp;		super.replaceChildNode(current, replacement);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="pc">&nbsp;		if (other instanceof Group &amp;&amp; super.equals(other)) {</b>
+<b class="fc">&nbsp;			Group o = (Group) other;</b>
+<b class="pc">&nbsp;			return groupBindings.equals(o.getGroupBindingNames()) &amp;&amp; groupElements.equals(o.getGroupElements());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return super.hashCode() ^ groupBindings.hashCode() ^ groupElements.hashCode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Group clone() {
+<b class="fc">&nbsp;		Group clone = (Group) super.clone();</b>
+&nbsp;
+<b class="fc">&nbsp;		clone.groupBindings = new LinkedHashSet&lt;&gt;(getGroupBindingNames());</b>
+&nbsp;
+<b class="fc">&nbsp;		clone.groupElements = new ArrayList&lt;&gt;(getGroupElements().size());</b>
+<b class="fc">&nbsp;		for (GroupElem ge : getGroupElements()) {</b>
+<b class="fc">&nbsp;			clone.addGroupElement(ge.clone());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return clone;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getSignature() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		sb.append(this.getClass().getSimpleName());</b>
+<b class="nc">&nbsp;		sb.append(&quot; (&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; bindingNames = getGroupBindingNames();</b>
+<b class="nc">&nbsp;		int count = 0;</b>
+<b class="nc">&nbsp;		for (String name : bindingNames) {</b>
+<b class="nc">&nbsp;			sb.append(name);</b>
+<b class="nc">&nbsp;			count++;</b>
+<b class="nc">&nbsp;			if (count &lt; bindingNames.size()) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;, &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		sb.append(&quot;)&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

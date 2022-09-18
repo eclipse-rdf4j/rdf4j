@@ -1,0 +1,229 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SimpleStatement</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: SimpleStatement (org.eclipse.rdf4j.model.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SimpleStatement</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (4/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.6%
+  </span>
+  <span class="absValue">
+    (7/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.impl;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractStatement;
+&nbsp;
+&nbsp;/**
+&nbsp; * A simple default implementation of the {@link Statement} interface for statements that don&#39;t have an associated
+&nbsp; * context. For statements that do have an associated context, {@link ContextStatement} can be used.
+&nbsp; *
+&nbsp; * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory
+&nbsp; * @deprecated Use {@link GenericStatement instead}
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;public class SimpleStatement extends AbstractStatement {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 8707542157460228077L;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The statement&#39;s subject.
+&nbsp;	 */
+&nbsp;	private final Resource subject;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The statement&#39;s predicate.
+&nbsp;	 */
+&nbsp;	private final IRI predicate;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The statement&#39;s object.
+&nbsp;	 */
+&nbsp;	private final Value object;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new Statement with the supplied subject, predicate and object. *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note that creating SimpleStatement objects directly via this constructor is not the recommended approach.
+&nbsp;	 * Instead, use a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository or by
+&nbsp;	 * using {@link org.eclipse.rdf4j.model.impl.SimpleValueFactory#getInstance()}) to create new Statement objects.
+&nbsp;	 *
+&nbsp;	 * @param subject   The statement&#39;s subject, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param predicate The statement&#39;s predicate, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param object    The statement&#39;s object, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory#createStatement(Resource, IRI, Value)
+&nbsp;	 */
+<b class="fc">&nbsp;	protected SimpleStatement(Resource subject, IRI predicate, Value object) {</b>
+<b class="fc">&nbsp;		this.subject = Objects.requireNonNull(subject, &quot;subject must not be null&quot;);</b>
+<b class="fc">&nbsp;		this.predicate = Objects.requireNonNull(predicate, &quot;predicate must not be null&quot;);</b>
+<b class="fc">&nbsp;		this.object = Objects.requireNonNull(object, &quot;object must not be null&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	// Implements Statement.getSubject()
+&nbsp;	@Override
+&nbsp;	public Resource getSubject() {
+<b class="fc">&nbsp;		return subject;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// Implements Statement.getPredicate()
+&nbsp;	@Override
+&nbsp;	public IRI getPredicate() {
+<b class="fc">&nbsp;		return predicate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// Implements Statement.getObject()
+&nbsp;	@Override
+&nbsp;	public Value getObject() {
+<b class="fc">&nbsp;		return object;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean exactSameSubject(Resource subject) {
+<b class="nc">&nbsp;		return subject == this.subject;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean exactSamePredicate(IRI predicate) {
+<b class="nc">&nbsp;		return predicate == this.predicate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean exactSameObject(Value object) {
+<b class="nc">&nbsp;		return object == this.object;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// Implements Statement.getContext()
+&nbsp;	@Override
+&nbsp;	public Resource getContext() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

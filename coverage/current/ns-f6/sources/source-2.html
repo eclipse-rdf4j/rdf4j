@@ -1,0 +1,305 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDF4JDao</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.dao</a>
+</div>
+
+<h1>Coverage Summary for Class: RDF4JDao (org.eclipse.rdf4j.spring.dao)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDF4JDao</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RDF4JDao$NamedSparqlSupplierFinishBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RDF4JDao$NamedSparqlSupplierPreparer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.dao;
+&nbsp;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.spring.dao.exception.RDF4JDaoException;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.GraphQueryEvaluationBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
+&nbsp;import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;public abstract class RDF4JDao {
+&nbsp;	private final RDF4JTemplate rdf4JTemplate;
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;String, NamedSparqlSupplier&gt; namedSparqlSuppliers = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	public RDF4JDao(RDF4JTemplate rdf4JTemplate) {</b>
+<b class="nc">&nbsp;		this.rdf4JTemplate = rdf4JTemplate;</b>
+<b class="nc">&nbsp;		prepareNamedSparqlSuppliers(new NamedSparqlSupplierPreparer());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected RDF4JTemplate getRdf4JTemplate() {
+<b class="nc">&nbsp;		return rdf4JTemplate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract NamedSparqlSupplierPreparer prepareNamedSparqlSuppliers(
+&nbsp;			NamedSparqlSupplierPreparer preparer);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepares the specified SPARQL string for later use, e.g. in
+&nbsp;	 * {@link RDF4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
+&nbsp;	 */
+&nbsp;	private void prepareNamedSparqlSupplier(String key, String sparql) {
+<b class="nc">&nbsp;		Objects.requireNonNull(key);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(sparql);</b>
+<b class="nc">&nbsp;		namedSparqlSuppliers.put(key, new NamedSparqlSupplier(key, () -&gt; sparql));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the SPARQL string from the specified resource using a {@link org.springframework.core.io.ResourceLoader}
+&nbsp;	 * and prepares it for later use, e.g. in {@link RDF4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
+&nbsp;	 */
+&nbsp;	private void prepareNamedSparqlSupplierFromResource(String key, String resourceName) {
+<b class="nc">&nbsp;		Objects.requireNonNull(key);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(resourceName);</b>
+<b class="nc">&nbsp;		String sparqlString = getRdf4JTemplate().getStringSupplierFromResourceContent(resourceName).get();</b>
+<b class="nc">&nbsp;		namedSparqlSuppliers.put(key, new NamedSparqlSupplier(key, () -&gt; sparqlString));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains the {@link NamedSparqlSupplier} with the specified key for use in, e.g.,
+&nbsp;	 * {@link RDF4JTemplate#tupleQuery(Class, NamedSparqlSupplier)}.
+&nbsp;	 */
+&nbsp;	protected NamedSparqlSupplier getNamedSparqlSupplier(String key) {
+<b class="nc">&nbsp;		Objects.requireNonNull(key);</b>
+<b class="nc">&nbsp;		NamedSparqlSupplier supplier = namedSparqlSuppliers.get(key);</b>
+<b class="nc">&nbsp;		if (supplier == null) {</b>
+<b class="nc">&nbsp;			throw new RDF4JDaoException(</b>
+<b class="nc">&nbsp;					String.format(</b>
+&nbsp;							&quot;No NamedSparqlOperation found for key %s. Prepare it using Rdf4JDao.prepareNamedSparqlSuppliers() before calling this method!&quot;,
+&nbsp;							key));
+&nbsp;		}
+<b class="nc">&nbsp;		return supplier;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected String getNamedSparqlString(String key) {
+<b class="nc">&nbsp;		return getNamedSparqlSupplier(key).getSparqlSupplier().get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected TupleQueryEvaluationBuilder getNamedTupleQuery(String key) {
+<b class="nc">&nbsp;		return getRdf4JTemplate().tupleQuery(getClass(), getNamedSparqlSupplier(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected GraphQueryEvaluationBuilder getNamedGraphQuery(String key) {
+<b class="nc">&nbsp;		return getRdf4JTemplate().graphQuery(getClass(), getNamedSparqlSupplier(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected UpdateExecutionBuilder getNamedUpdate(String key) {
+<b class="nc">&nbsp;		return getRdf4JTemplate().update(getClass(), getNamedSparqlSupplier(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public class NamedSparqlSupplierPreparer {
+&nbsp;
+<b class="nc">&nbsp;		private NamedSparqlSupplierPreparer() {</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * For the specified &lt;code&gt;key&lt;/code&gt;, {@link java.util.function.Supplier&lt;String&gt;} is registered with the
+&nbsp;		 * subsequent &lt;code&gt;supplySparql*&lt;/code&gt; method.
+&nbsp;		 */
+&nbsp;		public NamedSparqlSupplierFinishBuilder forKey(String key) {
+<b class="nc">&nbsp;			return new NamedSparqlSupplierFinishBuilder(key);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public class NamedSparqlSupplierFinishBuilder {
+&nbsp;		private final String key;
+&nbsp;
+<b class="nc">&nbsp;		public NamedSparqlSupplierFinishBuilder(String key) {</b>
+<b class="nc">&nbsp;			this.key = key;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/** Supplies the specified SPARQL String. */
+&nbsp;		public NamedSparqlSupplierPreparer supplySparql(String sparql) {
+<b class="nc">&nbsp;			prepareNamedSparqlSupplier(key, sparql);</b>
+<b class="nc">&nbsp;			return new NamedSparqlSupplierPreparer();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Loads the specified &lt;code&gt;resource&lt;/code&gt; using a {@link org.springframework.core.io.ResourceLoader} and
+&nbsp;		 * supplies its content as String, the assumption is that it contains a SPARQL operation.
+&nbsp;		 */
+&nbsp;		public NamedSparqlSupplierPreparer supplySparqlFromResource(String resource) {
+<b class="nc">&nbsp;			prepareNamedSparqlSupplierFromResource(key, resource);</b>
+<b class="nc">&nbsp;			return new NamedSparqlSupplierPreparer();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

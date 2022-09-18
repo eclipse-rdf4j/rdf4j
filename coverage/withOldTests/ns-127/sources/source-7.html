@@ -1,0 +1,763 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailIsolationLevelTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.sail</a>
+</div>
+
+<h1>Coverage Summary for Class: SailIsolationLevelTest (org.eclipse.rdf4j.testsuite.sail)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailIsolationLevelTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/132)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/348)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.sail;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;import static org.junit.Assert.assertFalse;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.concurrent.CountDownLatch;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConflictException;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.AfterClass;
+&nbsp;import org.junit.Assert;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.BeforeClass;
+&nbsp;import org.junit.Test;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Simple tests to sanity check that Sail correctly supports claimed isolation levels.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="nc">&nbsp;public abstract class SailIsolationLevelTest {</b>
+&nbsp;
+&nbsp;	@BeforeClass
+&nbsp;	public static void setUpClass() {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterClass
+&nbsp;	public static void afterClass() {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;false&quot;);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(SailIsolationLevelTest.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	protected Sail store;
+&nbsp;
+&nbsp;	private ValueFactory vf;
+&nbsp;
+&nbsp;	private String failedMessage;
+&nbsp;
+&nbsp;	private Throwable failed;
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		store = createSail();</b>
+<b class="nc">&nbsp;		store.init();</b>
+<b class="nc">&nbsp;		vf = store.getValueFactory();</b>
+<b class="nc">&nbsp;		failed = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws Exception {
+<b class="nc">&nbsp;		store.shutDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract Sail createSail() throws SailException;
+&nbsp;
+&nbsp;	protected boolean isSupported(IsolationLevels level) throws SailException {
+<b class="nc">&nbsp;		SailConnection con = store.getConnection();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			con.begin(level);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (UnknownSailTransactionStateException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			con.rollback();</b>
+<b class="nc">&nbsp;			con.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testNone() throws Exception {
+<b class="nc">&nbsp;		readPending(IsolationLevels.NONE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testReadUncommitted() throws Exception {
+<b class="nc">&nbsp;		rollbackTriple(IsolationLevels.READ_UNCOMMITTED);</b>
+<b class="nc">&nbsp;		readPending(IsolationLevels.READ_UNCOMMITTED);</b>
+<b class="nc">&nbsp;		readPendingWhileActive(IsolationLevels.READ_UNCOMMITTED);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testReadCommitted() throws Exception {
+<b class="nc">&nbsp;		readCommitted(IsolationLevels.READ_COMMITTED);</b>
+<b class="nc">&nbsp;		rollbackTriple(IsolationLevels.READ_COMMITTED);</b>
+<b class="nc">&nbsp;		readPending(IsolationLevels.READ_COMMITTED);</b>
+<b class="nc">&nbsp;		readPendingWhileActive(IsolationLevels.READ_COMMITTED);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSnapshotRead() throws Exception {
+<b class="nc">&nbsp;		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {</b>
+<b class="nc">&nbsp;			snapshotRead(IsolationLevels.SNAPSHOT_READ);</b>
+<b class="nc">&nbsp;			readCommitted(IsolationLevels.SNAPSHOT_READ);</b>
+<b class="nc">&nbsp;			rollbackTriple(IsolationLevels.SNAPSHOT_READ);</b>
+<b class="nc">&nbsp;			readPending(IsolationLevels.SNAPSHOT_READ);</b>
+<b class="nc">&nbsp;			readPendingWhileActive(IsolationLevels.SNAPSHOT_READ);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(&quot;{} does not support {}&quot;, store, IsolationLevels.SNAPSHOT_READ);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSnapshot() throws Exception {
+<b class="nc">&nbsp;		if (isSupported(IsolationLevels.SNAPSHOT)) {</b>
+<b class="nc">&nbsp;			snapshot(IsolationLevels.SNAPSHOT);</b>
+<b class="nc">&nbsp;			snapshotRead(IsolationLevels.SNAPSHOT);</b>
+<b class="nc">&nbsp;			repeatableRead(IsolationLevels.SNAPSHOT);</b>
+<b class="nc">&nbsp;			readCommitted(IsolationLevels.SNAPSHOT);</b>
+<b class="nc">&nbsp;			rollbackTriple(IsolationLevels.SNAPSHOT);</b>
+<b class="nc">&nbsp;			readPending(IsolationLevels.SNAPSHOT);</b>
+<b class="nc">&nbsp;			readPendingWhileActive(IsolationLevels.SNAPSHOT);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(&quot;{} does not support {}&quot;, store, IsolationLevels.SNAPSHOT);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSerializable() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		if (isSupported(IsolationLevels.SERIALIZABLE)) {</b>
+<b class="nc">&nbsp;			serializable(IsolationLevels.SERIALIZABLE);</b>
+<b class="nc">&nbsp;			snapshot(IsolationLevels.SERIALIZABLE);</b>
+<b class="nc">&nbsp;			snapshotRead(IsolationLevels.SERIALIZABLE);</b>
+<b class="nc">&nbsp;			repeatableRead(IsolationLevels.SERIALIZABLE);</b>
+<b class="nc">&nbsp;			readCommitted(IsolationLevels.SERIALIZABLE);</b>
+<b class="nc">&nbsp;			rollbackTriple(IsolationLevels.SERIALIZABLE);</b>
+<b class="nc">&nbsp;			readPending(IsolationLevels.SERIALIZABLE);</b>
+<b class="nc">&nbsp;			readPendingWhileActive(IsolationLevels.SERIALIZABLE);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(&quot;{} does not support {}&quot;, store, IsolationLevels.SERIALIZABLE);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testLargeTransactionReadCommitted() throws InterruptedException {
+<b class="nc">&nbsp;		if (isSupported(IsolationLevels.READ_COMMITTED)) {</b>
+<b class="nc">&nbsp;			testLargeTransaction(IsolationLevels.READ_COMMITTED, 1000);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(&quot;Isolation level not supporter.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testLargeTransactionSnapshot() throws InterruptedException {
+<b class="nc">&nbsp;		if (isSupported(IsolationLevels.SNAPSHOT)) {</b>
+<b class="nc">&nbsp;			testLargeTransaction(IsolationLevels.SNAPSHOT, 1000);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(&quot;Isolation level not supporter.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testLargeTransactionSnapshotRead() throws InterruptedException {
+<b class="nc">&nbsp;		if (isSupported(IsolationLevels.SNAPSHOT_READ)) {</b>
+<b class="nc">&nbsp;			testLargeTransaction(IsolationLevels.SNAPSHOT_READ, 1000);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(&quot;Isolation level not supporter.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testLargeTransactionSerializable() throws InterruptedException {
+<b class="nc">&nbsp;		if (isSupported(IsolationLevels.SERIALIZABLE)) {</b>
+<b class="nc">&nbsp;			testLargeTransaction(IsolationLevels.SERIALIZABLE, 1000);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.warn(&quot;Isolation level not supporter.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Checks that there is no leak between transactions. When one transactions adds a lot of data to the store another
+&nbsp;	 * transaction should see either nothing added or everything added. Nothing in between.
+&nbsp;	 */
+&nbsp;	public void testLargeTransaction(IsolationLevel isolationLevel, int count) throws InterruptedException {
+&nbsp;
+<b class="nc">&nbsp;		try (SailConnection connection = store.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.begin(IsolationLevels.NONE);</b>
+<b class="nc">&nbsp;			connection.clear();</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		AtomicBoolean failure = new AtomicBoolean(false);</b>
+&nbsp;
+<b class="nc">&nbsp;		Runnable runnable = () -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;			try (SailConnection connection = store.getConnection()) {</b>
+&nbsp;				while (true) {
+&nbsp;					try {
+<b class="nc">&nbsp;						connection.begin(isolationLevel);</b>
+<b class="nc">&nbsp;						List&lt;Statement&gt; statements = Iterations</b>
+<b class="nc">&nbsp;								.asList(connection.getStatements(null, null, null, false));</b>
+<b class="nc">&nbsp;						connection.commit();</b>
+<b class="nc">&nbsp;						if (statements.size() != 0) {</b>
+<b class="nc">&nbsp;							if (statements.size() != count) {</b>
+<b class="nc">&nbsp;								logger.error(&quot;Size was {}. Expected 0 or {}&quot;, statements.size(), count);</b>
+<b class="nc">&nbsp;								logger.error(&quot;\n[\n\t{}\n]&quot;,</b>
+<b class="nc">&nbsp;										statements.stream()</b>
+<b class="nc">&nbsp;												.map(Object::toString)</b>
+<b class="nc">&nbsp;												.reduce((a, b) -&gt; a + &quot; , \n\t&quot; + b)</b>
+<b class="nc">&nbsp;												.get());</b>
+&nbsp;
+<b class="nc">&nbsp;								failure.set(true);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							break;</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} catch (SailConflictException ignored) {</b>
+<b class="nc">&nbsp;						connection.rollback();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;					Thread.yield();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		};
+&nbsp;
+<b class="nc">&nbsp;		Thread thread = new Thread(runnable);</b>
+<b class="nc">&nbsp;		thread.start();</b>
+&nbsp;
+<b class="nc">&nbsp;		SimpleValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (SailConnection connection = store.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.begin(isolationLevel);</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; count; i++) {</b>
+<b class="nc">&nbsp;				connection.addStatement(RDFS.RESOURCE, RDFS.LABEL, vf.createLiteral(i));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			logger.debug(&quot;Commit&quot;);</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;			assertEquals(count, connection.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;Joining thread&quot;);</b>
+<b class="nc">&nbsp;		thread.join();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(failure.get());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Every connection must support reading it own changes
+&nbsp;	 */
+&nbsp;	private void readPending(IsolationLevel level) throws SailException {
+<b class="nc">&nbsp;		clear(store);</b>
+<b class="nc">&nbsp;		try (SailConnection con = store.getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin(level);</b>
+<b class="nc">&nbsp;			con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;			Assert.assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));</b>
+<b class="nc">&nbsp;			con.removeStatements(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Every connection must support reading its own changes while another iteration is active.
+&nbsp;	 */
+&nbsp;	private void readPendingWhileActive(IsolationLevel level) throws SailException {
+<b class="nc">&nbsp;		clear(store);</b>
+<b class="nc">&nbsp;		try (SailConnection con = store.getConnection()) {</b>
+&nbsp;			// open an iteration outside the transaction and leave it open while another transaction is begun and
+&nbsp;			// committed
+<b class="nc">&nbsp;			try (CloseableIteration&lt;? extends Statement, SailException&gt; unusedStatements = con.getStatements(null, null,</b>
+&nbsp;					null, true)) {
+<b class="nc">&nbsp;				con.begin(level);</b>
+<b class="nc">&nbsp;				con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;				Assert.assertEquals(1, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));</b>
+<b class="nc">&nbsp;				con.removeStatements(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;				con.commit();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Supports rolling back added triples
+&nbsp;	 */
+&nbsp;	private void rollbackTriple(IsolationLevel level) throws SailException {
+<b class="nc">&nbsp;		clear(store);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (SailConnection con = store.getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin(level);</b>
+<b class="nc">&nbsp;			con.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;			con.rollback();</b>
+<b class="nc">&nbsp;			Assert.assertEquals(0, count(con, RDF.NIL, RDF.TYPE, RDF.LIST, false));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read operations must not see uncommitted changes
+&nbsp;	 */
+&nbsp;	private void readCommitted(final IsolationLevel level) throws Exception {
+<b class="nc">&nbsp;		clear(store);</b>
+<b class="nc">&nbsp;		final CountDownLatch start = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch begin = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		final CountDownLatch uncommitted = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		Thread writer = new Thread(() -&gt; {</b>
+<b class="nc">&nbsp;			try (SailConnection write = store.getConnection()) {</b>
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				start.await();</b>
+<b class="nc">&nbsp;				write.begin(level);</b>
+<b class="nc">&nbsp;				write.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;				begin.countDown();</b>
+<b class="nc">&nbsp;				uncommitted.await(1, TimeUnit.SECONDS);</b>
+<b class="nc">&nbsp;				write.rollback();</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Writer failed&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+<b class="nc">&nbsp;		Thread reader = new Thread(() -&gt; {</b>
+<b class="nc">&nbsp;			try (SailConnection read = store.getConnection()) {</b>
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				start.await();</b>
+<b class="nc">&nbsp;				begin.await();</b>
+<b class="nc">&nbsp;				read.begin(level);</b>
+&nbsp;				// must not read uncommitted changes
+<b class="nc">&nbsp;				long counted = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);</b>
+<b class="nc">&nbsp;				uncommitted.countDown();</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					read.commit();</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+&nbsp;					// it is okay to abort after a dirty read
+&nbsp;					// e.printStackTrace();
+<b class="nc">&nbsp;					read.rollback();</b>
+&nbsp;					return;
+<b class="nc">&nbsp;				}</b>
+&nbsp;				// not read if transaction is consistent
+<b class="nc">&nbsp;				Assert.assertEquals(0, counted);</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Reader failed&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+<b class="nc">&nbsp;		reader.start();</b>
+<b class="nc">&nbsp;		writer.start();</b>
+<b class="nc">&nbsp;		reader.join();</b>
+<b class="nc">&nbsp;		writer.join();</b>
+<b class="nc">&nbsp;		assertNotFailed();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Any statement read in a transaction must remain present until the transaction is over
+&nbsp;	 */
+&nbsp;	private void repeatableRead(final IsolationLevels level) throws Exception {
+<b class="nc">&nbsp;		clear(store);</b>
+<b class="nc">&nbsp;		final CountDownLatch start = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch begin = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		final CountDownLatch observed = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		final CountDownLatch changed = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		Thread writer = new Thread(() -&gt; {</b>
+<b class="nc">&nbsp;			try (SailConnection write = store.getConnection()) {</b>
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				start.await();</b>
+<b class="nc">&nbsp;				write.begin(level);</b>
+<b class="nc">&nbsp;				write.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;				write.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;				begin.countDown();</b>
+<b class="nc">&nbsp;				observed.await(1, TimeUnit.SECONDS);</b>
+&nbsp;
+<b class="nc">&nbsp;				write.begin(level);</b>
+<b class="nc">&nbsp;				write.removeStatements(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;				write.commit();</b>
+<b class="nc">&nbsp;				changed.countDown();</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Writer failed&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+<b class="nc">&nbsp;		Thread reader = new Thread(() -&gt; {</b>
+<b class="nc">&nbsp;			try (SailConnection read = store.getConnection()) {</b>
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				start.await();</b>
+<b class="nc">&nbsp;				begin.await();</b>
+<b class="nc">&nbsp;				read.begin(level);</b>
+<b class="nc">&nbsp;				long first = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);</b>
+<b class="nc">&nbsp;				Assert.assertEquals(1, first);</b>
+<b class="nc">&nbsp;				observed.countDown();</b>
+<b class="nc">&nbsp;				changed.await(1, TimeUnit.SECONDS);</b>
+&nbsp;				// observed statements must continue to exist
+<b class="nc">&nbsp;				long second = count(read, RDF.NIL, RDF.TYPE, RDF.LIST, false);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					read.commit();</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+&nbsp;					// it is okay to abort on inconsistency
+&nbsp;					// e.printStackTrace();
+<b class="nc">&nbsp;					read.rollback();</b>
+&nbsp;					return;
+<b class="nc">&nbsp;				}</b>
+&nbsp;				// statement must continue to exist if transaction consistent
+<b class="nc">&nbsp;				Assert.assertEquals(first, second);</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Reader failed&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+<b class="nc">&nbsp;		reader.start();</b>
+<b class="nc">&nbsp;		writer.start();</b>
+<b class="nc">&nbsp;		reader.join();</b>
+<b class="nc">&nbsp;		writer.join();</b>
+<b class="nc">&nbsp;		assertNotFailed();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Query results must not include statements added after the first result is read
+&nbsp;	 */
+&nbsp;	private void snapshotRead(IsolationLevel level) throws SailException {
+<b class="nc">&nbsp;		clear(store);</b>
+<b class="nc">&nbsp;		try (SailConnection con = store.getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin(level);</b>
+<b class="nc">&nbsp;			int size = 1000;</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; size; i++) {</b>
+<b class="nc">&nbsp;				insertTestStatement(con, i);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			int counter = 0;</b>
+<b class="nc">&nbsp;			try (CloseableIteration&lt;? extends Statement, SailException&gt; stmts = con.getStatements(null, null, null,</b>
+&nbsp;					false)) {
+<b class="nc">&nbsp;				while (stmts.hasNext()) {</b>
+<b class="nc">&nbsp;					Statement st = stmts.next();</b>
+<b class="nc">&nbsp;					counter++;</b>
+<b class="nc">&nbsp;					if (counter &lt; size) {</b>
+&nbsp;						// remove observed statement to force new state
+<b class="nc">&nbsp;						con.removeStatements(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());</b>
+<b class="nc">&nbsp;						insertTestStatement(con, size + counter);</b>
+<b class="nc">&nbsp;						insertTestStatement(con, size + size + counter);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				con.commit();</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+&nbsp;				// it is okay to abort after a dirty read
+<b class="nc">&nbsp;				e.printStackTrace();</b>
+&nbsp;				return;
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			Assert.assertEquals(size, counter);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reader observes the complete state of the store and ensure that does not change
+&nbsp;	 */
+&nbsp;	private void snapshot(final IsolationLevels level) throws Exception {
+<b class="nc">&nbsp;		clear(store);</b>
+<b class="nc">&nbsp;		final CountDownLatch start = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch begin = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		final CountDownLatch observed = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		final CountDownLatch changed = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		Thread writer = new Thread(() -&gt; {</b>
+<b class="nc">&nbsp;			try (SailConnection write = store.getConnection()) {</b>
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				start.await();</b>
+<b class="nc">&nbsp;				write.begin(level);</b>
+<b class="nc">&nbsp;				insertTestStatement(write, 1);</b>
+<b class="nc">&nbsp;				write.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;				begin.countDown();</b>
+<b class="nc">&nbsp;				observed.await(1, TimeUnit.SECONDS);</b>
+&nbsp;
+<b class="nc">&nbsp;				write.begin(level);</b>
+<b class="nc">&nbsp;				insertTestStatement(write, 2);</b>
+<b class="nc">&nbsp;				write.commit();</b>
+<b class="nc">&nbsp;				changed.countDown();</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Writer failed&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+<b class="nc">&nbsp;		Thread reader = new Thread(() -&gt; {</b>
+<b class="nc">&nbsp;			try (SailConnection read = store.getConnection()) {</b>
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				start.await();</b>
+<b class="nc">&nbsp;				begin.await();</b>
+<b class="nc">&nbsp;				read.begin(level);</b>
+<b class="nc">&nbsp;				long first = count(read, null, null, null, false);</b>
+<b class="nc">&nbsp;				observed.countDown();</b>
+<b class="nc">&nbsp;				changed.await(1, TimeUnit.SECONDS);</b>
+&nbsp;				// new statements must not be observed
+<b class="nc">&nbsp;				long second = count(read, null, null, null, false);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					read.commit();</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+&nbsp;					// it is okay to abort on inconsistency
+&nbsp;					// e.printStackTrace();
+<b class="nc">&nbsp;					read.rollback();</b>
+&nbsp;					return;
+<b class="nc">&nbsp;				}</b>
+&nbsp;				// store must not change if transaction consistent
+<b class="nc">&nbsp;				Assert.assertEquals(first, second);</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Reader failed&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+<b class="nc">&nbsp;		reader.start();</b>
+<b class="nc">&nbsp;		writer.start();</b>
+<b class="nc">&nbsp;		reader.join();</b>
+<b class="nc">&nbsp;		writer.join();</b>
+<b class="nc">&nbsp;		assertNotFailed();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Two transactions read a value and replace it
+&nbsp;	 */
+&nbsp;	private void serializable(final IsolationLevels level) throws Exception {
+<b class="nc">&nbsp;		clear(store);</b>
+<b class="nc">&nbsp;		final ValueFactory vf = store.getValueFactory();</b>
+<b class="nc">&nbsp;		final IRI subj = vf.createIRI(&quot;http://test#s&quot;);</b>
+<b class="nc">&nbsp;		final IRI pred = vf.createIRI(&quot;http://test#p&quot;);</b>
+<b class="nc">&nbsp;		try (SailConnection prep = store.getConnection()) {</b>
+<b class="nc">&nbsp;			prep.begin(level);</b>
+<b class="nc">&nbsp;			prep.addStatement(subj, pred, vf.createLiteral(1));</b>
+<b class="nc">&nbsp;			prep.commit();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		final CountDownLatch start = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch observed = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		Thread t1 = incrementBy(start, observed, level, vf, subj, pred, 3);</b>
+<b class="nc">&nbsp;		Thread t2 = incrementBy(start, observed, level, vf, subj, pred, 5);</b>
+<b class="nc">&nbsp;		t2.start();</b>
+<b class="nc">&nbsp;		t1.start();</b>
+<b class="nc">&nbsp;		t2.join();</b>
+<b class="nc">&nbsp;		t1.join();</b>
+<b class="nc">&nbsp;		assertNotFailed();</b>
+<b class="nc">&nbsp;		try (SailConnection check = store.getConnection()) {</b>
+<b class="nc">&nbsp;			check.begin(level);</b>
+<b class="nc">&nbsp;			Literal lit = readLiteral(check, subj, pred);</b>
+<b class="nc">&nbsp;			int val = lit.intValue();</b>
+&nbsp;			// val could be 4 or 6 if one transaction was aborted
+<b class="nc">&nbsp;			if (val != 4 &amp;&amp; val != 6) {</b>
+<b class="nc">&nbsp;				Assert.assertEquals(9, val);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			check.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Thread incrementBy(final CountDownLatch start, final CountDownLatch observed, final IsolationLevels level,
+&nbsp;			final ValueFactory vf, final IRI subj, final IRI pred, final int by) {
+<b class="nc">&nbsp;		return new Thread(() -&gt; {</b>
+<b class="nc">&nbsp;			try (SailConnection con = store.getConnection()) {</b>
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				start.await();</b>
+<b class="nc">&nbsp;				con.begin(level);</b>
+<b class="nc">&nbsp;				Literal o1 = readLiteral(con, subj, pred);</b>
+<b class="nc">&nbsp;				observed.countDown();</b>
+<b class="nc">&nbsp;				observed.await(1, TimeUnit.SECONDS);</b>
+<b class="nc">&nbsp;				con.removeStatements(subj, pred, o1);</b>
+<b class="nc">&nbsp;				con.addStatement(subj, pred, vf.createLiteral(o1.intValue() + by));</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					con.commit();</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+&nbsp;					// it is okay to abort on conflict
+&nbsp;					// e.printStackTrace();
+<b class="nc">&nbsp;					con.rollback();</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Increment &quot; + by + &quot; failed&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private void clear(Sail store) throws SailException {
+<b class="nc">&nbsp;		try (SailConnection con = store.getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			con.clear();</b>
+<b class="nc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected long count(SailConnection con, Resource subj, IRI pred, Value obj, boolean includeInferred,
+&nbsp;			Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; stmts = con.getStatements(subj, pred, obj,</b>
+&nbsp;				includeInferred, contexts)) {
+<b class="nc">&nbsp;			long counter = 0;</b>
+<b class="nc">&nbsp;			while (stmts.hasNext()) {</b>
+<b class="nc">&nbsp;				stmts.next();</b>
+<b class="nc">&nbsp;				counter++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return counter;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Literal readLiteral(SailConnection con, final IRI subj, final IRI pred) throws SailException {
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; stmts = con.getStatements(subj, pred, null,</b>
+&nbsp;				false)) {
+<b class="nc">&nbsp;			if (!stmts.hasNext()) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Value obj = stmts.next().getObject();</b>
+<b class="nc">&nbsp;			if (stmts.hasNext()) {</b>
+<b class="nc">&nbsp;				Assert.fail(&quot;multiple literals: &quot; + obj + &quot; and &quot; + stmts.next());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return (Literal) obj;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void insertTestStatement(SailConnection connection, int i) throws SailException {
+<b class="nc">&nbsp;		Literal lit = vf.createLiteral(Integer.toString(i), XSD.INTEGER);</b>
+<b class="nc">&nbsp;		connection.addStatement(vf.createIRI(&quot;http://test#s&quot; + i), vf.createIRI(&quot;http://test#p&quot;), lit,</b>
+<b class="nc">&nbsp;				vf.createIRI(&quot;http://test#context_&quot; + i));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected synchronized void fail(String message, Throwable t) {
+<b class="nc">&nbsp;		failedMessage = message;</b>
+<b class="nc">&nbsp;		failed = t;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected synchronized void assertNotFailed() {
+<b class="nc">&nbsp;		if (failed != null) {</b>
+<b class="nc">&nbsp;			throw (AssertionError) new AssertionError(failedMessage).initCause(failed);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,224 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ParentReferenceChecker</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: ParentReferenceChecker (org.eclipse.rdf4j.query.algebra.evaluation.optimizer)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ParentReferenceChecker</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ParentReferenceChecker$ParentCheckingVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    12.5%
+  </span>
+  <span class="absValue">
+    (1/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (7/14)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    12.5%
+  </span>
+  <span class="absValue">
+    (1/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    61.1%
+  </span>
+  <span class="absValue">
+    (11/18)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Checks {@link QueryModelNode#getParentNode()} references that have become inconsistent with the actual algebra tree
+&nbsp; * structure due to optimization operations. Used during testing.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Håvard Ottestad
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class ParentReferenceChecker implements QueryOptimizer {
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ParentReferenceChecker.class);</b>
+&nbsp;
+&nbsp;	private final QueryOptimizer previousOptimizerInPipeline;
+&nbsp;
+<b class="fc">&nbsp;	public ParentReferenceChecker(QueryOptimizer previousOptimizerInPipeline) {</b>
+<b class="fc">&nbsp;		this.previousOptimizerInPipeline = previousOptimizerInPipeline;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="fc">&nbsp;		tupleExpr.visit(new ParentCheckingVisitor());</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private class ParentCheckingVisitor extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;		private final ArrayDeque&lt;QueryModelNode&gt; ancestors = new ArrayDeque&lt;&gt;();</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetNode(QueryModelNode node) throws RuntimeException {
+<b class="fc">&nbsp;			QueryModelNode expectedParent = ancestors.peekLast();</b>
+<b class="pc">&nbsp;			if (node.getParentNode() != expectedParent) {</b>
+&nbsp;				String previousOptimizer;
+<b class="nc">&nbsp;				if (ParentReferenceChecker.this.previousOptimizerInPipeline != null) {</b>
+<b class="nc">&nbsp;					previousOptimizer = ParentReferenceChecker.this.previousOptimizerInPipeline.getClass()</b>
+<b class="nc">&nbsp;							.getSimpleName();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					previousOptimizer = &quot;query parsing&quot;;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String message = &quot;After &quot; + previousOptimizer + &quot; there was an unexpected parent for node &quot; + node</b>
+<b class="nc">&nbsp;						+ &quot;: &quot; + node.getParentNode() + &quot; (expected &quot; + expectedParent + &quot;)&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;				assert node.getParentNode() == expectedParent : message;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			ancestors.addLast(node);</b>
+<b class="fc">&nbsp;			super.meetNode(node);</b>
+<b class="fc">&nbsp;			ancestors.pollLast();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,204 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ModelCollector</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.util</a>
+</div>
+
+<h1>Coverage Summary for Class: ModelCollector (org.eclipse.rdf4j.model.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ModelCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.util;
+&nbsp;
+&nbsp;import java.util.EnumSet;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.BiConsumer;
+&nbsp;import java.util.function.BinaryOperator;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Supplier;
+&nbsp;import java.util.stream.Collector;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.TreeModelFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Collects a stream of Statements into a Model. By default a {@link org.eclipse.rdf4j.model.impl.LinkedHashModel
+&nbsp; * LinkedHashModel} will be returned.
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public class ModelCollector implements Collector&lt;Statement, Model, Model&gt; {
+&nbsp;	private final ModelFactory factory;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 */
+<b class="nc">&nbsp;	public ModelCollector() {</b>
+<b class="nc">&nbsp;		this.factory = new DynamicModelFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param factory
+&nbsp;	 */
+<b class="nc">&nbsp;	public ModelCollector(ModelFactory factory) {</b>
+<b class="nc">&nbsp;		this.factory = factory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience method to obtain a ModelCollector.
+&nbsp;	 *
+&nbsp;	 * @return a ModelCollector
+&nbsp;	 */
+&nbsp;	public static ModelCollector toModel() {
+<b class="nc">&nbsp;		return new ModelCollector();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience method to obtain a ModelCollector, which will return a TreeModel.
+&nbsp;	 *
+&nbsp;	 * @return a ModelCollector
+&nbsp;	 */
+&nbsp;	public static ModelCollector toTreeModel() {
+<b class="nc">&nbsp;		return new ModelCollector(new TreeModelFactory());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Supplier&lt;Model&gt; supplier() {
+<b class="nc">&nbsp;		return () -&gt; factory.createEmptyModel();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BiConsumer&lt;Model, Statement&gt; accumulator() {
+<b class="nc">&nbsp;		return (m, s) -&gt; {</b>
+<b class="nc">&nbsp;			synchronized (m) {</b>
+<b class="nc">&nbsp;				m.add(s);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BinaryOperator&lt;Model&gt; combiner() {
+<b class="nc">&nbsp;		return (m1, m2) -&gt; {</b>
+<b class="nc">&nbsp;			m1.addAll(m2);</b>
+<b class="nc">&nbsp;			return m1;</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Function&lt;Model, Model&gt; finisher() {
+<b class="nc">&nbsp;		return Function.identity();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;Characteristics&gt; characteristics() {
+<b class="nc">&nbsp;		return EnumSet.of(Characteristics.CONCURRENT, Characteristics.IDENTITY_FINISH, Characteristics.UNORDERED);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

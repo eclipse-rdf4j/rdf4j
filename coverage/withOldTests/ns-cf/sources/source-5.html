@@ -1,0 +1,615 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemoryStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory</a>
+</div>
+
+<h1>Coverage Summary for Class: MemoryStore (org.eclipse.rdf4j.sail.memory)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemoryStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    81.8%
+  </span>
+  <span class="absValue">
+    (18/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    26.2%
+  </span>
+  <span class="absValue">
+    (22/84)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    39.7%
+  </span>
+  <span class="absValue">
+    (56/141)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">MemoryStore$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (18/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    26.2%
+  </span>
+  <span class="absValue">
+    (22/84)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    38.4%
+  </span>
+  <span class="absValue">
+    (56/146)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Timer;
+&nbsp;import java.util.TimerTask;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailChangedEvent;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailDataset;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailSink;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailStore;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the Sail interface that stores its data in main memory and that can use a file for persistent
+&nbsp; * storage. This Sail implementation supports single, isolated transactions. This means that changes to the data are not
+&nbsp; * visible until a transaction is committed and that concurrent transactions are not possible. When another transaction
+&nbsp; * is active, calls to &lt;var&gt;startTransaction()&lt;/var&gt; will block until the active transaction is committed or rolled
+&nbsp; * back.
+&nbsp; *
+&nbsp; * The MemoryStore is designed for datasets with fewer than 100,000 triples. The MemoryStore uses hash tables, and when
+&nbsp; * these hash tables fill up it copies the values to larger hash tables. This can cause strain on the garbage collector
+&nbsp; * due to lots of memory being allocated and freed.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author jeen
+&nbsp; */
+&nbsp;public class MemoryStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MemoryStore.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	protected static final String DATA_FILE_NAME = &quot;memorystore.data&quot;;
+&nbsp;
+&nbsp;	protected static final String SYNC_FILE_NAME = &quot;memorystore.sync&quot;;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Factory/cache for MemValue objects.
+&nbsp;	 */
+&nbsp;	private SailStore store;
+&nbsp;
+<b class="fc">&nbsp;	private volatile boolean persist = false;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The file used for data persistence, null if this is a volatile RDF store.
+&nbsp;	 */
+&nbsp;	private volatile File dataFile;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The file used for serialising data, null if this is a volatile RDF store.
+&nbsp;	 */
+&nbsp;	private volatile File syncFile;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The directory lock, null if this is read-only or a volatile RDF store.
+&nbsp;	 */
+&nbsp;	private volatile Lock dirLock;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the contents of this repository have changed.
+&nbsp;	 */
+&nbsp;	private volatile boolean contentsChanged;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The sync delay.
+&nbsp;	 *
+&nbsp;	 * @see #setSyncDelay
+&nbsp;	 */
+<b class="fc">&nbsp;	private volatile long syncDelay = 0L;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Semaphore used to synchronize concurrent access to {@link #syncWithLock()} .
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Object syncSemaphore = new Object();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The timer used to trigger file synchronization.
+&nbsp;	 */
+&nbsp;	private volatile Timer syncTimer;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The currently scheduled timer task, if any.
+&nbsp;	 */
+&nbsp;	private volatile TimerTask syncTimerTask;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Semaphore used to synchronize concurrent access to {@link #syncTimer} and {@link #syncTimerTask}.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Object syncTimerSemaphore = new Object();</b>
+&nbsp;
+&nbsp;	private EvaluationStrategyFactory evalStratFactory;
+&nbsp;
+&nbsp;	/** independent life cycle */
+&nbsp;	private FederatedServiceResolver serviceResolver;
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private SPARQLServiceResolver dependentServiceResolver;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new MemoryStore.
+&nbsp;	 */
+<b class="fc">&nbsp;	public MemoryStore() {</b>
+<b class="fc">&nbsp;		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,</b>
+&nbsp;				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+<b class="fc">&nbsp;		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new persistent MemoryStore. If the specified data directory contains an existing store, its contents
+&nbsp;	 * will be restored upon initialization.
+&nbsp;	 *
+&nbsp;	 * @param dataDir the data directory to be used for persistence.
+&nbsp;	 */
+&nbsp;	public MemoryStore(File dataDir) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		setDataDir(dataDir);</b>
+<b class="nc">&nbsp;		setPersist(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public void setPersist(boolean persist) {
+<b class="pc">&nbsp;		if (isInitialized()) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;sail has already been initialized&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		this.persist = persist;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean getPersist() {
+<b class="nc">&nbsp;		return persist;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the time (in milliseconds) to wait after a transaction was commited before writing the changed data to file.
+&nbsp;	 * Setting this variable to 0 will force a file sync immediately after each commit. A negative value will deactivate
+&nbsp;	 * file synchronization until the Sail is shut down. A positive value will postpone the synchronization for at least
+&nbsp;	 * that amount of milliseconds. If in the meantime a new transaction is started, the file synchronization will be
+&nbsp;	 * rescheduled to wait for another &lt;var&gt;syncDelay&lt;/var&gt; ms. This way, bursts of transaction events can be combined
+&nbsp;	 * in one file sync.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The default value for this parameter is &lt;var&gt;0&lt;/var&gt; (immediate synchronization).
+&nbsp;	 *
+&nbsp;	 * @param syncDelay The sync delay in milliseconds.
+&nbsp;	 */
+&nbsp;	public void setSyncDelay(long syncDelay) {
+<b class="pc">&nbsp;		if (isInitialized()) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;sail has already been initialized&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		this.syncDelay = syncDelay;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the currently configured sync delay.
+&nbsp;	 *
+&nbsp;	 * @return syncDelay The sync delay in milliseconds.
+&nbsp;	 * @see #setSyncDelay
+&nbsp;	 */
+&nbsp;	public long getSyncDelay() {
+<b class="nc">&nbsp;		return syncDelay;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the {@link EvaluationStrategy}.
+&nbsp;	 */
+&nbsp;	public synchronized EvaluationStrategyFactory getEvaluationStrategyFactory() {
+<b class="fc">&nbsp;		if (evalStratFactory == null) {</b>
+<b class="fc">&nbsp;			evalStratFactory = new StrictEvaluationStrategyFactory(getFederatedServiceResolver());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		evalStratFactory.setQuerySolutionCacheThreshold(getIterationCacheSyncThreshold());</b>
+<b class="fc">&nbsp;		evalStratFactory.setTrackResultSize(isTrackResultSize());</b>
+<b class="fc">&nbsp;		return evalStratFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the {@link EvaluationStrategy} to use.
+&nbsp;	 */
+&nbsp;	public synchronized void setEvaluationStrategyFactory(EvaluationStrategyFactory factory) {
+<b class="nc">&nbsp;		evalStratFactory = factory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the SERVICE resolver.
+&nbsp;	 */
+&nbsp;	public synchronized FederatedServiceResolver getFederatedServiceResolver() {
+<b class="pc">&nbsp;		if (serviceResolver == null) {</b>
+<b class="pc">&nbsp;			if (dependentServiceResolver == null) {</b>
+<b class="fc">&nbsp;				dependentServiceResolver = new SPARQLServiceResolver();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			setFederatedServiceResolver(dependentServiceResolver);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return serviceResolver;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides the {@link FederatedServiceResolver} used by this instance, but the given resolver is not shutDown when
+&nbsp;	 * this instance is.
+&nbsp;	 *
+&nbsp;	 * @param resolver The SERVICE resolver to set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+<b class="fc">&nbsp;		this.serviceResolver = resolver;</b>
+<b class="pc">&nbsp;		if (resolver != null &amp;&amp; evalStratFactory instanceof FederatedServiceResolverClient) {</b>
+<b class="nc">&nbsp;			((FederatedServiceResolverClient) evalStratFactory).setFederatedServiceResolver(resolver);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initializes this repository. If a persistence file is defined for the store, the contents will be restored.
+&nbsp;	 *
+&nbsp;	 * @throws SailException when initialization of the store failed.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void initializeInternal() throws SailException {
+<b class="fc">&nbsp;		logger.debug(&quot;Initializing MemoryStore...&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		this.store = new MemorySailStore(debugEnabled());</b>
+&nbsp;
+<b class="pc">&nbsp;		if (persist) {</b>
+<b class="nc">&nbsp;			File dataDir = getDataDir();</b>
+<b class="nc">&nbsp;			DirectoryLockManager locker = new DirectoryLockManager(dataDir);</b>
+<b class="nc">&nbsp;			dataFile = new File(dataDir, DATA_FILE_NAME);</b>
+<b class="nc">&nbsp;			syncFile = new File(dataDir, SYNC_FILE_NAME);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (dataFile.exists()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Reading data from {}...&quot;, dataFile);</b>
+&nbsp;
+&nbsp;				// Initialize persistent store from file
+<b class="nc">&nbsp;				if (!dataFile.canRead()) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Data file is not readable: {}&quot;, dataFile);</b>
+<b class="nc">&nbsp;					throw new SailException(&quot;Can&#39;t read data file: &quot; + dataFile);</b>
+&nbsp;				}
+&nbsp;				// try to create a lock for later writing
+<b class="nc">&nbsp;				dirLock = locker.tryLock();</b>
+<b class="nc">&nbsp;				if (dirLock == null) {</b>
+<b class="nc">&nbsp;					logger.warn(&quot;Failed to lock directory: {}&quot;, dataDir);</b>
+&nbsp;				}
+&nbsp;				// Don&#39;t try to read empty files: this will result in an
+&nbsp;				// IOException, and the file doesn&#39;t contain any data anyway.
+<b class="nc">&nbsp;				if (dataFile.length() == 0L) {</b>
+<b class="nc">&nbsp;					logger.warn(&quot;Ignoring empty data file: {}&quot;, dataFile);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					SailSink explicit = store.getExplicitSailSource().sink(IsolationLevels.NONE);</b>
+<b class="nc">&nbsp;					SailSink inferred = store.getInferredSailSource().sink(IsolationLevels.NONE);</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						new FileIO(store.getValueFactory()).read(dataFile, explicit, inferred);</b>
+<b class="nc">&nbsp;						logger.debug(&quot;Data file read successfully&quot;);</b>
+<b class="nc">&nbsp;					} catch (IOException e) {</b>
+<b class="nc">&nbsp;						logger.error(&quot;Failed to read data file&quot;, e);</b>
+<b class="nc">&nbsp;						throw new SailException(e);</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						explicit.prepare();</b>
+<b class="nc">&nbsp;						explicit.flush();</b>
+<b class="nc">&nbsp;						explicit.close();</b>
+<b class="nc">&nbsp;						inferred.prepare();</b>
+<b class="nc">&nbsp;						inferred.flush();</b>
+<b class="nc">&nbsp;						inferred.close();</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+&nbsp;				// file specified that does not exist yet, create it
+&nbsp;				try {
+<b class="nc">&nbsp;					File dir = dataFile.getParentFile();</b>
+<b class="nc">&nbsp;					if (dir != null &amp;&amp; !dir.exists()) {</b>
+<b class="nc">&nbsp;						logger.debug(&quot;Creating directory for data file...&quot;);</b>
+<b class="nc">&nbsp;						if (!dir.mkdirs()) {</b>
+<b class="nc">&nbsp;							logger.debug(&quot;Failed to create directory for data file: {}&quot;, dir);</b>
+<b class="nc">&nbsp;							throw new SailException(&quot;Failed to create directory for data file: &quot; + dir);</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;					// try to lock directory or fail
+<b class="nc">&nbsp;					dirLock = locker.lockOrFail();</b>
+&nbsp;
+<b class="nc">&nbsp;					logger.debug(&quot;Initializing data file...&quot;);</b>
+<b class="nc">&nbsp;					try (SailDataset explicit = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);</b>
+<b class="nc">&nbsp;							SailDataset inferred = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {</b>
+<b class="nc">&nbsp;						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					logger.debug(&quot;Data file initialized&quot;);</b>
+<b class="nc">&nbsp;				} catch (IOException | SailException e) {</b>
+<b class="nc">&nbsp;					logger.debug(&quot;Failed to initialize data file&quot;, e);</b>
+<b class="nc">&nbsp;					throw new SailException(&quot;Failed to initialize data file &quot; + dataFile, e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		contentsChanged = false;</b>
+&nbsp;
+<b class="fc">&nbsp;		logger.debug(&quot;MemoryStore initialized&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void shutDownInternal() throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			cancelSyncTimer();</b>
+<b class="fc">&nbsp;			sync();</b>
+&nbsp;
+<b class="fc">&nbsp;			store.close();</b>
+<b class="fc">&nbsp;			dataFile = null;</b>
+<b class="fc">&nbsp;			syncFile = null;</b>
+&nbsp;		} finally {
+<b class="pc">&nbsp;			if (dirLock != null) {</b>
+<b class="nc">&nbsp;				dirLock.release();</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (dependentServiceResolver != null) {</b>
+<b class="fc">&nbsp;				dependentServiceResolver.shutDown();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this Sail object is writable. A MemoryStore is not writable if a read-only data file is used.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public boolean isWritable() {
+&nbsp;		// Sail is not writable when it has a dataDir but no directory lock
+<b class="pc">&nbsp;		return !persist || dirLock != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected NotifyingSailConnection getConnectionInternal() throws SailException {
+<b class="fc">&nbsp;		return new MemoryStoreConnection(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="pc">&nbsp;		if (store == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;sail not initialized.&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return store.getValueFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void notifySailChanged(SailChangedEvent event) {
+<b class="fc">&nbsp;		super.notifySailChanged(event);</b>
+<b class="fc">&nbsp;		synchronized (syncSemaphore) {</b>
+<b class="pc">&nbsp;			contentsChanged = contentsChanged || event.statementsAdded() || event.statementsRemoved();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void scheduleSyncTask() throws SailException {
+<b class="pc">&nbsp;		if (!persist) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (syncDelay == 0L) {</b>
+&nbsp;			// Sync immediately
+<b class="nc">&nbsp;			sync();</b>
+<b class="nc">&nbsp;		} else if (syncDelay &gt; 0L) {</b>
+<b class="nc">&nbsp;			synchronized (syncTimerSemaphore) {</b>
+&nbsp;				// Sync in syncDelay milliseconds
+<b class="nc">&nbsp;				if (syncTimer == null) {</b>
+&nbsp;					// Create the syncTimer on a deamon thread
+<b class="nc">&nbsp;					syncTimer = new Timer(&quot;MemoryStore synchronization&quot;, true);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (syncTimerTask != null) {</b>
+&nbsp;					// sync task from (concurrent) other transaction exists.
+&nbsp;					// cancel and replace with newly scheduled sync task.
+<b class="nc">&nbsp;					syncTimerTask.cancel();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				syncTimerTask = new TimerTask() {</b>
+&nbsp;
+&nbsp;					@Override
+&nbsp;					public void run() {
+&nbsp;						try {
+<b class="nc">&nbsp;							sync();</b>
+<b class="nc">&nbsp;						} catch (SailException e) {</b>
+<b class="nc">&nbsp;							logger.warn(&quot;Unable to sync on timer&quot;, e);</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;				};
+&nbsp;
+<b class="nc">&nbsp;				syncTimer.schedule(syncTimerTask, syncDelay);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void cancelSyncTask() {
+<b class="fc">&nbsp;		synchronized (syncTimerSemaphore) {</b>
+<b class="pc">&nbsp;			if (syncTimerTask != null) {</b>
+<b class="nc">&nbsp;				syncTimerTask.cancel();</b>
+<b class="nc">&nbsp;				syncTimerTask = null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void cancelSyncTimer() {
+<b class="fc">&nbsp;		synchronized (syncTimerSemaphore) {</b>
+<b class="pc">&nbsp;			if (syncTimer != null) {</b>
+<b class="nc">&nbsp;				syncTimer.cancel();</b>
+<b class="nc">&nbsp;				syncTimer = null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Synchronizes the contents of this repository with the data that is stored on disk. Data will only be written when
+&nbsp;	 * the contents of the repository and data in the file are out of sync.
+&nbsp;	 */
+&nbsp;	public void sync() throws SailException {
+&nbsp;		// syncSemaphore prevents concurrent file synchronizations
+<b class="fc">&nbsp;		synchronized (syncSemaphore) {</b>
+<b class="pc">&nbsp;			if (persist &amp;&amp; contentsChanged) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;syncing data to file...&quot;);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IsolationLevels level = IsolationLevels.SNAPSHOT;</b>
+<b class="nc">&nbsp;					try (SailDataset explicit = store.getExplicitSailSource().dataset(level);</b>
+<b class="nc">&nbsp;							SailDataset inferred = store.getInferredSailSource().dataset(level)) {</b>
+<b class="nc">&nbsp;						new FileIO(store.getValueFactory()).write(explicit, inferred, syncFile, dataFile);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					contentsChanged = false;</b>
+<b class="nc">&nbsp;					logger.debug(&quot;Data synced to file&quot;);</b>
+<b class="nc">&nbsp;				} catch (IOException e) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Failed to sync to file&quot;, e);</b>
+<b class="nc">&nbsp;					throw new SailException(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	SailStore getSailStore() {
+<b class="fc">&nbsp;		return store;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

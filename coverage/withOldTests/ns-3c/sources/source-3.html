@@ -1,0 +1,628 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FilterOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: FilterOptimizer (org.eclipse.rdf4j.federated.optimizer)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FilterOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/53)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">FilterOptimizer$FilterBindingFinder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FilterOptimizer$FilterExprInsertVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/61)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FilterOptimizer$VarFinder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/86)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/135)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.optimizer;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.EmptyResult;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterTuple;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NUnion;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.exception.OptimizationException;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Filter optimizer to push down FILTER expressions as far as possible.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FilterOptimizer extends AbstractSimpleQueryModelVisitor&lt;OptimizationException&gt; implements FedXOptimizer {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FilterOptimizer.class);</b>
+&nbsp;
+&nbsp;	public FilterOptimizer() {
+<b class="nc">&nbsp;		super(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr) {
+<b class="nc">&nbsp;		tupleExpr.visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Filter filter) {
+&nbsp;
+<b class="nc">&nbsp;		if (filter.getArg() instanceof EmptyResult) {</b>
+<b class="nc">&nbsp;			log.debug(</b>
+&nbsp;					&quot;Argument of filter expression does not yield results at the provided sources, replacing Filter node.&quot;);
+<b class="nc">&nbsp;			filter.replaceWith(filter.getArg());</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * TODO idea: if we have a FILTER such as ?s=&#39;a&#39; OR ?s=&#39;b&#39; OR ?s=&#39;c&#39; handle this appropriately
+&nbsp;		 */
+&nbsp;
+<b class="nc">&nbsp;		ValueExpr valueExpr = filter.getCondition();</b>
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * TODO transform condition into some normal form, e.g. CNF
+&nbsp;		 */
+&nbsp;
+&nbsp;		// determine conjunctive expressions
+<b class="nc">&nbsp;		List&lt;ValueExpr&gt; conjunctiveExpressions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		getConjunctiveExpressions(valueExpr, conjunctiveExpressions);</b>
+&nbsp;
+<b class="nc">&nbsp;		FilterExprInsertVisitor filterExprVst = new FilterExprInsertVisitor();</b>
+<b class="nc">&nbsp;		List&lt;ValueExpr&gt; remainingExpr = new ArrayList&lt;&gt;(conjunctiveExpressions.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		for (ValueExpr cond : conjunctiveExpressions) {</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * Determine if this filter is applicable for optimization. Currently only leaf expressions are applicable,
+&nbsp;			 * i.e. not combined expressions.
+&nbsp;			 */
+<b class="nc">&nbsp;			if (isCompatibleExpr(cond)) {</b>
+&nbsp;
+<b class="nc">&nbsp;				HashSet&lt;String&gt; exprVars = new VarFinder().findVars(cond);</b>
+<b class="nc">&nbsp;				FilterExpr filterExpr = new FilterExpr(cond, exprVars);</b>
+<b class="nc">&nbsp;				if ((new FilterBindingFinder().isFilterOnAssignedBinding(filter, filterExpr.getVars()))) {</b>
+&nbsp;					// make sure the filter remains in the new filter expression
+<b class="nc">&nbsp;					remainingExpr.add(filterExpr.getExpression());</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				filterExprVst.initialize(filterExpr);</b>
+<b class="nc">&nbsp;				filter.getArg().visit(filterExprVst);</b>
+&nbsp;
+&nbsp;				// if the filter expr. is handled in the stmt we do not have to keep it
+<b class="nc">&nbsp;				if (filterExprVst.canRemove()) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				remainingExpr.add(filterExpr.getExpression());</b>
+&nbsp;
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				remainingExpr.add(cond);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (remainingExpr.isEmpty()) {</b>
+<b class="nc">&nbsp;			filter.replaceWith(filter.getArg()); // remove the filter</b>
+<b class="nc">&nbsp;		} else if (remainingExpr.size() == 1) {</b>
+<b class="nc">&nbsp;			filter.setCondition(remainingExpr.get(0)); // just apply the remaining condition</b>
+&nbsp;		} else {
+&nbsp;
+&nbsp;			// construct conjunctive value expr
+<b class="nc">&nbsp;			And root = new And();</b>
+<b class="nc">&nbsp;			root.setLeftArg(remainingExpr.get(0));</b>
+<b class="nc">&nbsp;			And tmp = root;</b>
+<b class="nc">&nbsp;			for (int i = 1; i &lt; remainingExpr.size() - 1; i++) {</b>
+<b class="nc">&nbsp;				And _a = new And();</b>
+<b class="nc">&nbsp;				_a.setLeftArg(remainingExpr.get(i));</b>
+<b class="nc">&nbsp;				tmp.setRightArg(_a);</b>
+<b class="nc">&nbsp;				tmp = _a;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			tmp.setRightArg(remainingExpr.get(remainingExpr.size() - 1));</b>
+&nbsp;
+<b class="nc">&nbsp;			filter.setCondition(root);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(filter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Service node) throws OptimizationException {
+&nbsp;		// do not optimize anything within SERVICE
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * add the conjunctive expressions to specified list, has recursive step.
+&nbsp;	 *
+&nbsp;	 * @param expr     the expr, in the best case in CNF
+&nbsp;	 * @param conjExpr the list to which expressions will be added
+&nbsp;	 */
+&nbsp;	protected void getConjunctiveExpressions(ValueExpr expr, List&lt;ValueExpr&gt; conjExpr) {
+<b class="nc">&nbsp;		if (expr instanceof And) {</b>
+<b class="nc">&nbsp;			And and = (And) expr;</b>
+<b class="nc">&nbsp;			getConjunctiveExpressions(and.getLeftArg(), conjExpr);</b>
+<b class="nc">&nbsp;			getConjunctiveExpressions(and.getRightArg(), conjExpr);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			conjExpr.add(expr);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * returns true if this filter can be used for optimization. Currently no conjunctive or disjunctive expressions are
+&nbsp;	 * supported.
+&nbsp;	 *
+&nbsp;	 * @param e
+&nbsp;	 * @return whether the expression is compatible
+&nbsp;	 */
+&nbsp;	protected boolean isCompatibleExpr(ValueExpr e) {
+&nbsp;
+<b class="nc">&nbsp;		if (e instanceof And || e instanceof Or) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (e instanceof Not) {</b>
+<b class="nc">&nbsp;			return isCompatibleExpr(((Not) e).getArg());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static class VarFinder extends AbstractSimpleQueryModelVisitor&lt;OptimizationException&gt; {
+&nbsp;
+&nbsp;		protected HashSet&lt;String&gt; vars;
+&nbsp;
+&nbsp;		protected VarFinder() {
+<b class="nc">&nbsp;			super(true);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public HashSet&lt;String&gt; findVars(ValueExpr expr) {
+<b class="nc">&nbsp;			vars = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			expr.visit(this);</b>
+<b class="nc">&nbsp;			return vars;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="nc">&nbsp;			if (var.getValue() == null) {</b>
+<b class="nc">&nbsp;				vars.add(var.getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			super.meet(var);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static class FilterBindingFinder extends AbstractSimpleQueryModelVisitor&lt;OptimizationException&gt; {
+&nbsp;
+&nbsp;		protected Set&lt;String&gt; vars;
+&nbsp;
+&nbsp;		protected boolean isFilterOnAssignedBinding;
+&nbsp;
+&nbsp;		protected FilterBindingFinder() {
+<b class="nc">&nbsp;			super(true);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isFilterOnAssignedBinding(TupleExpr expr, Set&lt;String&gt; filterArgs) {
+<b class="nc">&nbsp;			this.vars = filterArgs;</b>
+<b class="nc">&nbsp;			expr.visit(this);</b>
+<b class="nc">&nbsp;			return isFilterOnAssignedBinding;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Extension node) {
+<b class="nc">&nbsp;			for (String var : vars) {</b>
+<b class="nc">&nbsp;				if (node.getBindingNames().contains(var)) {</b>
+<b class="nc">&nbsp;					isFilterOnAssignedBinding = true;</b>
+&nbsp;					return;
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			super.meet(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(BindingSetAssignment node) {
+<b class="nc">&nbsp;			for (String var : vars) {</b>
+<b class="nc">&nbsp;				if (node.getBindingNames().contains(var)) {</b>
+<b class="nc">&nbsp;					isFilterOnAssignedBinding = true;</b>
+&nbsp;					return;
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			super.meet(node);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static class FilterExprInsertVisitor extends AbstractSimpleQueryModelVisitor&lt;OptimizationException&gt; {
+&nbsp;
+<b class="nc">&nbsp;		protected FilterExpr filterExpr = null; // the current filter Expr</b>
+<b class="nc">&nbsp;		protected int added = 0;</b>
+&nbsp;		// determines whether the filter is static i.e. should not be pushed down as it would change
+&nbsp;		// the query semantically
+<b class="nc">&nbsp;		protected boolean isStatic = false;</b>
+&nbsp;
+&nbsp;		protected FilterExprInsertVisitor() {
+<b class="nc">&nbsp;			super(true);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void initialize(FilterExpr filterExpr) {
+<b class="nc">&nbsp;			this.added = 0;</b>
+<b class="nc">&nbsp;			this.filterExpr = filterExpr;</b>
+<b class="nc">&nbsp;			this.isStatic = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean canRemove() {
+<b class="nc">&nbsp;			return added &gt; 0 &amp;&amp; !isStatic;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(LeftJoin node) {
+<b class="nc">&nbsp;			isStatic = true;</b>
+<b class="nc">&nbsp;			super.meet(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Union node) {
+<b class="nc">&nbsp;			isStatic = true;</b>
+<b class="nc">&nbsp;			super.meet(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Difference node) {
+<b class="nc">&nbsp;			isStatic = true;</b>
+<b class="nc">&nbsp;			super.meet(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meetOther(QueryModelNode node) {
+&nbsp;
+<b class="nc">&nbsp;			if (node instanceof FilterTuple) {</b>
+<b class="nc">&nbsp;				if (node instanceof ExclusiveGroup) {</b>
+&nbsp;					// for ExclusiveGroup also visit the children to insert
+&nbsp;					// filter expressions and bound values
+<b class="nc">&nbsp;					node.visitChildren(this);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				handleFilter((FilterTuple) node, filterExpr);</b>
+<b class="nc">&nbsp;			} else if (node instanceof StatementTupleExpr) {</b>
+&nbsp;				return;
+&nbsp;			} else {
+<b class="nc">&nbsp;				super.meetOther(node);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void handleFilter(FilterTuple filterTuple, FilterExpr expr) {
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * CompareEQ expressions are inserted as bindings if possible
+&nbsp;			 *
+&nbsp;			 * if the filtertuple contains all vars of the filterexpr, we can evaluate the filter expr safely on the
+&nbsp;			 * filterTuple
+&nbsp;			 *
+&nbsp;			 * if there is no intersection of variables, the filter is irrelevant for this expr
+&nbsp;			 *
+&nbsp;			 * if there is some intersection, we cannot remove the filter and have to keep it in the query plan for
+&nbsp;			 * postfiltering
+&nbsp;			 */
+<b class="nc">&nbsp;			int intersected = 0;</b>
+<b class="nc">&nbsp;			for (String filterVar : expr.getVars()) {</b>
+<b class="nc">&nbsp;				if (filterTuple.getFreeVars().contains(filterVar)) {</b>
+<b class="nc">&nbsp;					intersected++;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// filter expression is irrelevant for this expression
+<b class="nc">&nbsp;			if (intersected == 0) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+&nbsp;			// push eq comparison into stmt as bindings
+<b class="nc">&nbsp;			if (expr.isCompareEq()) {</b>
+&nbsp;
+<b class="nc">&nbsp;				if (bindCompareInExpression(filterTuple, (Compare) expr.getExpression())) {</b>
+<b class="nc">&nbsp;					added++;</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// filter contains all variables =&gt; push filter
+<b class="nc">&nbsp;			if (intersected == expr.getVars().size()) {</b>
+<b class="nc">&nbsp;				if (shouldAddFilter(filterTuple)) {</b>
+&nbsp;					// only push filter if it has not been applied to another statement
+<b class="nc">&nbsp;					filterTuple.addFilterExpr(expr);</b>
+<b class="nc">&nbsp;					added++;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean shouldAddFilter(FilterTuple filterTuple) {
+<b class="nc">&nbsp;			if (filterTuple.getParentNode() instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;				return false;</b>
+<b class="nc">&nbsp;			} else if (hasUnionParent(filterTuple)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} else if (added &gt; 0) {</b>
+&nbsp;				// only push filter if it has not been applied to another statement
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return added == 0;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private boolean hasUnionParent(FilterTuple pattern) {
+<b class="nc">&nbsp;			QueryModelNode node = pattern.getParentNode();</b>
+<b class="nc">&nbsp;			while (node != null &amp;&amp; node != filterExpr) {</b>
+<b class="nc">&nbsp;				if (node instanceof Union || node instanceof NUnion) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				node = node.getParentNode();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Bind the given compare filter expression in the tuple expression, i.e. insert the value as binding for the
+&nbsp;		 * respective variable.
+&nbsp;		 *
+&nbsp;		 * @param filterTuple
+&nbsp;		 * @param cmp
+&nbsp;		 * @return
+&nbsp;		 */
+&nbsp;		private boolean bindCompareInExpression(FilterTuple filterTuple, Compare cmp) {
+&nbsp;
+<b class="nc">&nbsp;			boolean isVarLeft = cmp.getLeftArg() instanceof Var;</b>
+<b class="nc">&nbsp;			boolean isVarRight = cmp.getRightArg() instanceof Var;</b>
+&nbsp;
+&nbsp;			// cases
+&nbsp;			// 1. both vars: we cannot add binding
+&nbsp;			// 2. left var, right value -&gt; add binding
+&nbsp;			// 3. right var, left value -&gt; add binding
+&nbsp;			//
+&nbsp;			// Note: we restrict this optimization to values of type Resource
+&nbsp;			// since for instance subj can only be URIs (i.e. literals are
+&nbsp;			// not allowed). For other types the Filter remains in place.
+&nbsp;
+<b class="nc">&nbsp;			if (isVarLeft &amp;&amp; isVarRight) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (isVarLeft &amp;&amp; cmp.getRightArg() instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;				String varName = ((Var) cmp.getLeftArg()).getName();</b>
+<b class="nc">&nbsp;				Value value = ((ValueConstant) cmp.getRightArg()).getValue();</b>
+<b class="nc">&nbsp;				filterTuple.addBoundFilter(varName, value);</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (isVarRight &amp;&amp; cmp.getLeftArg() instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;				String varName = ((Var) cmp.getRightArg()).getName();</b>
+<b class="nc">&nbsp;				Value value = ((ValueConstant) cmp.getLeftArg()).getValue();</b>
+<b class="nc">&nbsp;				filterTuple.addBoundFilter(varName, value);</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return false; // not added</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

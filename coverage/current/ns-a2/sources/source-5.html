@@ -1,0 +1,225 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFRemover</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.util</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFRemover (org.eclipse.rdf4j.repository.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFRemover</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.util;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+&nbsp;
+&nbsp;/**
+&nbsp; * An RDFHandler that removes RDF data from a repository.
+&nbsp; */
+&nbsp;public class RDFRemover extends AbstractRDFHandler {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The connection to use for the removal operations.
+&nbsp;	 */
+&nbsp;	private final RepositoryConnection con;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the context specified for this RDFRemover should be enforced upon all reported
+&nbsp;	 * statements.
+&nbsp;	 */
+&nbsp;	private boolean enforceContext;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The context to remove the statements from; &lt;var&gt;null&lt;/var&gt; to indicate the null context. This context value is
+&nbsp;	 * used when enforceContext is set to true.
+&nbsp;	 */
+&nbsp;	private Resource context;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFRemover object that removes the data from the default context.
+&nbsp;	 *
+&nbsp;	 * @param con The connection to use for the removal operations.
+&nbsp;	 */
+<b class="nc">&nbsp;	public RDFRemover(RepositoryConnection con) {</b>
+<b class="nc">&nbsp;		this.con = con;</b>
+<b class="nc">&nbsp;		this.enforceContext = false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enforces the supplied context upon all statements that are reported to this RDFRemover.
+&nbsp;	 *
+&nbsp;	 * @param context A Resource identifying the context, or &lt;var&gt;null&lt;/var&gt; for the null context.
+&nbsp;	 */
+&nbsp;	public void enforceContext(Resource context) {
+<b class="nc">&nbsp;		this.context = context;</b>
+<b class="nc">&nbsp;		enforceContext = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this RDFRemover enforces its context upon all statements that are reported to it.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if it enforces its context, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean enforcesContext() {
+<b class="nc">&nbsp;		return enforceContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the context identifier that this RDFRemover enforces upon all statements that are reported to it (in case
+&nbsp;	 * &lt;var&gt;enforcesContext()&lt;/var&gt; returns &lt;var&gt;true&lt;/var&gt;).
+&nbsp;	 *
+&nbsp;	 * @return A Resource identifying the context, or &lt;var&gt;null&lt;/var&gt; if the null context is enforced.
+&nbsp;	 */
+&nbsp;	public Resource getContext() {
+<b class="nc">&nbsp;		return context;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStatement(Statement st) throws RDFHandlerException {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (enforceContext) {</b>
+&nbsp;				// Override supplied context info
+<b class="nc">&nbsp;				con.remove(st.getSubject(), st.getPredicate(), st.getObject(), context);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				con.remove(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

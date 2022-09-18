@@ -1,0 +1,371 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ZeroLengthPath</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: ZeroLengthPath (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ZeroLengthPath</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    68%
+  </span>
+  <span class="absValue">
+    (17/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.6%
+  </span>
+  <span class="absValue">
+    (25/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (52/78)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;
+&nbsp;/**
+&nbsp; * A tuple expression that matches a path of length zero against an RDF graph. They can can be targeted at one of three
+&nbsp; * context scopes: all contexts, null context only, or named contexts only.
+&nbsp; */
+<b class="fc">&nbsp;public class ZeroLengthPath extends AbstractQueryModelNode implements TupleExpr {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private Scope scope;
+&nbsp;
+&nbsp;	private Var subjectVar;
+&nbsp;
+&nbsp;	private Var objectVar;
+&nbsp;
+&nbsp;	private Var contextVar;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	public ZeroLengthPath() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a zero-length path that matches a subject-, predicate- and object variable against statements from all
+&nbsp;	 * contexts.
+&nbsp;	 */
+&nbsp;	public ZeroLengthPath(Var subject, Var object) {
+<b class="nc">&nbsp;		this(Scope.DEFAULT_CONTEXTS, subject, object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a zero-length path that matches a subject-, predicate- and object variable against statements from the
+&nbsp;	 * specified context scope.
+&nbsp;	 */
+&nbsp;	public ZeroLengthPath(Scope scope, Var subject, Var object) {
+<b class="nc">&nbsp;		this(scope, subject, object, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a zero-length path that matches a subject-, predicate-, object- and context variable against statements
+&nbsp;	 * from all contexts.
+&nbsp;	 */
+&nbsp;	public ZeroLengthPath(Var subject, Var object, Var context) {
+<b class="nc">&nbsp;		this(Scope.DEFAULT_CONTEXTS, subject, object, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a zero-length path that matches a subject-, predicate-, object- and context variable against statements
+&nbsp;	 * from the specified context scope.
+&nbsp;	 */
+<b class="fc">&nbsp;	public ZeroLengthPath(Scope scope, Var subjVar, Var objVar, Var conVar) {</b>
+<b class="fc">&nbsp;		setScope(scope);</b>
+<b class="fc">&nbsp;		setSubjectVar(subjVar);</b>
+<b class="fc">&nbsp;		setObjectVar(objVar);</b>
+<b class="fc">&nbsp;		setContextVar(conVar);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the context scope for the zero-length path.
+&nbsp;	 */
+&nbsp;	public Scope getScope() {
+<b class="fc">&nbsp;		return scope;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the context scope for the zero-length path
+&nbsp;	 */
+&nbsp;	public void setScope(Scope scope) {
+<b class="pc">&nbsp;		assert scope != null : &quot;scope must not be null&quot;;</b>
+<b class="fc">&nbsp;		this.scope = scope;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Var getSubjectVar() {
+<b class="fc">&nbsp;		return subjectVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setSubjectVar(Var subject) {
+<b class="pc">&nbsp;		assert subject != null : &quot;subject must not be null&quot;;</b>
+<b class="fc">&nbsp;		subject.setParentNode(this);</b>
+<b class="fc">&nbsp;		subjectVar = subject;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Var getObjectVar() {
+<b class="fc">&nbsp;		return objectVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setObjectVar(Var object) {
+<b class="pc">&nbsp;		assert object != null : &quot;object must not be null&quot;;</b>
+<b class="fc">&nbsp;		object.setParentNode(this);</b>
+<b class="fc">&nbsp;		objectVar = object;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the context variable, if available.
+&nbsp;	 */
+&nbsp;	public Var getContextVar() {
+<b class="fc">&nbsp;		return contextVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setContextVar(Var context) {
+<b class="fc">&nbsp;		if (context != null) {</b>
+<b class="fc">&nbsp;			context.setParentNode(this);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		contextVar = context;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="nc">&nbsp;		return getAssuredBindingNames();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getAssuredBindingNames() {
+<b class="fc">&nbsp;		Set&lt;String&gt; bindingNames = new HashSet&lt;&gt;(8);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (subjectVar != null) {</b>
+<b class="fc">&nbsp;			bindingNames.add(subjectVar.getName());</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (objectVar != null) {</b>
+<b class="fc">&nbsp;			bindingNames.add(objectVar.getName());</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			bindingNames.add(contextVar.getName());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return bindingNames;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;Var&gt; getVarList() {
+<b class="nc">&nbsp;		return getVars(new ArrayList&lt;&gt;(4));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds the variables of this statement pattern to the supplied collection.
+&nbsp;	 */
+&nbsp;	public &lt;L extends Collection&lt;Var&gt;&gt; L getVars(L varCollection) {
+<b class="nc">&nbsp;		if (subjectVar != null) {</b>
+<b class="nc">&nbsp;			varCollection.add(subjectVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (objectVar != null) {</b>
+<b class="nc">&nbsp;			varCollection.add(objectVar);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			varCollection.add(contextVar);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return varCollection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		visitor.meet(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="pc">&nbsp;		if (subjectVar != null) {</b>
+<b class="fc">&nbsp;			subjectVar.visit(visitor);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (objectVar != null) {</b>
+<b class="fc">&nbsp;			objectVar.visit(visitor);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			contextVar.visit(visitor);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+<b class="fc">&nbsp;		if (subjectVar == current) {</b>
+<b class="fc">&nbsp;			setSubjectVar((Var) replacement);</b>
+<b class="pc">&nbsp;		} else if (objectVar == current) {</b>
+<b class="fc">&nbsp;			setObjectVar((Var) replacement);</b>
+<b class="nc">&nbsp;		} else if (contextVar == current) {</b>
+<b class="nc">&nbsp;			setContextVar((Var) replacement);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getSignature() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(128);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(super.getSignature());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (scope == Scope.NAMED_CONTEXTS) {</b>
+<b class="nc">&nbsp;			sb.append(&quot; FROM NAMED CONTEXT&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="pc">&nbsp;		if (other instanceof ZeroLengthPath) {</b>
+<b class="fc">&nbsp;			ZeroLengthPath o = (ZeroLengthPath) other;</b>
+<b class="pc">&nbsp;			return subjectVar.equals(o.getSubjectVar()) &amp;&amp; objectVar.equals(o.getObjectVar())</b>
+<b class="pc">&nbsp;					&amp;&amp; Objects.equals(contextVar, o.getContextVar()) &amp;&amp; scope.equals(o.getScope());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="fc">&nbsp;		int result = subjectVar.hashCode();</b>
+<b class="fc">&nbsp;		result ^= objectVar.hashCode();</b>
+<b class="pc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			result ^= contextVar.hashCode();</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (scope == Scope.NAMED_CONTEXTS) {</b>
+<b class="nc">&nbsp;			result = ~result;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ZeroLengthPath clone() {
+<b class="fc">&nbsp;		ZeroLengthPath clone = (ZeroLengthPath) super.clone();</b>
+<b class="fc">&nbsp;		clone.setSubjectVar(getSubjectVar().clone());</b>
+<b class="fc">&nbsp;		clone.setObjectVar(getObjectVar().clone());</b>
+&nbsp;
+<b class="pc">&nbsp;		if (getContextVar() != null) {</b>
+<b class="nc">&nbsp;			clone.setContextVar(getContextVar().clone());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return clone;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

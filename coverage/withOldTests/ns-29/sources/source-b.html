@@ -1,0 +1,345 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Load</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: Load (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Load</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/72)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.console.LockRemover;
+&nbsp;import org.eclipse.rdf4j.console.Util;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+&nbsp;import org.eclipse.rdf4j.console.setting.WorkDir;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Load command
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; */
+&nbsp;public class Load extends ConsoleCommand {
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;load&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Loads a data file into a repository, takes a file path or URL as argument&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return PrintHelp.USAGE + &quot;load &lt;file-or-url&gt; [from &lt;base-uri&gt;] [into &lt;context-id&gt;]\n&quot;</b>
+&nbsp;				+ &quot;  &lt;file-or-url&gt;   The path or URL identifying the data file\n&quot;
+&nbsp;				+ &quot;  &lt;base-uri&gt;      The base URI to use for resolving relative references, defaults to &lt;file-or-url&gt;\n&quot;
+&nbsp;				+ &quot;  &lt;context-id&gt;    The ID of the context to add the data to, e.g. foo:bar or _:n123\n&quot;
+&nbsp;				+ &quot;Loads the specified data file into the current repository\n&quot;;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String[] usesSettings() {
+<b class="nc">&nbsp;		return new String[] { WorkDir.NAME };</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 * @param settings
+&nbsp;	 */
+&nbsp;	public Load(ConsoleIO consoleIO, ConsoleState state, Map&lt;String, ConsoleSetting&gt; settings) {
+<b class="nc">&nbsp;		super(consoleIO, state, settings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(final String... tokens) {
+<b class="nc">&nbsp;		Repository repository = state.getRepository();</b>
+<b class="nc">&nbsp;		if (repository == null) {</b>
+<b class="nc">&nbsp;			writeUnopenedError();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (tokens.length &lt; 2) {</b>
+<b class="nc">&nbsp;				writeln(getHelpLong());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				String baseURI = null;</b>
+<b class="nc">&nbsp;				String context = null;</b>
+&nbsp;
+<b class="nc">&nbsp;				int index = 2;</b>
+<b class="nc">&nbsp;				if (tokens.length &gt;= index + 2 &amp;&amp; tokens[index].equalsIgnoreCase(&quot;from&quot;)) {</b>
+<b class="nc">&nbsp;					baseURI = tokens[index + 1];</b>
+<b class="nc">&nbsp;					index += 2;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (tokens.length &gt;= index + 2 &amp;&amp; tokens[index].equalsIgnoreCase(&quot;into&quot;)) {</b>
+<b class="nc">&nbsp;					context = tokens[tokens.length - 1];</b>
+<b class="nc">&nbsp;					index += 2;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (index &lt; tokens.length) {</b>
+<b class="nc">&nbsp;					writeln(getHelpLong());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					load(repository, baseURI, context, tokens);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get working dir setting.
+&nbsp;	 *
+&nbsp;	 * @return path of working dir
+&nbsp;	 */
+&nbsp;	private Path getWorkDir() {
+<b class="nc">&nbsp;		return ((WorkDir) settings.get(WorkDir.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load data into a repository
+&nbsp;	 *
+&nbsp;	 * @param repository repository
+&nbsp;	 * @param baseURI
+&nbsp;	 * @param context
+&nbsp;	 * @param tokens
+&nbsp;	 */
+&nbsp;	private void load(Repository repository, String baseURI, String context, final String... tokens) {
+<b class="nc">&nbsp;		final String dataPath = tokens[1];</b>
+<b class="nc">&nbsp;		URL dataURL = null;</b>
+<b class="nc">&nbsp;		File dataFile = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (Util.isHttpOrFile(dataPath)) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				dataURL = new URL(dataPath);</b>
+<b class="nc">&nbsp;			} catch (MalformedURLException e) {</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+&nbsp;			// dataPath is a file
+<b class="nc">&nbsp;			dataFile = Util.getNormalizedPath(getWorkDir(), dataPath).toFile();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			addData(repository, baseURI, context, dataURL, dataFile);</b>
+<b class="nc">&nbsp;		} catch (RepositoryReadOnlyException e) {</b>
+<b class="nc">&nbsp;			handleReadOnlyException(repository, e, tokens);</b>
+<b class="nc">&nbsp;		} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Malformed URL: &quot; + dataPath);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+&nbsp;			// Thrown when context URI is invalid
+<b class="nc">&nbsp;			writeError(e.getMessage());</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to load data&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (UnsupportedRDFormatException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;No parser available for this RDF format&quot;);</b>
+<b class="nc">&nbsp;		} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Malformed document&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Unable to add data to repository&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handle exceptions when loading data in a read-only repository. If a lock is present and can be removed, the
+&nbsp;	 * command will be executed again.
+&nbsp;	 *
+&nbsp;	 * @param repository repository
+&nbsp;	 * @param caught     exception
+&nbsp;	 * @param tokens     full command as series of tokens
+&nbsp;	 */
+&nbsp;	private void handleReadOnlyException(Repository repository, RepositoryReadOnlyException caught,
+&nbsp;			final String... tokens) {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (LockRemover.tryToRemoveLock(repository, consoleIO)) {</b>
+<b class="nc">&nbsp;				execute(tokens);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeError(&quot;Failed to load data&quot;, caught);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Unable to restart repository&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Unable to remove lock&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add data from a URL or local file. If the dataURL is null, then the datafile will be used.
+&nbsp;	 *
+&nbsp;	 * @param repository repository
+&nbsp;	 * @param baseURI    base URI
+&nbsp;	 * @param context    context (can be null)
+&nbsp;	 * @param dataURL    url of the data
+&nbsp;	 * @param dataFile   file containing data
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RDFParseException
+&nbsp;	 */
+&nbsp;	private void addData(Repository repository, String baseURI, String context, URL dataURL, File dataFile)
+&nbsp;			throws RepositoryException, IOException, RDFParseException {
+<b class="nc">&nbsp;		Resource[] contexts = getContexts(repository, context);</b>
+<b class="nc">&nbsp;		writeln(&quot;Loading data...&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		final long startTime = System.nanoTime();</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			if (dataURL == null) {</b>
+<b class="nc">&nbsp;				con.add(dataFile, baseURI, null, contexts);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				con.add(dataURL, baseURI, null, contexts);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		final long endTime = System.nanoTime();</b>
+<b class="nc">&nbsp;		writeln(&quot;Data has been added to the repository (&quot; + (endTime - startTime) / 1_000_000 + &quot; ms)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get context as resource
+&nbsp;	 *
+&nbsp;	 * @param repository
+&nbsp;	 * @param context
+&nbsp;	 * @return array of size one, or null
+&nbsp;	 */
+&nbsp;	private Resource[] getContexts(Repository repository, String context) {
+<b class="nc">&nbsp;		Resource[] contexts = new Resource[0];</b>
+<b class="nc">&nbsp;		if (context != null) {</b>
+&nbsp;			Resource contextURI;
+<b class="nc">&nbsp;			if (context.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;				contextURI = repository.getValueFactory().createBNode(context.substring(2));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				contextURI = repository.getValueFactory().createIRI(context);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			contexts = new Resource[] { contextURI };</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return contexts;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

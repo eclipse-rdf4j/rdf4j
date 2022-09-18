@@ -1,0 +1,235 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MapBindingSet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: MapBindingSet (org.eclipse.rdf4j.query.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MapBindingSet</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    78.6%
+  </span>
+  <span class="absValue">
+    (11/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    84.2%
+  </span>
+  <span class="absValue">
+    (16/19)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.impl;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.AbstractBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * A Map-based implementation of the {@link BindingSet} interface.
+&nbsp; */
+<b class="fc">&nbsp;public class MapBindingSet extends AbstractBindingSet implements MutableBindingSet {</b>
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -8857324525220429607L;
+&nbsp;
+&nbsp;	private final Map&lt;String, Binding&gt; bindings;
+&nbsp;
+&nbsp;	public MapBindingSet() {
+<b class="fc">&nbsp;		this(8);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new Map-based BindingSet with the specified initial capacity. Bindings can be added to this binding set
+&nbsp;	 * using the {@link #addBinding} methods.
+&nbsp;	 *
+&nbsp;	 * @param capacity The initial capacity of the created BindingSet object.
+&nbsp;	 */
+<b class="fc">&nbsp;	public MapBindingSet(int capacity) {</b>
+&nbsp;		// Create bindings map, compensating for HashMap&#39;s load factor
+<b class="fc">&nbsp;		bindings = new LinkedHashMap&lt;&gt;(capacity * 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds a binding to the binding set.
+&nbsp;	 *
+&nbsp;	 * @param binding The binding to add to the binding set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void addBinding(Binding binding) {
+<b class="pc">&nbsp;		assert !bindings.containsKey(binding.getName()) : &quot;variable already bound: &quot; + binding.getName();</b>
+<b class="fc">&nbsp;		bindings.put(binding.getName(), binding);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a binding from the binding set.
+&nbsp;	 *
+&nbsp;	 * @param name The binding&#39;s name.
+&nbsp;	 */
+&nbsp;	public void removeBinding(String name) {
+<b class="nc">&nbsp;		bindings.remove(name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all bindings from the binding set.
+&nbsp;	 */
+&nbsp;	public void clear() {
+<b class="nc">&nbsp;		bindings.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;Binding&gt; iterator() {
+<b class="fc">&nbsp;		return bindings.values().iterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="fc">&nbsp;		return bindings.keySet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Binding getBinding(String bindingName) {
+<b class="fc">&nbsp;		return bindings.get(bindingName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasBinding(String bindingName) {
+<b class="fc">&nbsp;		return bindings.containsKey(bindingName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Value getValue(String bindingName) {
+<b class="fc">&nbsp;		Binding binding = getBinding(bindingName);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (binding != null) {</b>
+<b class="fc">&nbsp;			return binding.getValue();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int size() {
+<b class="fc">&nbsp;		return bindings.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setBinding(String name, Value value) {
+<b class="fc">&nbsp;		bindings.put(name, new SimpleBinding(name, value));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setBinding(Binding binding) {
+<b class="nc">&nbsp;		bindings.put(binding.getName(), binding);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

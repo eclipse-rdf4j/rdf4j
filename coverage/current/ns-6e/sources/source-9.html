@@ -1,0 +1,330 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RegexValueEvaluationStepSupplier</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps</a>
+</div>
+
+<h1>Coverage Summary for Class: RegexValueEvaluationStepSupplier (org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RegexValueEvaluationStepSupplier</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (5/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    45.9%
+  </span>
+  <span class="absValue">
+    (28/61)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    73.1%
+  </span>
+  <span class="absValue">
+    (49/67)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RegexValueEvaluationStepSupplier$ChangingRegexQueryValueEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    62.5%
+  </span>
+  <span class="absValue">
+    (5/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    39.4%
+  </span>
+  <span class="absValue">
+    (28/71)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.6%
+  </span>
+  <span class="absValue">
+    (49/85)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
+&nbsp;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;
+<b class="nc">&nbsp;public class RegexValueEvaluationStepSupplier {</b>
+&nbsp;	/**
+&nbsp;	 * Returns value evaluation steps that determines whether the two operands match according to the &lt;code&gt;regex&lt;/code&gt;
+&nbsp;	 * operator.
+&nbsp;	 *
+&nbsp;	 * If possible it will cache the Pattern and flags, and if everything is constant it will return a constant value.
+&nbsp;	 */
+&nbsp;	private static final class ChangingRegexQueryValueEvaluationStep implements QueryValueEvaluationStep {
+&nbsp;		private final Regex node;
+&nbsp;		private final EvaluationStrategy strategy;
+&nbsp;
+<b class="nc">&nbsp;		private ChangingRegexQueryValueEvaluationStep(Regex node, EvaluationStrategy strategy) {</b>
+<b class="nc">&nbsp;			this.node = node;</b>
+<b class="nc">&nbsp;			this.strategy = strategy;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;			Value arg = strategy.evaluate(node.getArg(), bindings);</b>
+<b class="nc">&nbsp;			Value parg = strategy.evaluate(node.getPatternArg(), bindings);</b>
+<b class="nc">&nbsp;			Value farg = null;</b>
+<b class="nc">&nbsp;			ValueExpr flagsArg = node.getFlagsArg();</b>
+<b class="nc">&nbsp;			if (flagsArg != null) {</b>
+<b class="nc">&nbsp;				farg = strategy.evaluate(flagsArg, bindings);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (QueryEvaluationUtility.isStringLiteral(arg) &amp;&amp; QueryEvaluationUtility.isSimpleLiteral(parg)</b>
+<b class="nc">&nbsp;					&amp;&amp; (farg == null || QueryEvaluationUtility.isSimpleLiteral(farg))) {</b>
+<b class="nc">&nbsp;				String text = ((Literal) arg).getLabel();</b>
+<b class="nc">&nbsp;				String ptn = ((Literal) parg).getLabel();</b>
+&nbsp;				// TODO should this Pattern be cached?
+<b class="nc">&nbsp;				int f = extractRegexFlags(farg);</b>
+<b class="nc">&nbsp;				Pattern pattern = Pattern.compile(ptn, f);</b>
+<b class="nc">&nbsp;				boolean result = pattern.matcher(text).find();</b>
+<b class="nc">&nbsp;				return BooleanLiteral.valueOf(result);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static QueryValueEvaluationStep make(EvaluationStrategy strategy, Regex node,
+&nbsp;			QueryEvaluationContext context) {
+<b class="fc">&nbsp;		QueryValueEvaluationStep argStep = strategy.precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		QueryValueEvaluationStep pargStep = strategy.precompile(node.getPatternArg(), context);</b>
+<b class="fc">&nbsp;		QueryValueEvaluationStep fargStep = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueExpr flagsArg = node.getFlagsArg();</b>
+<b class="fc">&nbsp;		if (flagsArg != null) {</b>
+<b class="fc">&nbsp;			fargStep = strategy.precompile(flagsArg, context);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (argStep.isConstant() &amp;&amp; pargStep.isConstant() &amp;&amp; (flagsArg == null || fargStep.isConstant())) {</b>
+<b class="fc">&nbsp;			return allRegexPartsAreConstant(argStep, pargStep, fargStep, flagsArg);</b>
+<b class="pc">&nbsp;		} else if (pargStep.isConstant() &amp;&amp; (flagsArg == null || fargStep.isConstant())) {</b>
+<b class="fc">&nbsp;			return regexAndFlagsAreConstant(argStep, pargStep, fargStep, flagsArg);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new ChangingRegexQueryValueEvaluationStep(node, strategy);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static QueryValueEvaluationStep regexAndFlagsAreConstant(QueryValueEvaluationStep argStep,
+&nbsp;			QueryValueEvaluationStep pargStep, QueryValueEvaluationStep fargStep, ValueExpr flagsArg) {
+<b class="fc">&nbsp;		Value parg = pargStep.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="fc">&nbsp;		Value farg = null;</b>
+<b class="pc">&nbsp;		if (flagsArg != null) {</b>
+<b class="fc">&nbsp;			farg = fargStep.evaluate(EmptyBindingSet.getInstance());</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (QueryEvaluationUtility.isSimpleLiteral(parg)</b>
+<b class="pc">&nbsp;				&amp;&amp; (farg == null || QueryEvaluationUtility.isSimpleLiteral(farg))) {</b>
+<b class="fc">&nbsp;			String ptn = ((Literal) parg).getLabel();</b>
+<b class="fc">&nbsp;			int f = extractRegexFlags(farg);</b>
+<b class="fc">&nbsp;			Pattern pattern = Pattern.compile(ptn, f);</b>
+&nbsp;
+<b class="fc">&nbsp;			return bindings -&gt; {</b>
+<b class="fc">&nbsp;				Value arg = argStep.evaluate(bindings);</b>
+<b class="pc">&nbsp;				if (QueryEvaluationUtility.isStringLiteral(arg)) {</b>
+<b class="fc">&nbsp;					String text = ((Literal) arg).getLabel();</b>
+<b class="fc">&nbsp;					boolean result = pattern.matcher(text).find();</b>
+<b class="fc">&nbsp;					return BooleanLiteral.valueOf(result);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException();</b>
+&nbsp;			};
+&nbsp;		}
+<b class="nc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static QueryValueEvaluationStep allRegexPartsAreConstant(QueryValueEvaluationStep argStep,
+&nbsp;			QueryValueEvaluationStep pargStep,
+&nbsp;			QueryValueEvaluationStep fargStep, ValueExpr flagsArg) {
+<b class="fc">&nbsp;		Value arg = argStep.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="fc">&nbsp;		Value parg = pargStep.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="fc">&nbsp;		Value farg = null;</b>
+<b class="fc">&nbsp;		if (flagsArg != null) {</b>
+<b class="fc">&nbsp;			farg = fargStep.evaluate(EmptyBindingSet.getInstance());</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (QueryEvaluationUtility.isStringLiteral(arg) &amp;&amp; QueryEvaluationUtility.isSimpleLiteral(parg)</b>
+<b class="pc">&nbsp;				&amp;&amp; (farg == null || QueryEvaluationUtility.isSimpleLiteral(farg))) {</b>
+<b class="fc">&nbsp;			String text = ((Literal) arg).getLabel();</b>
+<b class="fc">&nbsp;			String ptn = ((Literal) parg).getLabel();</b>
+<b class="fc">&nbsp;			int f = extractRegexFlags(farg);</b>
+<b class="fc">&nbsp;			Pattern pattern = Pattern.compile(ptn, f);</b>
+<b class="fc">&nbsp;			boolean result = pattern.matcher(text).find();</b>
+<b class="fc">&nbsp;			BooleanLiteral valueOf = BooleanLiteral.valueOf(result);</b>
+<b class="fc">&nbsp;			return new ConstantQueryValueEvaluationStep(valueOf);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static int extractRegexFlags(Value farg) {
+<b class="fc">&nbsp;		String flags = &quot;&quot;;</b>
+<b class="fc">&nbsp;		if (farg != null) {</b>
+<b class="fc">&nbsp;			flags = ((Literal) farg).getLabel();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		int f = 0;</b>
+<b class="fc">&nbsp;		for (char c : flags.toCharArray()) {</b>
+<b class="pc">&nbsp;			switch (c) {</b>
+&nbsp;			case &#39;s&#39;:
+<b class="nc">&nbsp;				f |= Pattern.DOTALL;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;m&#39;:
+<b class="nc">&nbsp;				f |= Pattern.MULTILINE;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;i&#39;:
+<b class="fc">&nbsp;				f |= Pattern.CASE_INSENSITIVE;</b>
+<b class="fc">&nbsp;				f |= Pattern.UNICODE_CASE;</b>
+<b class="fc">&nbsp;				break;</b>
+&nbsp;			case &#39;x&#39;:
+<b class="nc">&nbsp;				f |= Pattern.COMMENTS;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;d&#39;:
+<b class="nc">&nbsp;				f |= Pattern.UNIX_LINES;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;u&#39;:
+<b class="nc">&nbsp;				f |= Pattern.UNICODE_CASE;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;q&#39;:
+<b class="nc">&nbsp;				f |= Pattern.LITERAL;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(flags);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return f;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

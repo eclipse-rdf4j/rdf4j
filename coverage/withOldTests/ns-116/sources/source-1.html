@@ -1,0 +1,220 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > UUIDSequence</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.uuidsource.sequence</a>
+</div>
+
+<h1>Coverage Summary for Class: UUIDSequence (org.eclipse.rdf4j.spring.uuidsource.sequence)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">UUIDSequence</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/35)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.uuidsource.sequence;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRI;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Queue;
+&nbsp;import java.util.WeakHashMap;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.IntStream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
+&nbsp;import org.eclipse.rdf4j.spring.support.UUIDSource;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.beans.factory.annotation.Autowired;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class UUIDSequence implements UUIDSource {
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;	private @Autowired RDF4JTemplate rdf4JTemplate;
+&nbsp;	private final int prefetchCount;
+<b class="nc">&nbsp;	private final Map&lt;RepositoryConnection, Queue&lt;IRI&gt;&gt; prefetchedUUIDs = Collections</b>
+<b class="nc">&nbsp;			.synchronizedMap(new WeakHashMap&lt;&gt;());</b>
+&nbsp;
+<b class="nc">&nbsp;	public UUIDSequence(UUIDSequenceProperties properties) {</b>
+<b class="nc">&nbsp;		this.prefetchCount = properties.getPrefetchCount();</b>
+<b class="nc">&nbsp;		logger.debug(&quot;UUIDSequence uses prefetchCount of {}&quot;, prefetchCount);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI nextUUID() {
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Obtaining UUID from UUIDSequence...&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return rdf4JTemplate.applyToConnection(</b>
+&nbsp;				con -&gt; {
+<b class="nc">&nbsp;					Queue&lt;IRI&gt; uuids = prefetchedUUIDs.computeIfAbsent(con, this::prefetchUUIDs);</b>
+<b class="nc">&nbsp;					IRI uuid = uuids.poll();</b>
+<b class="nc">&nbsp;					if (uuid == null) {</b>
+<b class="nc">&nbsp;						uuids = prefetchUUIDs(con);</b>
+<b class="nc">&nbsp;						prefetchedUUIDs.put(con, uuids);</b>
+<b class="nc">&nbsp;						uuid = uuids.poll();</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (uuid == null) {</b>
+<b class="nc">&nbsp;						throw new IllegalStateException(&quot;Unable to produce next UUID in sequence&quot;);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;						logger.debug(&quot;Returning next UUID&quot;);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return uuid;</b>
+&nbsp;				});
+&nbsp;	}
+&nbsp;
+&nbsp;	private Queue&lt;IRI&gt; prefetchUUIDs(RepositoryConnection con) {
+<b class="nc">&nbsp;		double nd = Math.pow(prefetchCount, 1d / 3d);</b>
+<b class="nc">&nbsp;		int n = (int) Math.ceil(nd);</b>
+<b class="nc">&nbsp;		int exactPrefetchCount = (int) Math.ceil(Math.pow(n, 3d));</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;prefetching {} uuids from the repostory&quot;, exactPrefetchCount);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String ints = IntStream.range(0, n).mapToObj(Integer::toString).collect(Collectors.joining(&quot; &quot;));</b>
+<b class="nc">&nbsp;		TupleQuery query = con.prepareTupleQuery(</b>
+&nbsp;				&quot;SELECT (UUID() as ?id) WHERE {&quot;
+&nbsp;						+ &quot;VALUES ?index1 { &quot;
+&nbsp;						+ ints
+&nbsp;						+ &quot; } &quot;
+&nbsp;						+ &quot;VALUES ?index2 { &quot;
+&nbsp;						+ ints
+&nbsp;						+ &quot; } &quot;
+&nbsp;						+ &quot;VALUES ?index3 { &quot;
+&nbsp;						+ ints
+&nbsp;						+ &quot; } &quot;
+&nbsp;						+ &quot;}&quot;);
+<b class="nc">&nbsp;		ArrayDeque&lt;IRI&gt; uuids = new ArrayDeque&lt;&gt;(exactPrefetchCount);</b>
+<b class="nc">&nbsp;		try (TupleQueryResult result = query.evaluate()) {</b>
+<b class="nc">&nbsp;			while (result.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet b = result.next();</b>
+<b class="nc">&nbsp;				uuids.add(getIRI(b, &quot;id&quot;));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return uuids;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

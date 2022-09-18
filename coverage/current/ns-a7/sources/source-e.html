@@ -1,0 +1,154 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONLDMode</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONLDMode (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONLDMode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;/**
+&nbsp; * Specifies constants to identify various modes that are relevant to JSONLD documents.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#features&quot;&gt;JSONLD Features&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;public enum JSONLDMode {</b>
+&nbsp;
+<b class="nc">&nbsp;	EXPAND(&quot;Expansion&quot;, &quot;http://json-ld.org/spec/latest/json-ld-api/index.html#expansion&quot;),</b>
+&nbsp;
+<b class="nc">&nbsp;	COMPACT(&quot;Compaction&quot;, &quot;http://json-ld.org/spec/latest/json-ld-api/index.html#compaction&quot;),</b>
+&nbsp;
+<b class="nc">&nbsp;	FLATTEN(&quot;Flattening&quot;, &quot;http://json-ld.org/spec/latest/json-ld-api/index.html#flattening&quot;),</b>
+&nbsp;
+&nbsp;	;
+&nbsp;
+&nbsp;	private final String label;
+&nbsp;
+&nbsp;	private final String reference;
+&nbsp;
+<b class="nc">&nbsp;	JSONLDMode(String label, String reference) {</b>
+<b class="nc">&nbsp;		this.label = label;</b>
+<b class="nc">&nbsp;		this.reference = reference;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the label.
+&nbsp;	 */
+&nbsp;	public String getLabel() {
+<b class="nc">&nbsp;		return label;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the reference URL for the given mode.
+&nbsp;	 */
+&nbsp;	public String getReference() {
+<b class="nc">&nbsp;		return reference;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

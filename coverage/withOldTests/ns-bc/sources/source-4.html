@@ -1,0 +1,282 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ElasticsearchHelper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.elasticsearchstore</a>
+</div>
+
+<h1>Coverage Summary for Class: ElasticsearchHelper (org.eclipse.rdf4j.sail.elasticsearchstore)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ElasticsearchHelper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ElasticsearchHelper$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.elasticsearchstore;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Iterator;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.elasticsearch.action.search.ClearScrollRequest;
+&nbsp;import org.elasticsearch.action.search.SearchResponse;
+&nbsp;import org.elasticsearch.client.Client;
+&nbsp;import org.elasticsearch.index.query.QueryBuilder;
+&nbsp;import org.elasticsearch.search.SearchHit;
+&nbsp;import org.elasticsearch.search.sort.FieldSortBuilder;
+&nbsp;import org.elasticsearch.search.sort.SortOrder;
+&nbsp;
+<b class="nc">&nbsp;class ElasticsearchHelper {</b>
+&nbsp;
+&nbsp;	static CloseableIteration&lt;SearchHit, RuntimeException&gt; getScrollingIterator(QueryBuilder queryBuilder,
+&nbsp;			Client client, String index, int scrollTimeout) {
+&nbsp;
+<b class="nc">&nbsp;		return new CloseableIteration&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			Iterator&lt;SearchHit&gt; items;
+&nbsp;			String scrollId;
+<b class="nc">&nbsp;			long itemsRetrieved = 0;</b>
+<b class="nc">&nbsp;			final int size = 1000;</b>
+&nbsp;
+&nbsp;			{
+&nbsp;
+<b class="nc">&nbsp;				SearchResponse scrollResp = client.prepareSearch(index)</b>
+<b class="nc">&nbsp;						.addSort(FieldSortBuilder.DOC_FIELD_NAME, SortOrder.ASC)</b>
+<b class="nc">&nbsp;						.setScroll(scrollTimeout + &quot;ms&quot;)</b>
+<b class="nc">&nbsp;						.setQuery(queryBuilder)</b>
+<b class="nc">&nbsp;						.setSize(size)</b>
+<b class="nc">&nbsp;						.get();</b>
+&nbsp;
+<b class="nc">&nbsp;				items = Arrays.asList(scrollResp.getHits().getHits()).iterator();</b>
+<b class="nc">&nbsp;				scrollId = scrollResp.getScrollId();</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			SearchHit next;
+<b class="nc">&nbsp;			boolean empty = false;</b>
+&nbsp;
+&nbsp;			private void calculateNext() {
+&nbsp;
+<b class="nc">&nbsp;				if (next != null) {</b>
+&nbsp;					return;
+&nbsp;				}
+<b class="nc">&nbsp;				if (empty) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (items.hasNext()) {</b>
+<b class="nc">&nbsp;					next = items.next();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					if (itemsRetrieved &lt; size - 2) {</b>
+&nbsp;						// the count of our prevous scroll was lower than requested size, so nothing more to get now.
+<b class="nc">&nbsp;						scrollIsEmpty();</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						SearchResponse scrollResp = client.prepareSearchScroll(scrollId)</b>
+<b class="nc">&nbsp;								.setScroll(scrollTimeout + &quot;ms&quot;)</b>
+<b class="nc">&nbsp;								.execute()</b>
+<b class="nc">&nbsp;								.actionGet();</b>
+&nbsp;
+<b class="nc">&nbsp;						items = Arrays.asList(scrollResp.getHits().getHits()).iterator();</b>
+<b class="nc">&nbsp;						scrollId = scrollResp.getScrollId();</b>
+&nbsp;
+<b class="nc">&nbsp;						if (items.hasNext()) {</b>
+<b class="nc">&nbsp;							next = items.next();</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							scrollIsEmpty();</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						itemsRetrieved = 0;</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			private void scrollIsEmpty() {
+<b class="nc">&nbsp;				ClearScrollRequest clearScrollRequest = new ClearScrollRequest();</b>
+<b class="nc">&nbsp;				clearScrollRequest.addScrollId(scrollId);</b>
+<b class="nc">&nbsp;				client.clearScroll(clearScrollRequest).actionGet();</b>
+<b class="nc">&nbsp;				scrollId = null;</b>
+<b class="nc">&nbsp;				empty = true;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean hasNext() {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				return next != null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public SearchHit next() {
+<b class="nc">&nbsp;				calculateNext();</b>
+&nbsp;
+<b class="nc">&nbsp;				SearchHit temp = next;</b>
+<b class="nc">&nbsp;				next = null;</b>
+&nbsp;
+<b class="nc">&nbsp;				itemsRetrieved++;</b>
+<b class="nc">&nbsp;				return temp;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void remove() {
+<b class="nc">&nbsp;				throw new UnsupportedOperationException();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void close() {
+&nbsp;
+<b class="nc">&nbsp;				if (scrollId != null) {</b>
+<b class="nc">&nbsp;					scrollIsEmpty();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

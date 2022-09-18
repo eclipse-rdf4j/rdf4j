@@ -1,0 +1,319 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.util</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXUtil (org.eclipse.rdf4j.federated.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.util;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.FedXConfig;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailQuery;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.collect.Sets;
+&nbsp;
+&nbsp;/**
+&nbsp; * General utility functions
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @since 5.0
+&nbsp; */
+<b class="nc">&nbsp;public class FedXUtil {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FedXUtil.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final AtomicLong count = new AtomicLong(0L);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param iri
+&nbsp;	 * @return the IRI for the full URI string
+&nbsp;	 */
+&nbsp;	public static IRI iri(String iri) {
+<b class="nc">&nbsp;		return valueFactory().createIRI(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param literal
+&nbsp;	 * @return the string literal
+&nbsp;	 */
+&nbsp;	public static Literal literal(String literal) {
+<b class="nc">&nbsp;		return valueFactory().createLiteral(literal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return a {@link SimpleValueFactory} instance
+&nbsp;	 */
+&nbsp;	public static ValueFactory valueFactory() {
+<b class="nc">&nbsp;		return SimpleValueFactory.getInstance();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Apply query bindings to transfer information from the query into the evaluation routine, e.g. the query execution
+&nbsp;	 * time.
+&nbsp;	 *
+&nbsp;	 * @param query
+&nbsp;	 */
+&nbsp;	public static void applyQueryBindings(SailQuery query) {
+<b class="nc">&nbsp;		query.setBinding(FedXRepositoryConnection.BINDING_ORIGINAL_MAX_EXECUTION_TIME,</b>
+<b class="nc">&nbsp;				FedXUtil.valueFactory().createLiteral(query.getMaxExecutionTime()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Hexadecimal representation of an incremental integer.
+&nbsp;	 *
+&nbsp;	 * @return an incremental hex UUID
+&nbsp;	 */
+&nbsp;	public static String getIncrementalUUID() {
+<b class="nc">&nbsp;		long id = count.incrementAndGet();</b>
+<b class="nc">&nbsp;		return Long.toHexString(id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a maximum execution time corresponding to {@link FedXConfig#getEnforceMaxQueryTime()} to this operation.
+&nbsp;	 *
+&nbsp;	 * Note that this is an upper bound only as FedX applies other means for evaluation the maximum query execution
+&nbsp;	 * time.
+&nbsp;	 *
+&nbsp;	 * @param operation         the {@link Operation}
+&nbsp;	 * @param federationContext the {@link FederationContext}
+&nbsp;	 */
+&nbsp;	public static void applyMaxQueryExecutionTime(Operation operation, FederationContext federationContext) {
+<b class="nc">&nbsp;		int maxExecutionTime = federationContext.getConfig().getEnforceMaxQueryTime();</b>
+<b class="nc">&nbsp;		if (maxExecutionTime &lt;= 0) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		operation.setMaxExecutionTime(maxExecutionTime);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert the given contexts to a {@link Dataset} representation.
+&nbsp;	 *
+&nbsp;	 * @param contexts
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public static Dataset toDataset(Resource[] contexts) {
+<b class="nc">&nbsp;		SimpleDataset dataset = new SimpleDataset();</b>
+<b class="nc">&nbsp;		for (Resource context : contexts) {</b>
+<b class="nc">&nbsp;			if (!(context instanceof IRI)) {</b>
+<b class="nc">&nbsp;				log.warn(&quot;FedX does not support to use non-IRIs as context identifier. Ignoring {}&quot;, context);</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			dataset.addDefaultGraph((IRI) context);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return dataset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert the given {@link Dataset} to an array of contexts
+&nbsp;	 *
+&nbsp;	 * @param ds
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public static Resource[] toContexts(Dataset ds) {
+<b class="nc">&nbsp;		if (ds == null) {</b>
+<b class="nc">&nbsp;			return new Resource[0];</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return ds.getDefaultGraphs().toArray(new Resource[0]);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the contexts from the {@link StatementPattern} and {@link Dataset}.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param dataset
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public static Resource[] toContexts(StatementPattern stmt, Dataset dataset) {
+<b class="nc">&nbsp;		if (dataset == null &amp;&amp; (stmt.getContextVar() == null || !stmt.getContextVar().hasValue())) {</b>
+<b class="nc">&nbsp;			return new Resource[0];</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;Resource&gt; contexts = Sets.newHashSet();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			contexts.addAll(dataset.getDefaultGraphs());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {</b>
+<b class="nc">&nbsp;			if (stmt.getContextVar().hasValue()) {</b>
+<b class="nc">&nbsp;				contexts.add((Resource) stmt.getContextVar().getValue());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return contexts.toArray(new Resource[contexts.size()]);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link Dataset} representation of the given {@link StatementPattern} and {@link Dataset}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the {@link StatementPattern} does not have a context value, the {@link Dataset} is returned as-is, which may
+&nbsp;	 * also be &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Otherwise the newly constructed {@link Dataset} contains all information from the original one plus the context
+&nbsp;	 * from the statement.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param dataset
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public static Dataset toDataset(StatementPattern stmt, Dataset dataset) {
+<b class="nc">&nbsp;		if (stmt.getContextVar() == null || !stmt.getContextVar().hasValue()) {</b>
+<b class="nc">&nbsp;			return dataset;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		SimpleDataset res = new SimpleDataset();</b>
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			dataset.getDefaultGraphs().forEach(iri -&gt; res.addDefaultGraph(iri));</b>
+<b class="nc">&nbsp;			dataset.getNamedGraphs().forEach(iri -&gt; res.addNamedGraph(iri));</b>
+<b class="nc">&nbsp;			dataset.getDefaultRemoveGraphs().forEach(iri -&gt; res.addDefaultRemoveGraph(iri));</b>
+<b class="nc">&nbsp;			res.setDefaultInsertGraph(dataset.getDefaultInsertGraph());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value stmtContext = stmt.getContextVar().getValue();</b>
+<b class="nc">&nbsp;		if (stmtContext instanceof IRI) {</b>
+<b class="nc">&nbsp;			res.addDefaultGraph((IRI) stmtContext);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			log.warn(&quot;FedX named graph handling does not support non-IRIs: &quot; + stmtContext);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

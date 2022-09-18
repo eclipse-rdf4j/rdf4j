@@ -1,0 +1,653 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailSourceModel</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: SailSourceModel (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailSourceModel</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/86)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/169)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailSourceModel$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailSourceModel$StatementIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/102)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/205)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.AbstractModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.EmptyModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.FilteredModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailDataset;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailSink;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailSource;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailStore;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link Model} that keeps the {@link Statement}s in an {@link SailSource}.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;class SailSourceModel extends AbstractModel {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SailSourceModel.class);</b>
+&nbsp;
+&nbsp;	private final class StatementIterator implements Iterator&lt;Statement&gt; {
+&nbsp;
+&nbsp;		final CloseableIteration&lt;? extends Statement, SailException&gt; stmts;
+&nbsp;
+&nbsp;		Statement last;
+&nbsp;
+<b class="nc">&nbsp;		StatementIterator(CloseableIteration&lt;? extends Statement, SailException&gt; closeableIteration) {</b>
+<b class="nc">&nbsp;			this.stmts = closeableIteration;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() {
+&nbsp;			try {
+<b class="nc">&nbsp;				if (stmts.hasNext()) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				stmts.close();</b>
+<b class="nc">&nbsp;				return false;</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Statement next() {
+&nbsp;			try {
+<b class="nc">&nbsp;				last = stmts.next();</b>
+<b class="nc">&nbsp;				if (last == null) {</b>
+<b class="nc">&nbsp;					stmts.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return last;</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() {
+<b class="nc">&nbsp;			if (last == null) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;next() not yet called&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			SailSourceModel.this.remove(last);</b>
+<b class="nc">&nbsp;			last = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	final SailSource source;
+&nbsp;
+&nbsp;	SailDataset dataset;
+&nbsp;
+&nbsp;	SailSink sink;
+&nbsp;
+&nbsp;	private long size;
+&nbsp;
+<b class="nc">&nbsp;	private final IsolationLevels level = IsolationLevels.NONE;</b>
+&nbsp;
+&nbsp;	public SailSourceModel(SailStore store) {
+<b class="nc">&nbsp;		this(store.getExplicitSailSource());</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public SailSourceModel(SailSource source) {</b>
+<b class="nc">&nbsp;		this.source = source;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void closeIterator(Iterator&lt;?&gt; iter) {
+<b class="nc">&nbsp;		super.closeIterator(iter);</b>
+<b class="nc">&nbsp;		if (iter instanceof StatementIterator) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				((StatementIterator) iter).stmts.close();</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		Iterator&lt;Statement&gt; it = iterator();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!it.hasNext()) {</b>
+<b class="nc">&nbsp;				return &quot;[]&quot;;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;			sb.append(&#39;[&#39;);</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; 100; i++) {</b>
+<b class="nc">&nbsp;				Statement e = it.next();</b>
+<b class="nc">&nbsp;				sb.append(e == this ? &quot;(this Collection)&quot; : e);</b>
+<b class="nc">&nbsp;				if (!it.hasNext()) {</b>
+<b class="nc">&nbsp;					return sb.append(&#39;]&#39;).toString();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				sb.append(&#39;,&#39;).append(&#39; &#39;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return sb.toString();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			closeIterator(it);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized int size() {
+<b class="nc">&nbsp;		if (size &lt; 0) {</b>
+&nbsp;			try {
+&nbsp;				CloseableIteration&lt;? extends Statement, SailException&gt; iter;
+<b class="nc">&nbsp;				iter = dataset().getStatements(null, null, null);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;						iter.next();</b>
+<b class="nc">&nbsp;						size++;</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					iter.close();</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (size &gt; Integer.MAX_VALUE) {</b>
+<b class="nc">&nbsp;			return Integer.MAX_VALUE;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return (int) size;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;Namespace&gt; getNamespaces() {
+<b class="nc">&nbsp;		Set&lt;Namespace&gt; set = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;		try {
+&nbsp;			CloseableIteration&lt;? extends Namespace, SailException&gt; spaces;
+<b class="nc">&nbsp;			spaces = dataset().getNamespaces();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				while (spaces.hasNext()) {</b>
+<b class="nc">&nbsp;					set.add(spaces.next());</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				spaces.close();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return set;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Optional&lt;Namespace&gt; getNamespace(String prefix) {
+&nbsp;		try {
+<b class="nc">&nbsp;			String name = dataset().getNamespace(prefix);</b>
+<b class="nc">&nbsp;			return Optional.of(new SimpleNamespace(prefix, name));</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Namespace setNamespace(String prefix, String name) {
+&nbsp;		try {
+<b class="nc">&nbsp;			sink().setNamespace(prefix, name);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return new SimpleNamespace(prefix, name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(Namespace namespace) {
+<b class="nc">&nbsp;		setNamespace(namespace.getPrefix(), namespace.getName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Optional&lt;Namespace&gt; removeNamespace(String prefix) {
+<b class="nc">&nbsp;		Optional&lt;Namespace&gt; ret = getNamespace(prefix);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			sink().removeNamespace(prefix);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!isEmptyOrResourcePresent(contexts)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return contains(dataset(), subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		if (subj == null || pred == null || obj == null) {</b>
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;Incomplete statement&quot;);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			if (contains(subj, pred, obj, contexts)) {</b>
+<b class="nc">&nbsp;				logger.trace(&quot;already contains statement {} {} {} {}&quot;, subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (size &gt;= 0) {</b>
+<b class="nc">&nbsp;				size++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (contexts == null || contexts.length == 0) {</b>
+<b class="nc">&nbsp;				sink().approve(subj, pred, obj, null);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				for (Resource ctx : contexts) {</b>
+<b class="nc">&nbsp;					sink().approve(subj, pred, obj, ctx);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized boolean clear(Resource... contexts) {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (contains(null, null, null, contexts)) {</b>
+<b class="nc">&nbsp;				sink().clear(contexts);</b>
+<b class="nc">&nbsp;				size = -1;</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (contains(subj, pred, obj, contexts)) {</b>
+<b class="nc">&nbsp;				size = -1;</b>
+&nbsp;				CloseableIteration&lt;? extends Statement, SailException&gt; stmts;
+<b class="nc">&nbsp;				stmts = dataset().getStatements(subj, pred, obj, contexts);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					while (stmts.hasNext()) {</b>
+<b class="nc">&nbsp;						Statement st = stmts.next();</b>
+<b class="nc">&nbsp;						sink().deprecate(st);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					stmts.close();</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;Statement&gt; iterator() {
+&nbsp;		try {
+<b class="nc">&nbsp;			return new StatementIterator(dataset().getStatements(null, null, null));</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
+<b class="nc">&nbsp;		if (!isEmptyOrResourcePresent(contexts)) {</b>
+<b class="nc">&nbsp;			return new EmptyModel(this);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new FilteredModel(this, subj, pred, obj, contexts) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public int size() {
+<b class="nc">&nbsp;				if (subj == null &amp;&amp; pred == null &amp;&amp; obj == null) {</b>
+&nbsp;					try {
+&nbsp;						CloseableIteration&lt;? extends Statement, SailException&gt; iter;
+<b class="nc">&nbsp;						iter = dataset().getStatements(null, null, null);</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							long size = 0;</b>
+<b class="nc">&nbsp;							while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;								iter.next();</b>
+<b class="nc">&nbsp;								if (size++ &gt;= Integer.MAX_VALUE) {</b>
+<b class="nc">&nbsp;									return Integer.MAX_VALUE;</b>
+&nbsp;								}
+&nbsp;							}
+<b class="nc">&nbsp;							return (int) size;</b>
+&nbsp;						} finally {
+<b class="nc">&nbsp;							iter.close();</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					} catch (SailException e) {</b>
+<b class="nc">&nbsp;						throw new ModelException(e);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				return super.size();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Iterator&lt;Statement&gt; iterator() {
+&nbsp;				try {
+<b class="nc">&nbsp;					return new StatementIterator(dataset().getStatements(subj, pred, obj, contexts));</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+<b class="nc">&nbsp;					throw new ModelException(e);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void removeFilteredTermIteration(Iterator&lt;Statement&gt; iter, Resource subj, IRI pred, Value obj,
+&nbsp;					Resource... contexts) {
+<b class="nc">&nbsp;				SailSourceModel.this.removeTermIteration(iter, subj, pred, obj, contexts);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void removeTermIteration(Iterator&lt;Statement&gt; iter, Resource subj, IRI pred, Value obj,
+&nbsp;			Resource... contexts) {
+&nbsp;		try {
+&nbsp;			CloseableIteration&lt;? extends Statement, SailException&gt; stmts;
+<b class="nc">&nbsp;			stmts = dataset().getStatements(subj, pred, obj, contexts);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				while (stmts.hasNext()) {</b>
+<b class="nc">&nbsp;					Statement st = stmts.next();</b>
+<b class="nc">&nbsp;					sink().deprecate(st);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				stmts.close();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			size = -1;</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized SailSink sink() throws SailException {
+<b class="nc">&nbsp;		if (sink == null) {</b>
+<b class="nc">&nbsp;			sink = source.sink(level);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return sink;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized SailDataset dataset() throws SailException {
+<b class="nc">&nbsp;		if (sink != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				sink.flush();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				sink.close();</b>
+<b class="nc">&nbsp;				sink = null;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (dataset != null) {</b>
+<b class="nc">&nbsp;				dataset.close();</b>
+<b class="nc">&nbsp;				dataset = null;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (dataset == null) {</b>
+<b class="nc">&nbsp;			dataset = source.dataset(level);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return dataset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean contains(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		if (dataset == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;		CloseableIteration&lt;? extends Statement, SailException&gt; stmts;
+<b class="nc">&nbsp;		stmts = dataset.getStatements(subj, pred, obj, contexts);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return stmts.hasNext();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			stmts.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isEmptyOrResourcePresent(Value[] contexts) {
+<b class="nc">&nbsp;		if (contexts instanceof Resource[]) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (contexts == null) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (contexts.length == 0) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Resource[] result = new Resource[contexts.length];</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; result.length; i++) {</b>
+<b class="nc">&nbsp;			if (contexts[i] == null || contexts[i] instanceof Resource) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Resource[] cast(Value[] contexts) {
+<b class="nc">&nbsp;		if (contexts instanceof Resource[]) {</b>
+<b class="nc">&nbsp;			return (Resource[]) contexts;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (contexts == null) {</b>
+<b class="nc">&nbsp;			return new Resource[] { null };</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (contexts.length == 0) {</b>
+<b class="nc">&nbsp;			return new Resource[0];</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Resource[] result = new Resource[contexts.length];</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; result.length; i++) {</b>
+<b class="nc">&nbsp;			if (contexts[i] == null || contexts[i] instanceof Resource) {</b>
+<b class="nc">&nbsp;				result[i] = (Resource) contexts[i];</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				List&lt;Resource&gt; list = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;				for (Value v : contexts) {</b>
+<b class="nc">&nbsp;					if (v == null || v instanceof Resource) {</b>
+<b class="nc">&nbsp;						list.add((Resource) v);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				return list.toArray(new Resource[list.size()]);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

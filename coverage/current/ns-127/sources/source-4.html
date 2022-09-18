@@ -1,0 +1,1113 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFStoreTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.sail</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFStoreTest (org.eclipse.rdf4j.testsuite.sail)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFStoreTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/497)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.sail;
+&nbsp;
+&nbsp;import static org.assertj.core.api.Assertions.assertThat;
+&nbsp;
+&nbsp;import java.io.ByteArrayInputStream;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.io.ObjectInputStream;
+&nbsp;import java.io.ObjectOutputStream;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.AfterClass;
+&nbsp;import org.junit.Assert;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.BeforeClass;
+&nbsp;import org.junit.Rule;
+&nbsp;import org.junit.Test;
+&nbsp;import org.junit.rules.Timeout;
+&nbsp;
+&nbsp;/**
+&nbsp; * A JUnit test for testing Sail implementations that store RDF data. This is purely a test for data storage and
+&nbsp; * retrieval which assumes that no inferencing or whatsoever is performed. This is an abstract class that should be
+&nbsp; * extended for specific Sail implementations.
+&nbsp; */
+&nbsp;public abstract class RDFStoreTest {
+&nbsp;
+&nbsp;	@BeforeClass
+&nbsp;	public static void setUpClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterClass
+&nbsp;	public static void afterClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;false&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Timeout all individual tests after 1 minute.
+&nbsp;	 */
+<b class="nc">&nbsp;	@Rule</b>
+&nbsp;	public Timeout to = new Timeout(60, TimeUnit.SECONDS);
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final String EXAMPLE_NS = &quot;http://example.org/&quot;;
+&nbsp;
+&nbsp;	private static final String PAINTER = &quot;Painter&quot;;
+&nbsp;
+&nbsp;	private static final String PAINTS = &quot;paints&quot;;
+&nbsp;
+&nbsp;	private static final String PAINTING = &quot;Painting&quot;;
+&nbsp;
+&nbsp;	private static final String PICASSO = &quot;picasso&quot;;
+&nbsp;
+&nbsp;	private static final String REMBRANDT = &quot;rembrandt&quot;;
+&nbsp;
+&nbsp;	private static final String GUERNICA = &quot;guernica&quot;;
+&nbsp;
+&nbsp;	private static final String NIGHTWATCH = &quot;nightwatch&quot;;
+&nbsp;
+&nbsp;	private static final String CONTEXT_1 = &quot;context1&quot;;
+&nbsp;
+&nbsp;	private static final String CONTEXT_2 = &quot;context2&quot;;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	protected IRI painter;
+&nbsp;
+&nbsp;	protected IRI paints;
+&nbsp;
+&nbsp;	protected IRI painting;
+&nbsp;
+&nbsp;	protected IRI picasso;
+&nbsp;
+&nbsp;	protected IRI rembrandt;
+&nbsp;
+&nbsp;	protected IRI guernica;
+&nbsp;
+&nbsp;	protected IRI nightwatch;
+&nbsp;
+&nbsp;	protected IRI context1;
+&nbsp;
+&nbsp;	protected IRI context2;
+&nbsp;
+&nbsp;	protected Sail sail;
+&nbsp;
+&nbsp;	protected SailConnection con;
+&nbsp;
+&nbsp;	protected ValueFactory vf;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	public RDFStoreTest() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets an instance of the Sail that should be tested.
+&nbsp;	 *
+&nbsp;	 * @return a Sail.
+&nbsp;	 */
+&nbsp;	protected abstract Sail createSail();
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		sail = createSail();</b>
+&nbsp;
+<b class="nc">&nbsp;		con = sail.getConnection();</b>
+&nbsp;
+&nbsp;		// Create values
+<b class="nc">&nbsp;		vf = sail.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		painter = vf.createIRI(EXAMPLE_NS, PAINTER);</b>
+<b class="nc">&nbsp;		paints = vf.createIRI(EXAMPLE_NS, PAINTS);</b>
+<b class="nc">&nbsp;		painting = vf.createIRI(EXAMPLE_NS, PAINTING);</b>
+<b class="nc">&nbsp;		picasso = vf.createIRI(EXAMPLE_NS, PICASSO);</b>
+<b class="nc">&nbsp;		guernica = vf.createIRI(EXAMPLE_NS, GUERNICA);</b>
+<b class="nc">&nbsp;		rembrandt = vf.createIRI(EXAMPLE_NS, REMBRANDT);</b>
+<b class="nc">&nbsp;		nightwatch = vf.createIRI(EXAMPLE_NS, NIGHTWATCH);</b>
+&nbsp;
+<b class="nc">&nbsp;		context1 = vf.createIRI(EXAMPLE_NS, CONTEXT_1);</b>
+<b class="nc">&nbsp;		context2 = vf.createIRI(EXAMPLE_NS, CONTEXT_2);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws Exception {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (con.isOpen()) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					if (con.isActive()) {</b>
+<b class="nc">&nbsp;						con.rollback();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					con.close();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			sail.shutDown();</b>
+<b class="nc">&nbsp;			sail = null;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testEmptyRepository() throws Exception {
+&nbsp;		// repository should be empty
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Empty repository should not return any statements&quot;, 0, countAllElements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Named context should be empty&quot;, 0, countContext1Elements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Empty repository should not return any context identifiers&quot;, 0,</b>
+<b class="nc">&nbsp;				countElements(con.getContextIDs()));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Empty repository should not return any query results&quot;, 0,</b>
+<b class="nc">&nbsp;				countQueryResults(&quot;select * where { ?s ?p ?o}&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testValueRoundTrip1() throws Exception {
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		IRI obj = vf.createIRI(EXAMPLE_NS + GUERNICA);</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testValueRoundTrip2() throws Exception {
+<b class="nc">&nbsp;		BNode subj = vf.createBNode();</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		IRI obj = vf.createIRI(EXAMPLE_NS + GUERNICA);</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testValueRoundTrip3() throws Exception {
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(&quot;guernica&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testValueRoundTrip4() throws Exception {
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(&quot;guernica&quot;, &quot;es&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testValueRoundTrip5() throws Exception {
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(3);</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDecimalRoundTrip() throws Exception {
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(&quot;3&quot;, XSD.DECIMAL);</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testTimeZoneRoundTrip() throws Exception {
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(&quot;2006-08-23+00:00&quot;, CoreDatatype.XSD.DATE);</b>
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.removeStatements(null, null, null);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		obj = vf.createLiteral(&quot;2006-08-23&quot;, CoreDatatype.XSD.DATE);</b>
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testLongURIRoundTrip() throws Exception {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; 512; i++) {</b>
+<b class="nc">&nbsp;			sb.append(Character.toChars(&#39;A&#39; + (i % 26)));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		IRI obj = vf.createIRI(EXAMPLE_NS + GUERNICA + sb.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testLongLiteralRoundTrip() throws Exception {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; 512; i++) {</b>
+<b class="nc">&nbsp;			sb.append(Character.toChars(&#39;A&#39; + (i % 26)));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(&quot;guernica&quot; + sb.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testReallyLongLiteralRoundTrip() throws Exception {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; 1024000; i++) {</b>
+<b class="nc">&nbsp;			sb.append(Character.toChars(&#39;A&#39; + (i % 26)));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(&quot;guernica&quot; + sb.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testLongLangRoundTrip() throws Exception {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; 512; i++) {</b>
+<b class="nc">&nbsp;			sb.append(Character.toChars(&#39;A&#39; + (i % 26)));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		IRI subj = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI pred = vf.createIRI(EXAMPLE_NS + PAINTS);</b>
+<b class="nc">&nbsp;		Literal obj = vf.createLiteral(&quot;guernica&quot; + sb.toString(), &quot;es&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		testValueRoundTrip(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void testValueRoundTrip(Resource subj, IRI pred, Value obj) {
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(subj, pred, obj);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; stIter = con.getStatements(null, null, null,</b>
+&nbsp;				false)) {
+<b class="nc">&nbsp;			Assert.assertTrue(stIter.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;			Statement st = stIter.next();</b>
+<b class="nc">&nbsp;			Assert.assertEquals(subj, st.getSubject());</b>
+<b class="nc">&nbsp;			Assert.assertEquals(pred, st.getPredicate());</b>
+<b class="nc">&nbsp;			Assert.assertEquals(obj, st.getObject());</b>
+<b class="nc">&nbsp;			Assert.assertFalse(stIter.hasNext());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,</b>
+<b class="nc">&nbsp;				&quot;SELECT * WHERE { ?S ?P ?O. FILTER(?P = &lt;&quot; + pred.stringValue() + &quot;&gt;)}&quot;, null);</b>
+&nbsp;
+&nbsp;		CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; iter;
+<b class="nc">&nbsp;		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Assert.assertTrue(iter.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;			BindingSet bindings = iter.next();</b>
+<b class="nc">&nbsp;			Assert.assertEquals(subj, bindings.getValue(&quot;S&quot;));</b>
+<b class="nc">&nbsp;			Assert.assertEquals(pred, bindings.getValue(&quot;P&quot;));</b>
+<b class="nc">&nbsp;			Assert.assertEquals(obj, bindings.getValue(&quot;O&quot;));</b>
+<b class="nc">&nbsp;			Assert.assertTrue(!iter.hasNext());</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			iter.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCreateURI1() {
+<b class="nc">&nbsp;		IRI picasso1 = vf.createIRI(EXAMPLE_NS, PICASSO);</b>
+<b class="nc">&nbsp;		IRI picasso2 = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(picasso1, paints, guernica);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso2, paints, guernica);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;createURI(Sring) and createURI(String, String) should create equal URIs&quot;, 1, con.size());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCreateURI2() {
+<b class="nc">&nbsp;		IRI picasso1 = vf.createIRI(EXAMPLE_NS + PICASSO);</b>
+<b class="nc">&nbsp;		IRI picasso2 = vf.createIRI(EXAMPLE_NS, PICASSO);</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(picasso1, paints, guernica);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso2, paints, guernica);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;createURI(Sring) and createURI(String, String) should create equal URIs&quot;, 1, con.size());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInvalidDateTime() {
+&nbsp;		// SES-711
+<b class="nc">&nbsp;		Literal date1 = vf.createLiteral(&quot;2004-12-20&quot;, XSD.DATETIME);</b>
+<b class="nc">&nbsp;		Literal date2 = vf.createLiteral(&quot;2004-12-20&quot;, CoreDatatype.XSD.DATETIME);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(date1, date2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSize() {
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Size of empty repository should be 0&quot;, 0, con.size());</b>
+&nbsp;
+&nbsp;		// Add some data to the repository
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, RDF.TYPE, painter, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(guernica, RDF.TYPE, painting, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Size of repository should be 5&quot;, 5, con.size());</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Size of named context should be 3&quot;, 3, con.size(context1));</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI unknownContext = vf.createIRI(EXAMPLE_NS + &quot;unknown&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Size of unknown context should be 0&quot;, 0, con.size(unknownContext));</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI uriImplContext1 = vf.createIRI(context1.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Size of named context (defined as URIImpl) should be 3&quot;, 3, con.size(uriImplContext1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddData() throws Exception {
+&nbsp;		// Add some data to the repository
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, RDF.TYPE, painter, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(guernica, RDF.TYPE, painting, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 5 statements in total&quot;, 5, countAllElements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Named context should contain 3 statements&quot;, 3, countContext1Elements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should have 1 context identifier&quot;, 1, countElements(con.getContextIDs()));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 5 statements in total&quot;, 5,</b>
+<b class="nc">&nbsp;				countQueryResults(&quot;select * where {?s ?p ?o}&quot;));</b>
+&nbsp;
+&nbsp;		// Check for presence of the added statements
+&nbsp;
+<b class="nc">&nbsp;		assertThat(con.hasStatement(painter, RDF.TYPE, RDFS.CLASS, true)).isTrue();</b>
+<b class="nc">&nbsp;		assertThat(con.hasStatement(painting, RDF.TYPE, RDFS.CLASS, true)).isTrue();</b>
+<b class="nc">&nbsp;		assertThat(con.hasStatement(picasso, RDF.TYPE, painter, true)).isTrue();</b>
+<b class="nc">&nbsp;		assertThat(con.hasStatement(guernica, RDF.TYPE, painting, true)).isTrue();</b>
+<b class="nc">&nbsp;		assertThat(con.hasStatement(picasso, paints, guernica, true)).isTrue();</b>
+&nbsp;
+&nbsp;		// Check for absence of non-added statements
+<b class="nc">&nbsp;		assertThat(con.hasStatement(painter, paints, painting, true)).isFalse();</b>
+&nbsp;
+&nbsp;		// Various other checks
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 2 statements matching (picasso, _, _)&quot;, 2,</b>
+<b class="nc">&nbsp;				countQueryResults(&quot;select * where { ex:picasso ?P ?O}&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 1 statement matching (picasso, paints, _)&quot;, 1,</b>
+<b class="nc">&nbsp;				countQueryResults(&quot;select * where {ex:picasso ex:paints ?O}&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 4 statements matching (_, type, _)&quot;, 4,</b>
+<b class="nc">&nbsp;				countQueryResults(&quot;select * where {?S rdf:type ?O}&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 2 statements matching (_, _, Class)&quot;, 2,</b>
+<b class="nc">&nbsp;				countQueryResults(&quot;select * where { ?S ?P rdfs:Class }&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 0 statements matching (_, _, type)&quot;, 0,</b>
+<b class="nc">&nbsp;				countQueryResults(&quot;select * where {?S ?P rdf:type}&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddWhileQuerying() {
+&nbsp;		// Add some data to the repository
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, RDF.TYPE, painter);</b>
+<b class="nc">&nbsp;		con.addStatement(guernica, RDF.TYPE, painting);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;SELECT ?C WHERE { [] a ?C }&quot;, null);
+&nbsp;
+&nbsp;		CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; iter;
+<b class="nc">&nbsp;		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);</b>
+&nbsp;
+<b class="nc">&nbsp;		con.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			BindingSet bindings = iter.next();</b>
+<b class="nc">&nbsp;			Value c = bindings.getValue(&quot;C&quot;);</b>
+<b class="nc">&nbsp;			if (c instanceof Resource) {</b>
+<b class="nc">&nbsp;				con.addStatement((Resource) c, RDF.TYPE, RDFS.CLASS);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(3, countElements(con.getStatements(null, RDF.TYPE, RDFS.CLASS, false)));</b>
+&nbsp;
+&nbsp;		// simulate auto-commit
+<b class="nc">&nbsp;		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, &quot;SELECT ?P WHERE { [] ?P [] .}&quot;, null);</b>
+<b class="nc">&nbsp;		iter = con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			BindingSet bindings = iter.next();</b>
+<b class="nc">&nbsp;			Value p = bindings.getValue(&quot;P&quot;);</b>
+<b class="nc">&nbsp;			if (p instanceof IRI) {</b>
+<b class="nc">&nbsp;				con.begin();</b>
+<b class="nc">&nbsp;				con.addStatement((IRI) p, RDF.TYPE, RDF.PROPERTY);</b>
+<b class="nc">&nbsp;				con.commit();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(2, countElements(con.getStatements(null, RDF.TYPE, RDF.PROPERTY, false)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRemoveAndClear() throws Exception {
+&nbsp;		// Add some data to the repository
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, RDF.TYPE, painter, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(guernica, RDF.TYPE, painting, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+&nbsp;		// Test removal of statements
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.removeStatements(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 4 statements in total&quot;, 4, countAllElements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Named context should contain 3 statements&quot;, 3, countContext1Elements());</b>
+&nbsp;
+<b class="nc">&nbsp;		assertThat(con.hasStatement(painting, RDF.TYPE, RDFS.CLASS, true)).isFalse();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.removeStatements(null, null, null, context1);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 1 statement in total&quot;, 1, countAllElements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Named context should be empty&quot;, 0, countContext1Elements());</b>
+&nbsp;
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.clear();</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should no longer contain any statements&quot;, 0, countAllElements());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testClose() {
+&nbsp;		try {
+<b class="nc">&nbsp;			con.close();</b>
+<b class="nc">&nbsp;			con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;			Assert.fail(&quot;Operation on connection after close should result in IllegalStateException&quot;);</b>
+<b class="nc">&nbsp;		} catch (IllegalStateException e) {</b>
+&nbsp;			// do nothing, this is expected
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			Assert.fail(e.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testContexts() throws Exception {
+<b class="nc">&nbsp;		con.begin();</b>
+&nbsp;		// Add schema data to the repository, no context
+<b class="nc">&nbsp;		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+&nbsp;
+&nbsp;		// Add stuff about picasso to context1
+<b class="nc">&nbsp;		con.addStatement(picasso, RDF.TYPE, painter, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(guernica, RDF.TYPE, painting, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+&nbsp;
+&nbsp;		// Add stuff about rembrandt to context2
+<b class="nc">&nbsp;		con.addStatement(rembrandt, RDF.TYPE, painter, context2);</b>
+<b class="nc">&nbsp;		con.addStatement(nightwatch, RDF.TYPE, painting, context2);</b>
+<b class="nc">&nbsp;		con.addStatement(rembrandt, paints, nightwatch, context2);</b>
+&nbsp;
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;context1 should contain 3 statements&quot;, 3, countContext1Elements());</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;context2 should contain 3 statements&quot;, 3,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, context2)));</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 8 statements&quot;, 8, countAllElements());</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;statements without context should equal 2&quot;, 2,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, (Resource) null)));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statements without context and statements in context 1 together should total 5&quot;, 5,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, null, context1)));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statements without context and statements in context 2 together should total 5&quot;, 5,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, null, context2)));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statements in context 1 and in context 2 together should total 6&quot;, 6,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, context1, context2)));</b>
+&nbsp;
+&nbsp;		// remove two statements from context1.
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.removeStatements(picasso, null, null, context1);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;context1 should contain 1 statements&quot;, 1, countContext1Elements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Repository should contain 6 statements&quot;, 6, countAllElements());</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statements without context and statements in context 1 together should total 3&quot;, 3,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, null, context1)));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statements without context and statements in context 2 together should total 5&quot;, 5,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, context2, null)));</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statements in context 1 and in context 2 together should total 4&quot;, 4,</b>
+<b class="nc">&nbsp;				countElements(con.getStatements(null, null, null, false, context1, context2)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testQueryBindings() {
+&nbsp;		// Add some data to the repository
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, RDF.TYPE, painter, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(guernica, RDF.TYPE, painting, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+&nbsp;		// Query 1
+<b class="nc">&nbsp;		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;select ?X where { ?X a ?Y . ?Y a rdfs:Class. }&quot;, null);
+<b class="nc">&nbsp;		TupleExpr tupleExpr = tupleQuery.getTupleExpr();</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet bindings = new MapBindingSet(2);</b>
+&nbsp;		CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; iter;
+&nbsp;
+<b class="nc">&nbsp;		iter = con.evaluate(tupleExpr, null, bindings, false);</b>
+<b class="nc">&nbsp;		int resultCount = verifyQueryResult(iter, 1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Wrong number of query results&quot;, 2, resultCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		bindings.addBinding(&quot;Y&quot;, painter);</b>
+<b class="nc">&nbsp;		iter = con.evaluate(tupleExpr, null, bindings, false);</b>
+<b class="nc">&nbsp;		resultCount = verifyQueryResult(iter, 1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Wrong number of query results&quot;, 1, resultCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		bindings.addBinding(&quot;Z&quot;, painting);</b>
+<b class="nc">&nbsp;		iter = con.evaluate(tupleExpr, null, bindings, false);</b>
+<b class="nc">&nbsp;		resultCount = verifyQueryResult(iter, 1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Wrong number of query results&quot;, 1, resultCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		bindings.removeBinding(&quot;Y&quot;);</b>
+<b class="nc">&nbsp;		iter = con.evaluate(tupleExpr, null, bindings, false);</b>
+<b class="nc">&nbsp;		resultCount = verifyQueryResult(iter, 1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Wrong number of query results&quot;, 2, resultCount);</b>
+&nbsp;
+&nbsp;		// Query 2
+<b class="nc">&nbsp;		tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;select ?X WHERE { ?X a ?Y . ?Y a rdfs:Class. filter(?Y = ?Z) }&quot;, null);
+<b class="nc">&nbsp;		tupleExpr = tupleQuery.getTupleExpr();</b>
+<b class="nc">&nbsp;		bindings.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;		iter = con.evaluate(tupleExpr, null, bindings, false);</b>
+<b class="nc">&nbsp;		resultCount = verifyQueryResult(iter, 1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Wrong number of query results&quot;, 0, resultCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		bindings.addBinding(&quot;Z&quot;, painter);</b>
+<b class="nc">&nbsp;		iter = con.evaluate(tupleExpr, null, bindings, false);</b>
+<b class="nc">&nbsp;		resultCount = verifyQueryResult(iter, 1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Wrong number of query results&quot;, 1, resultCount);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testStatementEquals() {
+<b class="nc">&nbsp;		Statement st = vf.createStatement(picasso, RDF.TYPE, painter);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(st, vf.createStatement(picasso, RDF.TYPE, painter));</b>
+<b class="nc">&nbsp;		Assert.assertNotEquals(st, vf.createStatement(picasso, RDF.TYPE, painter, context1));</b>
+<b class="nc">&nbsp;		Assert.assertNotEquals(st, vf.createStatement(picasso, RDF.TYPE, painter, context2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testStatementSerialization() throws Exception {
+<b class="nc">&nbsp;		Statement st = vf.createStatement(picasso, RDF.TYPE, painter);</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		ObjectOutputStream out = new ObjectOutputStream(baos);</b>
+<b class="nc">&nbsp;		out.writeObject(st);</b>
+<b class="nc">&nbsp;		out.close();</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());</b>
+<b class="nc">&nbsp;		ObjectInputStream in = new ObjectInputStream(bais);</b>
+<b class="nc">&nbsp;		Statement deserializedStatement = (Statement) in.readObject();</b>
+<b class="nc">&nbsp;		in.close();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertTrue(st.equals(deserializedStatement));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testGetNamespaces() {
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.setNamespace(&quot;rdf&quot;, RDF.NAMESPACE);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Namespace, SailException&gt; namespaces = con.getNamespaces()) {</b>
+<b class="nc">&nbsp;			Assert.assertTrue(namespaces.hasNext());</b>
+<b class="nc">&nbsp;			Namespace rdf = namespaces.next();</b>
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;rdf&quot;, rdf.getPrefix());</b>
+<b class="nc">&nbsp;			Assert.assertEquals(RDF.NAMESPACE, rdf.getName());</b>
+<b class="nc">&nbsp;			Assert.assertFalse(namespaces.hasNext());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testGetNamespace() {
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.setNamespace(&quot;rdf&quot;, RDF.NAMESPACE);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		Assert.assertEquals(RDF.NAMESPACE, con.getNamespace(&quot;rdf&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testClearNamespaces() {
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.setNamespace(&quot;rdf&quot;, RDF.NAMESPACE);</b>
+<b class="nc">&nbsp;		con.setNamespace(&quot;rdfs&quot;, RDFS.NAMESPACE);</b>
+<b class="nc">&nbsp;		con.clearNamespaces();</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		Assert.assertTrue(!con.getNamespaces().hasNext());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRemoveNamespaces() throws Exception {
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.setNamespace(&quot;rdf&quot;, RDF.NAMESPACE);</b>
+<b class="nc">&nbsp;		con.removeNamespace(&quot;rdf&quot;);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		Assert.assertNull(con.getNamespace(&quot;rdf&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testNullNamespaceDisallowed() {
+&nbsp;		try {
+<b class="nc">&nbsp;			con.setNamespace(&quot;foo&quot;, null);</b>
+<b class="nc">&nbsp;			Assert.fail(&quot;Expected NullPointerException&quot;);</b>
+<b class="nc">&nbsp;		} catch (NullPointerException e) {</b>
+&nbsp;			// expected
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testNullPrefixDisallowed() {
+&nbsp;		try {
+<b class="nc">&nbsp;			con.setNamespace(null, &quot;foo&quot;);</b>
+<b class="nc">&nbsp;			Assert.fail(&quot;Expected NullPointerException&quot;);</b>
+<b class="nc">&nbsp;		} catch (NullPointerException e) {</b>
+&nbsp;			// expected
+<b class="nc">&nbsp;		}</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			con.getNamespace(null);</b>
+<b class="nc">&nbsp;			Assert.fail(&quot;Expected NullPointerException&quot;);</b>
+<b class="nc">&nbsp;		} catch (NullPointerException e) {</b>
+&nbsp;			// expected
+<b class="nc">&nbsp;		}</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			con.removeNamespace(null);</b>
+<b class="nc">&nbsp;			Assert.fail(&quot;Expected NullPointerException&quot;);</b>
+<b class="nc">&nbsp;		} catch (NullPointerException e) {</b>
+&nbsp;			// expected
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testGetContextIDs() {
+<b class="nc">&nbsp;		Assert.assertEquals(0, countElements(con.getContextIDs()));</b>
+&nbsp;
+&nbsp;		// load data
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(1, countElements(con.getContextIDs()));</b>
+<b class="nc">&nbsp;		Assert.assertEquals(context1, first(con.getContextIDs()));</b>
+&nbsp;
+<b class="nc">&nbsp;		con.removeStatements(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(0, countElements(con.getContextIDs()));</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(0, countElements(con.getContextIDs()));</b>
+&nbsp;
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context2);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(1, countElements(con.getContextIDs()));</b>
+<b class="nc">&nbsp;		Assert.assertEquals(context2, first(con.getContextIDs()));</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testOldURI() throws Exception {
+<b class="nc">&nbsp;		Assert.assertEquals(0, countAllElements());</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, RDF.TYPE, painter, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(guernica, RDF.TYPE, painting, context1);</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(5, countAllElements());</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.clear();</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(picasso, paints, guernica, context1);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		Assert.assertEquals(1, countAllElements());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDualConnections() throws Exception {
+<b class="nc">&nbsp;		try (SailConnection con2 = sail.getConnection()) {</b>
+<b class="nc">&nbsp;			Assert.assertEquals(0, countAllElements());</b>
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			con.addStatement(painter, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;			con.addStatement(painting, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;			con.addStatement(picasso, RDF.TYPE, painter, context1);</b>
+<b class="nc">&nbsp;			con.addStatement(guernica, RDF.TYPE, painting, context1);</b>
+<b class="nc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;			Assert.assertEquals(4, countAllElements());</b>
+<b class="nc">&nbsp;			con2.begin();</b>
+<b class="nc">&nbsp;			con2.addStatement(RDF.NIL, RDF.TYPE, RDF.LIST);</b>
+<b class="nc">&nbsp;			String query = &quot;SELECT * WHERE { ?S ?P ?O }&quot;;</b>
+<b class="nc">&nbsp;			ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);</b>
+<b class="nc">&nbsp;			Assert.assertEquals(5, countElements(</b>
+<b class="nc">&nbsp;					con2.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)));</b>
+<b class="nc">&nbsp;			Runnable clearer = () -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					con.begin();</b>
+<b class="nc">&nbsp;					con.clear();</b>
+<b class="nc">&nbsp;					con.commit();</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+<b class="nc">&nbsp;					throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			};
+<b class="nc">&nbsp;			Thread thread = new Thread(clearer);</b>
+<b class="nc">&nbsp;			thread.start();</b>
+<b class="nc">&nbsp;			Thread.yield();</b>
+<b class="nc">&nbsp;			Thread.yield();</b>
+<b class="nc">&nbsp;			con2.commit();</b>
+<b class="nc">&nbsp;			thread.join();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testBNodeReuse() {
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(RDF.VALUE, RDF.VALUE, RDF.VALUE);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(1, con.size());</b>
+<b class="nc">&nbsp;		BNode b1 = vf.createBNode();</b>
+<b class="nc">&nbsp;		con.addStatement(b1, RDF.VALUE, b1);</b>
+<b class="nc">&nbsp;		con.removeStatements(b1, RDF.VALUE, b1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(1, con.size());</b>
+<b class="nc">&nbsp;		BNode b2 = vf.createBNode();</b>
+<b class="nc">&nbsp;		con.addStatement(b2, RDF.VALUE, b2);</b>
+<b class="nc">&nbsp;		con.addStatement(b1, RDF.VALUE, b1);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(3, con.size());</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDuplicateCount() {
+<b class="nc">&nbsp;		con.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statement should appear once&quot;, 1, con.size());</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDuplicateGetStatement() {
+<b class="nc">&nbsp;		con.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		try (Stream&lt;? extends Statement&gt; stream = con.getStatements(null, null, null, false).stream()) {</b>
+<b class="nc">&nbsp;			long count = stream.count();</b>
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;Statement should appear once&quot;, 1, count);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDuplicateGetStatementAfterCommit() {
+<b class="nc">&nbsp;		con.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		try (Stream&lt;? extends Statement&gt; stream = con.getStatements(null, null, null, false).stream()) {</b>
+<b class="nc">&nbsp;			long count = stream.count();</b>
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;Statement should appear once&quot;, 1, count);</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDuplicateCountAfterComit() {
+<b class="nc">&nbsp;		con.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statement should appear once&quot;, 1, con.size());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDuplicateCountMultipleTimes() {
+<b class="nc">&nbsp;		con.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		con.commit();</b>
+<b class="nc">&nbsp;		con.begin();</b>
+<b class="nc">&nbsp;		con.addStatement(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statement should appear once&quot;, 1, con.size());</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statement should appear once&quot;, 1, con.size());</b>
+<b class="nc">&nbsp;		Assert.assertEquals(&quot;Statement should appear once&quot;, 1, con.size());</b>
+<b class="nc">&nbsp;		con.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T, X extends Exception&gt; T first(CloseableIteration&lt;T, X&gt; iter) throws X {
+<b class="nc">&nbsp;		try (iter) {</b>
+<b class="nc">&nbsp;			if (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				return iter.next();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected int countContext1Elements() {
+<b class="nc">&nbsp;		return countElements(con.getStatements(null, null, null, false, context1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected int countAllElements() {
+<b class="nc">&nbsp;		return countElements(con.getStatements(null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T, X extends Exception&gt; int countElements(CloseableIteration&lt;T, X&gt; iter) throws X {
+<b class="nc">&nbsp;		int count = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		try (iter) {</b>
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				iter.next();</b>
+<b class="nc">&nbsp;				count++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return count;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected int countQueryResults(String query) {
+<b class="nc">&nbsp;		ParsedTupleQuery tupleQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;PREFIX ex: &lt;&quot; + EXAMPLE_NS + &quot;&gt; \n&quot; + query, null);
+&nbsp;
+<b class="nc">&nbsp;		return countElements(con.evaluate(tupleQuery.getTupleExpr(), null, EmptyBindingSet.getInstance(), false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int verifyQueryResult(CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; resultIter,
+&nbsp;			int expectedBindingCount) throws QueryEvaluationException {
+<b class="nc">&nbsp;		int resultCount = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		while (resultIter.hasNext()) {</b>
+<b class="nc">&nbsp;			BindingSet resultBindings = resultIter.next();</b>
+<b class="nc">&nbsp;			resultCount++;</b>
+&nbsp;
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;Wrong number of binding names for binding set&quot;, expectedBindingCount,</b>
+<b class="nc">&nbsp;					resultBindings.getBindingNames().size());</b>
+&nbsp;
+<b class="nc">&nbsp;			int bindingCount = 0;</b>
+<b class="nc">&nbsp;			Iterator&lt;Binding&gt; bindingIter = resultBindings.iterator();</b>
+<b class="nc">&nbsp;			while (bindingIter.hasNext()) {</b>
+<b class="nc">&nbsp;				bindingIter.next();</b>
+<b class="nc">&nbsp;				bindingCount++;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;Wrong number of bindings in binding set&quot;, expectedBindingCount, bindingCount);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return resultCount;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,405 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RemoteRepositoryManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.manager</a>
+</div>
+
+<h1>Coverage Summary for Class: RemoteRepositoryManager (org.eclipse.rdf4j.repository.manager)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RemoteRepositoryManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/109)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.manager;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+&nbsp;import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+&nbsp;import org.eclipse.rdf4j.repository.http.HTTPRepository;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;
+&nbsp;/**
+&nbsp; * A manager for {@link Repository}s that reside on a remote server. This repository manager allows one to access
+&nbsp; * repositories over HTTP similar to how local repositories are accessed using the {@link LocalRepositoryManager}.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class RemoteRepositoryManager extends RepositoryManager {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an initialized {@link RemoteRepositoryManager} with the specified server URL.
+&nbsp;	 */
+&nbsp;	public static RemoteRepositoryManager getInstance(String serverURL) throws RepositoryException {
+<b class="nc">&nbsp;		RemoteRepositoryManager manager = new RemoteRepositoryManager(serverURL);</b>
+<b class="nc">&nbsp;		manager.init();</b>
+<b class="nc">&nbsp;		return manager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an initialized {@link RemoteRepositoryManager} with the specified server URL and credentials.
+&nbsp;	 */
+&nbsp;	public static RemoteRepositoryManager getInstance(String serverURL, String username, String password)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		RemoteRepositoryManager manager = new RemoteRepositoryManager(serverURL);</b>
+<b class="nc">&nbsp;		manager.setUsernameAndPassword(username, password);</b>
+<b class="nc">&nbsp;		manager.init();</b>
+<b class="nc">&nbsp;		return manager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private volatile SharedHttpClientSessionManager client;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The URL of the remote server, e.g. http://localhost:8080/rdf4j-server/
+&nbsp;	 */
+&nbsp;	private final String serverURL;
+&nbsp;
+&nbsp;	private String username;
+&nbsp;
+&nbsp;	private String password;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RepositoryManager that operates on the specified base directory.
+&nbsp;	 *
+&nbsp;	 * @param serverURL The URL of the server.
+&nbsp;	 */
+&nbsp;	public RemoteRepositoryManager(String serverURL) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.serverURL = serverURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the {@link SharedHttpClientSessionManager}
+&nbsp;	 */
+&nbsp;	protected SharedHttpClientSessionManager getSharedHttpClientSessionManager() {
+<b class="nc">&nbsp;		SharedHttpClientSessionManager result = client;</b>
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				result = client;</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+<b class="nc">&nbsp;					result = client = new SharedHttpClientSessionManager();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClient getHttpClient() {
+<b class="nc">&nbsp;		SharedHttpClientSessionManager nextClient = client;</b>
+<b class="nc">&nbsp;		if (nextClient == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return nextClient.getHttpClient();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient protocolSession) {
+<b class="nc">&nbsp;		getSharedHttpClientSessionManager().setHttpClient(protocolSession);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.shutDown();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			SharedHttpClientSessionManager toCloseClient = client;</b>
+<b class="nc">&nbsp;			client = null;</b>
+<b class="nc">&nbsp;			if (toCloseClient != null) {</b>
+<b class="nc">&nbsp;				toCloseClient.shutDown();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the username and password for authenication with the remote server.
+&nbsp;	 *
+&nbsp;	 * @param username the username
+&nbsp;	 * @param password the password
+&nbsp;	 */
+&nbsp;	public void setUsernameAndPassword(String username, String password) {
+<b class="nc">&nbsp;		this.username = username;</b>
+<b class="nc">&nbsp;		this.password = password;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the URL of the remote server, e.g. &quot;http://localhost:8080/rdf4j-server/&quot;.
+&nbsp;	 *
+&nbsp;	 * @throws MalformedURLException If serverURL cannot be parsed
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public URL getLocation() throws MalformedURLException {
+<b class="nc">&nbsp;		return new URL(serverURL);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the URL of the remote server, e.g. &quot;http://localhost:8080/rdf4j-server/&quot;.
+&nbsp;	 */
+&nbsp;	public String getServerURL() {
+<b class="nc">&nbsp;		return serverURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates and initializes the repository with the specified ID.
+&nbsp;	 *
+&nbsp;	 * @param id A repository ID.
+&nbsp;	 * @return The created repository, or &lt;var&gt;null&lt;/var&gt; if no such repository exists.
+&nbsp;	 * @throws RepositoryConfigException If no repository could be created due to invalid or incomplete configuration
+&nbsp;	 *                                   data.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected Repository createRepository(String id) throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		HTTPRepository result = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (hasRepositoryConfig(id)) {</b>
+<b class="nc">&nbsp;			result = new HTTPRepository(serverURL, id);</b>
+<b class="nc">&nbsp;			result.setHttpClientSessionManager(getSharedHttpClientSessionManager());</b>
+<b class="nc">&nbsp;			result.setUsernameAndPassword(username, password);</b>
+<b class="nc">&nbsp;			result.init();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryConfig getRepositoryConfig(String id) throws RepositoryException {
+<b class="nc">&nbsp;		Model model = getModelFactory().createEmptyModel();</b>
+<b class="nc">&nbsp;		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()</b>
+<b class="nc">&nbsp;				.createRDF4JProtocolSession(serverURL)) {</b>
+<b class="nc">&nbsp;			protocolSession.setUsernameAndPassword(username, password);</b>
+&nbsp;
+<b class="nc">&nbsp;			int serverProtocolVersion = Integer.parseInt(protocolSession.getServerProtocol());</b>
+<b class="nc">&nbsp;			protocolSession.setRepository(Protocol.getRepositoryLocation(serverURL, id));</b>
+<b class="nc">&nbsp;			protocolSession.getRepositoryConfig(new StatementCollector(model));</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (IOException | QueryEvaluationException | UnauthorizedException ue) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(ue);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return RepositoryConfigUtil.getRepositoryConfig(model, id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RepositoryInfo&gt; getAllRepositoryInfos() throws RepositoryException {
+<b class="nc">&nbsp;		List&lt;RepositoryInfo&gt; result = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()</b>
+<b class="nc">&nbsp;				.createRDF4JProtocolSession(serverURL)) {</b>
+<b class="nc">&nbsp;			protocolSession.setUsernameAndPassword(username, password);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult responseFromServer = protocolSession.getRepositoryList()) {</b>
+<b class="nc">&nbsp;				while (responseFromServer.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = responseFromServer.next();</b>
+<b class="nc">&nbsp;					RepositoryInfo repInfo = new RepositoryInfo();</b>
+&nbsp;
+<b class="nc">&nbsp;					String id = Literals.getLabel(bindingSet.getValue(&quot;id&quot;), null);</b>
+&nbsp;
+<b class="nc">&nbsp;					Value uri = bindingSet.getValue(&quot;uri&quot;);</b>
+<b class="nc">&nbsp;					String description = Literals.getLabel(bindingSet.getValue(&quot;title&quot;), null);</b>
+<b class="nc">&nbsp;					boolean readable = Literals.getBooleanValue(bindingSet.getValue(&quot;readable&quot;), false);</b>
+<b class="nc">&nbsp;					boolean writable = Literals.getBooleanValue(bindingSet.getValue(&quot;writable&quot;), false);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (uri instanceof IRI) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							repInfo.setLocation(new URL(uri.toString()));</b>
+<b class="nc">&nbsp;						} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;							logger.warn(&quot;Server reported malformed repository URL: {}&quot;, uri);</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					repInfo.setId(id);</b>
+<b class="nc">&nbsp;					repInfo.setDescription(description);</b>
+<b class="nc">&nbsp;					repInfo.setReadable(readable);</b>
+<b class="nc">&nbsp;					repInfo.setWritable(writable);</b>
+&nbsp;
+<b class="nc">&nbsp;					result.add(repInfo);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (IOException | QueryEvaluationException ioe) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Unable to retrieve list of repositories&quot;, ioe);</b>
+<b class="nc">&nbsp;			throw new RepositoryException(ioe);</b>
+<b class="nc">&nbsp;		} catch (UnauthorizedException ue) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Not authorized to retrieve list of repositories&quot;, ue);</b>
+<b class="nc">&nbsp;			throw new RepositoryException(ue);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException re) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Unable to retrieve list of repositories&quot;, re);</b>
+<b class="nc">&nbsp;			throw re;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addRepositoryConfig(RepositoryConfig config) throws RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()</b>
+<b class="nc">&nbsp;				.createRDF4JProtocolSession(serverURL)) {</b>
+<b class="nc">&nbsp;			protocolSession.setUsernameAndPassword(username, password);</b>
+&nbsp;
+<b class="nc">&nbsp;			int serverProtocolVersion = Integer.parseInt(protocolSession.getServerProtocol());</b>
+<b class="nc">&nbsp;			if (serverProtocolVersion &lt; 9) { // explicit PUT create operation was introduced in Protocol version 9</b>
+<b class="nc">&nbsp;				throw new RepositoryException(</b>
+&nbsp;						&quot;Remote Server RDF4J Protocol version not compatible with this version of RDF4J&quot;);
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (hasRepositoryConfig(config.getID())) {</b>
+<b class="nc">&nbsp;					protocolSession.updateRepository(config);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					protocolSession.createRepository(config);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException | QueryEvaluationException | UnauthorizedException | NumberFormatException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean removeRepository(String repositoryID) throws RepositoryException, RepositoryConfigException {
+&nbsp;
+<b class="nc">&nbsp;		boolean existingRepo = hasRepositoryConfig(repositoryID);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (existingRepo) {</b>
+<b class="nc">&nbsp;			try (RDF4JProtocolSession protocolSession = getSharedHttpClientSessionManager()</b>
+<b class="nc">&nbsp;					.createRDF4JProtocolSession(serverURL)) {</b>
+<b class="nc">&nbsp;				protocolSession.setUsernameAndPassword(username, password);</b>
+<b class="nc">&nbsp;				protocolSession.deleteRepository(repositoryID);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;error while deleting remote repository&quot;, e);</b>
+<b class="nc">&nbsp;				throw new RepositoryConfigException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return existingRepo;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

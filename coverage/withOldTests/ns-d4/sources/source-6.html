@@ -1,0 +1,540 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RangeIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.btree</a>
+</div>
+
+<h1>Coverage Summary for Class: RangeIterator (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RangeIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/124)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/190)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.btree;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+&nbsp;
+<b class="nc">&nbsp;class RangeIterator implements RecordIterator, NodeListener {</b>
+&nbsp;
+&nbsp;	private final BTree tree;
+&nbsp;
+&nbsp;	private final byte[] searchKey;
+&nbsp;
+&nbsp;	private final byte[] searchMask;
+&nbsp;
+&nbsp;	private final byte[] minValue;
+&nbsp;
+&nbsp;	private final byte[] maxValue;
+&nbsp;
+&nbsp;	private volatile boolean started;
+&nbsp;
+&nbsp;	private volatile Node currentNode;
+&nbsp;
+<b class="nc">&nbsp;	private final AtomicBoolean revisitValue = new AtomicBoolean();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tracks the parent nodes of {@link #currentNode}.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final LinkedList&lt;Node&gt; parentNodeStack = new LinkedList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tracks the index of child nodes in parent nodes.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final LinkedList&lt;Integer&gt; parentIndexStack = new LinkedList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private volatile int currentIdx;
+&nbsp;
+<b class="nc">&nbsp;	private volatile boolean closed = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	public RangeIterator(BTree tree, byte[] searchKey, byte[] searchMask, byte[] minValue, byte[] maxValue) {</b>
+<b class="nc">&nbsp;		this.tree = tree;</b>
+<b class="nc">&nbsp;		this.searchKey = searchKey;</b>
+<b class="nc">&nbsp;		this.searchMask = searchMask;</b>
+<b class="nc">&nbsp;		this.minValue = minValue;</b>
+<b class="nc">&nbsp;		this.maxValue = maxValue;</b>
+<b class="nc">&nbsp;		this.started = false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public byte[] next() throws IOException {
+<b class="nc">&nbsp;		tree.btreeLock.readLock().lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!started) {</b>
+<b class="nc">&nbsp;				started = true;</b>
+<b class="nc">&nbsp;				findMinimum();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			byte[] value = findNext(revisitValue.getAndSet(false));</b>
+<b class="nc">&nbsp;			while (value != null) {</b>
+<b class="nc">&nbsp;				if (maxValue != null &amp;&amp; tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) &lt; 0) {</b>
+&nbsp;					// Reached maximum value, stop iterating
+<b class="nc">&nbsp;					close();</b>
+<b class="nc">&nbsp;					value = null;</b>
+<b class="nc">&nbsp;					break;</b>
+<b class="nc">&nbsp;				} else if (searchKey != null &amp;&amp; !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {</b>
+&nbsp;					// Value doesn&#39;t match search key/mask
+<b class="nc">&nbsp;					value = findNext(false);</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				} else {
+&nbsp;					// Matching value found
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return value;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			tree.btreeLock.readLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void findMinimum() throws IOException {
+<b class="nc">&nbsp;		Node nextCurrentNode = currentNode = tree.readRootNode();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (nextCurrentNode == null) {</b>
+&nbsp;			// Empty BTree
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		nextCurrentNode.register(this);</b>
+<b class="nc">&nbsp;		currentIdx = 0;</b>
+&nbsp;
+&nbsp;		// Search first value &gt;= minValue, or the left-most value in case
+&nbsp;		// minValue is null
+&nbsp;		while (true) {
+<b class="nc">&nbsp;			if (minValue != null) {</b>
+<b class="nc">&nbsp;				currentIdx = nextCurrentNode.search(minValue);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (currentIdx &gt;= 0) {</b>
+&nbsp;					// Found exact match with minimum value
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				} else {
+&nbsp;					// currentIdx indicates the first value larger than the
+&nbsp;					// minimum value
+<b class="nc">&nbsp;					currentIdx = -currentIdx - 1;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (nextCurrentNode.isLeaf()) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			} else {
+&nbsp;				// [SES-725] must change stacks after node loading has succeeded
+<b class="nc">&nbsp;				Node childNode = nextCurrentNode.getChildNode(currentIdx);</b>
+<b class="nc">&nbsp;				pushStacks(childNode);</b>
+&nbsp;				// pushStacks updates the current node
+<b class="nc">&nbsp;				nextCurrentNode = currentNode;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] findNext(boolean returnedFromRecursion) throws IOException {
+<b class="nc">&nbsp;		Node nextCurrentNode = currentNode;</b>
+<b class="nc">&nbsp;		if (nextCurrentNode == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (returnedFromRecursion || nextCurrentNode.isLeaf()) {</b>
+<b class="nc">&nbsp;			if (currentIdx &gt;= nextCurrentNode.getValueCount()) {</b>
+&nbsp;				// No more values in this node, continue with parent node
+<b class="nc">&nbsp;				popStacks();</b>
+<b class="nc">&nbsp;				return findNext(true);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return nextCurrentNode.getValue(currentIdx++);</b>
+&nbsp;			}
+&nbsp;		} else {
+&nbsp;			// [SES-725] must change stacks after node loading has succeeded
+<b class="nc">&nbsp;			Node childNode = nextCurrentNode.getChildNode(currentIdx);</b>
+<b class="nc">&nbsp;			pushStacks(childNode);</b>
+<b class="nc">&nbsp;			return findNext(false);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void set(byte[] value) {
+<b class="nc">&nbsp;		tree.btreeLock.readLock().lock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			Node nextCurrentNode = currentNode;</b>
+<b class="nc">&nbsp;			if (nextCurrentNode == null || currentIdx &gt; nextCurrentNode.getValueCount()) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			nextCurrentNode.setValue(currentIdx - 1, value);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			tree.btreeLock.readLock().unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws IOException {
+<b class="nc">&nbsp;		if (!closed) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				if (!closed) {</b>
+<b class="nc">&nbsp;					closed = true;</b>
+<b class="nc">&nbsp;					tree.btreeLock.readLock().lock();</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						while (popStacks()) {</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						assert parentNodeStack.isEmpty();</b>
+<b class="nc">&nbsp;						assert parentIndexStack.isEmpty();</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						tree.btreeLock.readLock().unlock();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void pushStacks(Node newChildNode) {
+<b class="nc">&nbsp;		newChildNode.register(this);</b>
+<b class="nc">&nbsp;		parentNodeStack.add(currentNode);</b>
+<b class="nc">&nbsp;		parentIndexStack.add(currentIdx);</b>
+<b class="nc">&nbsp;		currentNode = newChildNode;</b>
+<b class="nc">&nbsp;		currentIdx = 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized boolean popStacks() throws IOException {
+<b class="nc">&nbsp;		Node nextCurrentNode = currentNode;</b>
+<b class="nc">&nbsp;		if (nextCurrentNode == null) {</b>
+&nbsp;			// There&#39;s nothing to pop
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		nextCurrentNode.deregister(this);</b>
+<b class="nc">&nbsp;		nextCurrentNode.release();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!parentNodeStack.isEmpty()) {</b>
+<b class="nc">&nbsp;			currentNode = parentNodeStack.removeLast();</b>
+<b class="nc">&nbsp;			currentIdx = parentIndexStack.removeLast();</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			currentNode = null;</b>
+<b class="nc">&nbsp;			currentIdx = 0;</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean valueAdded(Node node, int addedIndex) {
+<b class="nc">&nbsp;		assert tree.btreeLock.isWriteLockedByCurrentThread();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (node == currentNode) {</b>
+<b class="nc">&nbsp;			if (addedIndex &lt; currentIdx) {</b>
+<b class="nc">&nbsp;				currentIdx++;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; parentNodeStack.size(); i++) {</b>
+<b class="nc">&nbsp;				if (node == parentNodeStack.get(i)) {</b>
+<b class="nc">&nbsp;					int parentIdx = parentIndexStack.get(i);</b>
+<b class="nc">&nbsp;					if (addedIndex &lt; parentIdx) {</b>
+<b class="nc">&nbsp;						parentIndexStack.set(i, parentIdx + 1);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean valueRemoved(Node node, int removedIndex) {
+<b class="nc">&nbsp;		assert tree.btreeLock.isWriteLockedByCurrentThread();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (node == currentNode) {</b>
+<b class="nc">&nbsp;			if (removedIndex &lt; currentIdx) {</b>
+<b class="nc">&nbsp;				currentIdx--;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; parentNodeStack.size(); i++) {</b>
+<b class="nc">&nbsp;				if (node == parentNodeStack.get(i)) {</b>
+<b class="nc">&nbsp;					int parentIdx = parentIndexStack.get(i);</b>
+<b class="nc">&nbsp;					if (removedIndex &lt; parentIdx) {</b>
+<b class="nc">&nbsp;						parentIndexStack.set(i, parentIdx - 1);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rotatedLeft(Node node, int valueIndex, Node leftChildNode, Node rightChildNode) throws IOException {
+<b class="nc">&nbsp;		Node nextCurrentNode = currentNode;</b>
+<b class="nc">&nbsp;		if (nextCurrentNode == node) {</b>
+<b class="nc">&nbsp;			if (valueIndex == currentIdx - 1) {</b>
+&nbsp;				// the value that was removed had just been visited
+<b class="nc">&nbsp;				currentIdx = valueIndex;</b>
+<b class="nc">&nbsp;				revisitValue.set(true);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (!node.isLeaf()) {</b>
+<b class="nc">&nbsp;					pushStacks(leftChildNode);</b>
+<b class="nc">&nbsp;					leftChildNode.use();</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (nextCurrentNode == rightChildNode) {</b>
+<b class="nc">&nbsp;			if (currentIdx == 0) {</b>
+&nbsp;				// the value that would be visited next has been moved to the
+&nbsp;				// parent node
+<b class="nc">&nbsp;				popStacks();</b>
+<b class="nc">&nbsp;				currentIdx = valueIndex;</b>
+<b class="nc">&nbsp;				revisitValue.set(true);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; parentNodeStack.size(); i++) {</b>
+<b class="nc">&nbsp;				Node stackNode = parentNodeStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (stackNode == rightChildNode) {</b>
+<b class="nc">&nbsp;					int stackIdx = parentIndexStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (stackIdx == 0) {</b>
+&nbsp;						// this node is no longer the parent, replace with left
+&nbsp;						// sibling
+<b class="nc">&nbsp;						rightChildNode.deregister(this);</b>
+<b class="nc">&nbsp;						rightChildNode.release();</b>
+&nbsp;
+<b class="nc">&nbsp;						leftChildNode.use();</b>
+<b class="nc">&nbsp;						leftChildNode.register(this);</b>
+&nbsp;
+<b class="nc">&nbsp;						parentNodeStack.set(i, leftChildNode);</b>
+<b class="nc">&nbsp;						parentIndexStack.set(i, leftChildNode.getValueCount());</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rotatedRight(Node node, int valueIndex, Node leftChildNode, Node rightChildNode) throws IOException {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; parentNodeStack.size(); i++) {</b>
+<b class="nc">&nbsp;			Node stackNode = parentNodeStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (stackNode == leftChildNode) {</b>
+<b class="nc">&nbsp;				int stackIdx = parentIndexStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (stackIdx == leftChildNode.getValueCount()) {</b>
+&nbsp;					// this node is no longer the parent, replace with right
+&nbsp;					// sibling
+<b class="nc">&nbsp;					leftChildNode.deregister(this);</b>
+<b class="nc">&nbsp;					leftChildNode.release();</b>
+&nbsp;
+<b class="nc">&nbsp;					rightChildNode.use();</b>
+<b class="nc">&nbsp;					rightChildNode.register(this);</b>
+&nbsp;
+<b class="nc">&nbsp;					parentNodeStack.set(i, rightChildNode);</b>
+<b class="nc">&nbsp;					parentIndexStack.set(i, 0);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				break;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException {
+<b class="nc">&nbsp;		assert tree.btreeLock.isWriteLockedByCurrentThread();</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean deregister = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		Node nextCurrentNode = currentNode;</b>
+<b class="nc">&nbsp;		if (node == nextCurrentNode) {</b>
+<b class="nc">&nbsp;			if (currentIdx &gt; medianIdx) {</b>
+<b class="nc">&nbsp;				nextCurrentNode.release();</b>
+<b class="nc">&nbsp;				deregister = true;</b>
+&nbsp;
+<b class="nc">&nbsp;				newNode.use();</b>
+<b class="nc">&nbsp;				newNode.register(this);</b>
+&nbsp;
+<b class="nc">&nbsp;				currentNode = newNode;</b>
+<b class="nc">&nbsp;				currentIdx -= medianIdx + 1;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; parentNodeStack.size(); i++) {</b>
+<b class="nc">&nbsp;				Node parentNode = parentNodeStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (node == parentNode) {</b>
+<b class="nc">&nbsp;					int parentIdx = parentIndexStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (parentIdx &gt; medianIdx) {</b>
+<b class="nc">&nbsp;						parentNode.release();</b>
+<b class="nc">&nbsp;						deregister = true;</b>
+&nbsp;
+<b class="nc">&nbsp;						newNode.use();</b>
+<b class="nc">&nbsp;						newNode.register(this);</b>
+&nbsp;
+<b class="nc">&nbsp;						parentNodeStack.set(i, newNode);</b>
+<b class="nc">&nbsp;						parentIndexStack.set(i, parentIdx - medianIdx - 1);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return deregister;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException {
+<b class="nc">&nbsp;		assert tree.btreeLock.isWriteLockedByCurrentThread();</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean deregister = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		Node nextCurrentNode = currentNode;</b>
+<b class="nc">&nbsp;		if (sourceNode == nextCurrentNode) {</b>
+<b class="nc">&nbsp;			nextCurrentNode.release();</b>
+<b class="nc">&nbsp;			deregister = true;</b>
+&nbsp;
+<b class="nc">&nbsp;			targetNode.use();</b>
+<b class="nc">&nbsp;			targetNode.register(this);</b>
+&nbsp;
+<b class="nc">&nbsp;			currentNode = targetNode;</b>
+<b class="nc">&nbsp;			currentIdx += mergeIdx;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; parentNodeStack.size(); i++) {</b>
+<b class="nc">&nbsp;				Node parentNode = parentNodeStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (sourceNode == parentNode) {</b>
+<b class="nc">&nbsp;					parentNode.release();</b>
+<b class="nc">&nbsp;					deregister = true;</b>
+&nbsp;
+<b class="nc">&nbsp;					targetNode.use();</b>
+<b class="nc">&nbsp;					targetNode.register(this);</b>
+&nbsp;
+<b class="nc">&nbsp;					parentNodeStack.set(i, targetNode);</b>
+<b class="nc">&nbsp;					parentIndexStack.set(i, mergeIdx + parentIndexStack.get(i));</b>
+&nbsp;
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return deregister;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

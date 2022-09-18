@@ -1,0 +1,179 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MavenUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.io</a>
+</div>
+
+<h1>Coverage Summary for Class: MavenUtil (org.eclipse.rdf4j.common.io)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MavenUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.io;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Properties;
+&nbsp;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Maven-related utility methods.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class MavenUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Loads the Maven &lt;var&gt;pom.properties&lt;/var&gt; for the specified artifact.
+&nbsp;	 *
+&nbsp;	 * @param groupId    The artifact&#39;s group ID.
+&nbsp;	 * @param artifactId The artifact&#39;s ID.
+&nbsp;	 * @return The parsed pom properties, or &lt;var&gt;null&lt;/var&gt; if the resource could not be found.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static Properties loadPomProperties(String groupId, String artifactId) throws IOException {
+<b class="nc">&nbsp;		String properties = &quot;META-INF/maven/&quot; + groupId + &quot;/&quot; + artifactId + &quot;/pom.properties&quot;;</b>
+<b class="nc">&nbsp;		return ResourceUtil.getProperties(properties);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Loads the version number from the &lt;var&gt;pom.properties&lt;/var&gt; file for the specified artifact.
+&nbsp;	 *
+&nbsp;	 * @param groupId        The artifact&#39;s group ID.
+&nbsp;	 * @param artifactId     The artifact&#39;s ID.
+&nbsp;	 * @param defaultVersion The version number to return in case no version number was found.
+&nbsp;	 * @return version as a string
+&nbsp;	 */
+&nbsp;	public static String loadVersion(String groupId, String artifactId, String defaultVersion) {
+<b class="nc">&nbsp;		String version = null;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Properties pom = loadPomProperties(groupId, artifactId);</b>
+<b class="nc">&nbsp;			if (pom != null) {</b>
+<b class="nc">&nbsp;				version = pom.getProperty(&quot;version&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			LoggerFactory.getLogger(MavenUtil.class).warn(&quot;Unable to read version info&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (version == null) {</b>
+<b class="nc">&nbsp;			version = defaultVersion;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return version;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,359 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TupleFunctionFederatedService</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.federation</a>
+</div>
+
+<h1>Coverage Summary for Class: TupleFunctionFederatedService (org.eclipse.rdf4j.query.algebra.evaluation.federation)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TupleFunctionFederatedService</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/51)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TupleFunctionFederatedService$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/78)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.federation;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SilentIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.UnionIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * A federated service that can evaluate {@link TupleFunction}s.
+&nbsp; */
+&nbsp;public class TupleFunctionFederatedService implements FederatedService {
+&nbsp;
+&nbsp;	private final TupleFunctionRegistry tupleFunctionRegistry;
+&nbsp;
+&nbsp;	private final ValueFactory vf;
+&nbsp;
+&nbsp;	private boolean isInitialized;
+&nbsp;
+<b class="nc">&nbsp;	public TupleFunctionFederatedService(TupleFunctionRegistry tupleFunctionRegistry, ValueFactory vf) {</b>
+<b class="nc">&nbsp;		this.tupleFunctionRegistry = tupleFunctionRegistry;</b>
+<b class="nc">&nbsp;		this.vf = vf;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isInitialized() {
+<b class="nc">&nbsp;		return isInitialized;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void initialize() {
+<b class="nc">&nbsp;		isInitialized = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutdown() {
+<b class="nc">&nbsp;		isInitialized = false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException {
+<b class="nc">&nbsp;		try (final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = evaluate(service,</b>
+&nbsp;				new SingletonIteration&lt;&gt;(bindings), baseUri)) {
+<b class="nc">&nbsp;			if (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bs = iter.next();</b>
+<b class="nc">&nbsp;				String firstVar = service.getBindingNames().iterator().next();</b>
+<b class="nc">&nbsp;				return QueryEvaluationUtil.getEffectiveBooleanValue(bs.getValue(firstVar));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; select(Service service,
+&nbsp;			final Set&lt;String&gt; projectionVars, BindingSet bindings, String baseUri) throws QueryEvaluationException {
+&nbsp;		final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter, eval;
+<b class="nc">&nbsp;		eval = evaluate(service, new SingletonIteration&lt;&gt;(bindings), baseUri);</b>
+<b class="nc">&nbsp;		iter = service.isSilent() ? new SilentIteration&lt;&gt;(eval) : eval;</b>
+<b class="nc">&nbsp;		if (service.getBindingNames().equals(projectionVars)) {</b>
+<b class="nc">&nbsp;			return iter;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new AbstractCloseableIteration&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;				if (isClosed()) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				boolean result = iter.hasNext();</b>
+<b class="nc">&nbsp;				if (!result) {</b>
+<b class="nc">&nbsp;					close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return result;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public BindingSet next() throws QueryEvaluationException {
+<b class="nc">&nbsp;				if (isClosed()) {</b>
+<b class="nc">&nbsp;					throw new NoSuchElementException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;				}
+&nbsp;				try {
+<b class="nc">&nbsp;					QueryBindingSet projected = new QueryBindingSet();</b>
+<b class="nc">&nbsp;					BindingSet result = iter.next();</b>
+<b class="nc">&nbsp;					for (String var : projectionVars) {</b>
+<b class="nc">&nbsp;						Value v = result.getValue(var);</b>
+<b class="nc">&nbsp;						projected.addBinding(var, v);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					return projected;</b>
+<b class="nc">&nbsp;				} catch (NoSuchElementException e) {</b>
+<b class="nc">&nbsp;					close();</b>
+<b class="nc">&nbsp;					throw e;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;				if (isClosed()) {</b>
+<b class="nc">&nbsp;					throw new IllegalStateException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;				}
+&nbsp;				try {
+<b class="nc">&nbsp;					iter.remove();</b>
+<b class="nc">&nbsp;				} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;					close();</b>
+<b class="nc">&nbsp;					throw e;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void handleClose() throws QueryEvaluationException {
+<b class="nc">&nbsp;				iter.close();</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Service service,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; bindings, String baseUri)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (!bindings.hasNext()) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr expr = service.getArg();</b>
+<b class="nc">&nbsp;		if (!(expr instanceof TupleFunctionCall)) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TupleFunctionCall funcCall = (TupleFunctionCall) expr;</b>
+<b class="nc">&nbsp;		TupleFunction func = tupleFunctionRegistry.get(funcCall.getURI())</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new QueryEvaluationException(&quot;Unknown tuple function &#39;&quot; + funcCall.getURI() + &quot;&#39;&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;ValueExpr&gt; argExprs = funcCall.getArgs();</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;CloseableIteration&lt;BindingSet, QueryEvaluationException&gt;&gt; resultIters = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		while (bindings.hasNext()) {</b>
+<b class="nc">&nbsp;			BindingSet bs = bindings.next();</b>
+<b class="nc">&nbsp;			Value[] argValues = new Value[argExprs.size()];</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; argExprs.size(); i++) {</b>
+<b class="nc">&nbsp;				ValueExpr argExpr = argExprs.get(i);</b>
+&nbsp;				Value argValue;
+<b class="nc">&nbsp;				if (argExpr instanceof Var) {</b>
+<b class="nc">&nbsp;					argValue = getValue((Var) argExpr, bs);</b>
+<b class="nc">&nbsp;				} else if (argExpr instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;					argValue = ((ValueConstant) argExpr).getValue();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new ValueExprEvaluationException(</b>
+<b class="nc">&nbsp;							&quot;Unsupported ValueExpr for argument &quot; + i + &quot;: &quot; + argExpr.getClass().getSimpleName());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				argValues[i] = argValue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			resultIters</b>
+<b class="nc">&nbsp;					.add(TupleFunctionEvaluationStrategy.evaluate(func, funcCall.getResultVars(), bs, vf, argValues));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return (resultIters.size() &gt; 1) ? new DistinctIteration&lt;&gt;(new UnionIteration&lt;&gt;(resultIters))</b>
+<b class="nc">&nbsp;				: resultIters.get(0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Value getValue(Var var, BindingSet bs) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		Value v = var.getValue();</b>
+<b class="nc">&nbsp;		if (v == null) {</b>
+<b class="nc">&nbsp;			v = bs.getValue(var.getName());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (v == null) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;No value for binding: &quot; + var.getName());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return v;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

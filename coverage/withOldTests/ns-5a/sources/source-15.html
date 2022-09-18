@@ -1,0 +1,391 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SimpleValueFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: SimpleValueFactory (org.eclipse.rdf4j.model.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SimpleValueFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    74.2%
+  </span>
+  <span class="absValue">
+    (23/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (7/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    61.5%
+  </span>
+  <span class="absValue">
+    (32/52)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.impl;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.GregorianCalendar;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import javax.xml.datatype.DatatypeConfigurationException;
+&nbsp;import javax.xml.datatype.DatatypeFactory;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;
+&nbsp;/**
+&nbsp; * Default implementation of the {@link ValueFactory} interface.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; *
+&nbsp; */
+&nbsp;public class SimpleValueFactory extends AbstractValueFactory {
+&nbsp;
+&nbsp;	/* Constants */
+&nbsp;
+<b class="fc">&nbsp;	private static final SimpleValueFactory sharedInstance = new SimpleValueFactory();</b>
+&nbsp;
+&nbsp;	// static UUID as prefix together with a thread safe incrementing long ensures unique blank nodes.
+<b class="fc">&nbsp;	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;);</b>
+<b class="fc">&nbsp;	private final static AtomicLong uniqueIdSuffix = new AtomicLong();</b>
+&nbsp;
+&nbsp;	private static final DatatypeFactory datatypeFactory;
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			datatypeFactory = DatatypeFactory.newInstance();</b>
+<b class="nc">&nbsp;		} catch (DatatypeConfigurationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(&quot;Could not instantiate javax.xml.datatype.DatatypeFactory&quot;, e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/* variables */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Provide a single shared instance of a SimpleValueFactory.
+&nbsp;	 *
+&nbsp;	 * @return a singleton instance of SimpleValueFactory.
+&nbsp;	 */
+&nbsp;	public static SimpleValueFactory getInstance() {
+<b class="fc">&nbsp;		return sharedInstance;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Hidden constructor to enforce singleton pattern.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected SimpleValueFactory() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/* Public methods */
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String iri) {
+<b class="fc">&nbsp;		return new SimpleIRI(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String namespace, String localName) {
+<b class="fc">&nbsp;		return createIRI(namespace + localName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BNode createBNode(String nodeID) {
+<b class="fc">&nbsp;		return new SimpleBNode(nodeID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String value) {
+<b class="fc">&nbsp;		return new SimpleLiteral(value, CoreDatatype.XSD.STRING);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String value, String language) {
+<b class="fc">&nbsp;		return new SimpleLiteral(value, language);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(boolean b) {
+<b class="fc">&nbsp;		return b ? BooleanLiteral.TRUE : BooleanLiteral.FALSE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String value, IRI datatype) {
+<b class="fc">&nbsp;		return new SimpleLiteral(value, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Statement createStatement(Resource subject, IRI predicate, Value object) {
+<b class="nc">&nbsp;		return new SimpleStatement(subject, predicate, object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
+<b class="fc">&nbsp;		return new ContextStatement(subject, predicate, object, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+<b class="nc">&nbsp;		return new SimpleTriple(subject, predicate, object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BNode createBNode() {
+<b class="fc">&nbsp;		return createBNode(uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#BYTE} as parameters.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(byte value) {
+<b class="nc">&nbsp;		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.BYTE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#SHORT} as parameters.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(short value) {
+<b class="nc">&nbsp;		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.SHORT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#INT} as parameters.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(int value) {
+<b class="fc">&nbsp;		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.INT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createIntegerLiteral(Number, IRI)} with the supplied value and {@link XSD#LONG} as parameters.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(long value) {
+<b class="fc">&nbsp;		return createIntegerLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.LONG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value and datatype as parameters.
+&nbsp;	 */
+&nbsp;	protected Literal createIntegerLiteral(Number value, IRI datatype) {
+<b class="fc">&nbsp;		return createNumericLiteral(value, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Literal createIntegerLiteral(Number value, XSD.Datatype datatype) {
+<b class="fc">&nbsp;		return createNumericLiteral(value, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XSD#FLOAT} as parameters.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(float value) {
+<b class="fc">&nbsp;		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.FLOAT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createFPLiteral(Number, IRI)} with the supplied value and {@link XSD#DOUBLE} as parameters.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(double value) {
+<b class="fc">&nbsp;		return createFPLiteral(value, org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.DOUBLE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(BigInteger bigInteger) {
+<b class="fc">&nbsp;		return createIntegerLiteral(bigInteger, org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(BigDecimal bigDecimal) {
+<b class="fc">&nbsp;		return createNumericLiteral(bigDecimal, org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link #createNumericLiteral(Number, IRI)} with the supplied value and datatype as parameters.
+&nbsp;	 */
+&nbsp;	protected Literal createFPLiteral(Number value, IRI datatype) {
+<b class="nc">&nbsp;		return createNumericLiteral(value, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Literal createFPLiteral(Number value, XSD.Datatype datatype) {
+<b class="fc">&nbsp;		return createNumericLiteral(value, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates specific optimized subtypes of SimpleLiteral for numeric datatypes.
+&nbsp;	 */
+&nbsp;	protected Literal createNumericLiteral(Number number, IRI datatype) {
+<b class="fc">&nbsp;		if (number instanceof BigDecimal) {</b>
+<b class="fc">&nbsp;			return new DecimalLiteral((BigDecimal) number, datatype);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (number instanceof BigInteger) {</b>
+<b class="fc">&nbsp;			return new IntegerLiteral((BigInteger) number, datatype);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new NumericLiteral(number, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(since = &quot;4.0.0&quot;, forRemoval = true)
+&nbsp;	protected Literal createNumericLiteral(Number number, XSD.Datatype datatype) {
+<b class="pc">&nbsp;		if (number instanceof BigDecimal) {</b>
+<b class="nc">&nbsp;			return new DecimalLiteral((BigDecimal) number, datatype);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (number instanceof BigInteger) {</b>
+<b class="nc">&nbsp;			return new IntegerLiteral((BigInteger) number, datatype);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return new NumericLiteral(number, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Literal createNumericLiteral(Number number, CoreDatatype datatype) {
+<b class="nc">&nbsp;		if (number instanceof BigDecimal) {</b>
+<b class="nc">&nbsp;			return new DecimalLiteral((BigDecimal) number, datatype);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (number instanceof BigInteger) {</b>
+<b class="nc">&nbsp;			return new IntegerLiteral((BigInteger) number, datatype);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new NumericLiteral(number, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calls {@link ValueFactory#createLiteral(String, IRI)} with the String-value of the supplied calendar and the
+&nbsp;	 * appropriate datatype as parameters.
+&nbsp;	 *
+&nbsp;	 * @see XMLGregorianCalendar#toXMLFormat()
+&nbsp;	 * @see XMLGregorianCalendar#getXMLSchemaType()
+&nbsp;	 * @see XMLDatatypeUtil#qnameToCoreDatatype(javax.xml.namespace.QName)
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(XMLGregorianCalendar calendar) {
+<b class="nc">&nbsp;		return createLiteral(calendar.toXMLFormat(), XMLDatatypeUtil.qnameToCoreDatatype(calendar.getXMLSchemaType()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied {@link Date} to a {@link XMLGregorianCalendar}, then calls
+&nbsp;	 * {@link ValueFactory#createLiteral(XMLGregorianCalendar)}.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(Date date) {
+<b class="nc">&nbsp;		GregorianCalendar c = new GregorianCalendar();</b>
+<b class="nc">&nbsp;		c.setTime(date);</b>
+&nbsp;
+<b class="nc">&nbsp;		XMLGregorianCalendar xmlGregCalendar = datatypeFactory.newXMLGregorianCalendar(c);</b>
+<b class="nc">&nbsp;		return createLiteral(xmlGregCalendar);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

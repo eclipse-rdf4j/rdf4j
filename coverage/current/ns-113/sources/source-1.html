@@ -1,0 +1,167 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ObjectMapUtils</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.util</a>
+</div>
+
+<h1>Coverage Summary for Class: ObjectMapUtils (org.eclipse.rdf4j.spring.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ObjectMapUtils</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.util;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBoolean;
+&nbsp;import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBooleanMaybe;
+&nbsp;import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toBooleanOptional;
+&nbsp;import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toIRI;
+&nbsp;import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toIRIMaybe;
+&nbsp;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+<b class="nc">&nbsp;public class ObjectMapUtils {</b>
+&nbsp;	public static IRI getIRI(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		return toIRI((String) map.get(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static IRI getIRIMaybe(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		return toIRIMaybe((String) map.get(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Boolean getBoolean(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		return toBoolean((String) map.get(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Boolean getBooleanMaybe(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		return toBooleanMaybe((Boolean) map.get(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;Boolean&gt; getBooleanOptional(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		return toBooleanOptional((Boolean) map.get(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getString(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		String value = (String) map.get(key);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getStringMaybe(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		return (String) map.get(key);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;String&gt; getStringOptional(Map&lt;String, Object&gt; map, String key) {
+<b class="nc">&nbsp;		return Optional.ofNullable(getStringMaybe(map, key));</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

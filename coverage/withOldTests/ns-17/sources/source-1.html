@@ -1,0 +1,266 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractLogReader</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.logging.base</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractLogReader (org.eclipse.rdf4j.common.logging.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractLogReader</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.logging.base;
+&nbsp;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogLevel;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogReader;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogRecord;
+&nbsp;
+&nbsp;import ch.qos.logback.core.Appender;
+&nbsp;
+&nbsp;/**
+&nbsp; * Abstract log reader
+&nbsp; */
+<b class="nc">&nbsp;public abstract class AbstractLogReader implements LogReader {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public abstract boolean hasNext();
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public abstract LogRecord next();
+&nbsp;
+<b class="nc">&nbsp;	private int limit = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int offset = 0;</b>
+&nbsp;
+&nbsp;	private Appender&lt;?&gt; appender;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final void remove() {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Removing log records is not supported.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setAppender(Appender&lt;?&gt; appender) {
+<b class="nc">&nbsp;		this.appender = appender;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Appender&lt;?&gt; getAppender() {
+<b class="nc">&nbsp;		return this.appender;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Date getEndDate() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public LogLevel getLevel() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Date getStartDate() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setEndDate(Date date) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Date ranges are not supported by this LogReader implementation!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setLevel(LogLevel level) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Level filter is not supported by this LogReader implementation!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setStartDate(Date date) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Date ranges are not supported by this LogReader implementation!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean supportsDateRanges() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Date getMaxDate() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Date getMinDate() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean supportsLevelFilter() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getThread() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setThread(String threadname) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Thread filter is not supported by this LogReader implementation!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean supportsThreadFilter() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the limit.
+&nbsp;	 *
+&nbsp;	 * @return limit
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public int getLimit() {
+<b class="nc">&nbsp;		return limit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the limit
+&nbsp;	 *
+&nbsp;	 * @param limit The limit to set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void setLimit(int limit) {
+<b class="nc">&nbsp;		this.limit = limit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the offset
+&nbsp;	 *
+&nbsp;	 * @return offset.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public int getOffset() {
+<b class="nc">&nbsp;		return offset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the offset
+&nbsp;	 *
+&nbsp;	 * @param offset The offset to set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void setOffset(int offset) {
+<b class="nc">&nbsp;		this.offset = offset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getThreadNames() {
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

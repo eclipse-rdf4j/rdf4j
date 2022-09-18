@@ -1,0 +1,159 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DefaultRepositoryResolver</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.resolver</a>
+</div>
+
+<h1>Coverage Summary for Class: DefaultRepositoryResolver (org.eclipse.rdf4j.http.server.repository.resolver)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DefaultRepositoryResolver</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.http.server.repository.resolver;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;
+&nbsp;public class DefaultRepositoryResolver implements RepositoryResolver {
+&nbsp;
+&nbsp;	private final RepositoryManager repositoryManager;
+&nbsp;
+<b class="nc">&nbsp;	public DefaultRepositoryResolver(RepositoryManager repMan) {</b>
+<b class="nc">&nbsp;		repositoryManager = repMan;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RepositoryManager getRepositoryManager() {
+<b class="nc">&nbsp;		return repositoryManager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RepositoryConfig getRepositoryConfig(String repId, Model model) {
+<b class="nc">&nbsp;		return RepositoryConfigUtil.getRepositoryConfig(model, repId);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getRepositoryID(HttpServletRequest request) {
+<b class="nc">&nbsp;		return RepositoryInterceptor.getRepositoryID(request);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RepositoryConnection getRepositoryConnection(HttpServletRequest request, Repository repository) {
+<b class="nc">&nbsp;		RepositoryConnection conn = repository.getConnection();</b>
+<b class="nc">&nbsp;		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+<b class="nc">&nbsp;		conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);</b>
+<b class="nc">&nbsp;		return conn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Repository getRepository(HttpServletRequest request) {
+<b class="nc">&nbsp;		return RepositoryInterceptor.getRepository(request);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

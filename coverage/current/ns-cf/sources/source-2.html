@@ -1,0 +1,302 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemEvaluationStatistics</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory</a>
+</div>
+
+<h1>Coverage Summary for Class: MemEvaluationStatistics (org.eclipse.rdf4j.sail.memory)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemEvaluationStatistics</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">MemEvaluationStatistics$MemCardinalityCalculator</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (42/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    97.8%
+  </span>
+  <span class="absValue">
+    (45/46)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (42/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    98%
+  </span>
+  <span class="absValue">
+    (49/50)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemIRI;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemResource;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemValue;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Uses the MemoryStore&#39;s statement sizes to give cost estimates based on the size of the expected results. This process
+&nbsp; * could be improved with repository statistics about size and distribution of statements.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;class MemEvaluationStatistics extends EvaluationStatistics {
+&nbsp;
+&nbsp;	private final MemValueFactory valueFactory;
+&nbsp;	private final MemStatementList memStatementList;
+&nbsp;
+<b class="fc">&nbsp;	MemEvaluationStatistics(MemValueFactory valueFactory, MemStatementList memStatementList) {</b>
+<b class="fc">&nbsp;		this.valueFactory = valueFactory;</b>
+<b class="fc">&nbsp;		this.memStatementList = memStatementList;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CardinalityCalculator createCardinalityCalculator() {
+<b class="fc">&nbsp;		return new MemCardinalityCalculator();</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	protected class MemCardinalityCalculator extends CardinalityCalculator {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public double getCardinality(StatementPattern sp) {
+&nbsp;
+<b class="fc">&nbsp;			Value subj = getConstantValue(sp.getSubjectVar());</b>
+<b class="pc">&nbsp;			if (!(subj != null &amp;&amp; subj.isResource())) {</b>
+&nbsp;				// can happen when a previous optimizer has inlined a comparison
+&nbsp;				// operator.
+&nbsp;				// this can cause, for example, the subject variable to be
+&nbsp;				// equated to a literal value.
+&nbsp;				// See SES-970 / SES-998
+<b class="fc">&nbsp;				subj = null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			Value pred = getConstantValue(sp.getPredicateVar());</b>
+<b class="pc">&nbsp;			if (!(pred != null &amp;&amp; pred.isIRI())) {</b>
+&nbsp;				// can happen when a previous optimizer has inlined a comparison
+&nbsp;				// operator. See SES-970 / SES-998
+<b class="fc">&nbsp;				pred = null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			Value obj = getConstantValue(sp.getObjectVar());</b>
+<b class="fc">&nbsp;			Value context = getConstantValue(sp.getContextVar());</b>
+<b class="pc">&nbsp;			if (!(context != null &amp;&amp; context.isResource())) {</b>
+&nbsp;				// can happen when a previous optimizer has inlined a comparison
+&nbsp;				// operator. See SES-970 / SES-998
+<b class="fc">&nbsp;				context = null;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (subj == null &amp;&amp; pred == null &amp;&amp; obj == null &amp;&amp; context == null) {</b>
+<b class="fc">&nbsp;				return memStatementList.size();</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return minStatementCount(subj, pred, obj, context);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		private int minStatementCount(Value subj, Value pred, Value obj, Value context) {
+<b class="fc">&nbsp;			int minListSizes = Integer.MAX_VALUE;</b>
+&nbsp;
+<b class="fc">&nbsp;			if (subj != null) {</b>
+<b class="fc">&nbsp;				MemResource memSubj = valueFactory.getMemResource((Resource) subj);</b>
+<b class="fc">&nbsp;				if (memSubj != null) {</b>
+<b class="fc">&nbsp;					minListSizes = memSubj.getSubjectStatementCount();</b>
+<b class="fc">&nbsp;					if (minListSizes == 0) {</b>
+<b class="fc">&nbsp;						return 0;</b>
+&nbsp;					}
+&nbsp;				} else {
+&nbsp;					// couldn&#39;t find the value in the value factory, which means that there are no statements with that
+&nbsp;					// value
+<b class="fc">&nbsp;					return 0;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (pred != null) {</b>
+<b class="fc">&nbsp;				MemIRI memPred = valueFactory.getMemURI((IRI) pred);</b>
+<b class="fc">&nbsp;				if (memPred != null) {</b>
+<b class="fc">&nbsp;					minListSizes = Math.min(minListSizes, memPred.getPredicateStatementCount());</b>
+<b class="fc">&nbsp;					if (minListSizes == 0) {</b>
+<b class="fc">&nbsp;						return 0;</b>
+&nbsp;					}
+&nbsp;				} else {
+&nbsp;					// couldn&#39;t find the value in the value factory, which means that there are no statements with that
+&nbsp;					// value
+<b class="fc">&nbsp;					return 0;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (obj != null) {</b>
+<b class="fc">&nbsp;				MemValue memObj = valueFactory.getMemValue(obj);</b>
+<b class="fc">&nbsp;				if (memObj != null) {</b>
+<b class="fc">&nbsp;					minListSizes = Math.min(minListSizes, memObj.getObjectStatementCount());</b>
+<b class="pc">&nbsp;					if (minListSizes == 0) {</b>
+<b class="nc">&nbsp;						return 0;</b>
+&nbsp;					}
+&nbsp;				} else {
+&nbsp;					// couldn&#39;t find the value in the value factory, which means that there are no statements with that
+&nbsp;					// value
+<b class="fc">&nbsp;					return 0;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (context != null) {</b>
+<b class="fc">&nbsp;				MemResource memContext = valueFactory.getMemResource((Resource) context);</b>
+<b class="fc">&nbsp;				if (memContext != null) {</b>
+<b class="fc">&nbsp;					minListSizes = Math.min(minListSizes, memContext.getContextStatementCount());</b>
+&nbsp;				} else {
+&nbsp;					// couldn&#39;t find the value in the value factory, which means that there are no statements with that
+&nbsp;					// value
+<b class="fc">&nbsp;					return 0;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			assert minListSizes != Integer.MAX_VALUE : &quot;minListSizes should have been updated before this point&quot;;</b>
+&nbsp;
+<b class="fc">&nbsp;			return minListSizes;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected Value getConstantValue(Var var) {
+<b class="fc">&nbsp;			if (var != null) {</b>
+<b class="fc">&nbsp;				return var.getValue();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

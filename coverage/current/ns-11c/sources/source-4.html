@@ -1,0 +1,283 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractTupleQueryResultWriterTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractTupleQueryResultWriterTest (org.eclipse.rdf4j.testsuite.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractTupleQueryResultWriterTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/65)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.query.resultio;
+&nbsp;
+&nbsp;import static org.assertj.core.api.Assertions.assertThat;
+&nbsp;
+&nbsp;import java.io.ByteArrayInputStream;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserFactory;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+&nbsp;import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+&nbsp;import org.junit.jupiter.api.Test;
+&nbsp;
+&nbsp;/**
+&nbsp; * Generic tests for {@link TupleQueryResultWriter} implementations.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public abstract class AbstractTupleQueryResultWriterTest {</b>
+&nbsp;
+<b class="nc">&nbsp;	protected final static ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRDFStarHandling_WithEncoding() throws Exception {
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);</b>
+&nbsp;
+<b class="nc">&nbsp;		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		Triple t = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		MapBindingSet bs = new MapBindingSet();</b>
+<b class="nc">&nbsp;		bs.addBinding(&quot;t&quot;, t);</b>
+&nbsp;
+<b class="nc">&nbsp;		writer.startQueryResult(new ArrayList&lt;&gt;(bs.getBindingNames()));</b>
+<b class="nc">&nbsp;		writer.handleSolution(bs);</b>
+<b class="nc">&nbsp;		writer.endQueryResult();</b>
+&nbsp;
+<b class="nc">&nbsp;		QueryResultCollector collector = new QueryResultCollector();</b>
+<b class="nc">&nbsp;		TupleQueryResultParser parser = getParserFactory().getParser();</b>
+<b class="nc">&nbsp;		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);</b>
+<b class="nc">&nbsp;		parser.setQueryResultHandler(collector);</b>
+<b class="nc">&nbsp;		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));</b>
+&nbsp;
+<b class="nc">&nbsp;		BindingSet actual = collector.getBindingSets().get(0);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (writer.getTupleQueryResultFormat().supportsRDFStar()) {</b>
+&nbsp;			// natively-supporting RDF-star writers should ignore the encoding setting and just always use their
+&nbsp;			// extended format
+<b class="nc">&nbsp;			assertThat(actual.getValue(&quot;t&quot;)).isInstanceOf(Triple.class);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			assertThat(actual.getValue(&quot;t&quot;)).isInstanceOf(IRI.class);</b>
+<b class="nc">&nbsp;			assertThat(actual.getValue(&quot;t&quot;)).isEqualTo(RDFStarUtil.toRDFEncodedValue((Resource) t));</b>
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRDFStarHandling_NoEncoding() throws Exception {
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);</b>
+&nbsp;
+<b class="nc">&nbsp;		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, false);</b>
+&nbsp;
+<b class="nc">&nbsp;		Triple t = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		MapBindingSet bs = new MapBindingSet();</b>
+<b class="nc">&nbsp;		bs.addBinding(&quot;t&quot;, t);</b>
+&nbsp;
+<b class="nc">&nbsp;		writer.startQueryResult(new ArrayList&lt;&gt;(bs.getBindingNames()));</b>
+<b class="nc">&nbsp;		writer.handleSolution(bs);</b>
+<b class="nc">&nbsp;		writer.endQueryResult();</b>
+&nbsp;
+<b class="nc">&nbsp;		QueryResultCollector collector = new QueryResultCollector();</b>
+<b class="nc">&nbsp;		TupleQueryResultParser parser = getParserFactory().getParser();</b>
+&nbsp;
+<b class="nc">&nbsp;		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);</b>
+<b class="nc">&nbsp;		parser.setQueryResultHandler(collector);</b>
+<b class="nc">&nbsp;		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));</b>
+&nbsp;
+<b class="nc">&nbsp;		BindingSet actual = collector.getBindingSets().get(0);</b>
+<b class="nc">&nbsp;		assertThat(actual.getValue(&quot;t&quot;)).isInstanceOf(Triple.class);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRDFStarHandling_DeepNesting() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = getWriterFactory().getWriter(baos);</b>
+&nbsp;
+<b class="nc">&nbsp;		writer.getWriterConfig().set(BasicWriterSettings.ENCODE_RDF_STAR, false);</b>
+&nbsp;
+<b class="nc">&nbsp;		Triple t2 = vf.createTriple(RDF.ALT, RDF.TYPE, RDFS.CLASS);</b>
+<b class="nc">&nbsp;		Triple t = vf.createTriple(RDF.BAG, RDFS.COMMENT, t2);</b>
+<b class="nc">&nbsp;		MapBindingSet bs = new MapBindingSet();</b>
+<b class="nc">&nbsp;		bs.addBinding(&quot;t&quot;, t);</b>
+&nbsp;
+<b class="nc">&nbsp;		writer.startQueryResult(new ArrayList&lt;&gt;(bs.getBindingNames()));</b>
+<b class="nc">&nbsp;		writer.handleSolution(bs);</b>
+<b class="nc">&nbsp;		writer.endQueryResult();</b>
+&nbsp;
+<b class="nc">&nbsp;		QueryResultCollector collector = new QueryResultCollector();</b>
+<b class="nc">&nbsp;		TupleQueryResultParser parser = getParserFactory().getParser();</b>
+&nbsp;
+<b class="nc">&nbsp;		parser.getParserConfig().set(BasicParserSettings.PROCESS_ENCODED_RDF_STAR, false);</b>
+<b class="nc">&nbsp;		parser.setQueryResultHandler(collector);</b>
+<b class="nc">&nbsp;		parser.parseQueryResult(new ByteArrayInputStream(baos.toByteArray()));</b>
+&nbsp;
+<b class="nc">&nbsp;		BindingSet actual = collector.getBindingSets().get(0);</b>
+<b class="nc">&nbsp;		assertThat(actual.getValue(&quot;t&quot;)).isInstanceOf(Triple.class);</b>
+&nbsp;
+<b class="nc">&nbsp;		Triple actualT = (Triple) actual.getValue(&quot;t&quot;);</b>
+<b class="nc">&nbsp;		assertThat(actualT.getSubject()).isEqualTo(RDF.BAG);</b>
+<b class="nc">&nbsp;		assertThat(actualT.getPredicate()).isEqualTo(RDFS.COMMENT);</b>
+<b class="nc">&nbsp;		assertThat(actualT.getObject()).isInstanceOf(Triple.class);</b>
+&nbsp;
+<b class="nc">&nbsp;		Triple actualT2 = (Triple) actualT.getObject();</b>
+<b class="nc">&nbsp;		assertThat(actualT2.getSubject()).isEqualTo(RDF.ALT);</b>
+<b class="nc">&nbsp;		assertThat(actualT2.getPredicate()).isEqualTo(RDF.TYPE);</b>
+<b class="nc">&nbsp;		assertThat(actualT2.getObject()).isEqualTo(RDFS.CLASS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testGetSupportedSettings() throws Exception {
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = getWriterFactory().getWriter(System.out);</b>
+&nbsp;
+<b class="nc">&nbsp;		Collection&lt;RioSetting&lt;?&gt;&gt; supportedSettings = writer.getSupportedSettings();</b>
+<b class="nc">&nbsp;		assertThat(supportedSettings).containsExactlyInAnyOrder(getExpectedSupportedSettings());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the {@link RioSetting}s expected to be returned by {@link QueryResultWriter#getSupportedSettings()}. Used by
+&nbsp;	 * {@link #testGetSupportedSettings()} to determine if the output of
+&nbsp;	 * {@link QueryResultWriter#getSupportedSettings()} is as expected for the concrete writer implementation.
+&nbsp;	 *
+&nbsp;	 * @return an array of {@link RioSetting}s.
+&nbsp;	 */
+&nbsp;	protected abstract RioSetting&lt;?&gt;[] getExpectedSupportedSettings();
+&nbsp;
+&nbsp;	protected abstract TupleQueryResultParserFactory getParserFactory();
+&nbsp;
+&nbsp;	protected abstract TupleQueryResultWriterFactory getWriterFactory();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

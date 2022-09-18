@@ -1,0 +1,139 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Scheduler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.concurrent</a>
+</div>
+
+<h1>Coverage Summary for Class: Scheduler (org.eclipse.rdf4j.federated.evaluation.concurrent)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">Scheduler</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.concurrent;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface for any scheduler.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; * @see ControlledWorkerScheduler
+&nbsp; */
+&nbsp;public interface Scheduler&lt;T&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Schedule the provided task.
+&nbsp;	 *
+&nbsp;	 * @param task
+&nbsp;	 */
+&nbsp;	void schedule(ParallelTask&lt;T&gt; task);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Callback to handle the result.
+&nbsp;	 *
+&nbsp;	 * @param res
+&nbsp;	 */
+&nbsp;	void handleResult(CloseableIteration&lt;T, QueryEvaluationException&gt; res);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Inform the scheduler that a certain task is done.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	void done();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Toss an exception to the scheduler.
+&nbsp;	 *
+&nbsp;	 * @param e
+&nbsp;	 */
+&nbsp;	void toss(Exception e);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Abort the execution of running and queued tasks.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	void abort();
+&nbsp;
+&nbsp;	void shutdown();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Inform the scheduler that no more tasks will be scheduled.
+&nbsp;	 */
+&nbsp;	void informFinish();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determine if the scheduler has unfinished tasks.
+&nbsp;	 *
+&nbsp;	 * @return whether the scheduler is running
+&nbsp;	 */
+&nbsp;	boolean isRunning();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

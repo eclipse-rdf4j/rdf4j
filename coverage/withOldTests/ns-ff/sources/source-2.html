@@ -1,0 +1,165 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ArtDemoConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.demo</a>
+</div>
+
+<h1>Coverage Summary for Class: ArtDemoConfig (org.eclipse.rdf4j.spring.demo)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ArtDemoConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.demo;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.spring.RDF4JConfig;
+&nbsp;import org.eclipse.rdf4j.spring.dao.RDF4JDao;
+&nbsp;import org.eclipse.rdf4j.spring.demo.support.InitialDataInserter;
+&nbsp;import org.eclipse.rdf4j.spring.support.DataInserter;
+&nbsp;import org.springframework.beans.factory.annotation.Autowired;
+&nbsp;import org.springframework.beans.factory.annotation.Value;
+&nbsp;import org.springframework.context.annotation.Bean;
+&nbsp;import org.springframework.context.annotation.ComponentScan;
+&nbsp;import org.springframework.context.annotation.Configuration;
+&nbsp;import org.springframework.context.annotation.FilterType;
+&nbsp;import org.springframework.context.annotation.Import;
+&nbsp;import org.springframework.core.io.Resource;
+&nbsp;
+&nbsp;/**
+&nbsp; * Spring config for the demo.
+&nbsp; *
+&nbsp; * Here is what it does:
+&nbsp; *
+&nbsp; * &lt;ul&gt;
+&nbsp; * &lt;li&gt;it imports {@link RDF4JConfig} which interprets the config properties (in our example, they are in
+&nbsp; * &lt;code&gt;application.properties&lt;/code&gt;) and registers a number of beans.&lt;/li&gt;
+&nbsp; * &lt;li&gt;it scans the &lt;code&gt;org.eclipse.rdf4j.spring.demo.dao&lt;/code&gt; package, finds the DAOs, registers them as beans and
+&nbsp; * injects their dependencies&lt;/li&gt;
+&nbsp; * &lt;li&gt;it configures the &#39;data inserter&#39; beans, which read data from the &#39;artists.ttl&#39; file and adds them to the
+&nbsp; * repository at startup&lt;/li&gt;
+&nbsp; * &lt;/ul&gt;
+&nbsp; *
+&nbsp; * See {@link org.eclipse.rdf4j.spring Rdf4J-Spring} for an overview and more pointers.
+&nbsp; *
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;@Configuration
+&nbsp;@Import(RDF4JConfig.class)
+&nbsp;@ComponentScan(
+&nbsp;		value = &quot;org.eclipse.rdf4j.spring.demo.dao&quot;, includeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE, classes = RDF4JDao.class))
+<b class="nc">&nbsp;public class ArtDemoConfig {</b>
+&nbsp;	@Bean
+&nbsp;	public DataInserter getDataInserter() {
+<b class="nc">&nbsp;		return new DataInserter();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Bean
+&nbsp;	public InitialDataInserter getInitialDataInserter(
+&nbsp;			@Autowired DataInserter dataInserter,
+&nbsp;			@Value(&quot;classpath:/artists.ttl&quot;) Resource ttlFile) {
+<b class="nc">&nbsp;		return new InitialDataInserter(dataInserter, ttlFile);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

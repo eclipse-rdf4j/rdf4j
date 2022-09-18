@@ -1,0 +1,313 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryEvaluationContext</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryEvaluationContext (org.eclipse.rdf4j.query.algebra.evaluation.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryEvaluationContext</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (7/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    91.7%
+  </span>
+  <span class="absValue">
+    (11/12)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryEvaluationContext$Minimal</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (12/24)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    78.6%
+  </span>
+  <span class="absValue">
+    (11/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (2/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.9%
+  </span>
+  <span class="absValue">
+    (23/36)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.function.BiConsumer;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Predicate;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * A QueryEvaluationContext stores values and methods that are valid throughout the lifetime of a query execution.
+&nbsp; * &lt;p&gt;
+&nbsp; * A classic case is the case of NOW() evaluation to the same instant for all invocations of that function in one query
+&nbsp; * evaluation.
+&nbsp; */
+&nbsp;public interface QueryEvaluationContext {
+&nbsp;
+&nbsp;	class Minimal implements QueryEvaluationContext {
+&nbsp;
+&nbsp;		private static final VarHandle NOW;
+&nbsp;
+&nbsp;		static {
+&nbsp;			try {
+<b class="fc">&nbsp;				NOW = MethodHandles</b>
+<b class="fc">&nbsp;						.privateLookupIn(QueryEvaluationContext.Minimal.class, MethodHandles.lookup())</b>
+<b class="fc">&nbsp;						.findVarHandle(QueryEvaluationContext.Minimal.class, &quot;now&quot;, Literal.class);</b>
+&nbsp;
+<b class="nc">&nbsp;			} catch (NoSuchFieldException | IllegalAccessException e) {</b>
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(&quot;The nowInLiteral field is missing&quot;);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// The now time as a literal, lazy set if not yet known. We use a VarHandle to access this field. By convention
+&nbsp;		// this field is volatile, as a precaution in case we call it directly.
+&nbsp;		private volatile Literal now;
+&nbsp;		private final Dataset dataset;
+&nbsp;		private final ValueFactory vf;
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Set the shared now value to a preexisting object
+&nbsp;		 *
+&nbsp;		 * @param now     that is shared.
+&nbsp;		 * @param dataset that a query should use to evaluate
+&nbsp;		 */
+&nbsp;		public Minimal(Literal now, Dataset dataset) {
+<b class="fc">&nbsp;			super();</b>
+<b class="fc">&nbsp;			this.now = now;</b>
+<b class="fc">&nbsp;			this.dataset = dataset;</b>
+<b class="fc">&nbsp;			this.vf = SimpleValueFactory.getInstance();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @param dataset that a query should use to evaluate
+&nbsp;		 */
+<b class="nc">&nbsp;		public Minimal(Dataset dataset) {</b>
+<b class="nc">&nbsp;			this.dataset = dataset;</b>
+<b class="nc">&nbsp;			this.vf = SimpleValueFactory.getInstance();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @param dataset that a query should use to the evaluate
+&nbsp;		 */
+<b class="fc">&nbsp;		public Minimal(Dataset dataset, ValueFactory vf) {</b>
+<b class="fc">&nbsp;			this.dataset = dataset;</b>
+<b class="fc">&nbsp;			this.vf = vf;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Literal getNow() {
+<b class="nc">&nbsp;			Literal now = (Literal) NOW.get(this);</b>
+&nbsp;
+&nbsp;			// creating a new date is expensive because it uses the XMLGregorianCalendar implementation which is very
+&nbsp;			// complex.
+<b class="nc">&nbsp;			if (now == null) {</b>
+<b class="nc">&nbsp;				now = vf.createLiteral(new Date());</b>
+<b class="nc">&nbsp;				boolean success = NOW.compareAndSet(this, null, now);</b>
+<b class="nc">&nbsp;				if (!success) {</b>
+<b class="nc">&nbsp;					now = (Literal) NOW.getAcquire(this);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return now;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Dataset getDataset() {
+<b class="fc">&nbsp;			return dataset;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the shared now;
+&nbsp;	 */
+&nbsp;	Literal getNow();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return The dataset that this query is operation on.
+&nbsp;	 */
+&nbsp;	Dataset getDataset();
+&nbsp;
+&nbsp;	default MutableBindingSet createBindingSet() {
+<b class="fc">&nbsp;		return new QueryBindingSet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default Predicate&lt;BindingSet&gt; hasBinding(String variableName) {
+<b class="fc">&nbsp;		return (bs) -&gt; bs.hasBinding(variableName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default Function&lt;BindingSet, Binding&gt; getBinding(String variableName) {
+<b class="fc">&nbsp;		return (bs) -&gt; bs.getBinding(variableName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default Function&lt;BindingSet, Value&gt; getValue(String variableName) {
+<b class="fc">&nbsp;		Function&lt;BindingSet, Binding&gt; getBinding = getBinding(variableName);</b>
+<b class="fc">&nbsp;		return (bs) -&gt; {</b>
+<b class="fc">&nbsp;			Binding binding = getBinding.apply(bs);</b>
+<b class="fc">&nbsp;			if (binding == null) {</b>
+<b class="fc">&nbsp;				return null;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return binding.getValue();</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	default BiConsumer&lt;Value, MutableBindingSet&gt; setBinding(String variableName) {
+<b class="nc">&nbsp;		return (val, bs) -&gt; bs.setBinding(variableName, val);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default BiConsumer&lt;Value, MutableBindingSet&gt; addBinding(String variableName) {
+<b class="fc">&nbsp;		return (val, bs) -&gt; bs.addBinding(variableName, val);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default MutableBindingSet createBindingSet(BindingSet bindings) {
+<b class="fc">&nbsp;		return new QueryBindingSet(bindings);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

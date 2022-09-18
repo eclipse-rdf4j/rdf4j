@@ -1,0 +1,409 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > UnboundTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps</a>
+</div>
+
+<h1>Coverage Summary for Class: UnboundTest (org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">UnboundTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    51.6%
+  </span>
+  <span class="absValue">
+    (16/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    22.2%
+  </span>
+  <span class="absValue">
+    (35/158)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    48.6%
+  </span>
+  <span class="absValue">
+    (69/142)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
+&nbsp;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Predicate;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;
+<b class="nc">&nbsp;class UnboundTest {</b>
+&nbsp;	public static Predicate&lt;BindingSet&gt; s(QueryEvaluationContext context, Var s) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="pc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="pc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; p(QueryEvaluationContext context, Var p) {
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; o(QueryEvaluationContext context, Var o) {
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="pc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="pc">&nbsp;				return oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; c(QueryEvaluationContext context, Var c) {
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; sp(QueryEvaluationContext context, Var s, Var p) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="pc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="pc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null &amp;&amp;</b>
+<b class="nc">&nbsp;						pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; so(QueryEvaluationContext context, Var s, Var o) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="pc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="pc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null</b>
+<b class="pc">&nbsp;						|| oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; sc(QueryEvaluationContext context, Var s, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; po(QueryEvaluationContext context, Var p, Var o) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; pc(QueryEvaluationContext context, Var p, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; oc(QueryEvaluationContext context, Var o, Var c) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; spo(QueryEvaluationContext context, Var s, Var p, Var o) {
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="pc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="fc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null</b>
+<b class="pc">&nbsp;						|| pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null</b>
+<b class="pc">&nbsp;						|| oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; spc(QueryEvaluationContext context, Var s, Var p, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; soc(QueryEvaluationContext context, Var s, Var o, Var c) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="pc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="pc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null</b>
+<b class="pc">&nbsp;						|| oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null</b>
+<b class="pc">&nbsp;						|| cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; poc(QueryEvaluationContext context, Var p, Var o, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="nc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Predicate&lt;BindingSet&gt; spoc(QueryEvaluationContext context, Var s, Var p, Var o,
+&nbsp;			Var c) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sHasBinding = context.hasBinding(s.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; sGetValue = context.getValue(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pHasBinding = context.hasBinding(p.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; pGetValue = context.getValue(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oHasBinding = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; oGetValue = context.getValue(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; cHasBinding = context.hasBinding(c.getName());</b>
+<b class="fc">&nbsp;		Function&lt;BindingSet, Value&gt; cGetValue = context.getValue(c.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			if (!bindings.isEmpty()) {</b>
+<b class="nc">&nbsp;				return sHasBinding.test(bindings) &amp;&amp; sGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| pHasBinding.test(bindings) &amp;&amp; pGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| oHasBinding.test(bindings) &amp;&amp; oGetValue.apply(bindings) == null</b>
+<b class="nc">&nbsp;						|| cHasBinding.test(bindings) &amp;&amp; cGetValue.apply(bindings) == null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

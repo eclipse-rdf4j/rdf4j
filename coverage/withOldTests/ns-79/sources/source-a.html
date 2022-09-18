@@ -1,0 +1,400 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryPrologLexer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryPrologLexer (org.eclipse.rdf4j.query.parser)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryPrologLexer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/81)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryPrologLexer$Token</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">QueryPrologLexer$TokenType</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/97)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;/**
+&nbsp; * A simple lexer that tokenizes a syntactically legal input SPARQL query string on prolog items (prefixes, base
+&nbsp; * declarations, IRIs, comments, and syntactical tokens such as keywords, opening and closing brackets, and hashes).
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class QueryPrologLexer {</b>
+&nbsp;
+<b class="nc">&nbsp;	public enum TokenType {</b>
+<b class="nc">&nbsp;		PREFIX_KEYWORD,</b>
+<b class="nc">&nbsp;		PREFIX,</b>
+<b class="nc">&nbsp;		BASE_KEYWORD,</b>
+<b class="nc">&nbsp;		LBRACKET,</b>
+<b class="nc">&nbsp;		RBRACKET,</b>
+<b class="nc">&nbsp;		IRI,</b>
+<b class="nc">&nbsp;		HASH,</b>
+<b class="nc">&nbsp;		COMMENT,</b>
+<b class="nc">&nbsp;		REST_OF_QUERY</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private static final Token HASH_TOKEN = new Token(TokenType.HASH, &quot;#&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Token PREFIX_KEYWORD_TOKEN = new Token(TokenType.PREFIX_KEYWORD, &quot;PREFIX&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Token BASE_KEYWORD_TOKEN = new Token(TokenType.BASE_KEYWORD, &quot;BASE&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Token LBRACKET_TOKEN = new Token(TokenType.LBRACKET, &quot;&lt;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Token RBRACKET_TOKEN = new Token(TokenType.RBRACKET, &quot;&gt;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Pattern IRI_PATTERN = Pattern.compile(&quot;^&lt;([^&gt;]*)&gt;*&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Pattern PREFIX_PATTERN = Pattern.compile(&quot;^prefix([^:]+):&quot;, Pattern.CASE_INSENSITIVE);</b>
+&nbsp;
+&nbsp;	// private static final Pattern COMMENT_PATTERN = Pattern.compile(&quot;^#([^\n]+/)&quot;);
+<b class="nc">&nbsp;	private static final Pattern COMMENT_PATTERN = Pattern.compile(&quot;^(#.*((\r)?\n|(\r)?\n*))*&quot;);</b>
+&nbsp;
+&nbsp;	public static class Token {
+&nbsp;
+&nbsp;		public final TokenType t;
+&nbsp;
+&nbsp;		public final String s;
+&nbsp;
+<b class="nc">&nbsp;		public Token(TokenType t, String s) {</b>
+<b class="nc">&nbsp;			this.t = t;</b>
+<b class="nc">&nbsp;			this.s = s;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public TokenType getType() {
+<b class="nc">&nbsp;			return t;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Get the corresponding string value for this token. For example in the case of an {@link TokenType#IRI} token,
+&nbsp;		 * this will return the string representation of that IRI.
+&nbsp;		 */
+&nbsp;		public String getStringValue() {
+<b class="nc">&nbsp;			return s;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return &quot;[&quot; + t.toString() + &quot;] &#39;&quot; + s + &quot;&#39;&quot;;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tokenizes a syntactically legal input SPARQL query on prolog elements. The last token in the returned list is of
+&nbsp;	 * type {@link TokenType#REST_OF_QUERY} and contains the SPARQL query string minus the prolog.
+&nbsp;	 *
+&nbsp;	 * @param input a syntactically legal SPARQL query string
+&nbsp;	 * @return a list with tokens for each prolog element. If the input string is syntactically legal SPARQL, the final
+&nbsp;	 *         returned token is guaranteed to be of type {@link TokenType#REST_OF_QUERY} and to contain the SPARQL
+&nbsp;	 *         query string minus the prolog. If the input string is not syntactically legal SPARQL, the method will
+&nbsp;	 *         still return normally but no guarantees about the returned list are made.
+&nbsp;	 */
+&nbsp;	public static List&lt;Token&gt; lex(String input) {
+<b class="nc">&nbsp;		final List&lt;Token&gt; result = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; input.length();) {</b>
+<b class="nc">&nbsp;			char c = input.charAt(i);</b>
+<b class="nc">&nbsp;			switch (c) {</b>
+&nbsp;			case &#39;#&#39;:
+<b class="nc">&nbsp;				result.add(HASH_TOKEN);</b>
+<b class="nc">&nbsp;				String comment = readComment(input, i);</b>
+<b class="nc">&nbsp;				i += comment.length() + 1; // 1 for hash</b>
+<b class="nc">&nbsp;				result.add(new Token(TokenType.COMMENT, comment));</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;p&#39;:
+&nbsp;			case &#39;P&#39;:
+<b class="nc">&nbsp;				result.add(PREFIX_KEYWORD_TOKEN);</b>
+&nbsp;				// read PREFIX
+<b class="nc">&nbsp;				String prefix = readPrefix(input, i);</b>
+<b class="nc">&nbsp;				result.add(new Token(TokenType.PREFIX, prefix.trim()));</b>
+<b class="nc">&nbsp;				i = i + prefix.length() + 7; // 6 for prefix keyword, 1 for &#39;:&#39;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;b&#39;:
+&nbsp;			case &#39;B&#39;:
+<b class="nc">&nbsp;				result.add(BASE_KEYWORD_TOKEN);</b>
+<b class="nc">&nbsp;				i += 4; // 4 for base keyword</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;&lt;&#39;:
+&nbsp;				// read IRI
+<b class="nc">&nbsp;				result.add(LBRACKET_TOKEN);</b>
+<b class="nc">&nbsp;				String iri = readIRI(input, i);</b>
+<b class="nc">&nbsp;				result.add(new Token(TokenType.IRI, iri));</b>
+<b class="nc">&nbsp;				result.add(RBRACKET_TOKEN);</b>
+<b class="nc">&nbsp;				i += iri.length() + 2; // 2 for opening and closing brackets</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				if (Character.isWhitespace(c)) {</b>
+<b class="nc">&nbsp;					i++;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					String restOfQuery = input.substring(i);</b>
+<b class="nc">&nbsp;					result.add(new Token(TokenType.REST_OF_QUERY, restOfQuery));</b>
+<b class="nc">&nbsp;					i += restOfQuery.length();</b>
+&nbsp;				}
+&nbsp;				break;
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tokenizes the input string on prolog elements and returns the final Token. If the input string is a syntactically
+&nbsp;	 * legal SPARQL query, this Token will be of type {@link TokenType#REST_OF_QUERY} and contain the query string minus
+&nbsp;	 * prolog.
+&nbsp;	 *
+&nbsp;	 * @param input a syntactically legal SPARQL string
+&nbsp;	 * @return if the input is syntactically legal SPARQL, a Token containing the query string without prolog. If the
+&nbsp;	 *         input is not syntactically legal, the method will still exist normally, but no guarantees are made about
+&nbsp;	 *         the returned object.
+&nbsp;	 */
+&nbsp;	public static Token getRestOfQueryToken(String input) {
+<b class="nc">&nbsp;		Token result = null;</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; input.length();) {</b>
+<b class="nc">&nbsp;			char c = input.charAt(i);</b>
+<b class="nc">&nbsp;			switch (c) {</b>
+&nbsp;			case &#39;#&#39;:
+<b class="nc">&nbsp;				String comment = readComment(input, i);</b>
+<b class="nc">&nbsp;				i += comment.length() + 1; // 1 for hash</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;p&#39;:
+&nbsp;			case &#39;P&#39;:
+&nbsp;				// read PREFIX
+<b class="nc">&nbsp;				String prefix = readPrefix(input, i);</b>
+<b class="nc">&nbsp;				if (prefix == null) {</b>
+<b class="nc">&nbsp;					prefix = &quot;&quot;; // prevent NPE on bad input</b>
+&nbsp;				}
+<b class="nc">&nbsp;				i = i + prefix.length() + 7; // 6 for prefix keyword, 1 for &#39;:&#39;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;b&#39;:
+&nbsp;			case &#39;B&#39;:
+<b class="nc">&nbsp;				i += 4; // 4 for base keyword</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;&lt;&#39;:
+&nbsp;				// read IRI
+<b class="nc">&nbsp;				String iri = readIRI(input, i);</b>
+<b class="nc">&nbsp;				if (iri == null) {</b>
+<b class="nc">&nbsp;					iri = &quot;&quot;; // prevent NPE on bad input</b>
+&nbsp;				}
+<b class="nc">&nbsp;				i += iri.length() + 2; // 2 for opening and closing brackets</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				if (Character.isWhitespace(c)) {</b>
+<b class="nc">&nbsp;					i++;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					String restOfQuery = input.substring(i);</b>
+<b class="nc">&nbsp;					result = (new Token(TokenType.REST_OF_QUERY, restOfQuery));</b>
+<b class="nc">&nbsp;					i += restOfQuery.length();</b>
+&nbsp;				}
+&nbsp;				break;
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the first comment line from the input, and returns the comment line (including the line break character)
+&nbsp;	 * without the leading &quot;#&quot;.
+&nbsp;	 *
+&nbsp;	 * @param input
+&nbsp;	 * @param index
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private static String readComment(String input, int index) {
+<b class="nc">&nbsp;		String comment = null;</b>
+<b class="nc">&nbsp;		Matcher matcher = COMMENT_PATTERN.matcher(input.substring(index));</b>
+<b class="nc">&nbsp;		if (matcher.find()) {</b>
+<b class="nc">&nbsp;			comment = matcher.group(0);</b>
+&nbsp;			// the regex group includes the # =&gt; just remove it
+<b class="nc">&nbsp;			comment = comment.substring(1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return comment;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String readPrefix(String input, int index) {
+<b class="nc">&nbsp;		String prefix = null;</b>
+<b class="nc">&nbsp;		Matcher matcher = PREFIX_PATTERN.matcher(input.substring(index));</b>
+<b class="nc">&nbsp;		if (matcher.find()) {</b>
+<b class="nc">&nbsp;			prefix = matcher.group(1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return prefix;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String readIRI(String input, int index) {
+<b class="nc">&nbsp;		String iri = null;</b>
+<b class="nc">&nbsp;		Matcher matcher = IRI_PATTERN.matcher(input.substring(index));</b>
+<b class="nc">&nbsp;		if (matcher.find()) {</b>
+<b class="nc">&nbsp;			iri = matcher.group(1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return iri;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

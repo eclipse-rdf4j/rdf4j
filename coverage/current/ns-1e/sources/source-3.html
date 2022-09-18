@@ -1,0 +1,181 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MessageHandlerInterceptor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.webapp</a>
+</div>
+
+<h1>Coverage Summary for Class: MessageHandlerInterceptor (org.eclipse.rdf4j.common.webapp)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MessageHandlerInterceptor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.webapp;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;import javax.servlet.http.HttpSession;
+&nbsp;
+&nbsp;import org.springframework.web.servlet.HandlerInterceptor;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.view.RedirectView;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interceptor that inserts some commonly used values into the model. The inserted values are: - path, equal to
+&nbsp; * request.getContextPath() (e.g. /context) - basePath, equal to the fully qualified context path (e.g.
+&nbsp; * http://www.example.com/context/) - currentYear, equal to the current year
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+<b class="nc">&nbsp;public class MessageHandlerInterceptor implements HandlerInterceptor {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
+&nbsp;			Exception ex) {
+&nbsp;		// nop
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView mav) {
+<b class="nc">&nbsp;		HttpSession session = request.getSession();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (session != null) {</b>
+<b class="nc">&nbsp;			Message message = (Message) session.getAttribute(Message.ATTRIBUTE_KEY);</b>
+<b class="nc">&nbsp;			if (message != null &amp;&amp; !mav.getModelMap().containsKey(Message.ATTRIBUTE_KEY)) {</b>
+<b class="nc">&nbsp;				mav.addObject(Message.ATTRIBUTE_KEY, message);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean shouldRemove = true;</b>
+<b class="nc">&nbsp;			if (mav.hasView() &amp;&amp; mav.getView() instanceof RedirectView) {</b>
+<b class="nc">&nbsp;				shouldRemove = false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (mav.getViewName() != null &amp;&amp; mav.getViewName().startsWith(&quot;redirect:&quot;)) {</b>
+<b class="nc">&nbsp;				shouldRemove = false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (shouldRemove) {</b>
+<b class="nc">&nbsp;				session.removeAttribute(Message.ATTRIBUTE_KEY);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

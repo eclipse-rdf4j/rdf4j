@@ -1,0 +1,1513 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TripleStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: TripleStore (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TripleStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/298)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/439)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TripleStore$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TripleStore$ExplicitStatementFilter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TripleStore$ImplicitStatementFilter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TripleStore$TripleComparator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TripleStore$TripleIndex</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/59)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/334)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/506)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.StringTokenizer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.TxnStatusFile.TxnStatus;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.BTree;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.RecordComparator;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * File-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four integer
+&nbsp; * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement&#39;s
+&nbsp; * subject, predicate, object and context. The ID &lt;var&gt;0&lt;/var&gt; is used to represent the &quot;null&quot; context and doesn&#39;t map
+&nbsp; * to an actual RDF value.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;@SuppressWarnings(&quot;deprecation&quot;)</b>
+&nbsp;class TripleStore implements Closeable {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private static final int CHECK_MEMORY_PRESSURE_INTERVAL = isAssertionsEnabled() ? 3 : 1024;</b>
+<b class="nc">&nbsp;	private static final long MIN_FREE_MEMORY_BEFORE_OVERFLOW = isAssertionsEnabled() ? Long.MAX_VALUE</b>
+<b class="nc">&nbsp;			: 1024 * 1024 * 128;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default triple indexes.
+&nbsp;	 */
+&nbsp;	private static final String DEFAULT_INDEXES = &quot;spoc,posc&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The file name for the properties file.
+&nbsp;	 */
+&nbsp;	private static final String PROPERTIES_FILE = &quot;triples.prop&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The key used to store the triple store version in the properties file.
+&nbsp;	 */
+&nbsp;	private static final String VERSION_KEY = &quot;version&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
+&nbsp;	 */
+&nbsp;	private static final String INDEXES_KEY = &quot;triple-indexes&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version number for the current triple store.
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;version 0: The first version which used a single spo-index. This version did not have a properties file yet.
+&nbsp;	 * &lt;li&gt;version 1: Introduces configurable triple indexes and the properties file.
+&nbsp;	 * &lt;li&gt;version 10: Introduces a context field, essentially making this a quad store.
+&nbsp;	 * &lt;li&gt;version 10a: Introduces transaction flags, this is backwards compatible with version 10.
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 */
+&nbsp;	private static final int SCHEME_VERSION = 10;
+&nbsp;
+&nbsp;	// 17 bytes are used to represent a triple:
+&nbsp;	// byte 0-3 : subject
+&nbsp;	// byte 4-7 : predicate
+&nbsp;	// byte 8-11: object
+&nbsp;	// byte 12-15: context
+&nbsp;	// byte 16: additional flag(s)
+&nbsp;	static final int RECORD_LENGTH = 17;
+&nbsp;
+&nbsp;	static final int SUBJ_IDX = 0;
+&nbsp;
+&nbsp;	static final int PRED_IDX = 4;
+&nbsp;
+&nbsp;	static final int OBJ_IDX = 8;
+&nbsp;
+&nbsp;	static final int CONTEXT_IDX = 12;
+&nbsp;
+&nbsp;	static final int FLAG_IDX = 16;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Bit field indicating that a statement has been explicitly added (instead of being inferred).
+&nbsp;	 */
+&nbsp;	static final byte EXPLICIT_FLAG = (byte) 0x1; // 0000 0001
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Bit field indicating that a statement has been added in a (currently active) transaction.
+&nbsp;	 */
+&nbsp;	static final byte ADDED_FLAG = (byte) 0x2; // 0000 0010
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Bit field indicating that a statement has been removed in a (currently active) transaction.
+&nbsp;	 */
+&nbsp;	static final byte REMOVED_FLAG = (byte) 0x4; // 0000 0100
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Bit field indicating that the explicit flag has been toggled (from true to false, or vice versa) in a (currently
+&nbsp;	 * active) transaction.
+&nbsp;	 */
+&nbsp;	static final byte TOGGLE_EXPLICIT_FLAG = (byte) 0x8; // 0000 1000
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The directory that is used to store the index files.
+&nbsp;	 */
+&nbsp;	private final File dir;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Object containing meta-data for the triple store. This includes
+&nbsp;	 */
+&nbsp;	private final Properties properties;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The list of triple indexes that are used to store and retrieve triples.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final List&lt;TripleIndex&gt; indexes = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private final boolean forceSync;
+&nbsp;
+&nbsp;	private final TxnStatusFile txnStatusFile;
+&nbsp;
+&nbsp;	private volatile SortedRecordCache updatedTriplesCache;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public TripleStore(File dir, String indexSpecStr) throws IOException, SailException {
+<b class="nc">&nbsp;		this(dir, indexSpecStr, false);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public TripleStore(File dir, String indexSpecStr, boolean forceSync) throws IOException, SailException {</b>
+<b class="nc">&nbsp;		this.dir = dir;</b>
+<b class="nc">&nbsp;		this.forceSync = forceSync;</b>
+<b class="nc">&nbsp;		this.txnStatusFile = new TxnStatusFile(dir);</b>
+&nbsp;
+<b class="nc">&nbsp;		File propFile = new File(dir, PROPERTIES_FILE);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!propFile.exists()) {</b>
+&nbsp;			// newly created native store
+<b class="nc">&nbsp;			properties = new Properties();</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;String&gt; indexSpecs = parseIndexSpecList(indexSpecStr);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (indexSpecs.isEmpty()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;No indexes specified, using default indexes: {}&quot;, DEFAULT_INDEXES);</b>
+<b class="nc">&nbsp;				indexSpecStr = DEFAULT_INDEXES;</b>
+<b class="nc">&nbsp;				indexSpecs = parseIndexSpecList(indexSpecStr);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			initIndexes(indexSpecs);</b>
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// Read triple properties file and check format version number
+<b class="nc">&nbsp;			properties = loadProperties(propFile);</b>
+<b class="nc">&nbsp;			checkVersion();</b>
+&nbsp;
+&nbsp;			// Initialize existing indexes
+<b class="nc">&nbsp;			Set&lt;String&gt; indexSpecs = getIndexSpecs();</b>
+<b class="nc">&nbsp;			initIndexes(indexSpecs);</b>
+&nbsp;
+&nbsp;			// Check transaction status
+<b class="nc">&nbsp;			TxnStatus txnStatus = txnStatusFile.getTxnStatus();</b>
+<b class="nc">&nbsp;			if (txnStatus == TxnStatus.NONE) {</b>
+<b class="nc">&nbsp;				logger.trace(&quot;No uncompleted transactions found&quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				processUncompletedTransaction(txnStatus);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Compare the existing indexes with the requested indexes
+<b class="nc">&nbsp;			Set&lt;String&gt; reqIndexSpecs = parseIndexSpecList(indexSpecStr);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (reqIndexSpecs.isEmpty()) {</b>
+&nbsp;				// No indexes specified, use the existing ones
+<b class="nc">&nbsp;				indexSpecStr = properties.getProperty(INDEXES_KEY);</b>
+<b class="nc">&nbsp;			} else if (!reqIndexSpecs.equals(indexSpecs)) {</b>
+&nbsp;				// Set of indexes needs to be changed
+<b class="nc">&nbsp;				reindex(indexSpecs, reqIndexSpecs);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!String.valueOf(SCHEME_VERSION).equals(properties.getProperty(VERSION_KEY))</b>
+<b class="nc">&nbsp;				|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {</b>
+&nbsp;			// Store up-to-date properties
+<b class="nc">&nbsp;			properties.setProperty(VERSION_KEY, String.valueOf(SCHEME_VERSION));</b>
+<b class="nc">&nbsp;			properties.setProperty(INDEXES_KEY, indexSpecStr);</b>
+<b class="nc">&nbsp;			storeProperties(propFile);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	private void checkVersion() throws SailException {
+&nbsp;		// Check version number
+<b class="nc">&nbsp;		String versionStr = properties.getProperty(VERSION_KEY);</b>
+<b class="nc">&nbsp;		if (versionStr == null) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;{} missing in TripleStore&#39;s properties file&quot;, VERSION_KEY);</b>
+&nbsp;		} else {
+&nbsp;			try {
+<b class="nc">&nbsp;				int version = Integer.parseInt(versionStr);</b>
+<b class="nc">&nbsp;				if (version &lt; 10) {</b>
+<b class="nc">&nbsp;					throw new SailException(&quot;Directory contains incompatible triple data&quot;);</b>
+<b class="nc">&nbsp;				} else if (version &gt; SCHEME_VERSION) {</b>
+<b class="nc">&nbsp;					throw new SailException(&quot;Directory contains data that uses a newer data format&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Malformed version number in TripleStore&#39;s properties file&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Set&lt;String&gt; getIndexSpecs() throws SailException {
+<b class="nc">&nbsp;		String indexesStr = properties.getProperty(INDEXES_KEY);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (indexesStr == null) {</b>
+<b class="nc">&nbsp;			throw new SailException(INDEXES_KEY + &quot; missing in TripleStore&#39;s properties file&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; indexSpecs = parseIndexSpecList(indexesStr);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (indexSpecs.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;No &quot; + INDEXES_KEY + &quot; found in TripleStore&#39;s properties file&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return indexSpecs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
+&nbsp;	 * of 4 characters: &#39;s&#39;, &#39;p&#39;, &#39;o&#39; and &#39;c&#39;.
+&nbsp;	 *
+&nbsp;	 * @param indexSpecStr A string like &quot;spoc, pocs, cosp&quot;.
+&nbsp;	 * @return A Set containing the parsed index specifications.
+&nbsp;	 */
+&nbsp;	private Set&lt;String&gt; parseIndexSpecList(String indexSpecStr) throws SailException {
+<b class="nc">&nbsp;		Set&lt;String&gt; indexes = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (indexSpecStr != null) {</b>
+<b class="nc">&nbsp;			StringTokenizer tok = new StringTokenizer(indexSpecStr, &quot;, \t&quot;);</b>
+<b class="nc">&nbsp;			while (tok.hasMoreTokens()) {</b>
+<b class="nc">&nbsp;				String index = tok.nextToken().toLowerCase();</b>
+&nbsp;
+&nbsp;				// sanity checks
+<b class="nc">&nbsp;				if (index.length() != 4 || index.indexOf(&#39;s&#39;) == -1 || index.indexOf(&#39;p&#39;) == -1</b>
+<b class="nc">&nbsp;						|| index.indexOf(&#39;o&#39;) == -1 || index.indexOf(&#39;c&#39;) == -1) {</b>
+<b class="nc">&nbsp;					throw new SailException(&quot;invalid value &#39;&quot; + index + &quot;&#39; in index specification: &quot; + indexSpecStr);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				indexes.add(index);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return indexes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void initIndexes(Set&lt;String&gt; indexSpecs) throws IOException {
+<b class="nc">&nbsp;		for (String fieldSeq : indexSpecs) {</b>
+<b class="nc">&nbsp;			logger.trace(&quot;Initializing index &#39;{}&#39;...&quot;, fieldSeq);</b>
+<b class="nc">&nbsp;			indexes.add(new TripleIndex(fieldSeq));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processUncompletedTransaction(TxnStatus txnStatus) throws IOException {
+<b class="nc">&nbsp;		switch (txnStatus) {</b>
+&nbsp;		case COMMITTING:
+<b class="nc">&nbsp;			logger.info(&quot;Detected uncompleted commit, trying to complete&quot;);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				commit();</b>
+<b class="nc">&nbsp;				logger.info(&quot;Uncompleted commit completed successfully&quot;);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Failed to restore from uncompleted commit&quot;, e);</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			break;
+&nbsp;		case ROLLING_BACK:
+<b class="nc">&nbsp;			logger.info(&quot;Detected uncompleted rollback, trying to complete&quot;);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				rollback();</b>
+<b class="nc">&nbsp;				logger.info(&quot;Uncompleted rollback completed successfully&quot;);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Failed to restore from uncompleted rollback&quot;, e);</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			break;
+&nbsp;		case ACTIVE:
+<b class="nc">&nbsp;			logger.info(&quot;Detected unfinished transaction, trying to roll back&quot;);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				rollback();</b>
+<b class="nc">&nbsp;				logger.info(&quot;Unfinished transaction rolled back successfully&quot;);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Failed to roll back unfinished transaction&quot;, e);</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			break;
+&nbsp;		case UNKNOWN:
+<b class="nc">&nbsp;			logger.info(&quot;Read invalid or unknown transaction status, trying to roll back&quot;);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				rollback();</b>
+<b class="nc">&nbsp;				logger.info(&quot;Successfully performed a rollback for invalid or unknown transaction status&quot;);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Failed to perform rollback for invalid or unknown transaction status&quot;, e);</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			break;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void reindex(Set&lt;String&gt; currentIndexSpecs, Set&lt;String&gt; newIndexSpecs) throws IOException, SailException {
+<b class="nc">&nbsp;		Map&lt;String, TripleIndex&gt; currentIndexes = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			currentIndexes.put(new String(index.getFieldSeq()), index);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// Determine the set of newly added indexes and initialize these using an
+&nbsp;		// existing index as source
+<b class="nc">&nbsp;		Set&lt;String&gt; addedIndexSpecs = new HashSet&lt;&gt;(newIndexSpecs);</b>
+<b class="nc">&nbsp;		addedIndexSpecs.removeAll(currentIndexSpecs);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!addedIndexSpecs.isEmpty()) {</b>
+<b class="nc">&nbsp;			TripleIndex sourceIndex = indexes.get(0);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String fieldSeq : addedIndexSpecs) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Initializing new index &#39;{}&#39;...&quot;, fieldSeq);</b>
+&nbsp;
+<b class="nc">&nbsp;				TripleIndex addedIndex = new TripleIndex(fieldSeq);</b>
+<b class="nc">&nbsp;				BTree addedBTree = null;</b>
+<b class="nc">&nbsp;				RecordIterator sourceIter = null;</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					addedBTree = addedIndex.getBTree();</b>
+<b class="nc">&nbsp;					sourceIter = sourceIndex.getBTree().iterateAll();</b>
+&nbsp;					byte[] value;
+<b class="nc">&nbsp;					while ((value = sourceIter.next()) != null) {</b>
+<b class="nc">&nbsp;						addedBTree.insert(value);</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="nc">&nbsp;						if (sourceIter != null) {</b>
+<b class="nc">&nbsp;							sourceIter.close();</b>
+&nbsp;						}
+&nbsp;					} finally {
+<b class="nc">&nbsp;						if (addedBTree != null) {</b>
+<b class="nc">&nbsp;							addedBTree.sync();</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				currentIndexes.put(fieldSeq, addedIndex);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;New index(es) initialized&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Determine the set of removed indexes
+<b class="nc">&nbsp;		Set&lt;String&gt; removedIndexSpecs = new HashSet&lt;&gt;(currentIndexSpecs);</b>
+<b class="nc">&nbsp;		removedIndexSpecs.removeAll(newIndexSpecs);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Throwable&gt; removedIndexExceptions = new ArrayList&lt;&gt;();</b>
+&nbsp;		// Delete files for removed indexes
+<b class="nc">&nbsp;		for (String fieldSeq : removedIndexSpecs) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				TripleIndex removedIndex = currentIndexes.remove(fieldSeq);</b>
+&nbsp;
+<b class="nc">&nbsp;				boolean deleted = removedIndex.getBTree().delete();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (deleted) {</b>
+<b class="nc">&nbsp;					logger.debug(&quot;Deleted file(s) for removed {} index&quot;, fieldSeq);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					logger.warn(&quot;Unable to delete file(s) for removed {} index&quot;, fieldSeq);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				removedIndexExceptions.add(e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!removedIndexExceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IOException(removedIndexExceptions.get(0));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Update the indexes variable, using the specified index order
+<b class="nc">&nbsp;		indexes.clear();</b>
+<b class="nc">&nbsp;		for (String fieldSeq : newIndexSpecs) {</b>
+<b class="nc">&nbsp;			indexes.add(currentIndexes.remove(fieldSeq));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			List&lt;Throwable&gt; caughtExceptions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			for (TripleIndex index : indexes) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					index.getBTree().close();</b>
+<b class="nc">&nbsp;				} catch (Throwable e) {</b>
+<b class="nc">&nbsp;					logger.warn(&quot;Failed to close file for {} index&quot;, new String(index.getFieldSeq()));</b>
+<b class="nc">&nbsp;					caughtExceptions.add(e);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (!caughtExceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;				throw new IOException(caughtExceptions.get(0));</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				txnStatusFile.close();</b>
+&nbsp;			} finally {
+&nbsp;				// Should have been removed upon commit() or rollback(), but just to be sure
+<b class="nc">&nbsp;				RecordCache toCloseUpdatedTriplesCache = updatedTriplesCache;</b>
+<b class="nc">&nbsp;				updatedTriplesCache = null;</b>
+<b class="nc">&nbsp;				if (toCloseUpdatedTriplesCache != null) {</b>
+<b class="nc">&nbsp;					toCloseUpdatedTriplesCache.discard();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RecordIterator getTriples(int subj, int pred, int obj, int context) throws IOException {
+&nbsp;		// Return all triples except those that were added but not yet committed
+<b class="nc">&nbsp;		return getTriples(subj, pred, obj, context, 0, ADDED_FLAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean readTransaction)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		if (readTransaction) {</b>
+&nbsp;			// Don&#39;t read removed statements
+<b class="nc">&nbsp;			return getTriples(subj, pred, obj, context, 0, TripleStore.REMOVED_FLAG);</b>
+&nbsp;		} else {
+&nbsp;			// Don&#39;t read added statements
+<b class="nc">&nbsp;			return getTriples(subj, pred, obj, context, 0, TripleStore.ADDED_FLAG);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If an index exists by context - use it, otherwise return null.
+&nbsp;	 *
+&nbsp;	 * @param readTransaction
+&nbsp;	 * @return All triples sorted by context or null if no context index exists
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public RecordIterator getAllTriplesSortedByContext(boolean readTransaction) throws IOException {
+<b class="nc">&nbsp;		if (readTransaction) {</b>
+&nbsp;			// Don&#39;t read removed statements
+<b class="nc">&nbsp;			return getAllTriplesSortedByContext(0, TripleStore.REMOVED_FLAG);</b>
+&nbsp;		} else {
+&nbsp;			// Don&#39;t read added statements
+<b class="nc">&nbsp;			return getAllTriplesSortedByContext(0, TripleStore.ADDED_FLAG);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public RecordIterator getTriples(int subj, int pred, int obj, int context, boolean explicit,
+&nbsp;			boolean readTransaction) throws IOException {
+<b class="nc">&nbsp;		int flags = 0;</b>
+<b class="nc">&nbsp;		int flagsMask = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (readTransaction) {</b>
+<b class="nc">&nbsp;			flagsMask |= TripleStore.REMOVED_FLAG;</b>
+&nbsp;			// &#39;explicit&#39; is handled through an ExplicitStatementFilter
+&nbsp;		} else {
+<b class="nc">&nbsp;			flagsMask |= TripleStore.ADDED_FLAG;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (explicit) {</b>
+<b class="nc">&nbsp;				flags |= TripleStore.EXPLICIT_FLAG;</b>
+<b class="nc">&nbsp;				flagsMask |= TripleStore.EXPLICIT_FLAG;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		RecordIterator btreeIter = getTriples(subj, pred, obj, context, flags, flagsMask);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (readTransaction &amp;&amp; explicit) {</b>
+&nbsp;			// Filter implicit statements from the result
+<b class="nc">&nbsp;			btreeIter = new ExplicitStatementFilter(btreeIter);</b>
+<b class="nc">&nbsp;		} else if (!explicit) {</b>
+&nbsp;			// Filter out explicit statements from the result
+<b class="nc">&nbsp;			btreeIter = new ImplicitStatementFilter(btreeIter);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return btreeIter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------------------------------*
+&nbsp;	 * Inner class ExplicitStatementFilter *
+&nbsp;	 *-------------------------------------*/
+&nbsp;
+&nbsp;	private static class ExplicitStatementFilter implements RecordIterator {
+&nbsp;
+&nbsp;		private final RecordIterator wrappedIter;
+&nbsp;
+<b class="nc">&nbsp;		public ExplicitStatementFilter(RecordIterator wrappedIter) {</b>
+<b class="nc">&nbsp;			this.wrappedIter = wrappedIter;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public byte[] next() throws IOException {
+&nbsp;			byte[] result;
+&nbsp;
+<b class="nc">&nbsp;			while ((result = wrappedIter.next()) != null) {</b>
+<b class="nc">&nbsp;				byte flags = result[TripleStore.FLAG_IDX];</b>
+<b class="nc">&nbsp;				boolean explicit = (flags &amp; TripleStore.EXPLICIT_FLAG) != 0;</b>
+<b class="nc">&nbsp;				boolean toggled = (flags &amp; TripleStore.TOGGLE_EXPLICIT_FLAG) != 0;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (explicit != toggled) {</b>
+&nbsp;					// Statement is either explicit and hasn&#39;t been toggled, or vice
+&nbsp;					// versa
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void set(byte[] value) throws IOException {
+<b class="nc">&nbsp;			wrappedIter.set(value);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws IOException {
+<b class="nc">&nbsp;			wrappedIter.close();</b>
+&nbsp;		}
+&nbsp;	} // end inner class ExplicitStatementFilter
+&nbsp;
+&nbsp;	private static class ImplicitStatementFilter implements RecordIterator {
+&nbsp;
+&nbsp;		private final RecordIterator wrappedIter;
+&nbsp;
+<b class="nc">&nbsp;		public ImplicitStatementFilter(RecordIterator wrappedIter) {</b>
+<b class="nc">&nbsp;			this.wrappedIter = wrappedIter;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public byte[] next() throws IOException {
+&nbsp;			byte[] result;
+&nbsp;
+<b class="nc">&nbsp;			while ((result = wrappedIter.next()) != null) {</b>
+<b class="nc">&nbsp;				byte flags = result[TripleStore.FLAG_IDX];</b>
+<b class="nc">&nbsp;				boolean explicit = (flags &amp; TripleStore.EXPLICIT_FLAG) != 0;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (!explicit) {</b>
+&nbsp;					// Statement is implicit
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void set(byte[] value) throws IOException {
+<b class="nc">&nbsp;			wrappedIter.set(value);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws IOException {
+<b class="nc">&nbsp;			wrappedIter.close();</b>
+&nbsp;		}
+&nbsp;	} // end inner class ImplicitStatementFilter
+&nbsp;
+&nbsp;	private RecordIterator getTriples(int subj, int pred, int obj, int context, int flags, int flagsMask)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		TripleIndex index = getBestIndex(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) &gt; 0;</b>
+<b class="nc">&nbsp;		return getTriplesUsingIndex(subj, pred, obj, context, flags, flagsMask, index, doRangeSearch);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private RecordIterator getAllTriplesSortedByContext(int flags, int flagsMask) throws IOException {
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			if (index.getFieldSeq()[0] == &#39;c&#39;) {</b>
+&nbsp;				// found a context-first index
+<b class="nc">&nbsp;				return getTriplesUsingIndex(-1, -1, -1, -1, flags, flagsMask, index, false);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private RecordIterator getTriplesUsingIndex(int subj, int pred, int obj, int context, int flags, int flagsMask,
+&nbsp;			TripleIndex index, boolean rangeSearch) {
+<b class="nc">&nbsp;		byte[] searchKey = getSearchKey(subj, pred, obj, context, flags);</b>
+<b class="nc">&nbsp;		byte[] searchMask = getSearchMask(subj, pred, obj, context, flagsMask);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (rangeSearch) {</b>
+&nbsp;			// Use ranged search
+<b class="nc">&nbsp;			byte[] minValue = getMinValue(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			byte[] maxValue = getMaxValue(subj, pred, obj, context);</b>
+&nbsp;
+<b class="nc">&nbsp;			return index.getBTree().iterateRangedValues(searchKey, searchMask, minValue, maxValue);</b>
+&nbsp;		} else {
+&nbsp;			// Use sequential scan
+<b class="nc">&nbsp;			return index.getBTree().iterateValues(searchKey, searchMask);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected double cardinality(int subj, int pred, int obj, int context) throws IOException {
+<b class="nc">&nbsp;		TripleIndex index = getBestIndex(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;		BTree btree = index.btree;</b>
+&nbsp;
+&nbsp;		double rangeSize;
+&nbsp;
+<b class="nc">&nbsp;		if (index.getPatternScore(subj, pred, obj, context) == 0) {</b>
+<b class="nc">&nbsp;			rangeSize = btree.getValueCountEstimate();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			byte[] minValue = getMinValue(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			byte[] maxValue = getMaxValue(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			rangeSize = btree.getValueCountEstimate(minValue, maxValue);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return rangeSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected TripleIndex getBestIndex(int subj, int pred, int obj, int context) {
+<b class="nc">&nbsp;		int bestScore = -1;</b>
+<b class="nc">&nbsp;		TripleIndex bestIndex = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			int score = index.getPatternScore(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			if (score &gt; bestScore) {</b>
+<b class="nc">&nbsp;				bestScore = score;</b>
+<b class="nc">&nbsp;				bestIndex = index;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return bestIndex;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void clear() throws IOException {
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			index.getBTree().clear();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean storeTriple(int subj, int pred, int obj, int context) throws IOException {
+<b class="nc">&nbsp;		return storeTriple(subj, pred, obj, context, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean storeTriple(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
+&nbsp;		boolean stAdded;
+&nbsp;
+<b class="nc">&nbsp;		byte[] data = getData(subj, pred, obj, context, 0);</b>
+<b class="nc">&nbsp;		byte[] storedData = indexes.get(0).getBTree().get(data);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (storedData == null) {</b>
+&nbsp;			// Statement does not yet exist
+<b class="nc">&nbsp;			data[FLAG_IDX] |= ADDED_FLAG;</b>
+<b class="nc">&nbsp;			if (explicit) {</b>
+<b class="nc">&nbsp;				data[FLAG_IDX] |= EXPLICIT_FLAG;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			stAdded = true;</b>
+&nbsp;		} else {
+&nbsp;			// Statement already exists, only modify its flags, see txn-flags.txt
+&nbsp;			// for a description of the flag transformations
+<b class="nc">&nbsp;			byte flags = storedData[FLAG_IDX];</b>
+<b class="nc">&nbsp;			boolean wasExplicit = (flags &amp; EXPLICIT_FLAG) != 0;</b>
+<b class="nc">&nbsp;			boolean wasAdded = (flags &amp; ADDED_FLAG) != 0;</b>
+<b class="nc">&nbsp;			boolean wasRemoved = (flags &amp; REMOVED_FLAG) != 0;</b>
+<b class="nc">&nbsp;			boolean wasToggled = (flags &amp; TOGGLE_EXPLICIT_FLAG) != 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (wasAdded) {</b>
+&nbsp;				// Statement has been added in the current transaction and is
+&nbsp;				// invisible to other connections, we can simply modify its flags
+<b class="nc">&nbsp;				data[FLAG_IDX] |= ADDED_FLAG;</b>
+<b class="nc">&nbsp;				if (explicit || wasExplicit) {</b>
+<b class="nc">&nbsp;					data[FLAG_IDX] |= EXPLICIT_FLAG;</b>
+&nbsp;				}
+&nbsp;			} else {
+&nbsp;				// Committed statement, must keep explicit flag the same
+<b class="nc">&nbsp;				if (wasExplicit) {</b>
+<b class="nc">&nbsp;					data[FLAG_IDX] |= EXPLICIT_FLAG;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (explicit) {</b>
+<b class="nc">&nbsp;					if (!wasExplicit) {</b>
+&nbsp;						// Make inferred statement explicit
+<b class="nc">&nbsp;						data[FLAG_IDX] |= TOGGLE_EXPLICIT_FLAG;</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="nc">&nbsp;					if (wasRemoved) {</b>
+<b class="nc">&nbsp;						if (wasExplicit) {</b>
+&nbsp;							// Re-add removed explicit statement as inferred
+<b class="nc">&nbsp;							data[FLAG_IDX] |= TOGGLE_EXPLICIT_FLAG;</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} else if (wasToggled) {</b>
+<b class="nc">&nbsp;						data[FLAG_IDX] |= TOGGLE_EXPLICIT_FLAG;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// Statement is new if it was removed before
+<b class="nc">&nbsp;			stAdded = wasRemoved;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (storedData == null || !Arrays.equals(data, storedData)) {</b>
+<b class="nc">&nbsp;			for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;				index.getBTree().insert(data);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			updatedTriplesCache.storeRecord(data);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return stAdded;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove triples
+&nbsp;	 *
+&nbsp;	 * @param subj    The subject for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred    The predicate for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj     The object for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param context The context for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @return The number of triples that were removed.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public int removeTriples(int subj, int pred, int obj, int context) throws IOException {
+<b class="nc">&nbsp;		Map&lt;Integer, Long&gt; countPerContext = removeTriplesByContext(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove triples by context
+&nbsp;	 *
+&nbsp;	 * @param subj    The subject for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred    The predicate for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj     The object for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param context The context for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @return A mapping of each modified context to the number of statements removed in that context.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @since 2.5.3
+&nbsp;	 */
+&nbsp;	public Map&lt;Integer, Long&gt; removeTriplesByContext(int subj, int pred, int obj, int context) throws IOException {
+<b class="nc">&nbsp;		RecordIterator iter = getTriples(subj, pred, obj, context, 0, 0);</b>
+<b class="nc">&nbsp;		return removeTriples(iter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove triples
+&nbsp;	 *
+&nbsp;	 * @param subj     The subject for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred     The predicate for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj      The object for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param context  The context for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; &lt;var&gt;true&lt;/var&gt;
+&nbsp;	 *                 removes explicit statements that match the pattern, &lt;var&gt;false&lt;/var&gt; removes inferred statements
+&nbsp;	 *                 that match the pattern.
+&nbsp;	 * @return The number of triples that were removed.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @deprecated since 2.5.3. use {@link #removeTriplesByContext(int, int, int, int, boolean)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public int removeTriples(int subj, int pred, int obj, int context, boolean explicit) throws IOException {
+<b class="nc">&nbsp;		Map&lt;Integer, Long&gt; countPerContext = removeTriplesByContext(subj, pred, obj, context, explicit);</b>
+<b class="nc">&nbsp;		return (int) countPerContext.values().stream().mapToLong(Long::longValue).sum();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param subj     The subject for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred     The predicate for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj      The object for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param context  The context for the pattern, or &lt;var&gt;-1&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; &lt;var&gt;true&lt;/var&gt;
+&nbsp;	 *                 removes explicit statements that match the pattern, &lt;var&gt;false&lt;/var&gt; removes inferred statements
+&nbsp;	 *                 that match the pattern.
+&nbsp;	 * @return A mapping of each modified context to the number of statements removed in that context.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public Map&lt;Integer, Long&gt; removeTriplesByContext(int subj, int pred, int obj, int context, boolean explicit)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		byte flags = explicit ? EXPLICIT_FLAG : 0;</b>
+<b class="nc">&nbsp;		try (RecordIterator iter = getTriples(subj, pred, obj, context, flags, EXPLICIT_FLAG)) {</b>
+<b class="nc">&nbsp;			return removeTriples(iter);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Map&lt;Integer, Long&gt; removeTriples(RecordIterator iter) throws IOException {
+&nbsp;
+<b class="nc">&nbsp;		byte[] data = iter.next();</b>
+<b class="nc">&nbsp;		if (data == null) {</b>
+&nbsp;			// no triples to remove
+<b class="nc">&nbsp;			return Collections.emptyMap();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final HashMap&lt;Integer, Long&gt; perContextCounts = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// Store the values that need to be removed in a tmp file and then
+&nbsp;		// iterate over this file to set the REMOVED flag
+<b class="nc">&nbsp;		RecordCache removedTriplesCache = new InMemRecordCache();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			try (iter) {</b>
+<b class="nc">&nbsp;				while (data != null) {</b>
+<b class="nc">&nbsp;					if ((data[FLAG_IDX] &amp; REMOVED_FLAG) == 0) {</b>
+<b class="nc">&nbsp;						data[FLAG_IDX] |= REMOVED_FLAG;</b>
+<b class="nc">&nbsp;						removedTriplesCache.storeRecord(data);</b>
+<b class="nc">&nbsp;						int context = ByteArrayUtil.getInt(data, CONTEXT_IDX);</b>
+<b class="nc">&nbsp;						perContextCounts.merge(context, 1L, Long::sum);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					data = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;					if (shouldOverflowToDisk(removedTriplesCache)) {</b>
+<b class="nc">&nbsp;						logger.debug(&quot;Overflowing RecordCache to disk due to low free mem.&quot;);</b>
+<b class="nc">&nbsp;						assert removedTriplesCache instanceof InMemRecordCache;</b>
+<b class="nc">&nbsp;						InMemRecordCache old = (InMemRecordCache) removedTriplesCache;</b>
+<b class="nc">&nbsp;						removedTriplesCache = new SequentialRecordCache(dir, RECORD_LENGTH);</b>
+<b class="nc">&nbsp;						removedTriplesCache.storeRecords(old);</b>
+<b class="nc">&nbsp;						old.clear();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			updatedTriplesCache.storeRecords(removedTriplesCache);</b>
+&nbsp;
+&nbsp;			// Set the REMOVED flag by overwriting the affected records
+<b class="nc">&nbsp;			for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;				BTree btree = index.getBTree();</b>
+&nbsp;
+<b class="nc">&nbsp;				try (RecordIterator recIter = removedTriplesCache.getRecords()) {</b>
+<b class="nc">&nbsp;					while ((data = recIter.next()) != null) {</b>
+<b class="nc">&nbsp;						btree.insert(data);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			removedTriplesCache.discard();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return perContextCounts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean shouldOverflowToDisk(RecordCache removedTriplesCache) {
+<b class="nc">&nbsp;		if (removedTriplesCache instanceof InMemRecordCache</b>
+<b class="nc">&nbsp;				&amp;&amp; removedTriplesCache.getRecordCount() % CHECK_MEMORY_PRESSURE_INTERVAL == 0) {</b>
+<b class="nc">&nbsp;			Runtime runtime = Runtime.getRuntime();</b>
+<b class="nc">&nbsp;			long allocatedMemory = runtime.totalMemory() - runtime.freeMemory();</b>
+<b class="nc">&nbsp;			long presumableFreeMemory = runtime.maxMemory() - allocatedMemory;</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.trace(&quot;Free memory {} MB and required free memory {} MB&quot;, presumableFreeMemory / 1024 / 1024,</b>
+<b class="nc">&nbsp;					MIN_FREE_MEMORY_BEFORE_OVERFLOW / 1024 / 1024);</b>
+<b class="nc">&nbsp;			return presumableFreeMemory &lt; MIN_FREE_MEMORY_BEFORE_OVERFLOW;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void startTransaction() throws IOException {
+<b class="nc">&nbsp;		txnStatusFile.setTxnStatus(TxnStatus.ACTIVE);</b>
+&nbsp;
+&nbsp;		// Create a record cache for storing updated triples with a maximum of
+&nbsp;		// some 10% of the number of triples
+<b class="nc">&nbsp;		long maxRecords = indexes.get(0).getBTree().getValueCountEstimate() / 10L;</b>
+<b class="nc">&nbsp;		if (updatedTriplesCache == null) {</b>
+<b class="nc">&nbsp;			updatedTriplesCache = new SortedRecordCache(dir, RECORD_LENGTH, maxRecords, new TripleComparator(&quot;spoc&quot;));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			assert updatedTriplesCache</b>
+<b class="nc">&nbsp;					.getRecordCount() == 0L : &quot;updatedTripleCache should have been cleared upon commit or rollback&quot;;</b>
+<b class="nc">&nbsp;			updatedTriplesCache.setMaxRecords(maxRecords);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void commit() throws IOException {
+<b class="nc">&nbsp;		txnStatusFile.setTxnStatus(TxnStatus.COMMITTING);</b>
+&nbsp;
+&nbsp;		// updatedTriplesCache will be null when recovering from a crashed commit
+<b class="nc">&nbsp;		boolean validCache = updatedTriplesCache != null &amp;&amp; updatedTriplesCache.isValid();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			BTree btree = index.getBTree();</b>
+&nbsp;
+&nbsp;			RecordIterator iter;
+<b class="nc">&nbsp;			if (validCache) {</b>
+&nbsp;				// Use the cached set of updated triples
+<b class="nc">&nbsp;				iter = updatedTriplesCache.getRecords();</b>
+&nbsp;			} else {
+&nbsp;				// Cache is invalid; too much updates(?). Iterate over all triples
+<b class="nc">&nbsp;				iter = btree.iterateAll();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+&nbsp;				byte[] data;
+<b class="nc">&nbsp;				while ((data = iter.next()) != null) {</b>
+<b class="nc">&nbsp;					byte flags = data[FLAG_IDX];</b>
+<b class="nc">&nbsp;					boolean wasAdded = (flags &amp; ADDED_FLAG) != 0;</b>
+<b class="nc">&nbsp;					boolean wasRemoved = (flags &amp; REMOVED_FLAG) != 0;</b>
+<b class="nc">&nbsp;					boolean wasToggled = (flags &amp; TOGGLE_EXPLICIT_FLAG) != 0;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (wasRemoved) {</b>
+<b class="nc">&nbsp;						btree.remove(data);</b>
+<b class="nc">&nbsp;					} else if (wasAdded || wasToggled) {</b>
+<b class="nc">&nbsp;						if (wasToggled) {</b>
+<b class="nc">&nbsp;							data[FLAG_IDX] ^= EXPLICIT_FLAG;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (wasAdded) {</b>
+<b class="nc">&nbsp;							data[FLAG_IDX] ^= ADDED_FLAG;</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						if (validCache) {</b>
+&nbsp;							// We&#39;re iterating the cache
+<b class="nc">&nbsp;							btree.insert(data);</b>
+&nbsp;						} else {
+&nbsp;							// We&#39;re iterating the BTree itself
+<b class="nc">&nbsp;							iter.set(data);</b>
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				iter.close();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (updatedTriplesCache != null) {</b>
+<b class="nc">&nbsp;			updatedTriplesCache.clear();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		sync();</b>
+&nbsp;
+<b class="nc">&nbsp;		txnStatusFile.setTxnStatus(TxnStatus.NONE);</b>
+&nbsp;		// checkAllCommitted();
+&nbsp;	}
+&nbsp;
+&nbsp;	private void checkAllCommitted() throws IOException {
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			System.out.println(&quot;Checking &quot; + index + &quot; index&quot;);</b>
+<b class="nc">&nbsp;			BTree btree = index.getBTree();</b>
+<b class="nc">&nbsp;			try (RecordIterator iter = btree.iterateAll()) {</b>
+<b class="nc">&nbsp;				for (byte[] data = iter.next(); data != null; data = iter.next()) {</b>
+<b class="nc">&nbsp;					byte flags = data[FLAG_IDX];</b>
+<b class="nc">&nbsp;					boolean wasAdded = (flags &amp; ADDED_FLAG) != 0;</b>
+<b class="nc">&nbsp;					boolean wasRemoved = (flags &amp; REMOVED_FLAG) != 0;</b>
+<b class="nc">&nbsp;					boolean wasToggled = (flags &amp; TOGGLE_EXPLICIT_FLAG) != 0;</b>
+<b class="nc">&nbsp;					if (wasAdded || wasRemoved || wasToggled) {</b>
+<b class="nc">&nbsp;						System.out.println(&quot;unexpected triple: &quot; + ByteArrayUtil.toHexString(data));</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void rollback() throws IOException {
+<b class="nc">&nbsp;		txnStatusFile.setTxnStatus(TxnStatus.ROLLING_BACK);</b>
+&nbsp;
+&nbsp;		// updatedTriplesCache will be null when recovering from a crash
+<b class="nc">&nbsp;		boolean validCache = updatedTriplesCache != null &amp;&amp; updatedTriplesCache.isValid();</b>
+&nbsp;
+<b class="nc">&nbsp;		byte txnFlagsMask = ~(ADDED_FLAG | REMOVED_FLAG | TOGGLE_EXPLICIT_FLAG);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			BTree btree = index.getBTree();</b>
+&nbsp;
+&nbsp;			RecordIterator iter;
+<b class="nc">&nbsp;			if (validCache) {</b>
+&nbsp;				// Use the cached set of updated triples
+<b class="nc">&nbsp;				iter = updatedTriplesCache.getRecords();</b>
+&nbsp;			} else {
+&nbsp;				// Cache is invalid; too much updates(?). Iterate over all triples
+<b class="nc">&nbsp;				iter = btree.iterateAll();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+&nbsp;				byte[] data;
+<b class="nc">&nbsp;				while ((data = iter.next()) != null) {</b>
+<b class="nc">&nbsp;					byte flags = data[FLAG_IDX];</b>
+<b class="nc">&nbsp;					boolean wasAdded = (flags &amp; ADDED_FLAG) != 0;</b>
+<b class="nc">&nbsp;					boolean wasRemoved = (flags &amp; REMOVED_FLAG) != 0;</b>
+<b class="nc">&nbsp;					boolean wasToggled = (flags &amp; TOGGLE_EXPLICIT_FLAG) != 0;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (wasAdded) {</b>
+<b class="nc">&nbsp;						btree.remove(data);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						if (wasRemoved || wasToggled) {</b>
+<b class="nc">&nbsp;							data[FLAG_IDX] &amp;= txnFlagsMask;</b>
+&nbsp;
+<b class="nc">&nbsp;							if (validCache) {</b>
+&nbsp;								// We&#39;re iterating the cache
+<b class="nc">&nbsp;								btree.insert(data);</b>
+&nbsp;							} else {
+&nbsp;								// We&#39;re iterating the BTree itself
+<b class="nc">&nbsp;								iter.set(data);</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				iter.close();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (updatedTriplesCache != null) {</b>
+<b class="nc">&nbsp;			updatedTriplesCache.clear();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		sync();</b>
+&nbsp;
+<b class="nc">&nbsp;		txnStatusFile.setTxnStatus(TxnStatus.NONE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void sync() throws IOException {
+<b class="nc">&nbsp;		List&lt;Throwable&gt; exceptions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				index.getBTree().sync();</b>
+<b class="nc">&nbsp;			} catch (Throwable e) {</b>
+<b class="nc">&nbsp;				exceptions.add(e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (!exceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IOException(exceptions.get(0));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] getData(int subj, int pred, int obj, int context, int flags) {
+<b class="nc">&nbsp;		byte[] data = new byte[RECORD_LENGTH];</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(subj, data, SUBJ_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(pred, data, PRED_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(obj, data, OBJ_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(context, data, CONTEXT_IDX);</b>
+<b class="nc">&nbsp;		data[FLAG_IDX] = (byte) flags;</b>
+&nbsp;
+<b class="nc">&nbsp;		return data;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] getSearchKey(int subj, int pred, int obj, int context, int flags) {
+<b class="nc">&nbsp;		return getData(subj, pred, obj, context, flags);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] getSearchMask(int subj, int pred, int obj, int context, int flags) {
+<b class="nc">&nbsp;		byte[] mask = new byte[RECORD_LENGTH];</b>
+&nbsp;
+<b class="nc">&nbsp;		if (subj != -1) {</b>
+<b class="nc">&nbsp;			ByteArrayUtil.putInt(0xffffffff, mask, SUBJ_IDX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (pred != -1) {</b>
+<b class="nc">&nbsp;			ByteArrayUtil.putInt(0xffffffff, mask, PRED_IDX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (obj != -1) {</b>
+<b class="nc">&nbsp;			ByteArrayUtil.putInt(0xffffffff, mask, OBJ_IDX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (context != -1) {</b>
+<b class="nc">&nbsp;			ByteArrayUtil.putInt(0xffffffff, mask, CONTEXT_IDX);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		mask[FLAG_IDX] = (byte) flags;</b>
+&nbsp;
+<b class="nc">&nbsp;		return mask;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] getMinValue(int subj, int pred, int obj, int context) {
+<b class="nc">&nbsp;		byte[] minValue = new byte[RECORD_LENGTH];</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((subj == -1 ? 0x00000000 : subj), minValue, SUBJ_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((pred == -1 ? 0x00000000 : pred), minValue, PRED_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((obj == -1 ? 0x00000000 : obj), minValue, OBJ_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((context == -1 ? 0x00000000 : context), minValue, CONTEXT_IDX);</b>
+<b class="nc">&nbsp;		minValue[FLAG_IDX] = (byte) 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		return minValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] getMaxValue(int subj, int pred, int obj, int context) {
+<b class="nc">&nbsp;		byte[] maxValue = new byte[RECORD_LENGTH];</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((subj == -1 ? 0xffffffff : subj), maxValue, SUBJ_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((pred == -1 ? 0xffffffff : pred), maxValue, PRED_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((obj == -1 ? 0xffffffff : obj), maxValue, OBJ_IDX);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt((context == -1 ? 0xffffffff : context), maxValue, CONTEXT_IDX);</b>
+<b class="nc">&nbsp;		maxValue[FLAG_IDX] = (byte) 0xff;</b>
+&nbsp;
+<b class="nc">&nbsp;		return maxValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Properties loadProperties(File propFile) throws IOException {
+<b class="nc">&nbsp;		try (InputStream in = new FileInputStream(propFile)) {</b>
+<b class="nc">&nbsp;			Properties properties = new Properties();</b>
+<b class="nc">&nbsp;			properties.load(in);</b>
+<b class="nc">&nbsp;			return properties;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void storeProperties(File propFile) throws IOException {
+<b class="nc">&nbsp;		try (OutputStream out = new FileOutputStream(propFile)) {</b>
+<b class="nc">&nbsp;			properties.store(out, &quot;triple indexes meta-data, DO NOT EDIT!&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------------------*
+&nbsp;	 * Inner class TripleIndex *
+&nbsp;	 *-------------------------*/
+&nbsp;
+&nbsp;	private class TripleIndex {
+&nbsp;
+&nbsp;		private final TripleComparator tripleComparator;
+&nbsp;
+&nbsp;		private final BTree btree;
+&nbsp;
+<b class="nc">&nbsp;		public TripleIndex(String fieldSeq) throws IOException {</b>
+<b class="nc">&nbsp;			tripleComparator = new TripleComparator(fieldSeq);</b>
+<b class="nc">&nbsp;			btree = new BTree(dir, getFilenamePrefix(fieldSeq), 2048, RECORD_LENGTH, tripleComparator, forceSync);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private String getFilenamePrefix(String fieldSeq) {
+<b class="nc">&nbsp;			return &quot;triples-&quot; + fieldSeq;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public char[] getFieldSeq() {
+<b class="nc">&nbsp;			return tripleComparator.getFieldSeq();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public BTree getBTree() {
+<b class="nc">&nbsp;			return btree;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Determines the &#39;score&#39; of this index on the supplied pattern of subject, predicate, object and context IDs.
+&nbsp;		 * The higher the score, the better the index is suited for matching the pattern. Lowest score is 0, which means
+&nbsp;		 * that the index will perform a sequential scan.
+&nbsp;		 */
+&nbsp;		public int getPatternScore(int subj, int pred, int obj, int context) {
+<b class="nc">&nbsp;			int score = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (char field : tripleComparator.getFieldSeq()) {</b>
+<b class="nc">&nbsp;				switch (field) {</b>
+&nbsp;				case &#39;s&#39;:
+<b class="nc">&nbsp;					if (subj &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				case &#39;p&#39;:
+<b class="nc">&nbsp;					if (pred &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				case &#39;o&#39;:
+<b class="nc">&nbsp;					if (obj &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				case &#39;c&#39;:
+<b class="nc">&nbsp;					if (context &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new RuntimeException(&quot;invalid character &#39;&quot; + field + &quot;&#39; in field sequence: &quot;</b>
+<b class="nc">&nbsp;							+ new String(tripleComparator.getFieldSeq()));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return score;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return new String(getFieldSeq());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------------------*
+&nbsp;	 * Inner class TripleComparator *
+&nbsp;	 *------------------------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A RecordComparator that can be used to create indexes with a configurable order of the subject, predicate, object
+&nbsp;	 * and context fields.
+&nbsp;	 */
+&nbsp;	private static class TripleComparator implements RecordComparator {
+&nbsp;
+&nbsp;		private final char[] fieldSeq;
+&nbsp;
+<b class="nc">&nbsp;		public TripleComparator(String fieldSeq) {</b>
+<b class="nc">&nbsp;			this.fieldSeq = fieldSeq.toCharArray();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public char[] getFieldSeq() {
+<b class="nc">&nbsp;			return fieldSeq;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public final int compareBTreeValues(byte[] key, byte[] data, int offset, int length) {
+<b class="nc">&nbsp;			for (char field : fieldSeq) {</b>
+&nbsp;				int fieldIdx;
+&nbsp;
+<b class="nc">&nbsp;				switch (field) {</b>
+&nbsp;				case &#39;s&#39;:
+<b class="nc">&nbsp;					fieldIdx = SUBJ_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;p&#39;:
+<b class="nc">&nbsp;					fieldIdx = PRED_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;o&#39;:
+<b class="nc">&nbsp;					fieldIdx = OBJ_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;c&#39;:
+<b class="nc">&nbsp;					fieldIdx = CONTEXT_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new IllegalArgumentException(</b>
+&nbsp;							&quot;invalid character &#39;&quot; + field + &quot;&#39; in field sequence: &quot; + new String(fieldSeq));
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				int diff = ByteArrayUtil.compareRegion(key, fieldIdx, data, offset + fieldIdx, 4);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (diff != 0) {</b>
+<b class="nc">&nbsp;					return diff;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isAssertionsEnabled() {
+&nbsp;		try {
+<b class="nc">&nbsp;			assert false;</b>
+<b class="nc">&nbsp;			return false;</b>
+<b class="nc">&nbsp;		} catch (AssertionError ignored) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

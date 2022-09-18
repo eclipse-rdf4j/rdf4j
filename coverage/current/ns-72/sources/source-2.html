@@ -1,0 +1,237 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BindingSetAssignmentInlinerOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: BindingSetAssignmentInlinerOptimizer (org.eclipse.rdf4j.query.algebra.evaluation.optimizer)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BindingSetAssignmentInlinerOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">BindingSetAssignmentInlinerOptimizer$BindingSetAssignmentVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (10/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (16/16)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (8/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (10/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (19/19)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * Optimizes a query model by inlining {@link BindingSetAssignment} values where possible.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="fc">&nbsp;		BindingSetAssignmentVisitor visitor = new BindingSetAssignmentVisitor();</b>
+<b class="fc">&nbsp;		tupleExpr.visit(visitor);</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class BindingSetAssignmentVisitor extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;		private BindingSet bindingSet;
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(BindingSetAssignment bsa) {
+<b class="fc">&nbsp;			Iterator&lt;BindingSet&gt; iter = bsa.getBindingSets().iterator();</b>
+<b class="pc">&nbsp;			if (iter.hasNext()) {</b>
+<b class="fc">&nbsp;				BindingSet firstBindingSet = iter.next();</b>
+<b class="fc">&nbsp;				if (!iter.hasNext()) {</b>
+<b class="fc">&nbsp;					bindingSet = firstBindingSet;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;			super.meet(bsa);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="fc">&nbsp;			if (bindingSet != null &amp;&amp; bindingSet.hasBinding(var.getName())) {</b>
+<b class="fc">&nbsp;				Value replacementValue = bindingSet.getValue(var.getName());</b>
+<b class="fc">&nbsp;				var.replaceWith(new Var(var.getName(), replacementValue, var.isAnonymous(), var.isConstant()));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter node) throws RuntimeException {
+&nbsp;			// TODO Auto-generated method stub
+<b class="fc">&nbsp;			super.meet(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(LeftJoin leftJoin) {
+<b class="fc">&nbsp;			leftJoin.getLeftArg().visit(this);</b>
+&nbsp;			// we can not pre-bind values for the optional part of the left-join
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetNode(QueryModelNode node) throws RuntimeException {
+&nbsp;			// reset if we encounter a scope change (e.g. a subquery or a union)
+<b class="pc">&nbsp;			if (node instanceof AbstractQueryModelNode) {</b>
+<b class="fc">&nbsp;				if (((AbstractQueryModelNode) node).isVariableScopeChange()) {</b>
+<b class="fc">&nbsp;					bindingSet = null;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;			super.meetNode(node);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

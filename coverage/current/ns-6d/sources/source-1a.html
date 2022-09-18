@@ -1,0 +1,173 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StandardQueryOptimizerPipeline</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: StandardQueryOptimizerPipeline (org.eclipse.rdf4j.query.algebra.evaluation.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StandardQueryOptimizerPipeline</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+&nbsp;
+&nbsp;/**
+&nbsp; *
+&nbsp; * A standard pipeline with the default {@link QueryOptimizer}s that will be used by {@link StrictEvaluationStrategy}
+&nbsp; * and its subclasses, unless specifically overridden.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; *
+&nbsp; * @see EvaluationStrategyFactory#setOptimizerPipeline(QueryOptimizerPipeline)
+&nbsp; */
+&nbsp;@Deprecated(forRemoval = true, since = &quot;4.1.0&quot;)
+&nbsp;public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
+&nbsp;
+&nbsp;	private final EvaluationStatistics evaluationStatistics;
+&nbsp;	private final TripleSource tripleSource;
+&nbsp;	private final EvaluationStrategy strategy;
+&nbsp;
+&nbsp;	public StandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+<b class="nc">&nbsp;			EvaluationStatistics evaluationStatistics) {</b>
+<b class="nc">&nbsp;		this.strategy = strategy;</b>
+<b class="nc">&nbsp;		this.tripleSource = tripleSource;</b>
+<b class="nc">&nbsp;		this.evaluationStatistics = evaluationStatistics;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * (non-Javadoc)
+&nbsp;	 *
+&nbsp;	 * @see org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline#getOptimizers()
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Iterable&lt;QueryOptimizer&gt; getOptimizers() {
+<b class="nc">&nbsp;		return Arrays.asList(</b>
+&nbsp;				new BindingAssigner(),
+&nbsp;				new BindingSetAssignmentInliner(),
+&nbsp;				new ConstantOptimizer(strategy),
+<b class="nc">&nbsp;				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),</b>
+&nbsp;				new CompareOptimizer(),
+&nbsp;				new ConjunctiveConstraintSplitter(),
+&nbsp;				new DisjunctiveConstraintOptimizer(),
+&nbsp;				new SameTermFilterOptimizer(),
+&nbsp;				new UnionScopeChangeOptimizer(),
+&nbsp;				new QueryModelNormalizer(),
+&nbsp;				new ProjectionRemovalOptimizer(), // Make sure this is after the UnionScopeChangeOptimizer
+&nbsp;				new FilterOptimizer(),
+&nbsp;				new QueryJoinOptimizer(evaluationStatistics),
+&nbsp;				new IterativeEvaluationOptimizer(),
+&nbsp;				new OrderLimitOptimizer(),
+&nbsp;				new ParentReferenceCleaner());
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

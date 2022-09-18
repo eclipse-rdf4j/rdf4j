@@ -1,0 +1,865 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractRDFParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractRDFParser (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractRDFParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    58.3%
+  </span>
+  <span class="absValue">
+    (28/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.3%
+  </span>
+  <span class="absValue">
+    (25/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    43.3%
+  </span>
+  <span class="absValue">
+    (68/157)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.security.MessageDigest;
+&nbsp;import java.security.NoSuchAlgorithmException;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import javax.xml.bind.annotation.adapters.HexBinaryAdapter;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.ParseErrorListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParseLocationListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link RDFParser}s offering common functionality for RDF parsers.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public abstract class AbstractRDFParser implements RDFParser {
+&nbsp;
+&nbsp;	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+<b class="fc">&nbsp;	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;);</b>
+<b class="fc">&nbsp;	private final static AtomicLong uniqueIdSuffix = new AtomicLong();</b>
+&nbsp;
+&nbsp;	private final MessageDigest md5;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The RDFHandler that will handle the parsed RDF.
+&nbsp;	 */
+&nbsp;	protected RDFHandler rdfHandler;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An optional ParseErrorListener to report parse errors to.
+&nbsp;	 */
+&nbsp;	private ParseErrorListener errListener;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An optional ParseLocationListener to report parse progress in the form of line- and column numbers to.
+&nbsp;	 */
+&nbsp;	private ParseLocationListener locationListener;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The ValueFactory to use for creating RDF model objects.
+&nbsp;	 */
+&nbsp;	protected ValueFactory valueFactory;
+&nbsp;
+&nbsp;	private ValueFactory originalValueFactory;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The base URI for resolving relative URIs.
+&nbsp;	 */
+&nbsp;	private ParsedIRI baseURI;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The base URI for skolemizing IRIs.
+&nbsp;	 */
+&nbsp;	private String skolemOrigin;
+&nbsp;	private ParsedIRI parsedSkolemOrigin;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enables a consistent global mapping of blank node identifiers without using a map, but concatenating this as a
+&nbsp;	 * prefix for the blank node identifiers supplied by the parser.
+&nbsp;	 */
+&nbsp;	private String nextBNodePrefix;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Mapping from namespace prefixes to namespace names.
+&nbsp;	 */
+&nbsp;	private final Map&lt;String, String&gt; namespaceTable;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A collection of configuration options for this parser.
+&nbsp;	 */
+&nbsp;	private ParserConfig parserConfig;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFParserBase that will use a {@link SimpleValueFactory} to create RDF model objects.
+&nbsp;	 */
+&nbsp;	protected AbstractRDFParser() {
+<b class="fc">&nbsp;		this(SimpleValueFactory.getInstance());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFParserBase that will use the supplied ValueFactory to create RDF model objects.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory A ValueFactory.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected AbstractRDFParser(ValueFactory valueFactory) {</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			md5 = MessageDigest.getInstance(&quot;MD5&quot;);</b>
+<b class="nc">&nbsp;		} catch (NoSuchAlgorithmException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		namespaceTable = new HashMap&lt;&gt;(16);</b>
+<b class="fc">&nbsp;		nextBNodePrefix = createUniqueBNodePrefix();</b>
+<b class="fc">&nbsp;		setValueFactory(valueFactory);</b>
+<b class="fc">&nbsp;		setParserConfig(new ParserConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFParser setValueFactory(ValueFactory valueFactory) {
+<b class="fc">&nbsp;		this.valueFactory = valueFactory;</b>
+<b class="fc">&nbsp;		this.originalValueFactory = valueFactory;</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFParser setRDFHandler(RDFHandler handler) {
+<b class="fc">&nbsp;		rdfHandler = handler;</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RDFHandler getRDFHandler() {
+<b class="fc">&nbsp;		return rdfHandler;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFParser setParseErrorListener(ParseErrorListener el) {
+<b class="fc">&nbsp;		errListener = el;</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParseErrorListener getParseErrorListener() {
+<b class="fc">&nbsp;		return errListener;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFParser setParseLocationListener(ParseLocationListener el) {
+<b class="nc">&nbsp;		locationListener = el;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParseLocationListener getParseLocationListener() {
+<b class="fc">&nbsp;		return locationListener;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFParser setParserConfig(ParserConfig config) {
+<b class="fc">&nbsp;		this.parserConfig = config;</b>
+<b class="fc">&nbsp;		initializeNamespaceTableFromConfiguration();</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ParserConfig getParserConfig() {
+<b class="fc">&nbsp;		return this.parserConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Default implementation, specific parsers are encouraged to override this method as necessary.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Collection&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// Supported in RDFParserHelper.createLiteral
+<b class="nc">&nbsp;		result.add(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES);</b>
+<b class="nc">&nbsp;		result.add(BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+<b class="nc">&nbsp;		result.add(BasicParserSettings.NORMALIZE_DATATYPE_VALUES);</b>
+<b class="nc">&nbsp;		result.add(BasicParserSettings.DATATYPE_HANDLERS);</b>
+&nbsp;
+&nbsp;		// Supported in RDFParserHelper.createLiteral
+<b class="nc">&nbsp;		result.add(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES);</b>
+<b class="nc">&nbsp;		result.add(BasicParserSettings.VERIFY_LANGUAGE_TAGS);</b>
+<b class="nc">&nbsp;		result.add(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS);</b>
+<b class="nc">&nbsp;		result.add(BasicParserSettings.LANGUAGE_HANDLERS);</b>
+&nbsp;
+&nbsp;		// Supported in RDFParserBase.resolveURI
+<b class="nc">&nbsp;		result.add(BasicParserSettings.VERIFY_RELATIVE_URIS);</b>
+&nbsp;
+&nbsp;		// Supported in createURI
+<b class="nc">&nbsp;		result.add(BasicParserSettings.VERIFY_URI_SYNTAX);</b>
+&nbsp;
+&nbsp;		// Supported in RDFParserBase.createBNode(String)
+<b class="nc">&nbsp;		result.add(BasicParserSettings.PRESERVE_BNODE_IDS);</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(BasicParserSettings.NAMESPACES);</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(BasicParserSettings.SKOLEMIZE_ORIGIN);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;T&gt; RDFParser set(RioSetting&lt;T&gt; setting, T value) {
+<b class="nc">&nbsp;		getParserConfig().set(setting, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setPreserveBNodeIDs(boolean preserveBNodeIDs) {
+<b class="fc">&nbsp;		this.parserConfig.set(BasicParserSettings.PRESERVE_BNODE_IDS, preserveBNodeIDs);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean preserveBNodeIDs() {
+<b class="fc">&nbsp;		return this.parserConfig.get(BasicParserSettings.PRESERVE_BNODE_IDS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied URI-string and sets it as the base URI for resolving relative URIs.
+&nbsp;	 */
+&nbsp;	protected void setBaseURI(String uriSpec) {
+&nbsp;		// Store base URI
+<b class="fc">&nbsp;		if (this.baseURI == null || !this.baseURI.toString().equals(uriSpec)) {</b>
+<b class="fc">&nbsp;			this.baseURI = ParsedIRI.create(uriSpec);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the base URI for resolving relative URIs.
+&nbsp;	 */
+&nbsp;	protected void setBaseURI(ParsedIRI baseURI) {
+<b class="nc">&nbsp;		setBaseURI(baseURI.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Associates the specified prefix to the specified namespace.
+&nbsp;	 */
+&nbsp;	protected void setNamespace(String prefix, String namespace) {
+<b class="fc">&nbsp;		namespaceTable.put(prefix, namespace);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the namespace that is associated with the specified prefix or throws an {@link RDFParseException}.
+&nbsp;	 *
+&nbsp;	 * @throws RDFParseException if no namespace is associated with this prefix
+&nbsp;	 */
+&nbsp;	protected String getNamespace(String prefix) throws RDFParseException {
+<b class="pc">&nbsp;		if (namespaceTable.containsKey(prefix)) {</b>
+<b class="fc">&nbsp;			return namespaceTable.get(prefix);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String msg = &quot;Namespace prefix &#39;&quot; + prefix + &quot;&#39; used but not defined&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (&quot;&quot;.equals(prefix)) {</b>
+<b class="nc">&nbsp;			msg = &quot;Default namespace used but not defined&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		reportFatalError(msg);</b>
+<b class="nc">&nbsp;		throw new RDFParseException(msg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clears any information that has been collected while parsing. This method must be called by subclasses when
+&nbsp;	 * finishing the parse process.
+&nbsp;	 */
+&nbsp;	protected void clear() {
+<b class="fc">&nbsp;		baseURI = null;</b>
+<b class="fc">&nbsp;		nextBNodePrefix = createUniqueBNodePrefix();</b>
+<b class="fc">&nbsp;		namespaceTable.clear();</b>
+&nbsp;		// Don&#39;t use the setter setValueFactory() as it will update originalValueFactory too
+<b class="pc">&nbsp;		if (getParserConfig().get(BasicParserSettings.PROCESS_ENCODED_RDF_STAR)) {</b>
+<b class="fc">&nbsp;			valueFactory = new RDFStarDecodingValueFactory(originalValueFactory);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			valueFactory = originalValueFactory;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		initializeNamespaceTableFromConfiguration();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void initializeNamespaceTableFromConfiguration() {
+<b class="fc">&nbsp;		for (Namespace aNS : getParserConfig().get(BasicParserSettings.NAMESPACES)) {</b>
+<b class="fc">&nbsp;			namespaceTable.put(aNS.getPrefix(), aNS.getName());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clears the map that keeps track of blank nodes that have been parsed. Normally, this map is clear when the
+&nbsp;	 * document has been parsed completely, but subclasses can clear the map at other moments too, for example when a
+&nbsp;	 * bnode scope ends.
+&nbsp;	 *
+&nbsp;	 * @deprecated Map is no longer used, call {@link #clear()} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	protected void clearBNodeIDMap() {
+<b class="nc">&nbsp;		clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Resolves a URI-string against the base URI and creates a {@link IRI} object for it.
+&nbsp;	 */
+&nbsp;	protected IRI resolveURI(String uriSpec) throws RDFParseException {
+<b class="fc">&nbsp;		if (uriSpec.indexOf(&#39;:&#39;) &lt; 0) {</b>
+&nbsp;			// Resolve relative URIs against base URI
+<b class="pc">&nbsp;			if (baseURI == null) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Unable to resolve URIs, no base URI has been set&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (getParserConfig().get(BasicParserSettings.VERIFY_RELATIVE_URIS)) {</b>
+<b class="pc">&nbsp;				if (uriSpec.length() &gt; 0 &amp;&amp; !uriSpec.startsWith(&quot;#&quot;) &amp;&amp; baseURI.isOpaque()) {</b>
+<b class="nc">&nbsp;					reportError(&quot;Relative URI &#39;&quot; + uriSpec + &quot;&#39; cannot be resolved using the opaque base URI &#39;&quot;</b>
+&nbsp;							+ baseURI + &quot;&#39;&quot;, BasicParserSettings.VERIFY_RELATIVE_URIS);
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return createURI(baseURI.resolve(uriSpec));</b>
+&nbsp;		} else {
+&nbsp;			// URI is not relative
+<b class="fc">&nbsp;			return createURI(uriSpec);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link IRI} object for the specified URI-string.
+&nbsp;	 */
+&nbsp;	protected IRI createURI(String uri) throws RDFParseException {
+<b class="pc">&nbsp;		if (getParserConfig().get(BasicParserSettings.VERIFY_URI_SYNTAX)) {</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				new ParsedIRI(uri);</b>
+<b class="nc">&nbsp;			} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;				reportError(e.getMessage(), BasicParserSettings.VERIFY_URI_SYNTAX);</b>
+<b class="nc">&nbsp;				return null;</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="fc">&nbsp;			return valueFactory.createIRI(uri);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			reportFatalError(e);</b>
+<b class="nc">&nbsp;			return null; // required by compiler</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link BNode} or Skolem {@link IRI} object.
+&nbsp;	 *
+&nbsp;	 * @return blank node or skolem IRI
+&nbsp;	 */
+&nbsp;	protected Resource createNode() throws RDFParseException {
+<b class="fc">&nbsp;		ParsedIRI skolem = getCachedSkolemOrigin();</b>
+&nbsp;		try {
+<b class="pc">&nbsp;			if (preserveBNodeIDs() || skolem == null) {</b>
+<b class="fc">&nbsp;				return valueFactory.createBNode();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				String nodeId = valueFactory.createBNode().getID();</b>
+<b class="nc">&nbsp;				String path = &quot;/.well-known/genid/&quot; + nextBNodePrefix + nodeId;</b>
+<b class="nc">&nbsp;				String iri = skolem.resolve(path);</b>
+<b class="nc">&nbsp;				return valueFactory.createIRI(iri);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			reportFatalError(e);</b>
+<b class="nc">&nbsp;			return null; // required by compiler</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link BNode} or Skolem {@link IRI} object for the specified identifier.
+&nbsp;	 *
+&nbsp;	 * @param nodeID node identifier
+&nbsp;	 * @return blank node or skolem IRI
+&nbsp;	 */
+&nbsp;	protected Resource createNode(String nodeID) throws RDFParseException {
+&nbsp;		// If we are preserving blank node ids then we do not prefix them to
+&nbsp;		// make them globally unique
+<b class="pc">&nbsp;		if (preserveBNodeIDs()) {</b>
+<b class="nc">&nbsp;			return valueFactory.createBNode(nodeID);</b>
+&nbsp;		} else {
+&nbsp;			// Prefix the node ID with a unique UUID prefix to reduce
+&nbsp;			// cross-document clashes
+&nbsp;			// This is consistent as long as nextBNodePrefix is not modified
+&nbsp;			// between parser runs
+&nbsp;
+<b class="fc">&nbsp;			String toAppend = nodeID;</b>
+<b class="pc">&nbsp;			if (nodeID.length() &gt; 32) {</b>
+&nbsp;				// we only hash the node ID if it is longer than the hash string
+&nbsp;				// itself would be.
+<b class="nc">&nbsp;				byte[] chars = nodeID.getBytes(StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;				// we use an MD5 hash rather than the node ID itself to get a
+&nbsp;				// fixed-length generated id, rather than
+&nbsp;				// an ever-growing one (see SES-2171)
+<b class="nc">&nbsp;				toAppend = (new HexBinaryAdapter()).marshal(md5.digest(chars));</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			ParsedIRI skolem = getCachedSkolemOrigin();</b>
+<b class="pc">&nbsp;			if (skolem == null) {</b>
+<b class="fc">&nbsp;				return valueFactory.createBNode(&quot;genid-&quot; + nextBNodePrefix + toAppend);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				String path = &quot;/.well-known/genid/&quot; + nextBNodePrefix + toAppend;</b>
+<b class="nc">&nbsp;				String iri = skolem.resolve(path);</b>
+<b class="nc">&nbsp;				return valueFactory.createIRI(iri);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link BNode} object.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	protected BNode createBNode() throws RDFParseException {
+&nbsp;		try {
+<b class="nc">&nbsp;			return valueFactory.createBNode();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			reportFatalError(e);</b>
+<b class="nc">&nbsp;			return null; // required by compiler</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link BNode} object for the specified identifier.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	protected BNode createBNode(String nodeID) throws RDFParseException {
+&nbsp;		// If we are preserving blank node ids then we do not prefix them to
+&nbsp;		// make them globally unique
+<b class="nc">&nbsp;		if (preserveBNodeIDs()) {</b>
+<b class="nc">&nbsp;			return valueFactory.createBNode(nodeID);</b>
+&nbsp;		} else {
+&nbsp;			// Prefix the node ID with a unique UUID prefix to reduce
+&nbsp;			// cross-document clashes
+&nbsp;			// This is consistent as long as nextBNodePrefix is not modified
+&nbsp;			// between parser runs
+&nbsp;
+<b class="nc">&nbsp;			String toAppend = nodeID;</b>
+<b class="nc">&nbsp;			if (nodeID.length() &gt; 32) {</b>
+&nbsp;				// we only hash the node ID if it is longer than the hash string
+&nbsp;				// itself would be.
+<b class="nc">&nbsp;				byte[] chars = nodeID.getBytes(StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;				// we use an MD5 hash rather than the node ID itself to get a
+&nbsp;				// fixed-length generated id, rather than
+&nbsp;				// an ever-growing one (see SES-2171)
+<b class="nc">&nbsp;				toAppend = (new HexBinaryAdapter()).marshal(md5.digest(chars));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return valueFactory.createBNode(&quot;genid-&quot; + nextBNodePrefix + toAppend);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link Literal} object with the supplied parameters.
+&nbsp;	 */
+&nbsp;	protected Literal createLiteral(String label, String lang, IRI datatype) throws RDFParseException {
+<b class="nc">&nbsp;		return RDFParserHelper.createLiteral(label, lang, datatype, getParserConfig(), getParseErrorListener(),</b>
+&nbsp;				valueFactory);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link Literal} object with the supplied parameters, using the lineNo and columnNo to enhance error
+&nbsp;	 * messages or exceptions that may be generated during the creation of the literal.
+&nbsp;	 *
+&nbsp;	 * @see org.eclipse.rdf4j.rio.helpers.RDFParserHelper#createLiteral(String, String, IRI, ParserConfig,
+&nbsp;	 *      ParseErrorListener, ValueFactory, long, long)
+&nbsp;	 */
+&nbsp;	protected Literal createLiteral(String label, String lang, IRI datatype, long lineNo, long columnNo)
+&nbsp;			throws RDFParseException {
+<b class="fc">&nbsp;		return RDFParserHelper.createLiteral(label, lang, datatype, getParserConfig(), getParseErrorListener(),</b>
+&nbsp;				valueFactory, lineNo, columnNo);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link Statement} object with the supplied components.
+&nbsp;	 */
+&nbsp;	protected Statement createStatement(Resource subj, IRI pred, Value obj) throws RDFParseException {
+&nbsp;		try {
+<b class="fc">&nbsp;			return valueFactory.createStatement(subj, pred, obj);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			reportFatalError(e);</b>
+<b class="nc">&nbsp;			return null; // required by compiler</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link Statement} object with the supplied components.
+&nbsp;	 */
+&nbsp;	protected Statement createStatement(Resource subj, IRI pred, Value obj, Resource context) throws RDFParseException {
+&nbsp;		try {
+<b class="fc">&nbsp;			return valueFactory.createStatement(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			reportFatalError(e);</b>
+<b class="nc">&nbsp;			return null; // required by compiler</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports the specified line- and column number to the registered {@link ParseLocationListener}, if any.
+&nbsp;	 */
+&nbsp;	protected void reportLocation(long lineNo, long columnNo) {
+<b class="pc">&nbsp;		if (locationListener != null) {</b>
+<b class="nc">&nbsp;			locationListener.parseLocationUpdate(lineNo, columnNo);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a warning to the registered ParseErrorListener, if any. This method simply calls
+&nbsp;	 * {@link #reportWarning(String, long, long)} supplying &lt;var&gt;-1&lt;/var&gt; for the line- and column number.
+&nbsp;	 */
+&nbsp;	protected void reportWarning(String msg) {
+<b class="nc">&nbsp;		reportWarning(msg, -1, -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a warning with associated line- and column number to the registered ParseErrorListener, if any.
+&nbsp;	 */
+&nbsp;	protected void reportWarning(String msg, long lineNo, long columnNo) {
+<b class="nc">&nbsp;		if (errListener != null) {</b>
+<b class="nc">&nbsp;			errListener.warning(msg, lineNo, columnNo);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	protected void reportError(String msg, RioSetting&lt;Boolean&gt; relevantSetting) throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportError(msg, relevantSetting, getParserConfig(), getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param lineNo          Optional line number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param columnNo        Optional column number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	protected void reportError(String msg, long lineNo, long columnNo, RioSetting&lt;Boolean&gt; relevantSetting)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportError(msg, lineNo, columnNo, relevantSetting, getParserConfig(), getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param e               The exception whose message will be used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	protected void reportError(Exception e, RioSetting&lt;Boolean&gt; relevantSetting) throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportError(e, -1, -1, relevantSetting, getParserConfig(), getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param e               The exception whose message will be used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param lineNo          Optional line number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param columnNo        Optional column number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	protected void reportError(Exception e, long lineNo, long columnNo, RioSetting&lt;Boolean&gt; relevantSetting)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportError(e, lineNo, columnNo, relevantSetting, getParserConfig(), getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param e               The exception whose message will be used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param lineNo          Optional line number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param columnNo        Optional column number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)} .
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	protected void reportError(String msg, Exception e, long lineNo, long columnNo, RioSetting&lt;Boolean&gt; relevantSetting)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportError(e, lineNo, columnNo, relevantSetting, getParserConfig(), getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a &lt;var&gt;ParseException&lt;/var&gt;
+&nbsp;	 * afterwards. This method simply calls {@link #reportFatalError(String, long, long)} supplying &lt;var&gt;-1&lt;/var&gt; for
+&nbsp;	 * the line- and column number.
+&nbsp;	 */
+&nbsp;	protected void reportFatalError(String msg) throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportFatalError(msg, getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
+&nbsp;	 * throws a &lt;var&gt;ParseException&lt;/var&gt; afterwards.
+&nbsp;	 */
+&nbsp;	protected void reportFatalError(String msg, long lineNo, long columnNo) throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportFatalError(msg, lineNo, columnNo, getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a &lt;var&gt;ParseException&lt;/var&gt;
+&nbsp;	 * afterwards. An exception is made for the case where the supplied exception is a {@link RDFParseException}; in
+&nbsp;	 * that case the supplied exception is not wrapped in another ParseException and the error message is not reported
+&nbsp;	 * to the ParseErrorListener, assuming that it has already been reported when the original ParseException was
+&nbsp;	 * thrown.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method simply calls {@link #reportFatalError(Exception, long, long)} supplying &lt;var&gt;-1&lt;/var&gt; for the line-
+&nbsp;	 * and column number.
+&nbsp;	 */
+&nbsp;	protected void reportFatalError(Exception e) throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportFatalError(e, getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
+&nbsp;	 * throws a &lt;var&gt;ParseException&lt;/var&gt; wrapped the supplied exception afterwards. An exception is made for the case
+&nbsp;	 * where the supplied exception is a {@link RDFParseException}; in that case the supplied exception is not wrapped
+&nbsp;	 * in another ParseException and the error message is not reported to the ParseErrorListener, assuming that it has
+&nbsp;	 * already been reported when the original ParseException was thrown.
+&nbsp;	 */
+&nbsp;	protected void reportFatalError(Exception e, long lineNo, long columnNo) throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportFatalError(e, lineNo, columnNo, getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
+&nbsp;	 * throws a &lt;var&gt;ParseException&lt;/var&gt; wrapped the supplied exception afterwards. An exception is made for the case
+&nbsp;	 * where the supplied exception is a {@link RDFParseException}; in that case the supplied exception is not wrapped
+&nbsp;	 * in another ParseException and the error message is not reported to the ParseErrorListener, assuming that it has
+&nbsp;	 * already been reported when the original ParseException was thrown.
+&nbsp;	 */
+&nbsp;	protected void reportFatalError(String message, Exception e, long lineNo, long columnNo) throws RDFParseException {
+<b class="nc">&nbsp;		RDFParserHelper.reportFatalError(message, e, lineNo, columnNo, getParseErrorListener());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String createUniqueBNodePrefix() {
+<b class="fc">&nbsp;		return uniqueIdPrefix + uniqueIdSuffix.incrementAndGet() + &quot;-&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse skolem origin, if set
+&nbsp;	 *
+&nbsp;	 * @return skolem origin or null
+&nbsp;	 */
+&nbsp;	private ParsedIRI getCachedSkolemOrigin() {
+<b class="fc">&nbsp;		String origin = getParserConfig().get(BasicParserSettings.SKOLEMIZE_ORIGIN);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (origin == null || origin.length() == 0) {</b>
+<b class="pc">&nbsp;			if (skolemOrigin != null) {</b>
+<b class="nc">&nbsp;				skolemOrigin = null;</b>
+<b class="nc">&nbsp;				parsedSkolemOrigin = null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (skolemOrigin != null &amp;&amp; origin.equals(skolemOrigin)) {</b>
+<b class="nc">&nbsp;			return parsedSkolemOrigin;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		skolemOrigin = origin;</b>
+<b class="nc">&nbsp;		parsedSkolemOrigin = ParsedIRI.create(origin);</b>
+<b class="nc">&nbsp;		return parsedSkolemOrigin;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

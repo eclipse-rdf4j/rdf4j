@@ -1,0 +1,457 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValidationQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast</a>
+</div>
+
+<h1>Coverage Summary for Class: ValidationQuery (org.eclipse.rdf4j.sail.shacl.ast)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValidationQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/116)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/99)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ValidationQuery$Deactivated</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/116)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/111)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationReportNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+&nbsp;
+<b class="nc">&nbsp;public class ValidationQuery {</b>
+&nbsp;
+&nbsp;	private String query;
+&nbsp;	private ConstraintComponent.Scope scope;
+&nbsp;	private ConstraintComponent.Scope scope_validationReport;
+&nbsp;
+&nbsp;	private final List&lt;StatementMatcher.Variable&gt; variables;
+&nbsp;
+&nbsp;	private int targetIndex;
+&nbsp;	private int valueIndex;
+&nbsp;
+&nbsp;	private boolean propertyShapeWithValue;
+&nbsp;	private boolean propertyShapeWithValue_validationReport;
+&nbsp;
+&nbsp;	private int targetIndex_validationReport;
+&nbsp;	private int valueIndex_validationReport;
+&nbsp;
+&nbsp;	private SourceConstraintComponent constraintComponent;
+&nbsp;	private SourceConstraintComponent constraintComponent_validationReport;
+&nbsp;
+&nbsp;	private Severity severity;
+&nbsp;	private Shape shape;
+&nbsp;
+&nbsp;	public ValidationQuery(String query, List&lt;StatementMatcher.Variable&gt; targets, StatementMatcher.Variable value,
+&nbsp;			ConstraintComponent.Scope scope, SourceConstraintComponent constraintComponent, Severity severity,
+<b class="nc">&nbsp;			Shape shape) {</b>
+<b class="nc">&nbsp;		this.query = query;</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;StatementMatcher.Variable&gt; variables = new ArrayList&lt;&gt;(targets);</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			variables.add(value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.variables = Collections.unmodifiableList(variables);</b>
+<b class="nc">&nbsp;		if (scope == ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			targetIndex = targets.size() - 1;</b>
+<b class="nc">&nbsp;			if (value != null) {</b>
+<b class="nc">&nbsp;				propertyShapeWithValue = true;</b>
+<b class="nc">&nbsp;				valueIndex = variables.size() - 1;</b>
+<b class="nc">&nbsp;				assert constraintComponent == null || constraintComponent.producesValidationResultValue();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				propertyShapeWithValue = false;</b>
+<b class="nc">&nbsp;				valueIndex = variables.size();</b>
+<b class="nc">&nbsp;				assert constraintComponent == null || !constraintComponent.producesValidationResultValue();</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			targetIndex = variables.size() - 1;</b>
+<b class="nc">&nbsp;			valueIndex = variables.size() - 1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.constraintComponent = constraintComponent;</b>
+<b class="nc">&nbsp;		this.severity = severity;</b>
+<b class="nc">&nbsp;		this.shape = shape;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationQuery(String query, ConstraintComponent.Scope scope, List&lt;StatementMatcher.Variable&gt; variables,
+<b class="nc">&nbsp;			int targetIndex, int valueIndex) {</b>
+<b class="nc">&nbsp;		this.query = query;</b>
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.variables = Collections.unmodifiableList(variables);</b>
+<b class="nc">&nbsp;		this.targetIndex = targetIndex;</b>
+<b class="nc">&nbsp;		this.valueIndex = valueIndex;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates the SPARQL UNION of two ValidationQuery objects.
+&nbsp;	 *
+&nbsp;	 * @param a              The first ValidationQuery.
+&nbsp;	 * @param b              The second ValidationQuery.
+&nbsp;	 * @param skipValueCheck Skips checks that the two ValidationQuery object are using the same value. This is useful
+&nbsp;	 *                       if the ValidationQuery is guaranteed to not use the current value because
+&nbsp;	 *                       {@link #shiftToNodeShape()} or {@link #popTargetChain()} will always called on the returned
+&nbsp;	 *                       ValidationQuery
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public static ValidationQuery union(ValidationQuery a, ValidationQuery b, boolean skipValueCheck) {
+<b class="nc">&nbsp;		if (a == Deactivated.instance) {</b>
+<b class="nc">&nbsp;			return b;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (b == Deactivated.instance) {</b>
+<b class="nc">&nbsp;			return a;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		assert a.getTargetVariable(false).equals(b.getTargetVariable(false));</b>
+<b class="nc">&nbsp;		assert skipValueCheck || !a.propertyShapeWithValue || !b.propertyShapeWithValue</b>
+<b class="nc">&nbsp;				|| a.getValueVariable(false).equals(b.getValueVariable(false));</b>
+<b class="nc">&nbsp;		assert a.scope != ConstraintComponent.Scope.nodeShape || a.valueIndex == a.targetIndex;</b>
+<b class="nc">&nbsp;		assert b.scope != ConstraintComponent.Scope.nodeShape || b.valueIndex == b.targetIndex;</b>
+<b class="nc">&nbsp;		assert a.scope == b.scope;</b>
+<b class="nc">&nbsp;		assert a.targetIndex == b.targetIndex;</b>
+<b class="nc">&nbsp;		assert a.valueIndex == b.valueIndex;</b>
+&nbsp;
+<b class="nc">&nbsp;		String unionQuery = &quot;{\n&quot; + a.getQuery() + &quot;\n} UNION {\n&quot; + b.query + &quot;\n}&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;StatementMatcher.Variable&gt; variables = a.variables.size() &gt;= b.variables.size() ? a.variables</b>
+<b class="nc">&nbsp;				: b.variables;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (a.propertyShapeWithValue || a.scope == ConstraintComponent.Scope.nodeShape) {</b>
+<b class="nc">&nbsp;			assert a.variables.size() &gt; a.valueIndex;</b>
+<b class="nc">&nbsp;			return new ValidationQuery(unionQuery, a.scope, variables.subList(0, a.valueIndex + 1), a.targetIndex,</b>
+&nbsp;					a.valueIndex);
+&nbsp;		} else {
+<b class="nc">&nbsp;			assert a.variables.size() &gt;= a.valueIndex;</b>
+<b class="nc">&nbsp;			return new ValidationQuery(unionQuery, a.scope, a.variables.subList(0, a.valueIndex), a.targetIndex,</b>
+&nbsp;					a.valueIndex);
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getQuery() {
+<b class="nc">&nbsp;		return query;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setQuery(String query) {
+<b class="nc">&nbsp;		this.query = query;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public PlanNode getValidationPlan(SailConnection baseConnection, Resource[] dataGraph,
+&nbsp;			Resource[] shapesGraphs) {
+&nbsp;
+<b class="nc">&nbsp;		assert query != null;</b>
+<b class="nc">&nbsp;		assert shape != null;</b>
+<b class="nc">&nbsp;		assert scope_validationReport != null;</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder fullQuery = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		fullQuery.append(&quot;select distinct &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		fullQuery.append(&quot;?&quot;).append(getTargetVariable(true)).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		if (scope_validationReport == ConstraintComponent.Scope.propertyShape</b>
+&nbsp;				&amp;&amp; propertyShapeWithValue_validationReport) {
+<b class="nc">&nbsp;			fullQuery.append(&quot;?&quot;).append(getValueVariable(true)).append(&quot; &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		fullQuery.append(&quot;{\n&quot;).append(query).append(&quot;\n}&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		Select select = new Select(baseConnection, fullQuery.toString(), bindings -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;			if (scope_validationReport == ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;				if (propertyShapeWithValue_validationReport) {</b>
+<b class="nc">&nbsp;					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),</b>
+<b class="nc">&nbsp;							bindings.getValue(getValueVariable(true)),</b>
+&nbsp;							scope_validationReport, true, dataGraph);
+&nbsp;				} else {
+<b class="nc">&nbsp;					return new ValidationTuple(bindings.getValue(getTargetVariable(true)),</b>
+&nbsp;							scope_validationReport, false, dataGraph);
+&nbsp;				}
+&nbsp;
+&nbsp;			} else {
+<b class="nc">&nbsp;				return new ValidationTuple(bindings.getValue(getTargetVariable(true)),</b>
+&nbsp;						scope_validationReport, true, dataGraph);
+&nbsp;			}
+&nbsp;
+&nbsp;		}, dataGraph);
+&nbsp;
+<b class="nc">&nbsp;		return new ValidationReportNode(select, t -&gt; {</b>
+<b class="nc">&nbsp;			return new ValidationResult(t.getActiveTarget(), t.getValue(), shape,</b>
+<b class="nc">&nbsp;					constraintComponent_validationReport, severity, t.getScope(), t.getContexts(), shapesGraphs);</b>
+&nbsp;		});
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getValueVariable(boolean forValidationReport) {
+<b class="nc">&nbsp;		if (forValidationReport) {</b>
+<b class="nc">&nbsp;			return variables.get(valueIndex_validationReport).name;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		assert scope != ConstraintComponent.Scope.propertyShape || propertyShapeWithValue;</b>
+<b class="nc">&nbsp;		return variables.get(valueIndex).name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getTargetVariable(boolean forValidationReport) {
+<b class="nc">&nbsp;		if (forValidationReport) {</b>
+<b class="nc">&nbsp;			return variables.get(targetIndex_validationReport).name;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return variables.get(targetIndex).name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationQuery withSeverity(Severity severity) {
+<b class="nc">&nbsp;		this.severity = severity;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationQuery withShape(Shape shape) {
+<b class="nc">&nbsp;		this.shape = shape;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void popTargetChain() {
+<b class="nc">&nbsp;		assert scope == ConstraintComponent.Scope.propertyShape;</b>
+<b class="nc">&nbsp;		this.propertyShapeWithValue = true;</b>
+<b class="nc">&nbsp;		targetIndex--;</b>
+<b class="nc">&nbsp;		valueIndex--;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void shiftToNodeShape() {
+<b class="nc">&nbsp;		assert this.scope == ConstraintComponent.Scope.propertyShape;</b>
+<b class="nc">&nbsp;		this.scope = ConstraintComponent.Scope.nodeShape;</b>
+<b class="nc">&nbsp;		this.propertyShapeWithValue = false;</b>
+<b class="nc">&nbsp;		valueIndex--;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void shiftToPropertyShape() {
+<b class="nc">&nbsp;		assert this.scope == ConstraintComponent.Scope.nodeShape;</b>
+<b class="nc">&nbsp;		this.scope = ConstraintComponent.Scope.propertyShape;</b>
+<b class="nc">&nbsp;		this.propertyShapeWithValue = true;</b>
+<b class="nc">&nbsp;		targetIndex--;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationQuery withConstraintComponent(SourceConstraintComponent constraintComponent) {
+<b class="nc">&nbsp;		this.constraintComponent = constraintComponent;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void makeCurrentStateValidationReport() {
+<b class="nc">&nbsp;		valueIndex_validationReport = valueIndex;</b>
+<b class="nc">&nbsp;		targetIndex_validationReport = targetIndex;</b>
+<b class="nc">&nbsp;		scope_validationReport = scope;</b>
+<b class="nc">&nbsp;		constraintComponent_validationReport = constraintComponent;</b>
+<b class="nc">&nbsp;		propertyShapeWithValue_validationReport = propertyShapeWithValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// used for sh:deactivated
+&nbsp;	public static class Deactivated extends ValidationQuery {
+&nbsp;
+<b class="nc">&nbsp;		private static final Deactivated instance = new Deactivated();</b>
+&nbsp;
+&nbsp;		private Deactivated() {
+<b class="nc">&nbsp;			super(&quot;&quot;, Collections.emptyList(), null, null, null, null, null);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public static Deactivated getInstance() {
+<b class="nc">&nbsp;			return instance;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void setQuery(String query) {
+<b class="nc">&nbsp;			throw new IllegalStateException();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public PlanNode getValidationPlan(SailConnection baseConnection, Resource[] dataGraph,
+&nbsp;				Resource[] shapesGraphs) {
+<b class="nc">&nbsp;			return EmptyNode.getInstance();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ValidationQuery withSeverity(Severity severity) {
+<b class="nc">&nbsp;			return this;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ValidationQuery withShape(Shape shape) {
+<b class="nc">&nbsp;			return this;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void popTargetChain() {
+&nbsp;			// no-op;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void shiftToNodeShape() {
+&nbsp;			// no-op;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void shiftToPropertyShape() {
+&nbsp;			// no-op;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ValidationQuery withConstraintComponent(SourceConstraintComponent constraintComponent) {
+<b class="nc">&nbsp;			return this;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void makeCurrentStateValidationReport() {
+&nbsp;			// no-op;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

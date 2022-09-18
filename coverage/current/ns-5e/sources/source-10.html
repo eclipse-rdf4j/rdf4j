@@ -1,0 +1,264 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Compare</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: Compare (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Compare</td>
+<td class="coverageStat">
+  <span class="percent">
+    72.7%
+  </span>
+  <span class="absValue">
+    (8/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (6/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    81.2%
+  </span>
+  <span class="absValue">
+    (13/16)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Compare$CompareOp</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90%
+  </span>
+  <span class="absValue">
+    (9/10)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    73.3%
+  </span>
+  <span class="absValue">
+    (11/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (6/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    84.6%
+  </span>
+  <span class="absValue">
+    (22/26)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;/**
+&nbsp; * A comparison between two values.
+&nbsp; */
+<b class="fc">&nbsp;public class Compare extends BinaryValueOperator {</b>
+&nbsp;
+&nbsp;	/*---------------*
+&nbsp;	 * enum Operator *
+&nbsp;	 *---------------*/
+&nbsp;
+<b class="fc">&nbsp;	public enum CompareOp {</b>
+&nbsp;		/** equal to */
+<b class="fc">&nbsp;		EQ(&quot;=&quot;),</b>
+&nbsp;
+&nbsp;		/** not equal to */
+<b class="fc">&nbsp;		NE(&quot;!=&quot;),</b>
+&nbsp;
+&nbsp;		/** lower than */
+<b class="fc">&nbsp;		LT(&quot;&lt;&quot;),</b>
+&nbsp;
+&nbsp;		/** lower than or equal to */
+<b class="fc">&nbsp;		LE(&quot;&lt;=&quot;),</b>
+&nbsp;
+&nbsp;		/** greater than or equal to */
+<b class="fc">&nbsp;		GE(&quot;&gt;=&quot;),</b>
+&nbsp;
+&nbsp;		/** greater than */
+<b class="fc">&nbsp;		GT(&quot;&gt;&quot;);</b>
+&nbsp;
+&nbsp;		private final String symbol;
+&nbsp;
+<b class="fc">&nbsp;		CompareOp(String symbol) {</b>
+<b class="fc">&nbsp;			this.symbol = symbol;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public String getSymbol() {
+<b class="nc">&nbsp;			return symbol;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private CompareOp operator;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	public Compare() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Compare(ValueExpr leftArg, ValueExpr rightArg) {
+<b class="nc">&nbsp;		this(leftArg, rightArg, CompareOp.EQ);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Compare(ValueExpr leftArg, ValueExpr rightArg, CompareOp operator) {
+<b class="fc">&nbsp;		super(leftArg, rightArg);</b>
+<b class="fc">&nbsp;		setOperator(operator);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public CompareOp getOperator() {
+<b class="fc">&nbsp;		return operator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setOperator(CompareOp operator) {
+<b class="pc">&nbsp;		assert operator != null : &quot;operator must not be null&quot;;</b>
+<b class="fc">&nbsp;		this.operator = operator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		visitor.meet(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getSignature() {
+<b class="nc">&nbsp;		return super.getSignature() + &quot; (&quot; + operator.getSymbol() + &quot;)&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="fc">&nbsp;		if (other instanceof Compare &amp;&amp; super.equals(other)) {</b>
+<b class="fc">&nbsp;			Compare o = (Compare) other;</b>
+<b class="fc">&nbsp;			return operator.equals(o.getOperator());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="fc">&nbsp;		return super.hashCode() ^ operator.hashCode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Compare clone() {
+<b class="fc">&nbsp;		return (Compare) super.clone();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,480 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TripleSourceBase</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: TripleSourceBase (org.eclipse.rdf4j.federated.evaluation)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TripleSourceBase</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/90)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TripleSourceBase$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TripleSourceBase$ConnectionOperation</td>
+  </tr>
+  <tr>
+    <td class="name">TripleSourceBase$ResultHolder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/94)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation;
+&nbsp;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringInsertBindingsIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.GraphToBindingSetConversionIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
+&nbsp;import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
+&nbsp;import org.eclipse.rdf4j.federated.monitoring.Monitoring;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryType;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;public abstract class TripleSourceBase implements TripleSource {
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(TripleSourceBase.class);</b>
+&nbsp;
+&nbsp;	protected final FederationContext federationContext;
+&nbsp;	protected final Monitoring monitoringService;
+&nbsp;	protected final Endpoint endpoint;
+&nbsp;
+<b class="nc">&nbsp;	public TripleSourceBase(FederationContext federationContext, Endpoint endpoint) {</b>
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+<b class="nc">&nbsp;		this.monitoringService = federationContext.getMonitoringService();</b>
+<b class="nc">&nbsp;		this.endpoint = endpoint;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(
+&nbsp;			String preparedQuery, BindingSet queryBindings, QueryType queryType, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return withConnection((conn, resultHolder) -&gt; {</b>
+<b class="nc">&nbsp;			final String baseURI = queryInfo.getBaseURI();</b>
+<b class="nc">&nbsp;			switch (queryType) {</b>
+&nbsp;			case SELECT:
+<b class="nc">&nbsp;				monitorRemoteRequest();</b>
+<b class="nc">&nbsp;				TupleQuery tQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);</b>
+<b class="nc">&nbsp;				applyBindings(tQuery, queryBindings);</b>
+<b class="nc">&nbsp;				applyMaxExecutionTimeUpperBound(tQuery);</b>
+<b class="nc">&nbsp;				configureInference(tQuery, queryInfo);</b>
+<b class="nc">&nbsp;				if (queryInfo.getResultHandler().isPresent()) {</b>
+&nbsp;					// pass through result to configured handler, and return an empty iteration as marker result
+<b class="nc">&nbsp;					tQuery.evaluate(queryInfo.getResultHandler().get());</b>
+<b class="nc">&nbsp;					resultHolder.set(new EmptyIteration&lt;&gt;());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					resultHolder.set(tQuery.evaluate());</b>
+&nbsp;				}
+&nbsp;				return;
+&nbsp;			case CONSTRUCT:
+<b class="nc">&nbsp;				monitorRemoteRequest();</b>
+<b class="nc">&nbsp;				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);</b>
+<b class="nc">&nbsp;				applyBindings(gQuery, queryBindings);</b>
+<b class="nc">&nbsp;				applyMaxExecutionTimeUpperBound(gQuery);</b>
+<b class="nc">&nbsp;				configureInference(gQuery, queryInfo);</b>
+<b class="nc">&nbsp;				resultHolder.set(new GraphToBindingSetConversionIteration(gQuery.evaluate()));</b>
+&nbsp;				return;
+&nbsp;			case ASK:
+<b class="nc">&nbsp;				monitorRemoteRequest();</b>
+&nbsp;				boolean hasResults;
+<b class="nc">&nbsp;				try (RepositoryConnection _conn = conn) {</b>
+<b class="nc">&nbsp;					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);</b>
+<b class="nc">&nbsp;					applyBindings(bQuery, queryBindings);</b>
+<b class="nc">&nbsp;					applyMaxExecutionTimeUpperBound(bQuery);</b>
+<b class="nc">&nbsp;					configureInference(bQuery, queryInfo);</b>
+<b class="nc">&nbsp;					hasResults = bQuery.evaluate();</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				resultHolder.set(booleanToBindingSetIteration(hasResults));</b>
+&nbsp;				return;
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(&quot;Operation not supported for query type &quot; + queryType);</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private void applyBindings(Operation operation, BindingSet queryBindings) {
+<b class="nc">&nbsp;		if (queryBindings == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		for (Binding b : queryBindings) {</b>
+<b class="nc">&nbsp;			operation.setBinding(b.getName(), b.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(
+&nbsp;			String preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return withConnection((conn, resultHolder) -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);</b>
+<b class="nc">&nbsp;			applyMaxExecutionTimeUpperBound(query);</b>
+<b class="nc">&nbsp;			configureInference(query, queryInfo);</b>
+&nbsp;
+&nbsp;			// evaluate the query
+<b class="nc">&nbsp;			monitorRemoteRequest();</b>
+<b class="nc">&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res = query.evaluate();</b>
+<b class="nc">&nbsp;			resultHolder.set(res);</b>
+&nbsp;
+&nbsp;			// apply filter and/or insert original bindings
+<b class="nc">&nbsp;			if (filterExpr != null) {</b>
+<b class="nc">&nbsp;				if (bindings.size() &gt; 0) {</b>
+<b class="nc">&nbsp;					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,</b>
+<b class="nc">&nbsp;							queryInfo.getStrategy());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (!res.hasNext()) {</b>
+<b class="nc">&nbsp;					Iterations.closeCloseable(res);</b>
+<b class="nc">&nbsp;					conn.close();</b>
+<b class="nc">&nbsp;					resultHolder.set(new EmptyIteration&lt;&gt;());</b>
+&nbsp;					return;
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (bindings.size() &gt; 0) {</b>
+<b class="nc">&nbsp;				res = new InsertBindingsIteration(res, bindings);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			resultHolder.set(new ConsumingIteration(res, federationContext.getConfig().getConsumingIterationMax()));</b>
+&nbsp;
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatements(Resource subj,
+&nbsp;			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		try (RepositoryConnection conn = endpoint.getConnection()) {</b>
+<b class="nc">&nbsp;			return conn.hasStatement(subj, pred, obj, queryInfo.getIncludeInferred(), contexts);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatements(ExclusiveTupleExpr group, BindingSet bindings)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		monitorRemoteRequest();</b>
+<b class="nc">&nbsp;		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings, group.getQueryInfo().getDataset());</b>
+<b class="nc">&nbsp;		try (RepositoryConnection conn = endpoint.getConnection()) {</b>
+<b class="nc">&nbsp;			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedAskQuery);</b>
+<b class="nc">&nbsp;			configureInference(query, group.getQueryInfo());</b>
+<b class="nc">&nbsp;			applyMaxExecutionTimeUpperBound(query);</b>
+<b class="nc">&nbsp;			return query.evaluate();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void monitorRemoteRequest() {
+<b class="nc">&nbsp;		monitoringService.monitorRemoteRequest(endpoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; booleanToBindingSetIteration(boolean hasResult) {
+<b class="nc">&nbsp;		if (hasResult) {</b>
+<b class="nc">&nbsp;			return new SingleBindingSetIteration(EmptyBindingSet.getInstance());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new EmptyIteration&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set includeInferred depending on {@link QueryInfo#getIncludeInferred()}
+&nbsp;	 *
+&nbsp;	 * @param query
+&nbsp;	 * @param queryInfo
+&nbsp;	 */
+&nbsp;	protected void configureInference(Query query, QueryInfo queryInfo) {
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			query.setIncludeInferred(queryInfo.getIncludeInferred());</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;Failed to set include inferred: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			log.trace(&quot;Details:&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Apply an upper bound of the maximum execution time using
+&nbsp;	 * {@link FedXUtil#applyMaxQueryExecutionTime(Operation, FederationContext)}.
+&nbsp;	 *
+&nbsp;	 * @param operation the operation
+&nbsp;	 */
+&nbsp;	protected void applyMaxExecutionTimeUpperBound(Operation operation) {
+<b class="nc">&nbsp;		FedXUtil.applyMaxQueryExecutionTime(operation, federationContext);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T&gt; CloseableIteration&lt;T, QueryEvaluationException&gt; closeConn(RepositoryConnection dependentConn,
+&nbsp;			CloseableIteration&lt;T, QueryEvaluationException&gt; inner) {
+<b class="nc">&nbsp;		return new CloseDependentConnectionIteration&lt;&gt;(inner, dependentConn);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience method to perform an operation on a {@link RepositoryConnection}. This method takes care for closing
+&nbsp;	 * resources as well error handling. The resulting iteration has to be supplied to the {@link ResultHolder}.
+&nbsp;	 *
+&nbsp;	 * @param operation the {@link ConnectionOperation}
+&nbsp;	 * @return the resulting iteration
+&nbsp;	 */
+&nbsp;	protected &lt;T&gt; CloseableIteration&lt;T, QueryEvaluationException&gt; withConnection(ConnectionOperation&lt;T&gt; operation) {
+&nbsp;
+<b class="nc">&nbsp;		ResultHolder&lt;T&gt; resultHolder = new ResultHolder&lt;&gt;();</b>
+<b class="nc">&nbsp;		RepositoryConnection conn = endpoint.getConnection();</b>
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			operation.perform(conn, resultHolder);</b>
+&nbsp;
+<b class="nc">&nbsp;			CloseableIteration&lt;T, QueryEvaluationException&gt; res = resultHolder.get();</b>
+&nbsp;
+&nbsp;			// do not wrap Empty and Pass-through Iterations
+<b class="nc">&nbsp;			if (res instanceof EmptyIteration) {</b>
+<b class="nc">&nbsp;				conn.close();</b>
+<b class="nc">&nbsp;				return res;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return closeConn(conn, res);</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+&nbsp;			// handle all other exception case
+<b class="nc">&nbsp;			Iterations.closeCloseable(resultHolder.get());</b>
+<b class="nc">&nbsp;			conn.close();</b>
+<b class="nc">&nbsp;			throw ExceptionUtil.traceExceptionSource(endpoint, t, &quot;&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Interface defining the operation to be perform on the connection
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Typical pattern
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * CloseableIteration&amp;lt;BindingSet, QueryEvaluationException&amp;gt; res = withConnection((conn, resultHolder) -&gt; {
+&nbsp;	 *  	// do something with conn
+&nbsp;	 * 		resultHolder.set(...)
+&nbsp;	 * });
+&nbsp;	 *
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 *
+&nbsp;	 * @param &lt;T&gt;
+&nbsp;	 * @see TripleSourceBase#withConnection(ConnectionOperation)
+&nbsp;	 */
+&nbsp;	protected interface ConnectionOperation&lt;T&gt; {
+&nbsp;		void perform(RepositoryConnection conn, ResultHolder&lt;T&gt; resultHolder);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Holder for a result iteration to be used with {@link TripleSourceBase#withConnection(ConnectionOperation)}. Note
+&nbsp;	 * that the result holder should also be set with temporary results to properly allow error handling.
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 *
+&nbsp;	 * @param &lt;T&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	protected static class ResultHolder&lt;T&gt; implements Supplier&lt;CloseableIteration&lt;T, QueryEvaluationException&gt;&gt; {</b>
+&nbsp;
+&nbsp;		protected CloseableIteration&lt;T, QueryEvaluationException&gt; result;
+&nbsp;
+&nbsp;		public void set(CloseableIteration&lt;T, QueryEvaluationException&gt; result) {
+<b class="nc">&nbsp;			this.result = result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;T, QueryEvaluationException&gt; get() {
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

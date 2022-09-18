@@ -1,0 +1,233 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositorySPARQLComplianceTestSuite</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositorySPARQLComplianceTestSuite (org.eclipse.rdf4j.testsuite.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositorySPARQLComplianceTestSuite</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (4/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    58.3%
+  </span>
+  <span class="absValue">
+    (7/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    94.4%
+  </span>
+  <span class="absValue">
+    (17/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.sparql;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.file.Files;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.io.FileUtil;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryFactory;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.AggregateTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.ArbitraryLengthPathTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.BasicTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.BindTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.BuiltinFunctionTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.ConstructTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.SubselectTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.UnionTest;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.tests.ValuesTest;
+&nbsp;import org.junit.AfterClass;
+&nbsp;import org.junit.BeforeClass;
+&nbsp;import org.junit.runner.RunWith;
+&nbsp;import org.junit.runners.Suite;
+&nbsp;import org.junit.runners.Suite.SuiteClasses;
+&nbsp;
+&nbsp;/**
+&nbsp; * A suite of custom compliance tests on SPARQL query functionality for RDF4J Repositories.
+&nbsp; * &lt;p&gt;
+&nbsp; * To use this test suite, extend the abstract suite class, making sure that the correct {@link RepositoryFactory} gets
+&nbsp; * set on initialization, and torn down after. For example, to run the suite against an RDF4J Memory Store:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &lt;code&gt;
+&nbsp; * 	&amp;#64;BeforeClass
+&nbsp;	public static void setUpFactory() throws Exception {
+&nbsp;		setRepositoryFactory(new SailRepositoryFactory() {
+&nbsp;			&amp;#64;Override
+&nbsp;			public RepositoryImplConfig getConfig() {
+&nbsp;				return new SailRepositoryConfig(new MemoryStoreFactory().getConfig());
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	&amp;#64;AfterClass
+&nbsp;	public static void tearDownFactory() throws Exception {
+&nbsp;		setRepositoryFactory(null);
+&nbsp;	}
+&nbsp; * &lt;/code&gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @implNote currently implemented as an abstract JUnit-4 suite. This suite is marked Experimental as we may want to
+&nbsp; *           make further improvements to its setup (including migrating to JUnit 5 when its suite support matures) in
+&nbsp; *           future minor releases.
+&nbsp; */
+&nbsp;@RunWith(Suite.class)
+&nbsp;@SuiteClasses({ AggregateTest.class, ArbitraryLengthPathTest.class, BasicTest.class, BindTest.class,
+&nbsp;		BuiltinFunctionTest.class, ConstructTest.class, DefaultGraphTest.class, DescribeTest.class, GroupByTest.class,
+&nbsp;		InTest.class, OptionalTest.class, PropertyPathTest.class, SubselectTest.class, UnionTest.class,
+&nbsp;		ValuesTest.class, OrderByTest.class })
+&nbsp;@Experimental
+<b class="nc">&nbsp;public abstract class RepositorySPARQLComplianceTestSuite {</b>
+&nbsp;	@BeforeClass
+&nbsp;	public static void setUpClass() throws Exception {
+<b class="fc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterClass
+&nbsp;	public static void tearDownClass() throws Exception {
+<b class="fc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;false&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static RepositoryFactory factory;
+&nbsp;
+&nbsp;	private static File dataDir;
+&nbsp;
+&nbsp;	public static void setRepositoryFactory(RepositoryFactory factory) throws IOException {
+<b class="pc">&nbsp;		if (dataDir != null &amp;&amp; dataDir.isDirectory()) {</b>
+<b class="fc">&nbsp;			FileUtil.deleteDir(dataDir);</b>
+<b class="fc">&nbsp;			dataDir = null;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		RepositorySPARQLComplianceTestSuite.factory = factory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Repository getEmptyInitializedRepository(Class&lt;?&gt; caller) throws RDF4JException, IOException {
+<b class="pc">&nbsp;		if (dataDir != null &amp;&amp; dataDir.isDirectory()) {</b>
+<b class="fc">&nbsp;			FileUtil.deleteDir(dataDir);</b>
+<b class="fc">&nbsp;			dataDir = null;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		dataDir = Files.createTempDirectory(caller.getSimpleName()).toFile();</b>
+<b class="fc">&nbsp;		Repository repository = factory.getRepository(factory.getConfig());</b>
+<b class="fc">&nbsp;		repository.setDataDir(dataDir);</b>
+<b class="pc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="fc">&nbsp;			con.clear();</b>
+<b class="fc">&nbsp;			con.clearNamespaces();</b>
+<b class="pc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return repository;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

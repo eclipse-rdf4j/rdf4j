@@ -1,0 +1,233 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SynchronousBoundJoin</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.join</a>
+</div>
+
+<h1>Coverage Summary for Class: SynchronousBoundJoin (org.eclipse.rdf4j.federated.evaluation.join)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SynchronousBoundJoin</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.join;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Execute the nested loop join in a synchronous fashion, using grouped requests, i.e. group bindings into one SPARQL
+&nbsp; * request using the UNION operator
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class SynchronousBoundJoin extends SynchronousJoin {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(SynchronousBoundJoin.class);</b>
+&nbsp;
+&nbsp;	public SynchronousBoundJoin(FederationEvalStrategy strategy,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; leftIter,
+&nbsp;			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		super(strategy, leftIter, rightArg, bindings, queryInfo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleBindings() throws Exception {
+&nbsp;
+&nbsp;		// XXX use something else as second check, e.g. an empty interface
+<b class="nc">&nbsp;		if (!((rightArg instanceof StatementPattern))) {</b>
+<b class="nc">&nbsp;			log.warn(</b>
+&nbsp;					&quot;Right argument is not a StatementPattern. Fallback on SynchronousJoin implementation: &quot;
+<b class="nc">&nbsp;							+ rightArg.getClass().getCanonicalName());</b>
+<b class="nc">&nbsp;			super.handleBindings(); // fallback</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int nBindingsCfg = this.queryInfo.getFederationContext().getConfig().getBoundJoinBlockSize();</b>
+<b class="nc">&nbsp;		int totalBindings = 0; // the total number of bindings</b>
+<b class="nc">&nbsp;		StatementTupleExpr stmt = (StatementTupleExpr) rightArg;</b>
+&nbsp;
+&nbsp;		// optimization: if there is no free variable, we can avoid the bound-join
+&nbsp;		// first item is always sent in a non-bound way
+&nbsp;
+<b class="nc">&nbsp;		boolean hasFreeVars = true;</b>
+<b class="nc">&nbsp;		if (!isClosed() &amp;&amp; leftIter.hasNext()) {</b>
+<b class="nc">&nbsp;			BindingSet b = leftIter.next();</b>
+<b class="nc">&nbsp;			totalBindings++;</b>
+<b class="nc">&nbsp;			hasFreeVars = stmt.hasFreeVarsFor(b);</b>
+<b class="nc">&nbsp;			if (!hasFreeVars) {</b>
+<b class="nc">&nbsp;				stmt = new CheckStatementPattern(stmt, queryInfo);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			addResult(strategy.evaluate(stmt, b));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		int nBindings;
+&nbsp;		List&lt;BindingSet&gt; bindings;
+<b class="nc">&nbsp;		while (!isClosed() &amp;&amp; leftIter.hasNext()) {</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * XXX idea:
+&nbsp;			 *
+&nbsp;			 * make nBindings dependent on the number of intermediate results of the left argument.
+&nbsp;			 *
+&nbsp;			 * If many intermediate results, increase the number of bindings. This will result in less remote SPARQL
+&nbsp;			 * requests.
+&nbsp;			 *
+&nbsp;			 */
+<b class="nc">&nbsp;			if (totalBindings &gt; 10) {</b>
+<b class="nc">&nbsp;				nBindings = nBindingsCfg;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				nBindings = 3;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			bindings = new ArrayList&lt;&gt;(nBindings);</b>
+&nbsp;
+<b class="nc">&nbsp;			int count = 0;</b>
+<b class="nc">&nbsp;			while (!isClosed() &amp;&amp; count &lt; nBindings &amp;&amp; leftIter.hasNext()) {</b>
+<b class="nc">&nbsp;				bindings.add(leftIter.next());</b>
+<b class="nc">&nbsp;				count++;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			totalBindings += count;</b>
+<b class="nc">&nbsp;			if (isClosed())</b>
+&nbsp;				return;
+<b class="nc">&nbsp;			if (hasFreeVars) {</b>
+<b class="nc">&nbsp;				addResult(strategy.evaluateBoundJoinStatementPattern(stmt, bindings));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				addResult(strategy.evaluateGroupedCheck((CheckStatementPattern) stmt, bindings));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;JoinStats: left iter of &quot; + getDisplayId() + &quot; had &quot; + totalBindings + &quot; results.&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

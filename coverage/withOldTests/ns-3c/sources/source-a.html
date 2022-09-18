@@ -1,0 +1,395 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementGroupAndJoinOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementGroupAndJoinOptimizer (org.eclipse.rdf4j.federated.optimizer)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementGroupAndJoinOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/100)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.optimizer;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.EmptyNJoin;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.EmptyResult;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NJoin;
+&nbsp;import org.eclipse.rdf4j.federated.exception.OptimizationException;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Optimizer with the following tasks:
+&nbsp; *
+&nbsp; * 1. Group {@link ExclusiveStatement} into {@link ExclusiveGroup} 2. Adjust the join order using
+&nbsp; * {@link DefaultFedXCostModel}
+&nbsp; *
+&nbsp; *
+&nbsp; * @author as
+&nbsp; */
+&nbsp;public class StatementGroupAndJoinOptimizer extends AbstractSimpleQueryModelVisitor&lt;OptimizationException&gt;
+&nbsp;		implements FedXOptimizer {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(StatementGroupAndJoinOptimizer.class);</b>
+&nbsp;
+&nbsp;	protected final QueryInfo queryInfo;
+&nbsp;
+&nbsp;	private final FedXCostModel costModel;
+&nbsp;
+&nbsp;	public StatementGroupAndJoinOptimizer(QueryInfo queryInfo, FedXCostModel costModel) {
+<b class="nc">&nbsp;		super(true);</b>
+<b class="nc">&nbsp;		this.queryInfo = queryInfo;</b>
+<b class="nc">&nbsp;		this.costModel = costModel;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr) {
+<b class="nc">&nbsp;		tupleExpr.visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Service tupleExpr) {
+&nbsp;		// stop traversal
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meetOther(QueryModelNode node) {
+<b class="nc">&nbsp;		if (node instanceof NJoin) {</b>
+<b class="nc">&nbsp;			super.meetOther(node); // depth first</b>
+<b class="nc">&nbsp;			meetNJoin((NJoin) node);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.meetOther(node);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void meetNJoin(NJoin node) {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;TupleExpr&gt; args = node.getArgs();</b>
+&nbsp;
+&nbsp;		// form groups
+<b class="nc">&nbsp;		args = formGroups(args);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (args.isEmpty()) {</b>
+<b class="nc">&nbsp;			node.replaceWith(new EmptyNJoin(node, queryInfo));</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// if the join args could be reduced to just one, e.g. ExclusiveGroup
+&nbsp;		// we can safely replace the join node
+<b class="nc">&nbsp;		if (args.size() == 1) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;Join arguments could be reduced to a single argument, replacing join node.&quot;);</b>
+<b class="nc">&nbsp;			node.replaceWith(args.get(0));</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// optimize the join order
+<b class="nc">&nbsp;		args = optimizeJoinOrder(args);</b>
+&nbsp;
+&nbsp;		// exchange the node
+<b class="nc">&nbsp;		NJoin newNode = new NJoin(args, queryInfo);</b>
+<b class="nc">&nbsp;		node.replaceWith(newNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Group {@link ExclusiveStatement}s having the same source into an {@link ExclusiveGroup}.
+&nbsp;	 *
+&nbsp;	 * @param originalArgs
+&nbsp;	 * @return the new (potentially grouped) join arguments. If empty, the join will not produce any results.
+&nbsp;	 */
+&nbsp;	protected List&lt;TupleExpr&gt; formGroups(List&lt;TupleExpr&gt; originalArgs) {
+&nbsp;
+<b class="nc">&nbsp;		LinkedList&lt;TupleExpr&gt; newArgs = new LinkedList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		LinkedList&lt;TupleExpr&gt; argsCopy = new LinkedList&lt;&gt;(originalArgs);</b>
+<b class="nc">&nbsp;		while (!argsCopy.isEmpty()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleExpr t = argsCopy.removeFirst();</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * If one of the join arguments cannot produce results, the whole join expression does not produce results.
+&nbsp;			 * =&gt; return an null as marker to replace with empty join
+&nbsp;			 */
+<b class="nc">&nbsp;			if (t instanceof EmptyResult) {</b>
+<b class="nc">&nbsp;				return Collections.emptyList();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * for (existing) exclusive groups (e.g. created by SERVICE clauses) add potential ExclusiveTupleExpr with
+&nbsp;			 * the same source to the group
+&nbsp;			 */
+<b class="nc">&nbsp;			else if (t instanceof ExclusiveGroup) {</b>
+&nbsp;
+<b class="nc">&nbsp;				ExclusiveGroup current = (ExclusiveGroup) t;</b>
+&nbsp;
+<b class="nc">&nbsp;				List&lt;ExclusiveTupleExpr&gt; l = null;</b>
+<b class="nc">&nbsp;				for (TupleExpr te : argsCopy) {</b>
+&nbsp;
+&nbsp;					/*
+&nbsp;					 * in the remaining join args find exclusive statements / expressions having the same source, and
+&nbsp;					 * add to a list which is later used to form an exclusive group
+&nbsp;					 */
+<b class="nc">&nbsp;					if (te instanceof ExclusiveTupleExpr) {</b>
+<b class="nc">&nbsp;						ExclusiveTupleExpr check = (ExclusiveTupleExpr) te;</b>
+<b class="nc">&nbsp;						if (check.getOwner().equals(current.getOwner())) {</b>
+<b class="nc">&nbsp;							if (l == null) {</b>
+<b class="nc">&nbsp;								l = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;								l.addAll(current.getExclusiveExpressions());</b>
+&nbsp;							}
+<b class="nc">&nbsp;							if (check instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;								l.addAll((((ExclusiveGroup) check).getExclusiveExpressions()));</b>
+&nbsp;							} else {
+<b class="nc">&nbsp;								l.add(check);</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+&nbsp;				// check if we have a modification, otherwise add existing node
+<b class="nc">&nbsp;				if (l != null) {</b>
+<b class="nc">&nbsp;					argsCopy.removeAll(l);</b>
+<b class="nc">&nbsp;					argsCopy.remove(current);</b>
+<b class="nc">&nbsp;					newArgs.add(new ExclusiveGroup(l, current.getOwner(), queryInfo));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					newArgs.add(current);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * for exclusive statements find those belonging to the same source (if any) and form exclusive group
+&nbsp;			 */
+<b class="nc">&nbsp;			else if (t instanceof ExclusiveTupleExpr) {</b>
+<b class="nc">&nbsp;				ExclusiveTupleExpr current = (ExclusiveTupleExpr) t;</b>
+&nbsp;
+<b class="nc">&nbsp;				List&lt;ExclusiveTupleExpr&gt; l = null;</b>
+<b class="nc">&nbsp;				List&lt;ExclusiveGroup&gt; toRemoveFromArgs = null; // contains exclusive groups have to be removed</b>
+<b class="nc">&nbsp;				for (TupleExpr te : argsCopy) {</b>
+&nbsp;					/*
+&nbsp;					 * scan for exclusive groups having the same owner and flatten
+&nbsp;					 */
+<b class="nc">&nbsp;					if (te instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;						ExclusiveGroup check = (ExclusiveGroup) te;</b>
+<b class="nc">&nbsp;						if (check.getOwner().equals(current.getOwner())) {</b>
+<b class="nc">&nbsp;							if (l == null) {</b>
+<b class="nc">&nbsp;								l = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;								l.add(current);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							if (toRemoveFromArgs == null) {</b>
+<b class="nc">&nbsp;								toRemoveFromArgs = new ArrayList&lt;&gt;();</b>
+&nbsp;							}
+<b class="nc">&nbsp;							toRemoveFromArgs.add(check);</b>
+<b class="nc">&nbsp;							l.addAll(check.getExclusiveExpressions());</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					/*
+&nbsp;					 * in the remaining join args find exclusive expressions‚ having the same source, and add to a list
+&nbsp;					 * which is later used to form an exclusive group
+&nbsp;					 */
+<b class="nc">&nbsp;					else if (te instanceof ExclusiveTupleExpr) {</b>
+<b class="nc">&nbsp;						ExclusiveTupleExpr check = (ExclusiveTupleExpr) te;</b>
+<b class="nc">&nbsp;						if (check.getOwner().equals(current.getOwner())) {</b>
+<b class="nc">&nbsp;							if (l == null) {</b>
+<b class="nc">&nbsp;								l = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;								l.add(current);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							l.add(check);</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+&nbsp;				// check if we can construct a group, otherwise add directly
+<b class="nc">&nbsp;				if (l != null) {</b>
+<b class="nc">&nbsp;					argsCopy.removeAll(l);</b>
+<b class="nc">&nbsp;					if (toRemoveFromArgs != null) {</b>
+<b class="nc">&nbsp;						argsCopy.removeAll(toRemoveFromArgs);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					newArgs.add(new ExclusiveGroup(l, current.getOwner(), queryInfo));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					newArgs.add(current);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				newArgs.add(t);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return newArgs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Join Order Optimizer
+&nbsp;	 *
+&nbsp;	 * Group -&gt; Statements according to number of free Variables
+&nbsp;	 *
+&nbsp;	 * Additional Heuristics: - ExclusiveGroups are cheaper than any other subquery - owned statements are cheaper if
+&nbsp;	 * they have a single free variable
+&nbsp;	 *
+&nbsp;	 * @param joinArgs
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	protected List&lt;TupleExpr&gt; optimizeJoinOrder(List&lt;TupleExpr&gt; joinArgs) {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;TupleExpr&gt; optimized = new ArrayList&lt;&gt;(joinArgs.size());</b>
+<b class="nc">&nbsp;		List&lt;TupleExpr&gt; left = new LinkedList&lt;&gt;(joinArgs);</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; joinVars = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (!left.isEmpty()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleExpr item = left.get(0);</b>
+&nbsp;
+<b class="nc">&nbsp;			double minCost = Double.MAX_VALUE;</b>
+<b class="nc">&nbsp;			for (TupleExpr tmp : left) {</b>
+&nbsp;
+<b class="nc">&nbsp;				double currentCost = estimateCost(tmp, joinVars);</b>
+<b class="nc">&nbsp;				if (currentCost &lt; minCost) {</b>
+<b class="nc">&nbsp;					item = tmp;</b>
+<b class="nc">&nbsp;					minCost = currentCost;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			joinVars.addAll(QueryAlgebraUtil.getFreeVars(item));</b>
+<b class="nc">&nbsp;			if (log.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;				log.trace(&quot;Cost of &quot; + item.getClass().getSimpleName() + &quot; is determined as &quot; + minCost);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			optimized.add(item);</b>
+<b class="nc">&nbsp;			left.remove(item);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return optimized;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected double estimateCost(TupleExpr tupleExpr, Set&lt;String&gt; joinVars) {
+<b class="nc">&nbsp;		return costModel.estimateCost(tupleExpr, joinVars);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

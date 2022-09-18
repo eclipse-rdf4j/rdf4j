@@ -1,0 +1,302 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > If</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: If (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">If</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70.6%
+  </span>
+  <span class="absValue">
+    (12/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    30.6%
+  </span>
+  <span class="absValue">
+    (11/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    58.6%
+  </span>
+  <span class="absValue">
+    (34/58)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;/**
+&nbsp; * The IF function, as defined in SPARQL 1.1 Query.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class If extends AbstractQueryModelNode implements ValueExpr {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The operator&#39;s arguments.
+&nbsp;	 */
+&nbsp;	private ValueExpr condition;
+&nbsp;
+&nbsp;	private ValueExpr result;
+&nbsp;
+&nbsp;	private ValueExpr alternative;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	public If() {</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public If(ValueExpr condition) {</b>
+<b class="nc">&nbsp;		setCondition(condition);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public If(ValueExpr condition, ValueExpr result) {</b>
+<b class="nc">&nbsp;		setCondition(condition);</b>
+<b class="nc">&nbsp;		setResult(result);</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	public If(ValueExpr condition, ValueExpr result, ValueExpr alternative) {</b>
+<b class="fc">&nbsp;		setCondition(condition);</b>
+<b class="fc">&nbsp;		setResult(result);</b>
+<b class="fc">&nbsp;		setAlternative(alternative);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the argument of this unary value operator.
+&nbsp;	 *
+&nbsp;	 * @return The operator&#39;s argument.
+&nbsp;	 */
+&nbsp;	public ValueExpr getCondition() {
+<b class="fc">&nbsp;		return condition;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the condition argument of this unary value operator.
+&nbsp;	 *
+&nbsp;	 * @param condition The (new) condition argument for this operator, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public void setCondition(ValueExpr condition) {
+<b class="pc">&nbsp;		assert condition != null : &quot;arg must not be null&quot;;</b>
+<b class="fc">&nbsp;		condition.setParentNode(this);</b>
+<b class="fc">&nbsp;		this.condition = condition;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		visitor.meet(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		condition.visit(visitor);</b>
+<b class="pc">&nbsp;		if (result != null) {</b>
+<b class="fc">&nbsp;			result.visit(visitor);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (alternative != null) {</b>
+<b class="fc">&nbsp;			alternative.visit(visitor);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+<b class="fc">&nbsp;		if (condition == current) {</b>
+<b class="fc">&nbsp;			setCondition((ValueExpr) replacement);</b>
+<b class="fc">&nbsp;		} else if (result == current) {</b>
+<b class="fc">&nbsp;			setResult((ValueExpr) replacement);</b>
+<b class="pc">&nbsp;		} else if (alternative == current) {</b>
+<b class="fc">&nbsp;			setAlternative((ValueExpr) replacement);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="nc">&nbsp;		if (other instanceof If) {</b>
+<b class="nc">&nbsp;			If o = (If) other;</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean equal = condition.equals(o.getCondition());</b>
+<b class="nc">&nbsp;			if (!equal) {</b>
+<b class="nc">&nbsp;				return equal;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			equal = (result == null) ? o.getResult() == null : result.equals(o.getResult());</b>
+<b class="nc">&nbsp;			if (!equal) {</b>
+<b class="nc">&nbsp;				return equal;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			equal = (alternative == null) ? o.getAlternative() == null : alternative.equals(o.getAlternative());</b>
+&nbsp;
+<b class="nc">&nbsp;			return equal;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		int hashCode = condition.hashCode();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (result != null) {</b>
+<b class="nc">&nbsp;			hashCode = hashCode ^ result.hashCode();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (alternative != null) {</b>
+<b class="nc">&nbsp;			hashCode = hashCode ^ alternative.hashCode();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		hashCode = hashCode ^ &quot;If&quot;.hashCode();</b>
+&nbsp;
+<b class="nc">&nbsp;		return hashCode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public If clone() {
+<b class="fc">&nbsp;		If clone = (If) super.clone();</b>
+<b class="fc">&nbsp;		clone.setCondition(condition.clone());</b>
+<b class="pc">&nbsp;		if (result != null) {</b>
+<b class="fc">&nbsp;			clone.setResult(result.clone());</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (alternative != null) {</b>
+<b class="fc">&nbsp;			clone.setAlternative(alternative.clone());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return clone;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param result The result to set.
+&nbsp;	 */
+&nbsp;	public void setResult(ValueExpr result) {
+<b class="fc">&nbsp;		result.setParentNode(this);</b>
+<b class="fc">&nbsp;		this.result = result;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the result.
+&nbsp;	 */
+&nbsp;	public ValueExpr getResult() {
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param alternative The alternative to set.
+&nbsp;	 */
+&nbsp;	public void setAlternative(ValueExpr alternative) {
+<b class="fc">&nbsp;		alternative.setParentNode(this);</b>
+<b class="fc">&nbsp;		this.alternative = alternative;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the alternative.
+&nbsp;	 */
+&nbsp;	public ValueExpr getAlternative() {
+<b class="fc">&nbsp;		return alternative;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

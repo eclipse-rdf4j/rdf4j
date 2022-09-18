@@ -1,0 +1,390 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > WorkbenchServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.proxy</a>
+</div>
+
+<h1>Coverage Summary for Class: WorkbenchServlet (org.eclipse.rdf4j.workbench.proxy)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">WorkbenchServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/112)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.proxy;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.PrintWriter;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.net.URLDecoder;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Base64;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.ConcurrentMap;
+&nbsp;
+&nbsp;import javax.servlet.Servlet;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.ValidationException;
+&nbsp;import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.workbench.base.AbstractServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
+&nbsp;import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public class WorkbenchServlet extends AbstractServlet {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger LOGGER = LoggerFactory.getLogger(WorkbenchServlet.class);</b>
+&nbsp;
+&nbsp;	private static final String DEFAULT_PATH = &quot;default-path&quot;;
+&nbsp;
+&nbsp;	private static final String NO_REPOSITORY = &quot;no-repository-id&quot;;
+&nbsp;
+&nbsp;	public static final String SERVER_PARAM = &quot;server&quot;;
+&nbsp;
+&nbsp;	private RepositoryManager manager;
+&nbsp;
+<b class="nc">&nbsp;	private final ConcurrentMap&lt;String, ProxyRepositoryServlet&gt; repositories = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init(final ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		this.config = config;</b>
+<b class="nc">&nbsp;		if (config.getInitParameter(DEFAULT_PATH) == null) {</b>
+<b class="nc">&nbsp;			throw new MissingInitParameterException(DEFAULT_PATH);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String param = config.getInitParameter(SERVER_PARAM);</b>
+<b class="nc">&nbsp;		if (param == null || param.trim().isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new MissingInitParameterException(SERVER_PARAM);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			manager = createRepositoryManager(param);</b>
+<b class="nc">&nbsp;		} catch (IOException | RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new ServletException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() {
+<b class="nc">&nbsp;		for (Servlet servlet : repositories.values()) {</b>
+<b class="nc">&nbsp;			servlet.destroy();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		manager.shutDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void resetCache() {
+<b class="nc">&nbsp;		for (ProxyRepositoryServlet proxy : repositories.values()) {</b>
+&nbsp;			// inform browser that server changed and cache is invalid
+<b class="nc">&nbsp;			proxy.resetCache();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void service(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws ServletException, IOException {
+<b class="nc">&nbsp;		final String pathInfo = req.getPathInfo();</b>
+<b class="nc">&nbsp;		if (pathInfo == null) {</b>
+<b class="nc">&nbsp;			final String defaultPath = config.getInitParameter(DEFAULT_PATH);</b>
+<b class="nc">&nbsp;			resp.sendRedirect(req.getRequestURI() + defaultPath);</b>
+<b class="nc">&nbsp;		} else if (&quot;/&quot;.equals(pathInfo)) {</b>
+<b class="nc">&nbsp;			final String defaultPath = config.getInitParameter(DEFAULT_PATH);</b>
+<b class="nc">&nbsp;			resp.sendRedirect(req.getRequestURI() + defaultPath.substring(1));</b>
+<b class="nc">&nbsp;		} else if (&#39;/&#39; == pathInfo.charAt(0)) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				handleRequest(req, resp, pathInfo);</b>
+<b class="nc">&nbsp;			} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;				throw new IOException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new BadRequestException(&quot;Request path must contain a repository ID&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param req      the servlet request
+&nbsp;	 * @param resp     the servlet response
+&nbsp;	 * @param pathInfo the path info from the request
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws ServletException
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 */
+&nbsp;	private void handleRequest(final HttpServletRequest req, final HttpServletResponse resp, final String pathInfo)
+&nbsp;			throws IOException, ServletException, QueryResultHandlerException {
+<b class="nc">&nbsp;		int idx = pathInfo.indexOf(&#39;/&#39;, 1);</b>
+<b class="nc">&nbsp;		if (idx &lt; 0) {</b>
+<b class="nc">&nbsp;			idx = pathInfo.length();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String repoID = pathInfo.substring(1, idx);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			service(repoID, req, resp);</b>
+<b class="nc">&nbsp;		} catch (UnauthorizedException e) {</b>
+<b class="nc">&nbsp;			handleUnauthorizedException(req, resp);</b>
+<b class="nc">&nbsp;		} catch (RepositoryConfigException | RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() instanceof ValidationException) {</b>
+<b class="nc">&nbsp;				Model model = ((ValidationException) e.getCause()).validationReportAsModel();</b>
+&nbsp;
+<b class="nc">&nbsp;				resp.setStatus(HttpServletResponse.SC_CONFLICT);</b>
+<b class="nc">&nbsp;				resp.setContentType(TEXT_PLAIN);</b>
+<b class="nc">&nbsp;				PrintWriter writer = resp.getWriter();</b>
+&nbsp;
+<b class="nc">&nbsp;				writer.println(&quot;SHACL validation failed with the following report:\n&quot;);</b>
+<b class="nc">&nbsp;				WriterConfig writerConfig = new WriterConfig();</b>
+<b class="nc">&nbsp;				writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);</b>
+<b class="nc">&nbsp;				writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);</b>
+<b class="nc">&nbsp;				Rio.write(model, writer, RDFFormat.TURTLE, writerConfig);</b>
+&nbsp;
+<b class="nc">&nbsp;				writer.println(</b>
+&nbsp;						&quot;\n&quot; +
+&nbsp;								&quot;THIS ERROR MESSAGE IS EXPERIMENTAL AND IS SUBJECT TO CHANGE - &quot; +
+&nbsp;								&quot;DO NOT TRY TO PARSE THIS ERROR MESSAGE&quot;);
+&nbsp;
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				throw new ServletException(e);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (ServletException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() instanceof UnauthorizedException) {</b>
+<b class="nc">&nbsp;				handleUnauthorizedException(req, resp);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw e;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param req
+&nbsp;	 * @param resp
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 */
+&nbsp;	private void handleUnauthorizedException(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws IOException, QueryResultHandlerException {
+&nbsp;		// Invalid credentials or insufficient authorization. Present
+&nbsp;		// entry form again with error message.
+<b class="nc">&nbsp;		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;		builder.transform(this.getTransformationUrl(req), &quot;server.xsl&quot;);</b>
+<b class="nc">&nbsp;		builder.start(&quot;error-message&quot;);</b>
+<b class="nc">&nbsp;		builder.result(</b>
+&nbsp;				&quot;The entered credentials entered either failed to authenticate to the Sesame server, or were unauthorized for the requested operation.&quot;);
+<b class="nc">&nbsp;		builder.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
+&nbsp;		RepositoryManager manager;
+<b class="nc">&nbsp;		if (param.startsWith(&quot;file:&quot;)) {</b>
+<b class="nc">&nbsp;			manager = new LocalRepositoryManager(asLocalFile(new URL(param)));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			manager = new RemoteRepositoryManager(param);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		manager.init();</b>
+<b class="nc">&nbsp;		return manager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
+<b class="nc">&nbsp;		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws RepositoryConfigException, RepositoryException, ServletException, IOException {
+<b class="nc">&nbsp;		LOGGER.info(&quot;Servicing repository: {}&quot;, repoID);</b>
+<b class="nc">&nbsp;		setCredentials(req, resp);</b>
+<b class="nc">&nbsp;		final DynamicHttpRequest http = new DynamicHttpRequest(req);</b>
+<b class="nc">&nbsp;		final String path = req.getPathInfo();</b>
+<b class="nc">&nbsp;		final int idx = path.indexOf(repoID) + repoID.length();</b>
+<b class="nc">&nbsp;		http.setServletPath(http.getServletPath() + path.substring(0, idx));</b>
+<b class="nc">&nbsp;		final String pathInfo = path.substring(idx);</b>
+<b class="nc">&nbsp;		http.setPathInfo(pathInfo.length() == 0 ? null : pathInfo);</b>
+<b class="nc">&nbsp;		if (repositories.containsKey(repoID)) {</b>
+<b class="nc">&nbsp;			repositories.get(repoID).service(http, resp);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			final Repository repository = manager.getRepository(repoID);</b>
+<b class="nc">&nbsp;			if (repository == null) {</b>
+<b class="nc">&nbsp;				final String noId = config.getInitParameter(NO_REPOSITORY);</b>
+<b class="nc">&nbsp;				if (noId == null || !noId.equals(repoID)) {</b>
+<b class="nc">&nbsp;					resp.setHeader(&quot;Cache-Control&quot;, &quot;no-cache, no-store&quot;);</b>
+<b class="nc">&nbsp;					throw new BadRequestException(&quot;No such repository: &quot; + repoID);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			final ProxyRepositoryServlet servlet = new ProxyRepositoryServlet();</b>
+<b class="nc">&nbsp;			servlet.setRepositoryManager(manager);</b>
+<b class="nc">&nbsp;			if (repository != null) {</b>
+<b class="nc">&nbsp;				servlet.setRepositoryInfo(manager.getRepositoryInfo(repoID));</b>
+<b class="nc">&nbsp;				servlet.setRepository(repository);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			servlet.init(new BasicServletConfig(repoID, config));</b>
+<b class="nc">&nbsp;			repositories.putIfAbsent(repoID, servlet);</b>
+<b class="nc">&nbsp;			repositories.get(repoID).service(http, resp);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getTransformationUrl(final HttpServletRequest req) {
+<b class="nc">&nbsp;		final String contextPath = req.getContextPath();</b>
+<b class="nc">&nbsp;		return contextPath + config.getInitParameter(WorkbenchGateway.TRANSFORMATIONS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the username and password for all requests to the repository.
+&nbsp;	 *
+&nbsp;	 * @param req  the servlet request
+&nbsp;	 * @param resp the servlet response
+&nbsp;	 * @throws MalformedURLException if the repository location is malformed
+&nbsp;	 */
+&nbsp;	private void setCredentials(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws MalformedURLException, RepositoryException {
+<b class="nc">&nbsp;		if (manager instanceof RemoteRepositoryManager) {</b>
+<b class="nc">&nbsp;			final RemoteRepositoryManager rrm = (RemoteRepositoryManager) manager;</b>
+<b class="nc">&nbsp;			LOGGER.info(&quot;RemoteRepositoryManager URL: {}&quot;, rrm.getLocation());</b>
+<b class="nc">&nbsp;			final CookieHandler cookies = new CookieHandler(config);</b>
+<b class="nc">&nbsp;			final String user_password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER_PASSWORD);</b>
+<b class="nc">&nbsp;			if (user_password == null) {</b>
+<b class="nc">&nbsp;				rrm.setUsernameAndPassword(null, null);</b>
+&nbsp;			} else {
+&nbsp;				String decoded;
+&nbsp;				try {
+<b class="nc">&nbsp;					decoded = new String(Base64.getDecoder().decode(user_password));</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					decoded = user_password; // older browsers</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				final String user = decoded.substring(0, decoded.indexOf(&#39;:&#39;));</b>
+<b class="nc">&nbsp;				final String password = decoded.substring(decoded.indexOf(&#39;:&#39;) + 1);</b>
+<b class="nc">&nbsp;				LOGGER.info(&quot;Setting user &#39;{}&#39; and their password.&quot;, user);</b>
+<b class="nc">&nbsp;				rrm.setUsernameAndPassword(user, password);</b>
+&nbsp;			}
+&nbsp;			// init() required to push credentials to internal HTTP
+&nbsp;			// client.
+<b class="nc">&nbsp;			rrm.init();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,844 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractQueryResultIOTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractQueryResultIOTest (org.eclipse.rdf4j.testsuite.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractQueryResultIOTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/291)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.testsuite.query.resultio;
+&nbsp;
+&nbsp;import static org.junit.jupiter.api.Assertions.assertEquals;
+&nbsp;import static org.junit.jupiter.api.Assertions.assertFalse;
+&nbsp;import static org.junit.jupiter.api.Assertions.assertTrue;
+&nbsp;import static org.junit.jupiter.api.Assertions.fail;
+&nbsp;
+&nbsp;import java.io.ByteArrayInputStream;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Random;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
+&nbsp;import org.junit.jupiter.api.Test;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public abstract class AbstractQueryResultIOTest {
+&nbsp;
+<b class="nc">&nbsp;	private static final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Random random = new Random(43252333);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public AbstractQueryResultIOTest() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return An example filename that will match the {@link QueryResultFormat} returned by {@link #getFormat()}.
+&nbsp;	 */
+&nbsp;	protected abstract String getFileName();
+&nbsp;
+&nbsp;	protected abstract QueryResultFormat getFormat();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Override this to customise how the tuple parsing is performed, particularly to test background and other parsing
+&nbsp;	 * strategies.
+&nbsp;	 *
+&nbsp;	 * @param format The {@link TupleQueryResultFormat} for the parser.
+&nbsp;	 * @param in     The InputStream to parse
+&nbsp;	 * @return A {@link TupleQueryResult} that can be parsed.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws QueryResultParseException
+&nbsp;	 * @throws TupleQueryResultHandlerException
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 */
+&nbsp;	protected TupleQueryResult parseTupleInternal(TupleQueryResultFormat format, InputStream in) throws IOException,
+&nbsp;			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		return QueryResultIO.parseTuple(in, format, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for
+&nbsp;	 * {@link org.eclipse.rdf4j.query.resultio.QueryResultIO#getParserFormatForFileName(java.lang.String)} .
+&nbsp;	 */
+&nbsp;	@Test
+&nbsp;	public final void testGetParserFormatForFileNameString() throws Exception {
+<b class="nc">&nbsp;		String fileName = getFileName();</b>
+&nbsp;
+&nbsp;		Optional&lt;QueryResultFormat&gt; format;
+&nbsp;
+<b class="nc">&nbsp;		if (getFormat() instanceof TupleQueryResultFormat) {</b>
+<b class="nc">&nbsp;			format = QueryResultIO.getParserFormatForFileName(fileName);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			format = QueryResultIO.getBooleanParserFormatForFileName(fileName);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(format.isPresent(), &quot;Could not find parser for this format.&quot;);</b>
+<b class="nc">&nbsp;		assertEquals(getFormat(), format.get());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected TupleQueryResult createTupleSingleVarMultipleBindingSets() {
+<b class="nc">&nbsp;		List&lt;String&gt; bindingNames = List.of(&quot;a&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution1 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution1.addBinding(&quot;a&quot;, vf.createIRI(&quot;foo:bar&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution2 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution2.addBinding(&quot;a&quot;, vf.createLiteral(&quot;2.0&quot;, CoreDatatype.XSD.DOUBLE));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution3 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution3.addBinding(&quot;a&quot;, vf.createBNode(&quot;bnode3&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution4 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution4.addBinding(&quot;a&quot;, vf.createLiteral(&quot;&#39;&#39;single-quoted string&quot;, XSD.STRING));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution5 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution5.addBinding(&quot;a&quot;, vf.createLiteral(&quot;\&quot;\&quot;double-quoted string&quot;, XSD.STRING));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution6 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution6.addBinding(&quot;a&quot;, vf.createLiteral(&quot;space at the end         &quot;, CoreDatatype.XSD.STRING));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution7 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution7.addBinding(&quot;a&quot;, vf.createLiteral(&quot;space at the end         &quot;, XSD.STRING));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution8 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution8.addBinding(&quot;a&quot;, vf.createLiteral(&quot;\&quot;\&quot;double-quoted string with no datatype&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution9 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution9.addBinding(&quot;a&quot;, vf.createLiteral(&quot;newline at the end \n&quot;, CoreDatatype.XSD.STRING));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution10 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution10.addBinding(&quot;a&quot;, vf.createTriple(vf.createIRI(&quot;urn:a&quot;), RDF.TYPE, vf.createIRI(&quot;urn:b&quot;)));</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;? extends BindingSet&gt; bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4, solution5,</b>
+&nbsp;				solution6, solution7, solution8, solution9, solution10);
+&nbsp;
+<b class="nc">&nbsp;		IteratingTupleQueryResult result = new IteratingTupleQueryResult(bindingNames, bindingSetList);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected TupleQueryResult createTupleMultipleBindingSets() {
+<b class="nc">&nbsp;		List&lt;String&gt; bindingNames = Arrays.asList(&quot;a&quot;, &quot;b&quot;, &quot;c&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution1 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution1.addBinding(&quot;a&quot;, vf.createIRI(&quot;foo:bar&quot;));</b>
+<b class="nc">&nbsp;		solution1.addBinding(&quot;b&quot;, vf.createBNode(&quot;bnode&quot;));</b>
+<b class="nc">&nbsp;		solution1.addBinding(&quot;c&quot;, vf.createLiteral(&quot;baz&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution2 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution2.addBinding(&quot;a&quot;, vf.createLiteral(&quot;1&quot;, CoreDatatype.XSD.INTEGER));</b>
+<b class="nc">&nbsp;		solution2.addBinding(&quot;c&quot;, vf.createLiteral(&quot;Hello World!&quot;, &quot;en&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution3 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution3.addBinding(&quot;a&quot;, vf.createIRI(&quot;http://example.org/test/ns/bindingA&quot;));</b>
+<b class="nc">&nbsp;		solution3.addBinding(&quot;b&quot;, vf.createLiteral(&quot;http://example.com/other/ns/bindingB&quot;));</b>
+<b class="nc">&nbsp;		solution3.addBinding(&quot;c&quot;, vf.createIRI(&quot;http://example.com/other/ns/binding,C&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution4 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution4.addBinding(&quot;a&quot;, vf.createLiteral(&quot;string with newline at the end       \n&quot;));</b>
+<b class="nc">&nbsp;		solution4.addBinding(&quot;b&quot;, vf.createLiteral(&quot;string with space at the end         &quot;));</b>
+<b class="nc">&nbsp;		solution4.addBinding(&quot;c&quot;, vf.createLiteral(&quot;    &quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution5 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution5.addBinding(&quot;a&quot;, vf.createLiteral(&quot;&#39;&#39;single-quoted string&quot;));</b>
+<b class="nc">&nbsp;		solution5.addBinding(&quot;b&quot;, vf.createLiteral(&quot;\&quot;\&quot;double-quoted string&quot;));</b>
+<b class="nc">&nbsp;		solution5.addBinding(&quot;c&quot;, vf.createLiteral(&quot;		unencoded tab characters followed by encoded \t\t&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		MapBindingSet solution6 = new MapBindingSet(bindingNames.size());</b>
+<b class="nc">&nbsp;		solution6.addBinding(&quot;a&quot;, vf.createTriple(vf.createIRI(&quot;urn:a&quot;), RDF.TYPE, vf.createIRI(&quot;urn:b&quot;)));</b>
+<b class="nc">&nbsp;		solution6.addBinding(&quot;b&quot;, vf.createIRI(&quot;urn:test&quot;));</b>
+<b class="nc">&nbsp;		solution6.addBinding(&quot;c&quot;, vf.createBNode(&quot;bnode1&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;? extends BindingSet&gt; bindingSetList = Arrays.asList(solution1, solution2, solution3, solution4,</b>
+&nbsp;				solution5);
+&nbsp;
+<b class="nc">&nbsp;		IteratingTupleQueryResult result = new IteratingTupleQueryResult(bindingNames, bindingSetList);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return A map of test namespaces for the writer to handle.
+&nbsp;	 */
+&nbsp;	protected Map&lt;String, String&gt; getNamespaces() {
+<b class="nc">&nbsp;		Map&lt;String, String&gt; result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;test&quot;, &quot;http://example.org/test/ns/&quot;);</b>
+<b class="nc">&nbsp;		result.put(&quot;other&quot;, &quot;http://example.com/other/ns/&quot;);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return A map of test namespaces for the writer to handle, including an empty namespace.
+&nbsp;	 */
+&nbsp;	protected Map&lt;String, String&gt; getNamespacesWithEmpty() {
+<b class="nc">&nbsp;		Map&lt;String, String&gt; result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;test&quot;, &quot;http://example.org/test/ns/&quot;);</b>
+<b class="nc">&nbsp;		result.put(&quot;other&quot;, &quot;http://example.com/other/ns/&quot;);</b>
+<b class="nc">&nbsp;		result.put(&quot;&quot;, &quot;http://other.example.org/ns/&quot;);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected TupleQueryResult createTupleNoBindingSets() {
+<b class="nc">&nbsp;		List&lt;String&gt; bindingNames = Arrays.asList(&quot;a&quot;, &quot;b&quot;, &quot;c&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;? extends BindingSet&gt; bindingSetList = Collections.emptyList();</b>
+&nbsp;
+<b class="nc">&nbsp;		IteratingTupleQueryResult result = new IteratingTupleQueryResult(bindingNames, bindingSetList);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleLinks(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected,
+&nbsp;			List&lt;String&gt; links) throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		QueryResults.report(input, writer);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleLinksAndStylesheet(TupleQueryResultFormat format, TupleQueryResult input,
+&nbsp;			TupleQueryResult expected, List&lt;String&gt; links, String stylesheetUrl) throws QueryResultHandlerException,
+&nbsp;			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		QueryResults.report(input, writer);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleLinksAndStylesheetAndNamespaces(TupleQueryResultFormat format, TupleQueryResult input,
+&nbsp;			TupleQueryResult expected, List&lt;String&gt; links, String stylesheetUrl, Map&lt;String, String&gt; namespaces)
+&nbsp;			throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+<b class="nc">&nbsp;		for (String nextPrefix : namespaces.keySet()) {</b>
+<b class="nc">&nbsp;			writer.handleNamespace(nextPrefix, namespaces.get(nextPrefix));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		QueryResults.report(input, writer);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test specifically for QName support.
+&nbsp;	 */
+&nbsp;	protected void doTupleLinksAndStylesheetAndNamespacesQName(TupleQueryResultFormat format, TupleQueryResult input,
+&nbsp;			TupleQueryResult expected, List&lt;String&gt; links, String stylesheetUrl, Map&lt;String, String&gt; namespaces)
+&nbsp;			throws QueryResultHandlerException, QueryEvaluationException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+<b class="nc">&nbsp;		if (writer.getSupportedSettings().contains(BasicQueryWriterSettings.ADD_SESAME_QNAME)) {</b>
+&nbsp;			// System.out.println(&quot;Enabling Sesame qname support&quot;);
+<b class="nc">&nbsp;			writer.getWriterConfig().set(BasicQueryWriterSettings.ADD_SESAME_QNAME, true);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (String nextPrefix : namespaces.keySet()) {</b>
+<b class="nc">&nbsp;			writer.handleNamespace(nextPrefix, namespaces.get(nextPrefix));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		QueryResults.report(input, writer);</b>
+&nbsp;
+<b class="nc">&nbsp;		String result = out.toString(StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + result);
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;
+&nbsp;		// only do this additional test if sesame q:qname is supported by this
+&nbsp;		// writer
+<b class="nc">&nbsp;		if (writer.getSupportedSettings().contains(BasicQueryWriterSettings.ADD_SESAME_QNAME)) {</b>
+<b class="nc">&nbsp;			assertTrue(result.contains(&quot;test:bindingA&quot;));</b>
+<b class="nc">&nbsp;			assertFalse(result.contains(&quot;other:bindingB&quot;));</b>
+<b class="nc">&nbsp;			assertTrue(result.contains(&quot;other:binding,C&quot;));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test specifically for JSONP callback support.
+&nbsp;	 */
+&nbsp;	protected void doTupleJSONPCallback(TupleQueryResultFormat format, TupleQueryResult input,
+&nbsp;			TupleQueryResult expected) throws QueryResultHandlerException, QueryEvaluationException,
+&nbsp;			QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+&nbsp;
+&nbsp;		// only do this test if the callback is enabled
+<b class="nc">&nbsp;		if (writer.getSupportedSettings().contains(BasicQueryWriterSettings.JSONP_CALLBACK)) {</b>
+&nbsp;
+<b class="nc">&nbsp;			String callback = &quot;nextfunctionname&quot; + Math.abs(random.nextInt());</b>
+&nbsp;
+<b class="nc">&nbsp;			writer.getWriterConfig().set(BasicQueryWriterSettings.JSONP_CALLBACK, callback);</b>
+&nbsp;
+<b class="nc">&nbsp;			QueryResults.report(input, writer);</b>
+&nbsp;
+<b class="nc">&nbsp;			String result = out.toString(StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;			// System.out.println(&quot;output: &quot; + result);
+&nbsp;
+<b class="nc">&nbsp;			assertTrue(result.startsWith(callback + &quot;(&quot;));</b>
+<b class="nc">&nbsp;			assertTrue(result.endsWith(&quot;);&quot;));</b>
+&nbsp;
+&nbsp;			// Strip off the callback function and verify that it contains a
+&nbsp;			// valid
+&nbsp;			// JSON object containing the correct results
+<b class="nc">&nbsp;			result = result.substring(callback.length() + 1, result.length() - 2);</b>
+&nbsp;
+<b class="nc">&nbsp;			ByteArrayInputStream in = new ByteArrayInputStream(result.getBytes(StandardCharsets.UTF_8));</b>
+<b class="nc">&nbsp;			TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;			assertQueryResultsEqual(expected, output);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleNoLinks(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected)
+&nbsp;			throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException,
+&nbsp;			QueryEvaluationException, QueryResultHandlerException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		QueryResultIO.writeTuple(input, format, out);</b>
+<b class="nc">&nbsp;		input.close();</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleStylesheet(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected,
+&nbsp;			String stylesheetUrl) throws QueryResultHandlerException, QueryEvaluationException,
+&nbsp;			QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		QueryResults.report(input, writer);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleLinksAndStylesheetNoStarts(TupleQueryResultFormat format, TupleQueryResult input,
+&nbsp;			TupleQueryResult expected, List&lt;String&gt; links, String stylesheetUrl) throws QueryResultHandlerException,
+&nbsp;			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+&nbsp;		// Test for handling when startDocument and startHeader are not called
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		QueryResults.report(input, writer);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleLinksAndStylesheetMultipleEndHeaders(TupleQueryResultFormat format, TupleQueryResult input,
+&nbsp;			TupleQueryResult expected, List&lt;String&gt; links, String stylesheetUrl) throws QueryResultHandlerException,
+&nbsp;			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+&nbsp;		// Test for handling when startDocument and startHeader are not called
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.startQueryResult(input.getBindingNames());</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		writer.endHeader();</b>
+<b class="nc">&nbsp;		writer.endHeader();</b>
+<b class="nc">&nbsp;		try (input) {</b>
+<b class="nc">&nbsp;			while (input.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = input.next();</b>
+<b class="nc">&nbsp;				writer.handleSolution(bindingSet);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		writer.endQueryResult();</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResult output = parseTupleInternal(format, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertQueryResultsEqual(expected, output);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void assertQueryResultsEqual(TupleQueryResult expected, TupleQueryResult output)
+&nbsp;			throws QueryEvaluationException, TupleQueryResultHandlerException, QueryResultHandlerException,
+&nbsp;			UnsupportedEncodingException {
+<b class="nc">&nbsp;		assertTrue(QueryResults.equals(expected, output));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doTupleMissingStartQueryResult(TupleQueryResultFormat format, TupleQueryResult input,
+&nbsp;			TupleQueryResult expected, List&lt;String&gt; links, String stylesheetUrl) throws QueryResultHandlerException,
+&nbsp;			QueryEvaluationException, QueryResultParseException, UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = QueryResultIO.createTupleWriter(format, out);</b>
+&nbsp;		// Test for handling when startDocument and startHeader are not called
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		writer.endHeader();</b>
+<b class="nc">&nbsp;		try (input) {</b>
+<b class="nc">&nbsp;			while (input.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = input.next();</b>
+<b class="nc">&nbsp;				writer.handleSolution(bindingSet);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			writer.endQueryResult();</b>
+<b class="nc">&nbsp;			fail(&quot;Expected exception when calling handleSolution without startQueryResult&quot;);</b>
+<b class="nc">&nbsp;		} catch (IllegalStateException ise) {</b>
+&nbsp;			// Expected exception
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tests that parsing a tuple results set without specifying a {@link TupleQueryResultHandler} does not throw any
+&nbsp;	 * exceptions.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param input
+&nbsp;	 * @throws QueryResultParseException
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws TupleQueryResultHandlerException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 */
+&nbsp;	protected void doTupleNoHandler(TupleQueryResultFormat format, TupleQueryResult input, TupleQueryResult expected)
+&nbsp;			throws QueryResultParseException, IOException, TupleQueryResultHandlerException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		QueryResultIO.writeTuple(input, format, out);</b>
+<b class="nc">&nbsp;		out.flush();</b>
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResultParser parser = QueryResultIO.createTupleParser(format);</b>
+&nbsp;		// This should perform a full parse to verify the document, even though
+&nbsp;		// the handler is not set
+<b class="nc">&nbsp;		parser.parseQueryResult(in);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tests that the parser returned for a TupleQueryResultFormat is not able to parse a BooleanQueryResultFormat using
+&nbsp;	 * the deprecated {@link TupleQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed through
+&nbsp;	 * an exception of type {@link QueryResultParseException}.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param input
+&nbsp;	 * @param matchingBooleanFormat A BooleanQueryResultFormat that matches the given TupleQueryResultFormat .
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 * @see &lt;a href=&quot;https://openrdf.atlassian.net/browse/SES-1860&quot;&gt;SES-1860&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	protected void doTupleParseNoHandlerOnBooleanResults(TupleQueryResultFormat format, boolean input,
+&nbsp;			BooleanQueryResultFormat matchingBooleanFormat)
+&nbsp;			throws UnsupportedQueryResultFormatException, QueryResultHandlerException, IOException {
+<b class="nc">&nbsp;		if (matchingBooleanFormat == null) {</b>
+&nbsp;			// This test is not supported for this boolean format
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(matchingBooleanFormat, out);</b>
+&nbsp;		// Test for handling when handler is not set
+<b class="nc">&nbsp;		writer.handleBoolean(input);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		TupleQueryResultParser parser = QueryResultIO.createTupleParser(format);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			parser.parse(in);</b>
+<b class="nc">&nbsp;			fail(&quot;Did not find expected parse exception&quot;);</b>
+<b class="nc">&nbsp;		} catch (QueryResultParseException expected) {</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doBooleanNoLinks(BooleanQueryResultFormat format, boolean input)
+&nbsp;			throws IOException, QueryResultHandlerException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		QueryResultIO.writeBoolean(input, format, out);</b>
+<b class="nc">&nbsp;		out.flush();</b>
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		boolean output = QueryResultIO.parseBoolean(in, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertEquals(output, input);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doBooleanLinksOnly(BooleanQueryResultFormat format, boolean input, List&lt;String&gt; links)
+&nbsp;			throws IOException, QueryResultHandlerException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		writer.handleBoolean(input);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		boolean output = QueryResultIO.parseBoolean(in, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertEquals(output, input);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doInvalidBooleanAfterStartQueryResult(BooleanQueryResultFormat format, boolean input,
+&nbsp;			List&lt;String&gt; links) throws IOException, QueryResultHandlerException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+&nbsp;		// Determine whether this writer also supports startQueryResult, if not,
+&nbsp;		// this test is irrelevant as it will fail early
+<b class="nc">&nbsp;		boolean supported = true;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			writer.startQueryResult(List.of(&quot;foo&quot;));</b>
+<b class="nc">&nbsp;		} catch (UnsupportedOperationException uoe) {</b>
+&nbsp;			// Boolean writers are allowed to throw this for startQueryResult
+<b class="nc">&nbsp;			supported = false;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (supported) {</b>
+&nbsp;			try {
+&nbsp;				// After calling startQueryResult, we should not be able to call
+&nbsp;				// handleBoolean without an exception occuring
+<b class="nc">&nbsp;				writer.handleBoolean(input);</b>
+<b class="nc">&nbsp;				fail(&quot;Did not find expected exception&quot;);</b>
+<b class="nc">&nbsp;			} catch (QueryResultHandlerException e) {</b>
+&nbsp;				// Expected
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doBooleanLinks(BooleanQueryResultFormat format, boolean input, List&lt;String&gt; links)
+&nbsp;			throws IOException, QueryResultHandlerException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		writer.handleBoolean(input);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		boolean output = QueryResultIO.parseBoolean(in, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertEquals(output, input);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doBooleanLinksAndStylesheet(BooleanQueryResultFormat format, boolean input, List&lt;String&gt; links,
+&nbsp;			String stylesheetUrl) throws IOException, QueryResultHandlerException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		writer.handleBoolean(input);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		boolean output = QueryResultIO.parseBoolean(in, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertEquals(output, input);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doBooleanLinksAndStylesheetAndNamespaces(BooleanQueryResultFormat format, boolean input,
+&nbsp;			List&lt;String&gt; links, String stylesheetUrl, Map&lt;String, String&gt; namespaces)
+&nbsp;			throws IOException, QueryResultHandlerException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);</b>
+<b class="nc">&nbsp;		for (String nextPrefix : namespaces.keySet()) {</b>
+<b class="nc">&nbsp;			writer.handleNamespace(nextPrefix, namespaces.get(nextPrefix));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleLinks(links);</b>
+<b class="nc">&nbsp;		writer.handleBoolean(input);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		boolean output = QueryResultIO.parseBoolean(in, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertEquals(output, input);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doBooleanStylesheet(BooleanQueryResultFormat format, boolean input, String stylesheetUrl)
+&nbsp;			throws IOException, QueryResultHandlerException, QueryResultParseException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = QueryResultIO.createBooleanWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.handleStylesheet(stylesheetUrl);</b>
+<b class="nc">&nbsp;		writer.handleBoolean(input);</b>
+&nbsp;
+&nbsp;		// System.out.println(&quot;output: &quot; + out.toString(StandardCharsets.UTF_8));
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		boolean output = QueryResultIO.parseBoolean(in, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertEquals(output, input);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tests that parsing a boolean without specifying a {@link BooleanQueryResultHandler} does not throw any
+&nbsp;	 * exceptions.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param input
+&nbsp;	 * @throws QueryResultParseException
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void doBooleanNoHandler(BooleanQueryResultFormat format, boolean input)
+&nbsp;			throws QueryResultParseException, IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		QueryResultIO.writeBoolean(input, format, out);</b>
+<b class="nc">&nbsp;		out.flush();</b>
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(format);</b>
+<b class="nc">&nbsp;		assertEquals(input, parser.parse(in));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tests that the parser returned for a BooleanQueryResultFormat is not able to parse a TupleQueryResultFormat using
+&nbsp;	 * the deprecated {@link BooleanQueryResultParser#parse(java.io.InputStream)} method, and that it does indeed
+&nbsp;	 * through an exception of type {@link QueryResultParseException}.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param tqr
+&nbsp;	 * @param matchingTupleFormat A TupleQueryResultFormat that matches the given BooleanQueryResultFormat.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 * @throws TupleQueryResultHandlerException
+&nbsp;	 * @see &lt;a href=&quot;https://openrdf.atlassian.net/browse/SES-1860&quot;&gt;SES-1860&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	protected void doBooleanParseNoHandlerOnTupleResults(BooleanQueryResultFormat format, TupleQueryResult tqr,
+&nbsp;			TupleQueryResultFormat matchingTupleFormat) throws TupleQueryResultHandlerException,
+&nbsp;			UnsupportedQueryResultFormatException, QueryEvaluationException, IOException {
+<b class="nc">&nbsp;		if (matchingTupleFormat == null) {</b>
+&nbsp;			// This test is not supported for this boolean format
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		QueryResultIO.writeTuple(tqr, matchingTupleFormat, out);</b>
+<b class="nc">&nbsp;		out.flush();</b>
+<b class="nc">&nbsp;		ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;		BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(format);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			parser.parse(in);</b>
+<b class="nc">&nbsp;			fail(&quot;Did not find expected parse exception&quot;);</b>
+<b class="nc">&nbsp;		} catch (QueryResultParseException e) {</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

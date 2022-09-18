@@ -1,0 +1,342 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLComplianceTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLComplianceTest (org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLComplianceTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    78.6%
+  </span>
+  <span class="absValue">
+    (11/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.7%
+  </span>
+  <span class="absValue">
+    (14/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    65.1%
+  </span>
+  <span class="absValue">
+    (54/83)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
+&nbsp;
+&nbsp;import static org.assertj.core.api.Assertions.fail;
+&nbsp;import static org.assertj.core.api.Assumptions.assumeThat;
+&nbsp;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.URL;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.text.StringUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.util.RDFInserter;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.junit.Test;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base functionality for SPARQL compliance test suites using a W3C-style Manifest.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; *
+&nbsp; */
+&nbsp;public abstract class SPARQLComplianceTest {
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SPARQLComplianceTest.class);</b>
+&nbsp;
+<b class="fc">&nbsp;	private List&lt;String&gt; ignoredTests = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private final String displayName;
+&nbsp;	private final String testURI;
+&nbsp;	private final String name;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param displayName
+&nbsp;	 * @param testURI
+&nbsp;	 * @param name
+&nbsp;	 */
+<b class="fc">&nbsp;	public SPARQLComplianceTest(String displayName, String testURI, String name) {</b>
+<b class="fc">&nbsp;		this.displayName = displayName;</b>
+<b class="fc">&nbsp;		this.testURI = testURI;</b>
+<b class="fc">&nbsp;		this.name = name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test() throws Exception {
+<b class="fc">&nbsp;		assumeThat(getIgnoredTests().contains(getName())).withFailMessage(&quot;test case &#39;%s&#39; is ignored&quot;, getName())</b>
+<b class="fc">&nbsp;				.isFalse();</b>
+<b class="fc">&nbsp;		runTest();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the displayName
+&nbsp;	 */
+&nbsp;	public String getDisplayName() {
+<b class="nc">&nbsp;		return displayName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the testURI
+&nbsp;	 */
+&nbsp;	public String getTestURI() {
+<b class="nc">&nbsp;		return testURI;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the name
+&nbsp;	 */
+&nbsp;	public String getName() {
+<b class="fc">&nbsp;		return name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract void runTest() throws Exception;
+&nbsp;
+&nbsp;	protected abstract Repository getDataRepository();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the selected subManifest occurs in the supplied list of excluded subdirs.
+&nbsp;	 *
+&nbsp;	 * @param subManifestFile the url of a sub-manifest
+&nbsp;	 * @param excludedSubdirs an array of directory names. May be null.
+&nbsp;	 * @return &lt;code&gt;false&lt;/code&gt; if the supplied list of excluded subdirs is not empty and contains a match for the
+&nbsp;	 *         supplied sub-manifest, &lt;code&gt;true&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	protected static boolean includeSubManifest(String subManifestFile, List&lt;String&gt; excludedSubdirs) {
+<b class="fc">&nbsp;		boolean result = true;</b>
+&nbsp;
+<b class="pc">&nbsp;		if (excludedSubdirs != null &amp;&amp; !excludedSubdirs.isEmpty()) {</b>
+<b class="fc">&nbsp;			int index = subManifestFile.lastIndexOf(&#39;/&#39;);</b>
+<b class="fc">&nbsp;			String path = subManifestFile.substring(0, index);</b>
+<b class="fc">&nbsp;			String sd = path.substring(path.lastIndexOf(&#39;/&#39;) + 1);</b>
+&nbsp;
+<b class="fc">&nbsp;			for (String subdir : excludedSubdirs) {</b>
+<b class="fc">&nbsp;				if (sd.equals(subdir)) {</b>
+<b class="fc">&nbsp;					result = false;</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void uploadDataset(Dataset dataset) throws Exception {
+<b class="pc">&nbsp;		try (RepositoryConnection con = getDataRepository().getConnection()) {</b>
+&nbsp;			// Merge default and named graphs to filter duplicates
+<b class="fc">&nbsp;			Set&lt;IRI&gt; graphURIs = new HashSet&lt;&gt;();</b>
+<b class="fc">&nbsp;			graphURIs.addAll(dataset.getDefaultGraphs());</b>
+<b class="fc">&nbsp;			graphURIs.addAll(dataset.getNamedGraphs());</b>
+&nbsp;
+<b class="fc">&nbsp;			for (Resource graphURI : graphURIs) {</b>
+<b class="fc">&nbsp;				upload(((IRI) graphURI), graphURI);</b>
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void upload(IRI graphURI, Resource context) throws Exception {
+<b class="fc">&nbsp;		RepositoryConnection con = getDataRepository().getConnection();</b>
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			con.begin();</b>
+<b class="fc">&nbsp;			RDFFormat rdfFormat = Rio.getParserFormatForFileName(graphURI.toString()).orElse(RDFFormat.TURTLE);</b>
+<b class="fc">&nbsp;			RDFParser rdfParser = Rio.createParser(rdfFormat, getDataRepository().getValueFactory());</b>
+&nbsp;			// rdfParser.setPreserveBNodeIDs(true);
+&nbsp;
+<b class="fc">&nbsp;			RDFInserter rdfInserter = new RDFInserter(con);</b>
+<b class="fc">&nbsp;			rdfInserter.enforceContext(context);</b>
+<b class="fc">&nbsp;			rdfParser.setRDFHandler(rdfInserter);</b>
+&nbsp;
+<b class="fc">&nbsp;			URL graphURL = new URL(graphURI.toString());</b>
+<b class="pc">&nbsp;			try (InputStream in = graphURL.openStream()) {</b>
+<b class="fc">&nbsp;				rdfParser.parse(in, graphURI.toString());</b>
+<b class="pc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (con.isActive()) {</b>
+<b class="nc">&nbsp;				con.rollback();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			con.close();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static final void printBindingSet(BindingSet bs, StringBuilder appendable) {
+<b class="fc">&nbsp;		List&lt;String&gt; names = new ArrayList&lt;&gt;(bs.getBindingNames());</b>
+<b class="fc">&nbsp;		Collections.sort(names);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (String name : names) {</b>
+<b class="pc">&nbsp;			if (bs.hasBinding(name)) {</b>
+<b class="fc">&nbsp;				appendable.append(bs.getBinding(name));</b>
+<b class="fc">&nbsp;				appendable.append(&#39; &#39;);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		appendable.append(&quot;\n&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the ignoredTests
+&nbsp;	 */
+&nbsp;	protected List&lt;String&gt; getIgnoredTests() {
+<b class="fc">&nbsp;		return ignoredTests;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void addIgnoredTest(String ignoredTest) {
+<b class="fc">&nbsp;		this.ignoredTests.add(ignoredTest);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param ignoredTests the ignoredTests to set
+&nbsp;	 */
+&nbsp;	protected void setIgnoredTests(List&lt;String&gt; ignoredTests) {
+<b class="nc">&nbsp;		this.ignoredTests = ignoredTests;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void compareGraphs(Iterable&lt;Statement&gt; queryResult, Iterable&lt;Statement&gt; expectedResult) throws Exception {
+<b class="pc">&nbsp;		if (!Models.isomorphic(expectedResult, queryResult)) {</b>
+<b class="nc">&nbsp;			StringBuilder message = new StringBuilder(128);</b>
+<b class="nc">&nbsp;			message.append(&quot;\n============ &quot;);</b>
+<b class="nc">&nbsp;			message.append(getName());</b>
+<b class="nc">&nbsp;			message.append(&quot; =======================\n&quot;);</b>
+<b class="nc">&nbsp;			message.append(&quot;Expected result: \n&quot;);</b>
+<b class="nc">&nbsp;			for (Statement st : expectedResult) {</b>
+<b class="nc">&nbsp;				message.append(st.toString());</b>
+<b class="nc">&nbsp;				message.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			message.append(&quot;=============&quot;);</b>
+<b class="nc">&nbsp;			StringUtil.appendN(&#39;=&#39;, getName().length(), message);</b>
+<b class="nc">&nbsp;			message.append(&quot;========================\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			message.append(&quot;Query result: \n&quot;);</b>
+<b class="nc">&nbsp;			for (Statement st : queryResult) {</b>
+<b class="nc">&nbsp;				message.append(st.toString());</b>
+<b class="nc">&nbsp;				message.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			message.append(&quot;=============&quot;);</b>
+<b class="nc">&nbsp;			StringUtil.appendN(&#39;=&#39;, getName().length(), message);</b>
+<b class="nc">&nbsp;			message.append(&quot;========================\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.error(message.toString());</b>
+<b class="nc">&nbsp;			fail(message.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

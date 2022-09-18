@@ -1,0 +1,326 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractLuceneSailIndexedPropertiesTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.testsuite.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractLuceneSailIndexedPropertiesTest (org.eclipse.testsuite.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractLuceneSailIndexedPropertiesTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/94)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.testsuite.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.PROPERTY;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;import static org.junit.Assert.assertFalse;
+&nbsp;import static org.junit.Assert.assertNotNull;
+&nbsp;import static org.junit.Assert.assertTrue;
+&nbsp;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Properties;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.Test;
+&nbsp;
+<b class="nc">&nbsp;public abstract class AbstractLuceneSailIndexedPropertiesTest {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+&nbsp;	protected LuceneSail sail;
+&nbsp;
+&nbsp;	protected Repository repository;
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_1 = vf.createIRI(&quot;urn:subject1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_2 = vf.createIRI(&quot;urn:subject2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_3 = vf.createIRI(&quot;urn:subject3&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_4 = vf.createIRI(&quot;urn:subject4&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_5 = vf.createIRI(&quot;urn:subject5&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_1 = vf.createIRI(&quot;urn:context1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_2 = vf.createIRI(&quot;urn:context2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_3 = vf.createIRI(&quot;urn:context3&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI RDFSLABEL = RDFS.LABEL;</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI RDFSCOMMENT = RDFS.COMMENT;</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI FOAFNAME = vf.createIRI(&quot;http://xmlns.com/foaf/0.1/name&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI FOAFPLAN = vf.createIRI(&quot;http://xmlns.com/foaf/0.1/plan&quot;);</b>
+&nbsp;
+&nbsp;	protected abstract void configure(LuceneSail sail);
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+&nbsp;		// setup a LuceneSail
+<b class="nc">&nbsp;		MemoryStore memoryStore = new MemoryStore();</b>
+&nbsp;		// enable lock tracking
+<b class="nc">&nbsp;		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(true);</b>
+<b class="nc">&nbsp;		sail = new LuceneSail();</b>
+<b class="nc">&nbsp;		configure(sail);</b>
+<b class="nc">&nbsp;		Properties indexedFields = new Properties();</b>
+<b class="nc">&nbsp;		indexedFields.setProperty(&quot;index.1&quot;, RDFSLABEL.toString());</b>
+<b class="nc">&nbsp;		indexedFields.setProperty(&quot;index.2&quot;, RDFSCOMMENT.toString());</b>
+<b class="nc">&nbsp;		indexedFields.setProperty(FOAFNAME.toString(), RDFS.LABEL.toString());</b>
+<b class="nc">&nbsp;		ByteArrayOutputStream indexedFieldsString = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		indexedFields.store(indexedFieldsString, &quot;For testing&quot;);</b>
+<b class="nc">&nbsp;		sail.setParameter(LuceneSail.INDEXEDFIELDS, indexedFieldsString.toString());</b>
+<b class="nc">&nbsp;		sail.setBaseSail(memoryStore);</b>
+&nbsp;
+&nbsp;		// create a Repository wrapping the LuceneSail
+<b class="nc">&nbsp;		repository = new SailRepository(sail);</b>
+&nbsp;
+&nbsp;		// add some statements to it
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.begin();</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, RDFSLABEL, vf.createLiteral(&quot;the first resource&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, RDFSCOMMENT, vf.createLiteral(</b>
+&nbsp;					&quot;Groucho Marx is going to cut away the first part of the first party of the contract.&quot;));
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, FOAFNAME, vf.createLiteral(&quot;groucho and harpo&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;			connection.add(SUBJECT_2, FOAFNAME, vf.createLiteral(&quot;the second resource&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_2, RDFSCOMMENT,</b>
+<b class="nc">&nbsp;					vf.createLiteral(&quot;in the night at the opera, groucho is in a cabin on a ship.&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, RDFSLABEL, vf.createLiteral(&quot;the third resource&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, RDFSCOMMENT,</b>
+<b class="nc">&nbsp;					vf.createLiteral(&quot;a not well known fact, groucho marx was not a smoker&quot;));</b>
+&nbsp;			// this should not be indexed
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, FOAFPLAN, vf.createLiteral(&quot;groucho did not smoke cigars nor cigarillos&quot;));</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws IOException, RepositoryException {
+<b class="nc">&nbsp;		if (repository != null) {</b>
+<b class="nc">&nbsp;			repository.shutDown();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testTriplesStored() throws Exception {
+&nbsp;		// are the triples stored in the underlying sail?
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_1, RDFSLABEL, vf.createLiteral(&quot;the first resource&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_1, RDFSCOMMENT,</b>
+<b class="nc">&nbsp;					vf.createLiteral(</b>
+&nbsp;							&quot;Groucho Marx is going to cut away the first part of the first party of the contract.&quot;),
+&nbsp;					false));
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_1, FOAFNAME, vf.createLiteral(&quot;groucho and harpo&quot;), false));</b>
+&nbsp;
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_2, FOAFNAME, vf.createLiteral(&quot;the second resource&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_2, RDFSCOMMENT,</b>
+<b class="nc">&nbsp;					vf.createLiteral(&quot;in the night at the opera, groucho is in a cabin on a ship.&quot;), false));</b>
+&nbsp;
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, RDFSLABEL, vf.createLiteral(&quot;the third resource&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, RDFSCOMMENT,</b>
+<b class="nc">&nbsp;					vf.createLiteral(&quot;a not well known fact, groucho marx was not a smoker&quot;), false));</b>
+&nbsp;			// this should not be indexed
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, FOAFPLAN,</b>
+<b class="nc">&nbsp;					vf.createLiteral(&quot;groucho did not smoke cigars nor cigarillos&quot;), false));</b>
+<b class="nc">&nbsp;			System.err.println(&quot;--- after&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRegularQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query for all subjects with a given term
+<b class="nc">&nbsp;			String queryString = &quot;SELECT ?Subject ?Score &quot; + &quot;WHERE { ?Subject &lt;&quot; + MATCHES + &quot;&gt; [ &quot; + &quot; &lt;&quot; + QUERY</b>
+&nbsp;					+ &quot;&gt; ?Query; &quot; + &quot; &lt;&quot; + PROPERTY + &quot;&gt; ?Property; &quot; + &quot; &lt;&quot; + SCORE + &quot;&gt; ?Score ].} &quot;;
+&nbsp;			{
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(queryString);</b>
+<b class="nc">&nbsp;				query.setBinding(&quot;Query&quot;, vf.createLiteral(&quot;resource&quot;));</b>
+<b class="nc">&nbsp;				query.setBinding(&quot;Property&quot;, RDFSLABEL);</b>
+<b class="nc">&nbsp;				try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;					// check the results
+<b class="nc">&nbsp;					ArrayList&lt;IRI&gt; uris = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;					BindingSet bindings;
+<b class="nc">&nbsp;					while (result.hasNext()) {</b>
+<b class="nc">&nbsp;						bindings = result.next();</b>
+<b class="nc">&nbsp;						uris.add((IRI) bindings.getValue(&quot;Subject&quot;));</b>
+<b class="nc">&nbsp;						assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					assertEquals(3, uris.size());</b>
+<b class="nc">&nbsp;					assertTrue(uris.contains(SUBJECT_1));</b>
+<b class="nc">&nbsp;					assertTrue(uris.contains(SUBJECT_2));</b>
+<b class="nc">&nbsp;					assertTrue(uris.contains(SUBJECT_3));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			{
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(queryString);</b>
+<b class="nc">&nbsp;				query.setBinding(&quot;Query&quot;, vf.createLiteral(&quot;groucho&quot;));</b>
+<b class="nc">&nbsp;				query.setBinding(&quot;Property&quot;, RDFSLABEL);</b>
+<b class="nc">&nbsp;				try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;					// check the results
+<b class="nc">&nbsp;					ArrayList&lt;IRI&gt; uris = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;					BindingSet bindings;
+<b class="nc">&nbsp;					while (result.hasNext()) {</b>
+<b class="nc">&nbsp;						bindings = result.next();</b>
+<b class="nc">&nbsp;						uris.add((IRI) bindings.getValue(&quot;Subject&quot;));</b>
+<b class="nc">&nbsp;						assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					assertEquals(1, uris.size());</b>
+<b class="nc">&nbsp;					assertTrue(uris.contains(SUBJECT_1));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			{
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(queryString);</b>
+<b class="nc">&nbsp;				query.setBinding(&quot;Query&quot;, vf.createLiteral(&quot;cigarillos&quot;));</b>
+<b class="nc">&nbsp;				query.setBinding(&quot;Property&quot;, FOAFPLAN);</b>
+<b class="nc">&nbsp;				try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;					// check the results
+<b class="nc">&nbsp;					assertFalse(result.hasNext());</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

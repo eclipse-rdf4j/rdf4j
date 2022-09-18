@@ -1,0 +1,194 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DefaultConsoleState</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console</a>
+</div>
+
+<h1>Coverage Summary for Class: DefaultConsoleState (org.eclipse.rdf4j.console)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DefaultConsoleState</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.app.AppConfiguration;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;
+&nbsp;/**
+&nbsp; * Console state helper class
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;class DefaultConsoleState implements ConsoleState {
+&nbsp;	private final AppConfiguration cfg;
+&nbsp;
+&nbsp;	private RepositoryManager manager;
+&nbsp;	private String managerID;
+&nbsp;
+&nbsp;	private Repository repository;
+&nbsp;	private String repositoryID;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getApplicationName() {
+<b class="nc">&nbsp;		return cfg.getFullName();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public File getDataDirectory() {
+<b class="nc">&nbsp;		return cfg.getDataDir();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getManagerID() {
+<b class="nc">&nbsp;		return this.managerID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getRepositoryID() {
+<b class="nc">&nbsp;		return this.repositoryID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryManager getManager() {
+<b class="nc">&nbsp;		return this.manager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setManager(RepositoryManager manager) {
+<b class="nc">&nbsp;		this.manager = manager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setManagerID(String managerID) {
+<b class="nc">&nbsp;		this.managerID = managerID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Repository getRepository() {
+<b class="nc">&nbsp;		return this.repository;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setRepositoryID(String repositoryID) {
+<b class="nc">&nbsp;		this.repositoryID = repositoryID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setRepository(Repository repository) {
+<b class="nc">&nbsp;		this.repository = repository;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param cfg
+&nbsp;	 */
+<b class="nc">&nbsp;	DefaultConsoleState(AppConfiguration cfg) {</b>
+<b class="nc">&nbsp;		this.cfg = cfg;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

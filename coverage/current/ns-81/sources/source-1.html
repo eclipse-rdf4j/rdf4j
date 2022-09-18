@@ -1,0 +1,689 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractSPARQLJSONParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.sparqljson</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractSPARQLJSONParser (org.eclipse.rdf4j.query.resultio.sparqljson)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractSPARQLJSONParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.5%
+  </span>
+  <span class="absValue">
+    (6/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40.3%
+  </span>
+  <span class="absValue">
+    (71/176)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40.7%
+  </span>
+  <span class="absValue">
+    (111/273)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.sparqljson;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.OBJECT;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.PREDICATE;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.SUBJECT;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONConstants.TRIPLE_STARDOG;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.StringUtils;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.resultio.AbstractQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.JSONSettings;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.fasterxml.jackson.core.JsonFactory;
+&nbsp;import com.fasterxml.jackson.core.JsonGenerator;
+&nbsp;import com.fasterxml.jackson.core.JsonParser;
+&nbsp;import com.fasterxml.jackson.core.JsonProcessingException;
+&nbsp;import com.fasterxml.jackson.core.JsonToken;
+&nbsp;
+&nbsp;/**
+&nbsp; * Abstract base class for SPARQL Results JSON Parsers. Provides a common implementation of both boolean and tuple
+&nbsp; * parsing.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; * @author Sebastian Schaffert
+&nbsp; */
+&nbsp;public abstract class AbstractSPARQLJSONParser extends AbstractQueryResultParser {
+&nbsp;
+<b class="fc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+&nbsp;	public static final String HEAD = &quot;head&quot;;
+&nbsp;
+&nbsp;	public static final String LINK = &quot;link&quot;;
+&nbsp;
+&nbsp;	public static final String VARS = &quot;vars&quot;;
+&nbsp;
+&nbsp;	public static final String BOOLEAN = &quot;boolean&quot;;
+&nbsp;
+&nbsp;	public static final String RESULTS = &quot;results&quot;;
+&nbsp;
+&nbsp;	public static final String BINDINGS = &quot;bindings&quot;;
+&nbsp;
+&nbsp;	public static final String TYPE = &quot;type&quot;;
+&nbsp;
+&nbsp;	public static final String VALUE = &quot;value&quot;;
+&nbsp;
+&nbsp;	public static final String XMLLANG = &quot;xml:lang&quot;;
+&nbsp;
+&nbsp;	public static final String DATATYPE = &quot;datatype&quot;;
+&nbsp;
+&nbsp;	public static final String LITERAL = &quot;literal&quot;;
+&nbsp;
+&nbsp;	public static final String TYPED_LITERAL = &quot;typed-literal&quot;;
+&nbsp;
+&nbsp;	public static final String BNODE = &quot;bnode&quot;;
+&nbsp;
+&nbsp;	public static final String URI = &quot;uri&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Backwards compatibility with very early version of original SPARQL spec.
+&nbsp;	 */
+&nbsp;	private static final String DISTINCT = &quot;distinct&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Backwards compatibility with very early version of original SPARQL spec.
+&nbsp;	 */
+&nbsp;	private static final String ORDERED = &quot;ordered&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	protected AbstractSPARQLJSONParser() {
+<b class="fc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	protected AbstractSPARQLJSONParser(ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parseQueryResult(InputStream in)
+&nbsp;			throws IOException, QueryResultParseException, QueryResultHandlerException {
+<b class="fc">&nbsp;		parseQueryResultInternal(in, true, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean, boolean attemptParseTuple)
+&nbsp;			throws IOException, QueryResultParseException, QueryResultHandlerException {
+<b class="pc">&nbsp;		if (!attemptParseBoolean &amp;&amp; !attemptParseTuple) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+&nbsp;					&quot;Internal error: Did not specify whether to parse as either boolean and/or tuple&quot;);
+&nbsp;		}
+&nbsp;
+&nbsp;		JsonParser jp;
+&nbsp;
+<b class="fc">&nbsp;		boolean result = false;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			jp = configureNewJsonFactory().createParser(in);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (jp.nextToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;				throw new QueryResultParseException(&quot;Expected SPARQL Results JSON document to start with an Object&quot;,</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			List&lt;String&gt; varsList = new ArrayList&lt;&gt;();</b>
+<b class="fc">&nbsp;			boolean varsFound = false;</b>
+<b class="fc">&nbsp;			Set&lt;BindingSet&gt; bindings = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;			while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+&nbsp;
+<b class="fc">&nbsp;				final String baseStr = jp.getCurrentName();</b>
+&nbsp;
+<b class="fc">&nbsp;				if (baseStr.equals(HEAD)) {</b>
+<b class="pc">&nbsp;					if (jp.nextToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;						throw new QueryResultParseException(&quot;Did not find object under &quot; + baseStr + &quot; field&quot;,</b>
+<b class="nc">&nbsp;								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+<b class="fc">&nbsp;						final String headStr = jp.getCurrentName();</b>
+&nbsp;
+<b class="pc">&nbsp;						if (headStr.equals(VARS)) {</b>
+<b class="pc">&nbsp;							if (!attemptParseTuple) {</b>
+<b class="nc">&nbsp;								throw new QueryResultParseException(</b>
+&nbsp;										&quot;Found tuple results variables when attempting to parse SPARQL Results JSON to boolean result&quot;,
+<b class="nc">&nbsp;										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());</b>
+&nbsp;							}
+&nbsp;
+<b class="pc">&nbsp;							if (jp.nextToken() != JsonToken.START_ARRAY) {</b>
+<b class="nc">&nbsp;								throw new QueryResultParseException(&quot;Expected variable labels to be an array&quot;,</b>
+<b class="nc">&nbsp;										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;							}
+&nbsp;
+<b class="fc">&nbsp;							while (jp.nextToken() != JsonToken.END_ARRAY) {</b>
+<b class="fc">&nbsp;								varsList.add(jp.getText());</b>
+&nbsp;							}
+&nbsp;
+<b class="pc">&nbsp;							if (this.handler != null) {</b>
+<b class="fc">&nbsp;								handler.startQueryResult(varsList);</b>
+&nbsp;							}
+&nbsp;
+<b class="fc">&nbsp;							varsFound = true;</b>
+&nbsp;
+&nbsp;							// If the bindings were populated before this point push them
+&nbsp;							// out now.
+<b class="pc">&nbsp;							if (!bindings.isEmpty() &amp;&amp; this.handler != null) {</b>
+<b class="nc">&nbsp;								for (BindingSet nextBinding : bindings) {</b>
+<b class="nc">&nbsp;									handler.handleSolution(nextBinding);</b>
+<b class="nc">&nbsp;									handler.endQueryResult();</b>
+<b class="nc">&nbsp;								}</b>
+<b class="nc">&nbsp;								bindings.clear();</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;						} else if (headStr.equals(LINK)) {</b>
+<b class="nc">&nbsp;							List&lt;String&gt; linksList = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;							if (jp.nextToken() != JsonToken.START_ARRAY) {</b>
+<b class="nc">&nbsp;								throw new QueryResultParseException(&quot;Expected links to be an array&quot;,</b>
+<b class="nc">&nbsp;										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							while (jp.nextToken() != JsonToken.END_ARRAY) {</b>
+<b class="nc">&nbsp;								linksList.add(jp.getText());</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							if (this.handler != null) {</b>
+<b class="nc">&nbsp;								handler.handleLinks(linksList);</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;						} else {</b>
+<b class="nc">&nbsp;							throw new QueryResultParseException(&quot;Found unexpected object in head field: &quot; + headStr,</b>
+<b class="nc">&nbsp;									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+<b class="fc">&nbsp;				} else if (baseStr.equals(RESULTS)) {</b>
+<b class="pc">&nbsp;					if (!attemptParseTuple) {</b>
+<b class="nc">&nbsp;						throw new QueryResultParseException(</b>
+&nbsp;								&quot;Found tuple results bindings when attempting to parse SPARQL Results JSON to boolean result&quot;,
+<b class="nc">&nbsp;								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());</b>
+&nbsp;					}
+<b class="pc">&nbsp;					if (jp.nextToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;						throw new QueryResultParseException(</b>
+<b class="nc">&nbsp;								&quot;Found unexpected token in results object: &quot; + jp.getCurrentName(),</b>
+<b class="nc">&nbsp;								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+&nbsp;
+<b class="pc">&nbsp;						if (jp.getCurrentName().equals(BINDINGS)) {</b>
+<b class="pc">&nbsp;							if (jp.nextToken() != JsonToken.START_ARRAY) {</b>
+<b class="nc">&nbsp;								throw new QueryResultParseException(&quot;Found unexpected token in bindings object&quot;,</b>
+<b class="nc">&nbsp;										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;							}
+&nbsp;
+<b class="fc">&nbsp;							while (jp.nextToken() != JsonToken.END_ARRAY) {</b>
+&nbsp;
+<b class="fc">&nbsp;								MapBindingSet nextBindingSet = new MapBindingSet();</b>
+&nbsp;
+<b class="pc">&nbsp;								if (jp.getCurrentToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;									throw new QueryResultParseException(</b>
+<b class="nc">&nbsp;											&quot;Did not find object in bindings array: &quot; + jp.getCurrentName(),</b>
+<b class="nc">&nbsp;											jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;								}
+&nbsp;
+<b class="fc">&nbsp;								while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+&nbsp;
+<b class="pc">&nbsp;									if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {</b>
+<b class="nc">&nbsp;										throw new QueryResultParseException(&quot;Did not find binding name&quot;,</b>
+<b class="nc">&nbsp;												jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;												jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;									}
+&nbsp;
+<b class="fc">&nbsp;									final String bindingStr = jp.getCurrentName();</b>
+&nbsp;
+<b class="fc">&nbsp;									nextBindingSet.addBinding(bindingStr, parseValue(jp, bindingStr));</b>
+<b class="fc">&nbsp;								}</b>
+&nbsp;								// parsing of solution finished, report result return to
+&nbsp;								// bindings state
+<b class="pc">&nbsp;								if (!varsFound) {</b>
+&nbsp;									// Buffer the bindings to fit with the
+&nbsp;									// QueryResultHandler contract so that startQueryResults
+&nbsp;									// is
+&nbsp;									// always called before handleSolution
+<b class="nc">&nbsp;									bindings.add(nextBindingSet);</b>
+<b class="pc">&nbsp;								} else if (handler != null) {</b>
+<b class="fc">&nbsp;									handler.handleSolution(nextBindingSet);</b>
+&nbsp;								}
+<b class="fc">&nbsp;							}</b>
+<b class="pc">&nbsp;							if (handler != null) {</b>
+<b class="fc">&nbsp;								handler.endQueryResult();</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;						// Backwards compatibility with very old draft of the original
+&nbsp;						// SPARQL spec
+<b class="nc">&nbsp;						else if (jp.getCurrentName().equals(DISTINCT) || jp.getCurrentName().equals(ORDERED)) {</b>
+<b class="nc">&nbsp;							jp.nextToken();</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							throw new QueryResultParseException(</b>
+<b class="nc">&nbsp;									&quot;Found unexpected field in results: &quot; + jp.getCurrentName(),</b>
+<b class="nc">&nbsp;									jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;						}
+&nbsp;					}
+<b class="pc">&nbsp;				} else if (baseStr.equals(BOOLEAN)) {</b>
+<b class="pc">&nbsp;					if (!attemptParseBoolean) {</b>
+<b class="nc">&nbsp;						throw new QueryResultParseException(</b>
+&nbsp;								&quot;Found boolean results when attempting to parse SPARQL Results JSON to tuple results&quot;,
+<b class="nc">&nbsp;								jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());</b>
+&nbsp;					}
+<b class="fc">&nbsp;					jp.nextToken();</b>
+&nbsp;
+<b class="fc">&nbsp;					result = Boolean.parseBoolean(jp.getText());</b>
+<b class="pc">&nbsp;					if (handler != null) {</b>
+<b class="fc">&nbsp;						handler.handleBoolean(result);</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="nc">&nbsp;					logger.debug(&quot;Found unexpected object in top level {} field #{}.{}&quot;, baseStr,</b>
+<b class="nc">&nbsp;							jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;					// Consume the discovered unexpected object
+&nbsp;					// (in particular, if it is either an array or a composite object).
+<b class="nc">&nbsp;					jp.nextToken();</b>
+&nbsp;
+<b class="nc">&nbsp;					if (jp.currentToken() == JsonToken.START_ARRAY) {</b>
+<b class="nc">&nbsp;						while (!(jp.getParsingContext().getParent().inRoot()</b>
+<b class="nc">&nbsp;								&amp;&amp; (jp.currentToken() == JsonToken.END_ARRAY))) {</b>
+<b class="nc">&nbsp;							if (jp.nextToken() == null) {</b>
+<b class="nc">&nbsp;								throw new QueryResultParseException(</b>
+&nbsp;										&quot;An array value of the unexpected &quot; + baseStr + &quot; field is not closed.&quot;,
+<b class="nc">&nbsp;										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());</b>
+&nbsp;							}
+&nbsp;						}
+<b class="nc">&nbsp;					} else if (jp.currentToken() == JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;						while (!(jp.getParsingContext().getParent().inRoot()</b>
+<b class="nc">&nbsp;								&amp;&amp; (jp.currentToken() == JsonToken.END_OBJECT))) {</b>
+<b class="nc">&nbsp;							if (jp.nextToken() == null) {</b>
+<b class="nc">&nbsp;								throw new QueryResultParseException(</b>
+&nbsp;										&quot;An object value of the unexpected &quot; + baseStr + &quot; field is not closed.&quot;,
+<b class="nc">&nbsp;										jp.getCurrentLocation().getLineNr(), jp.getCurrentLocation().getLineNr());</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (JsonProcessingException e) {</b>
+<b class="nc">&nbsp;			throw new QueryResultParseException(&quot;Could not parse SPARQL/JSON&quot;, e, e.getLocation().getLineNr(),</b>
+<b class="nc">&nbsp;					e.getLocation().getLineNr());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Value parseValue(JsonParser jp, String bindingStr) throws IOException {
+<b class="pc">&nbsp;		if (jp.nextToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;			throw new QueryResultParseException(&quot;Did not find object for binding value&quot;,</b>
+<b class="nc">&nbsp;					jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;					jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		String lang = null;</b>
+<b class="fc">&nbsp;		String type = null;</b>
+<b class="fc">&nbsp;		String datatype = null;</b>
+<b class="fc">&nbsp;		String value = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		Triple triple = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+<b class="pc">&nbsp;			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {</b>
+<b class="nc">&nbsp;				throw new QueryResultParseException(</b>
+&nbsp;						&quot;Did not find value attribute under &quot; + bindingStr + &quot; field&quot;,
+<b class="nc">&nbsp;						jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			String fieldName = jp.getCurrentName();</b>
+&nbsp;
+&nbsp;			// set the appropriate state variable
+<b class="fc">&nbsp;			if (TYPE.equals(fieldName)) {</b>
+<b class="fc">&nbsp;				type = jp.nextTextValue();</b>
+<b class="pc">&nbsp;				if (TRIPLE_STARDOG.equals(type)) {</b>
+&nbsp;					// Stardog RDF-star serialization dialect does not wrap the triple in a value object
+<b class="nc">&nbsp;					triple = parseStardogTripleValue(jp, type);</b>
+&nbsp;					// avoid reading away the next end-of-object token by jumping out of the loop.
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (XMLLANG.equals(fieldName)) {</b>
+<b class="nc">&nbsp;				lang = jp.nextTextValue();</b>
+<b class="fc">&nbsp;			} else if (DATATYPE.equals(fieldName)) {</b>
+<b class="fc">&nbsp;				datatype = jp.nextTextValue();</b>
+<b class="pc">&nbsp;			} else if (VALUE.equals(fieldName)) {</b>
+<b class="pc">&nbsp;				if (jp.nextToken() == JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;					triple = parseTripleValue(jp, fieldName);</b>
+<b class="nc">&nbsp;					if (jp.getCurrentToken() != JsonToken.END_OBJECT) {</b>
+<b class="nc">&nbsp;						throw new QueryResultParseException(&quot;Unexpected token: &quot; + jp.getCurrentName(),</b>
+<b class="nc">&nbsp;								jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;								jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="fc">&nbsp;					value = jp.getText();</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new QueryResultParseException(&quot;Unexpected field name: &quot; + fieldName,</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+<b class="pc">&nbsp;		if (triple != null &amp;&amp; checkTripleType(jp, type)) {</b>
+<b class="nc">&nbsp;			return triple;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return parseValue(type, value, lang, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Triple parseStardogTripleValue(JsonParser jp, String fieldName) throws IOException {
+<b class="nc">&nbsp;		Value subject = null, predicate = null, object = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+<b class="nc">&nbsp;			if (jp.getCurrentToken() != JsonToken.FIELD_NAME) {</b>
+<b class="nc">&nbsp;				throw new QueryResultParseException(&quot;Did not find triple attribute in triple value&quot;,</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String posName = jp.getCurrentName();</b>
+<b class="nc">&nbsp;			if (SUBJECT.equals(posName)) {</b>
+<b class="nc">&nbsp;				if (subject != null) {</b>
+<b class="nc">&nbsp;					throw new QueryResultParseException(</b>
+&nbsp;							posName + &quot; field encountered twice in triple value: &quot;,
+<b class="nc">&nbsp;							jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;							jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				subject = parseValue(jp, fieldName + &quot;:&quot; + posName);</b>
+<b class="nc">&nbsp;			} else if (PREDICATE.equals(posName)) {</b>
+<b class="nc">&nbsp;				if (predicate != null) {</b>
+<b class="nc">&nbsp;					throw new QueryResultParseException(</b>
+&nbsp;							posName + &quot; field encountered twice in triple value: &quot;,
+<b class="nc">&nbsp;							jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;							jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				predicate = parseValue(jp, fieldName + &quot;:&quot; + posName);</b>
+<b class="nc">&nbsp;			} else if (OBJECT.equals(posName)) {</b>
+<b class="nc">&nbsp;				if (object != null) {</b>
+<b class="nc">&nbsp;					throw new QueryResultParseException(</b>
+&nbsp;							posName + &quot; field encountered twice in triple value: &quot;,
+<b class="nc">&nbsp;							jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;							jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				object = parseValue(jp, fieldName + &quot;:&quot; + posName);</b>
+<b class="nc">&nbsp;			} else if (&quot;g&quot;.equals(posName)) {</b>
+&nbsp;				// silently ignore named graph field in Stardog dialect
+<b class="nc">&nbsp;				parseValue(jp, fieldName + &quot;:&quot; + posName);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new QueryResultParseException(&quot;Unexpected field name in triple value: &quot; + posName,</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;						jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (subject instanceof Resource &amp;&amp; predicate instanceof IRI &amp;&amp; object != null) {</b>
+<b class="nc">&nbsp;			return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryResultParseException(&quot;Incomplete or invalid triple value&quot;,</b>
+<b class="nc">&nbsp;					jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;					jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Triple parseTripleValue(JsonParser jp, String fieldName) throws IOException {
+<b class="nc">&nbsp;		throw new QueryResultParseException(&quot;Unexpected object as value&quot;, jp.getCurrentLocation().getLineNr(),</b>
+<b class="nc">&nbsp;				jp.getCurrentLocation().getColumnNr());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean checkTripleType(JsonParser jp, String type) {
+<b class="nc">&nbsp;		throw new IllegalStateException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse a value out of the elements for a binding.
+&nbsp;	 *
+&nbsp;	 * @param type     {@link #LITERAL}, {@link #TYPED_LITERAL}, {@link #BNODE} or {@link #URI}
+&nbsp;	 * @param value    actual value text
+&nbsp;	 * @param language language tag, if applicable
+&nbsp;	 * @param datatype datatype tag, if applicable
+&nbsp;	 * @return the value corresponding to the given parameters
+&nbsp;	 */
+&nbsp;	private Value parseValue(String type, String value, String language, String datatype) {
+<b class="fc">&nbsp;		logger.trace(&quot;type: {}&quot;, type);</b>
+<b class="fc">&nbsp;		logger.trace(&quot;value: {}&quot;, value);</b>
+<b class="fc">&nbsp;		logger.trace(&quot;language: {}&quot;, language);</b>
+<b class="fc">&nbsp;		logger.trace(&quot;datatype: {}&quot;, datatype);</b>
+&nbsp;
+<b class="fc">&nbsp;		Value result = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		if (type.equals(LITERAL) || type.equals(TYPED_LITERAL)) {</b>
+<b class="pc">&nbsp;			if (language != null) {</b>
+<b class="nc">&nbsp;				result = valueFactory.createLiteral(value, language);</b>
+<b class="fc">&nbsp;			} else if (datatype != null) {</b>
+&nbsp;				IRI datatypeIri;
+<b class="fc">&nbsp;				datatypeIri = valueFactory.createIRI(datatype);</b>
+&nbsp;
+&nbsp;				// For broken SPARQL endpoints which return LANGSTRING without a language, fall back
+&nbsp;				// to using STRING as the datatype
+<b class="pc">&nbsp;				if (RDF.LANGSTRING.equals(datatypeIri) &amp;&amp; language == null) {</b>
+<b class="nc">&nbsp;					logger.debug(</b>
+&nbsp;							&quot;rdf:langString typed literal missing language tag: &#39;{}&#39;. Falling back to xsd:string.&quot;,
+<b class="nc">&nbsp;							StringUtils.abbreviate(value, 10)</b>
+&nbsp;					);
+<b class="nc">&nbsp;					datatypeIri = XSD.STRING;</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				result = valueFactory.createLiteral(value, datatypeIri);</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				result = valueFactory.createLiteral(value);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		} else if (type.equals(BNODE)) {</b>
+<b class="fc">&nbsp;			result = valueFactory.createBNode(value);</b>
+<b class="pc">&nbsp;		} else if (type.equals(URI)) {</b>
+<b class="fc">&nbsp;			result = valueFactory.createIRI(value);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		logger.debug(&quot;result value: {}&quot;, result);</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Collection&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_COMMENTS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_SINGLE_QUOTES);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_YAML_COMMENTS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_TRAILING_COMMA);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.INCLUDE_SOURCE_IN_LOCATION);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.STRICT_DUPLICATE_DETECTION);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
+&nbsp;	 *
+&nbsp;	 * @return A newly configured JsonFactory based on the currently enabled settings
+&nbsp;	 */
+&nbsp;	private JsonFactory configureNewJsonFactory() {
+<b class="fc">&nbsp;		final JsonFactory nextJsonFactory = new JsonFactory();</b>
+&nbsp;		// Disable features that may work for most JSON where the field names are
+&nbsp;		// in limited supply,
+&nbsp;		// but does not work for SPARQL/JSON where a wide range of URIs are used for
+&nbsp;		// subjects and predicates
+<b class="fc">&nbsp;		nextJsonFactory.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);</b>
+<b class="fc">&nbsp;		nextJsonFactory.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);</b>
+<b class="fc">&nbsp;		nextJsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_COMMENTS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_COMMENTS));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (getParserConfig().isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return nextJsonFactory;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

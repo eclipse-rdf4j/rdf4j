@@ -1,0 +1,377 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HDTParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.hdt</a>
+</div>
+
+<h1>Coverage Summary for Class: HDTParser (org.eclipse.rdf4j.rio.hdt)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HDTParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/86)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.hdt;
+&nbsp;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.io.input.CountingInputStream;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+&nbsp;
+&nbsp;/**
+&nbsp; * RDF parser for HDT v1.0 files. This parser is not thread-safe, therefore its public methods are synchronized.
+&nbsp; *
+&nbsp; * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
+&nbsp; * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
+&nbsp; * with HDT-It 1.0.
+&nbsp; *
+&nbsp; * The most important parts are the Dictionaries containing the actual values (S, P, O part of a triple), and the
+&nbsp; * Triples containing the numeric references to construct the triples.
+&nbsp; *
+&nbsp; * Since objects in one triple are often subjects in another triple, these &quot;shared&quot; parts are stored in a shared
+&nbsp; * Dictionary, which may significantly reduce the file size.
+&nbsp; *
+&nbsp; * File structure:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * +---------------------+
+&nbsp; * | Global              |
+&nbsp; * | Header              |
+&nbsp; * | Dictionary (Shared) |
+&nbsp; * | Dictionary (S)      |
+&nbsp; * | Dictionary (P)      |
+&nbsp; * | Dictionary (O)      |
+&nbsp; * | Triples             |
+&nbsp; * +---------------------+
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.rdfhdt.org/hdt-binary-format/&quot;&gt;HDT draft (2015)&lt;/a&gt;
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/Submission/2011/03/&quot;&gt;W3C Member Submission (2011)&lt;/a&gt;
+&nbsp; */
+&nbsp;public class HDTParser extends AbstractRDFParser {
+&nbsp;	/**
+&nbsp;	 * Creates a new HDTParser that will use a {@link SimpleValueFactory} to create RDF model objects.
+&nbsp;	 */
+&nbsp;	public HDTParser() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new HDTParser that will use the supplied ValueFactory to create RDF model objects.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory A ValueFactory.
+&nbsp;	 */
+&nbsp;	public HDTParser(ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.HDT;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Set&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void parse(InputStream in, String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		if (in == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Input stream must not be &#39;null&#39;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (in instanceof FileInputStream) {</b>
+&nbsp;			// &quot;TODO: use more optimized way to parse the file, eg. filechannel / membuffer&quot;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		HDTDictionarySection shared = null;</b>
+<b class="nc">&nbsp;		HDTDictionarySection subjects = null;</b>
+<b class="nc">&nbsp;		HDTDictionarySection predicates = null;</b>
+<b class="nc">&nbsp;		HDTDictionarySection objects = null;</b>
+<b class="nc">&nbsp;		HDTTriplesSection section = null;</b>
+&nbsp;
+&nbsp;		// not using try-with-resources, since the counter is needed in the catch clause (JDK8)
+<b class="nc">&nbsp;		CountingInputStream bis = new CountingInputStream(in);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			reportLocation(0, -1);</b>
+<b class="nc">&nbsp;			HDTGlobal global = new HDTGlobal();</b>
+<b class="nc">&nbsp;			global.parse(bis);</b>
+<b class="nc">&nbsp;			Map&lt;String, String&gt; globalProps = global.getProperties();</b>
+<b class="nc">&nbsp;			String base = globalProps.getOrDefault(HDTGlobal.GLOBAL_BASEURI, &quot;&quot;);</b>
+<b class="nc">&nbsp;			if (!base.isEmpty()) {</b>
+<b class="nc">&nbsp;				setBaseURI(base);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			reportLocation(bis.getByteCount(), -1);</b>
+<b class="nc">&nbsp;			HDTHeader header = new HDTHeader();</b>
+<b class="nc">&nbsp;			header.parse(bis);</b>
+&nbsp;
+<b class="nc">&nbsp;			reportLocation(bis.getByteCount(), -1);</b>
+<b class="nc">&nbsp;			new HDTDictionary().parse(bis);</b>
+&nbsp;
+<b class="nc">&nbsp;			long dpos = bis.getByteCount();</b>
+<b class="nc">&nbsp;			reportLocation(dpos, -1);</b>
+<b class="nc">&nbsp;			shared = HDTDictionarySectionFactory.parse(bis, &quot;S+O&quot;, dpos);</b>
+<b class="nc">&nbsp;			shared.parse(bis);</b>
+&nbsp;
+<b class="nc">&nbsp;			dpos = bis.getByteCount();</b>
+<b class="nc">&nbsp;			reportLocation(dpos, -1);</b>
+<b class="nc">&nbsp;			subjects = HDTDictionarySectionFactory.parse(bis, &quot;S&quot;, dpos);</b>
+<b class="nc">&nbsp;			subjects.parse(bis);</b>
+&nbsp;
+<b class="nc">&nbsp;			dpos = bis.getByteCount();</b>
+<b class="nc">&nbsp;			reportLocation(dpos, -1);</b>
+<b class="nc">&nbsp;			predicates = HDTDictionarySectionFactory.parse(bis, &quot;P&quot;, dpos);</b>
+<b class="nc">&nbsp;			predicates.parse(bis);</b>
+&nbsp;
+<b class="nc">&nbsp;			dpos = bis.getByteCount();</b>
+<b class="nc">&nbsp;			reportLocation(dpos, -1);</b>
+<b class="nc">&nbsp;			objects = HDTDictionarySectionFactory.parse(bis, &quot;O&quot;, dpos);</b>
+<b class="nc">&nbsp;			objects.parse(bis);</b>
+&nbsp;
+<b class="nc">&nbsp;			reportLocation(bis.getByteCount(), -1);</b>
+<b class="nc">&nbsp;			HDTTriples triples = new HDTTriples();</b>
+<b class="nc">&nbsp;			triples.parse(bis);</b>
+&nbsp;
+<b class="nc">&nbsp;			reportLocation(bis.getByteCount(), -1);</b>
+<b class="nc">&nbsp;			section = HDTTriplesSectionFactory.parse(new String(HDTTriples.FORMAT_BITMAP));</b>
+<b class="nc">&nbsp;			section.parse(bis, triples.getOrder());</b>
+<b class="nc">&nbsp;		} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;			reportFatalError(ioe.getMessage(), bis.getCount(), -1);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			bis.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;			rdfHandler.startRDF();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int cnt = 0;</b>
+<b class="nc">&nbsp;		int size = shared.size();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (section.hasNext()) {</b>
+<b class="nc">&nbsp;			int[] t = section.next();</b>
+<b class="nc">&nbsp;			byte[] s = getSO(t[0], size, shared, subjects);</b>
+<b class="nc">&nbsp;			byte[] p = predicates.get(t[1]);</b>
+<b class="nc">&nbsp;			byte[] o = getSO(t[2], size, shared, objects);</b>
+<b class="nc">&nbsp;			Statement stmt = valueFactory.createStatement(createSubject(s), createPredicate(p), createObject(o));</b>
+&nbsp;
+<b class="nc">&nbsp;			if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;				rdfHandler.handleStatement(stmt);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;			rdfHandler.endRDF();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Not supported, since HDT is a binary format.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void parse(Reader reader, String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;HDT is binary, text readers not supported.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get part of triple from shared HDT Dictionary or (if not found) from specific HDT Dictionary
+&nbsp;	 *
+&nbsp;	 * @param pos    position
+&nbsp;	 * @param size   size of shared Dictionary
+&nbsp;	 * @param shared shared Dictionary
+&nbsp;	 * @param other  specific Dictionary
+&nbsp;	 * @return subject or object
+&nbsp;	 */
+&nbsp;	private byte[] getSO(int pos, int size, HDTDictionarySection shared, HDTDictionarySection other)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		return (pos &lt;= size) ? shared.get(pos) : other.get(pos - size);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isBNodeID(byte[] b) {
+&nbsp;		// HDT-It generates &quot;genid&quot; for blank nodes in RDF/XML
+<b class="nc">&nbsp;		return (b[0] == &#39;_&#39; || (b.length &gt; 5 &amp;&amp; b[0] == &#39;g&#39; &amp;&amp; b[1] == &#39;e&#39;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create subject IRI or blank node
+&nbsp;	 *
+&nbsp;	 * @param b byte buffer
+&nbsp;	 * @return IRI or blank node
+&nbsp;	 */
+&nbsp;	private Resource createSubject(byte[] b) {
+<b class="nc">&nbsp;		String str = new String(b, StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;		return isBNodeID(b) ? valueFactory.createBNode(str) : valueFactory.createIRI(str);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create predicate IRI
+&nbsp;	 *
+&nbsp;	 * @param b byte buffer
+&nbsp;	 * @return IRI
+&nbsp;	 */
+&nbsp;	private IRI createPredicate(byte[] b) {
+<b class="nc">&nbsp;		return valueFactory.createIRI(new String(b, StandardCharsets.UTF_8));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create object (typed) literal, IRI or blank node
+&nbsp;	 *
+&nbsp;	 * @param b byte buffer
+&nbsp;	 * @return literal, IRI or blank node
+&nbsp;	 */
+&nbsp;	private Value createObject(byte[] b) {
+<b class="nc">&nbsp;		if (b[0] == &#39;&quot;&#39;) {</b>
+<b class="nc">&nbsp;			int i = b.length - 1;</b>
+<b class="nc">&nbsp;			for (; i &gt; 1 &amp;&amp; b[i] != &#39;&quot;&#39;; i--) {</b>
+<b class="nc">&nbsp;				if (b[i] == &#39;@&#39;) {</b>
+<b class="nc">&nbsp;					String lang = new String(b, i + 1, b.length - i - 1, StandardCharsets.US_ASCII);</b>
+<b class="nc">&nbsp;					return valueFactory.createLiteral(new String(b, 1, i - 2, StandardCharsets.UTF_8), lang);</b>
+<b class="nc">&nbsp;				} else if (b[i] == &#39;^&#39;) {</b>
+<b class="nc">&nbsp;					IRI datatype = valueFactory</b>
+<b class="nc">&nbsp;							.createIRI(new String(b, i + 2, b.length - i - 3, StandardCharsets.US_ASCII));</b>
+<b class="nc">&nbsp;					return valueFactory.createLiteral(new String(b, 1, i - 3, StandardCharsets.UTF_8), datatype);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return valueFactory.createLiteral(new String(b, 1, i - 1, StandardCharsets.UTF_8));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String str = new String(b, StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;		return isBNodeID(b) ? valueFactory.createBNode(str) : valueFactory.createIRI(str);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

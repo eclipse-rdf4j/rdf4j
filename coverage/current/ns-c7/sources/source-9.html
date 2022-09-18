@@ -1,0 +1,319 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LmdbUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lmdb</a>
+</div>
+
+<h1>Coverage Summary for Class: LmdbUtil (org.eclipse.rdf4j.sail.lmdb)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LmdbUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LmdbUtil$Transaction</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;/*
+&nbsp; * Copyright LWJGL. All rights reserved.
+&nbsp; * License terms: https://www.lwjgl.org/license
+&nbsp; */
+&nbsp;package org.eclipse.rdf4j.sail.lmdb;
+&nbsp;
+&nbsp;import static org.lwjgl.system.MemoryStack.stackPush;
+&nbsp;import static org.lwjgl.system.MemoryUtil.NULL;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_set_compare;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.nio.IntBuffer;
+&nbsp;import java.util.Comparator;
+&nbsp;
+&nbsp;import org.lwjgl.PointerBuffer;
+&nbsp;import org.lwjgl.system.MemoryStack;
+&nbsp;import org.lwjgl.system.MemoryUtil;
+&nbsp;import org.lwjgl.system.Pointer;
+&nbsp;import org.lwjgl.util.lmdb.MDBCmpFuncI;
+&nbsp;import org.lwjgl.util.lmdb.MDBVal;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility class for working with LMDB.
+&nbsp; */
+&nbsp;final class LmdbUtil {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Minimum free space in an LMDB db before automatically resizing the map.
+&nbsp;	 */
+&nbsp;	static final long MIN_FREE_SPACE = 524_288; // 512 KiB
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Minimum size an LMDB db is automatically grown.
+&nbsp;	 */
+&nbsp;	static final long MIN_AUTOGROW_SIZE = 1_048_576; // 1024 KiB
+&nbsp;
+&nbsp;	private LmdbUtil() {
+&nbsp;	}
+&nbsp;
+&nbsp;	static void E(int rc) throws IOException {
+<b class="nc">&nbsp;		if (rc != MDB_SUCCESS &amp;&amp; rc != MDB_NOTFOUND) {</b>
+<b class="nc">&nbsp;			throw new IOException(mdb_strerror(rc));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	static &lt;T&gt; T readTransaction(long env, Transaction&lt;T&gt; transaction) throws IOException {
+<b class="nc">&nbsp;		return readTransaction(env, 0L, transaction);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static &lt;T&gt; T readTransaction(long env, long writeTxn, Transaction&lt;T&gt; transaction) throws IOException {
+&nbsp;		T ret;
+<b class="nc">&nbsp;		try (MemoryStack stack = stackPush()) {</b>
+&nbsp;			long txn;
+<b class="nc">&nbsp;			if (writeTxn == 0) {</b>
+<b class="nc">&nbsp;				PointerBuffer pp = stack.mallocPointer(1);</b>
+<b class="nc">&nbsp;				E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));</b>
+<b class="nc">&nbsp;				txn = pp.get(0);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				txn = writeTxn;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				ret = transaction.exec(stack, txn);</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				if (writeTxn == 0) {</b>
+<b class="nc">&nbsp;					mdb_txn_abort(txn);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static &lt;T&gt; T transaction(long env, Transaction&lt;T&gt; transaction) throws IOException {
+&nbsp;		T ret;
+<b class="nc">&nbsp;		try (MemoryStack stack = stackPush()) {</b>
+<b class="nc">&nbsp;			PointerBuffer pp = stack.mallocPointer(1);</b>
+&nbsp;
+<b class="nc">&nbsp;			E(mdb_txn_begin(env, NULL, 0, pp));</b>
+<b class="nc">&nbsp;			long txn = pp.get(0);</b>
+&nbsp;
+&nbsp;			int err;
+&nbsp;			try {
+<b class="nc">&nbsp;				ret = transaction.exec(stack, txn);</b>
+<b class="nc">&nbsp;				err = mdb_txn_commit(txn);</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				mdb_txn_abort(txn);</b>
+<b class="nc">&nbsp;				throw t;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			E(err);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static int openDatabase(long env, String name, int flags, Comparator&lt;ByteBuffer&gt; comparator) throws IOException {
+<b class="nc">&nbsp;		return transaction(env, (stack, txn) -&gt; {</b>
+<b class="nc">&nbsp;			IntBuffer ip = stack.mallocInt(1);</b>
+&nbsp;
+<b class="nc">&nbsp;			E(mdb_dbi_open(txn, name, flags, ip));</b>
+<b class="nc">&nbsp;			int dbi = ip.get(0);</b>
+<b class="nc">&nbsp;			if (comparator != null) {</b>
+<b class="nc">&nbsp;				MDBCmpFuncI cmp = (a, b) -&gt; {</b>
+<b class="nc">&nbsp;					MDBVal aVal = MDBVal.create(a);</b>
+<b class="nc">&nbsp;					MDBVal bVal = MDBVal.create(b);</b>
+<b class="nc">&nbsp;					return comparator.compare(aVal.mv_data(), bVal.mv_data());</b>
+&nbsp;				};
+<b class="nc">&nbsp;				mdb_set_compare(txn, dbi, cmp);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return dbi;</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the next unallocated page for a given transaction handle.
+&nbsp;	 *
+&nbsp;	 * The function expects the following layout of the transaction struct:
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * &lt;code&gt;
+&nbsp;	 * struct MDB_txn {
+&nbsp;	 *     size_t mt_parent;
+&nbsp;	 *     size_t mt_child;
+&nbsp;	 *     size_t mt_next_pgno;
+&nbsp;	 *     ...
+&nbsp;	 * }&lt;/code&gt;
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 */
+&nbsp;	private static long mdbTxnMtNextPgno(long txn) {
+<b class="nc">&nbsp;		return MemoryUtil.memGetAddress(txn + 2 * Pointer.POINTER_SIZE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if a resize of the current map size for an LMDB db is required.
+&nbsp;	 *
+&nbsp;	 * @param mapSize      the current map size
+&nbsp;	 * @param pageSize     the page size
+&nbsp;	 * @param txn          a transaction handle
+&nbsp;	 * @param requiredSize the minimum required size
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if map should be resized, else &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 */
+&nbsp;	static boolean requiresResize(long mapSize, long pageSize, long txn, long requiredSize) {
+<b class="nc">&nbsp;		long nextPageNo = mdbTxnMtNextPgno(txn);</b>
+<b class="nc">&nbsp;		return mapSize - nextPageNo * pageSize &lt; Math.max(requiredSize, LmdbUtil.MIN_FREE_SPACE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes a new map size for auto-growing an existing LMDB db.
+&nbsp;	 *
+&nbsp;	 * @param mapSize      the current map size
+&nbsp;	 * @param pageSize     the page size
+&nbsp;	 * @param requiredSize the minimum required size
+&nbsp;	 * @return the new map size
+&nbsp;	 */
+&nbsp;	static long autoGrowMapSize(long mapSize, long pageSize, long requiredSize) {
+<b class="nc">&nbsp;		mapSize = Math.max(mapSize * 2, Math.max(requiredSize, MIN_AUTOGROW_SIZE));</b>
+&nbsp;		// align map size to page size
+<b class="nc">&nbsp;		return mapSize % pageSize == 0 ? mapSize : mapSize + (mapSize / pageSize + 1) * pageSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@FunctionalInterface
+&nbsp;	interface Transaction&lt;T&gt; {
+&nbsp;
+&nbsp;		T exec(MemoryStack stack, long txn) throws IOException;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

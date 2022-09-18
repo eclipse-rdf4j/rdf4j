@@ -1,0 +1,339 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GraphController</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.graph</a>
+</div>
+
+<h1>Coverage Summary for Class: GraphController (org.eclipse.rdf4j.http.server.repository.graph)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GraphController</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/91)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.graph;
+&nbsp;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
+&nbsp;import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorType;
+&nbsp;import org.eclipse.rdf4j.http.server.ClientHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.ServerHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.statements.ExportStatementsView;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.context.ApplicationContextException;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.mvc.AbstractController;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles requests for manipulating the named graphs in a repository.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class GraphController extends AbstractController {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+<b class="nc">&nbsp;	public GraphController() throws ApplicationContextException {</b>
+<b class="nc">&nbsp;		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD, METHOD_POST, &quot;PUT&quot;, &quot;DELETE&quot; });</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws Exception {
+&nbsp;		ModelAndView result;
+&nbsp;
+<b class="nc">&nbsp;		Repository repository = RepositoryInterceptor.getRepository(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		String reqMethod = request.getMethod();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (METHOD_GET.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;GET graph&quot;);</b>
+<b class="nc">&nbsp;			result = getExportStatementsResult(repository, request, response);</b>
+<b class="nc">&nbsp;			logger.info(&quot;GET graph request finished.&quot;);</b>
+<b class="nc">&nbsp;		} else if (METHOD_HEAD.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;HEAD graph&quot;);</b>
+<b class="nc">&nbsp;			result = getExportStatementsResult(repository, request, response);</b>
+<b class="nc">&nbsp;			logger.info(&quot;HEAD graph request finished.&quot;);</b>
+<b class="nc">&nbsp;		} else if (METHOD_POST.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;POST data to graph&quot;);</b>
+<b class="nc">&nbsp;			result = getAddDataResult(repository, request, response, false);</b>
+<b class="nc">&nbsp;			logger.info(&quot;POST data request finished.&quot;);</b>
+<b class="nc">&nbsp;		} else if (&quot;PUT&quot;.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;PUT data in graph&quot;);</b>
+<b class="nc">&nbsp;			result = getAddDataResult(repository, request, response, true);</b>
+<b class="nc">&nbsp;			logger.info(&quot;PUT data request finished.&quot;);</b>
+<b class="nc">&nbsp;		} else if (&quot;DELETE&quot;.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;DELETE data from graph&quot;);</b>
+<b class="nc">&nbsp;			result = getDeleteDataResult(repository, request, response);</b>
+<b class="nc">&nbsp;			logger.info(&quot;DELETE data request finished.&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,</b>
+&nbsp;					&quot;Method not allowed: &quot; + reqMethod);
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI getGraphName(HttpServletRequest request, ValueFactory vf) throws ClientHTTPException {
+<b class="nc">&nbsp;		String requestURL = request.getRequestURL().toString();</b>
+<b class="nc">&nbsp;		boolean isServiceRequest = requestURL.endsWith(&quot;/service&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String queryString = request.getQueryString();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isServiceRequest) {</b>
+<b class="nc">&nbsp;			if (!&quot;default&quot;.equalsIgnoreCase(queryString)) {</b>
+<b class="nc">&nbsp;				IRI graph = ProtocolUtil.parseGraphParam(request, vf);</b>
+<b class="nc">&nbsp;				if (graph == null) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(HttpServletResponse.SC_BAD_REQUEST,</b>
+&nbsp;							&quot;Named or default graph expected for indirect reference request.&quot;);
+&nbsp;				}
+<b class="nc">&nbsp;				return graph;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (queryString != null) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(HttpServletResponse.SC_BAD_REQUEST,</b>
+&nbsp;						&quot;No parameters epxected for direct reference request.&quot;);
+&nbsp;			}
+<b class="nc">&nbsp;			return vf.createIRI(requestURL);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get all statements and export them as RDF.
+&nbsp;	 *
+&nbsp;	 * @return a model and view for exporting the statements.
+&nbsp;	 */
+&nbsp;	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws ClientHTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = repository.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI graph = getGraphName(request, vf);</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,</b>
+<b class="nc">&nbsp;				RDFWriterRegistry.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		model.put(ExportStatementsView.CONTEXTS_KEY, new Resource[] { graph });</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.FACTORY_KEY, rdfWriterFactory);</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.USE_INFERENCING_KEY, true);</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));</b>
+<b class="nc">&nbsp;		return new ModelAndView(ExportStatementsView.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Upload data to the graph.
+&nbsp;	 */
+&nbsp;	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response, boolean replaceCurrent)
+&nbsp;			throws IOException, ClientHTTPException, ServerHTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType)</b>
+<b class="nc">&nbsp;				.orElseThrow(</b>
+<b class="nc">&nbsp;						() -&gt; new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, &quot;Unsupported MIME type: &quot; + mimeType));</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = repository.getValueFactory();</b>
+<b class="nc">&nbsp;		final IRI graph = getGraphName(request, vf);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI baseURI = ProtocolUtil.parseURIParam(request, Protocol.BASEURI_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = graph != null ? graph : vf.createIRI(&quot;foo:bar&quot;);</b>
+<b class="nc">&nbsp;			logger.info(&quot;no base URI specified, using &#39;{}&#39;&quot;, baseURI);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		InputStream in = request.getInputStream();</b>
+<b class="nc">&nbsp;		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+<b class="nc">&nbsp;			boolean localTransaction = !repositoryCon.isActive();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (localTransaction) {</b>
+<b class="nc">&nbsp;				repositoryCon.begin();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (replaceCurrent) {</b>
+<b class="nc">&nbsp;				repositoryCon.clear(graph);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			repositoryCon.add(in, baseURI.stringValue(), rdfFormat, graph);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (localTransaction) {</b>
+<b class="nc">&nbsp;				repositoryCon.commit();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		} catch (UnsupportedRDFormatException e) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,</b>
+<b class="nc">&nbsp;					&quot;No RDF parser available for format &quot; + rdfFormat.getName());</b>
+<b class="nc">&nbsp;		} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_DATA, e.getMessage());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Failed to read data: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Repository update error: &quot; + e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Delete data from the graph.
+&nbsp;	 */
+&nbsp;	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws ClientHTTPException, ServerHTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = repository.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI graph = getGraphName(request, vf);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+<b class="nc">&nbsp;			repositoryCon.clear(graph);</b>
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Repository update error: &quot; + e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

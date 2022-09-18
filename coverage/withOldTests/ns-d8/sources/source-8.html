@@ -1,0 +1,222 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SourceConstraintComponent</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl</a>
+</div>
+
+<h1>Coverage Summary for Class: SourceConstraintComponent (org.eclipse.rdf4j.sail.shacl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SourceConstraintComponent</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SourceConstraintComponent$ConstraintType</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/47)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.DASH;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SHACL;
+&nbsp;
+<b class="nc">&nbsp;public enum SourceConstraintComponent {</b>
+<b class="nc">&nbsp;	MaxCountConstraintComponent(SHACL.MAX_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality, false),</b>
+<b class="nc">&nbsp;	MinCountConstraintComponent(SHACL.MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.Cardinality, false),</b>
+&nbsp;
+<b class="nc">&nbsp;	DatatypeConstraintComponent(SHACL.DATATYPE_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),</b>
+<b class="nc">&nbsp;	NodeKindConstraintComponent(SHACL.NODE_KIND_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),</b>
+<b class="nc">&nbsp;	ClassConstraintComponent(SHACL.CLASS_CONSTRAINT_COMPONENT, ConstraintType.ValueType, true),</b>
+&nbsp;
+<b class="nc">&nbsp;	PatternConstraintComponent(SHACL.PATTERN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),</b>
+<b class="nc">&nbsp;	UniqueLangConstraintComponent(SHACL.UNIQUE_LANG_CONSTRAINT_COMPONENT, ConstraintType.StringBased, false),</b>
+<b class="nc">&nbsp;	LanguageInConstraintComponent(SHACL.LANGUAGE_IN_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),</b>
+<b class="nc">&nbsp;	MaxLengthConstraintComponent(SHACL.MAX_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),</b>
+<b class="nc">&nbsp;	MinLengthConstraintComponent(SHACL.MIN_LENGTH_CONSTRAINT_COMPONENT, ConstraintType.StringBased, true),</b>
+&nbsp;
+<b class="nc">&nbsp;	InConstraintComponent(SHACL.IN_CONSTRAINT_COMPONENT, ConstraintType.Other, true),</b>
+<b class="nc">&nbsp;	HasValueConstraintComponent(SHACL.HAS_VALUE_CONSTRAINT_COMPONENT, ConstraintType.Other, false),</b>
+<b class="nc">&nbsp;	HasValueInConstraintComponent(DASH.HasValueInConstraintComponent, ConstraintType.Other, false),</b>
+<b class="nc">&nbsp;	ClosedConstraintComponent(SHACL.CLOSED_CONSTRAINT_COMPONENT, ConstraintType.Other, true),</b>
+&nbsp;
+<b class="nc">&nbsp;	MinExclusiveConstraintComponent(SHACL.MIN_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),</b>
+<b class="nc">&nbsp;	MaxExclusiveConstraintComponent(SHACL.MAX_EXCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),</b>
+<b class="nc">&nbsp;	MaxInclusiveConstraintComponent(SHACL.MAX_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),</b>
+<b class="nc">&nbsp;	MinInclusiveConstraintComponent(SHACL.MIN_INCLUSIVE_CONSTRAINT_COMPONENT, ConstraintType.ValueRange, true),</b>
+&nbsp;
+<b class="nc">&nbsp;	AndConstraintComponent(SHACL.AND_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),</b>
+<b class="nc">&nbsp;	OrConstraintComponent(SHACL.OR_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),</b>
+<b class="nc">&nbsp;	NotConstraintComponent(SHACL.NOT_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),</b>
+<b class="nc">&nbsp;	XoneConstraintComponent(SHACL.XONE_CONSTRAINT_COMPONENT, ConstraintType.Logical, true),</b>
+&nbsp;
+<b class="nc">&nbsp;	DisjointConstraintComponent(SHACL.DISJOINT_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),</b>
+<b class="nc">&nbsp;	EqualsConstraintComponent(SHACL.EQUALS_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),</b>
+<b class="nc">&nbsp;	LessThanConstraintComponent(SHACL.LESS_THAN_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair, true),</b>
+<b class="nc">&nbsp;	LessThanOrEqualsConstraintComponent(SHACL.LESS_THAN_OR_EQUALS_CONSTRAINT_COMPONENT, ConstraintType.PropertyPair,</b>
+&nbsp;			true),
+&nbsp;
+<b class="nc">&nbsp;	QualifiedMaxCountConstraintComponent(SHACL.QUALIFIED_MAX_COUNT_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased,</b>
+&nbsp;			false),
+<b class="nc">&nbsp;	QualifiedMinCountConstraintComponent(SHACL.QUALIFIED_MIN_COUNT_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased,</b>
+&nbsp;			false),
+<b class="nc">&nbsp;	NodeConstraintComponent(SHACL.NODE_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, true),</b>
+<b class="nc">&nbsp;	PropertyConstraintComponent(SHACL.PROPERTY_CONSTRAINT_COMPONENT, ConstraintType.ShapeBased, false);</b>
+&nbsp;
+&nbsp;	private final IRI iri;
+&nbsp;	private final ConstraintType constraintType;
+&nbsp;	private final boolean producesValidationResultValue;
+&nbsp;
+<b class="nc">&nbsp;	SourceConstraintComponent(IRI iri, ConstraintType constraintType, boolean producesValidationResultValue) {</b>
+<b class="nc">&nbsp;		this.iri = iri;</b>
+<b class="nc">&nbsp;		this.constraintType = constraintType;</b>
+<b class="nc">&nbsp;		this.producesValidationResultValue = producesValidationResultValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getIri() {
+<b class="nc">&nbsp;		return iri;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ConstraintType getConstraintType() {
+<b class="nc">&nbsp;		return constraintType;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public enum ConstraintType {</b>
+<b class="nc">&nbsp;		ValueType,</b>
+<b class="nc">&nbsp;		Cardinality,</b>
+<b class="nc">&nbsp;		ValueRange,</b>
+<b class="nc">&nbsp;		StringBased,</b>
+<b class="nc">&nbsp;		PropertyPair,</b>
+<b class="nc">&nbsp;		Logical,</b>
+<b class="nc">&nbsp;		ShapeBased,</b>
+<b class="nc">&nbsp;		Other</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean producesValidationResultValue() {
+<b class="nc">&nbsp;		return producesValidationResultValue;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

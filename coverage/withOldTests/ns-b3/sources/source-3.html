@@ -1,0 +1,323 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TriXWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.trix</a>
+</div>
+
+<h1>Coverage Summary for Class: TriXWriter (org.eclipse.rdf4j.rio.trix)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TriXWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/72)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.trix;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.BNODE_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.CONTEXT_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.DATATYPE_ATT;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.LANGUAGE_ATT;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.NAMESPACE;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.PLAIN_LITERAL_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.ROOT_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.TRIPLE_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.TYPED_LITERAL_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.URI_TAG;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Writer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.common.xml.XMLWriter;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the RDFWriter interface that writes RDF documents in
+&nbsp; * &lt;a href=&quot;http://www.w3.org/2004/03/trix/&quot;&gt;TriX format&lt;/a&gt;.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class TriXWriter extends AbstractRDFWriter implements CharSink {
+&nbsp;
+&nbsp;	private final XMLWriter xmlWriter;
+&nbsp;
+<b class="nc">&nbsp;	private boolean inActiveContext = false;</b>
+&nbsp;
+&nbsp;	private boolean convertRDFStar;
+<b class="nc">&nbsp;	private Resource currentContext = null;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TriXWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out The OutputStream to write the RDF/XML document to.
+&nbsp;	 */
+<b class="nc">&nbsp;	public TriXWriter(OutputStream out) {</b>
+<b class="nc">&nbsp;		this.xmlWriter = new XMLWriter(out);</b>
+<b class="nc">&nbsp;		this.xmlWriter.setPrettyPrint(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TriXWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer The Writer to write the RDF/XML document to.
+&nbsp;	 */
+&nbsp;	public TriXWriter(Writer writer) {
+<b class="nc">&nbsp;		this(new XMLWriter(writer));</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	protected TriXWriter(XMLWriter xmlWriter) {</b>
+<b class="nc">&nbsp;		this.xmlWriter = xmlWriter;</b>
+<b class="nc">&nbsp;		this.xmlWriter.setPrettyPrint(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return xmlWriter.getWriter();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.TRIX;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		super.startRDF();</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			if (getWriterConfig().get(XMLWriterSettings.INCLUDE_XML_PI)) {</b>
+<b class="nc">&nbsp;				xmlWriter.startDocument();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.setAttribute(&quot;xmlns&quot;, NAMESPACE);</b>
+<b class="nc">&nbsp;			xmlWriter.startTag(ROOT_TAG);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (inActiveContext) {</b>
+<b class="nc">&nbsp;				xmlWriter.endTag(CONTEXT_TAG);</b>
+<b class="nc">&nbsp;				inActiveContext = false;</b>
+<b class="nc">&nbsp;				currentContext = null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			xmlWriter.endTag(ROOT_TAG);</b>
+<b class="nc">&nbsp;			xmlWriter.endDocument();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String name) {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		// ignore
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void consumeStatement(Statement st) {
+&nbsp;		try {
+<b class="nc">&nbsp;			Resource context = st.getContext();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (inActiveContext &amp;&amp; !contextsEquals(context, currentContext)) {</b>
+&nbsp;				// Close currently active context
+<b class="nc">&nbsp;				xmlWriter.endTag(CONTEXT_TAG);</b>
+<b class="nc">&nbsp;				inActiveContext = false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!inActiveContext) {</b>
+&nbsp;				// Open new context
+<b class="nc">&nbsp;				xmlWriter.startTag(CONTEXT_TAG);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (context != null) {</b>
+<b class="nc">&nbsp;					writeValue(context);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				currentContext = context;</b>
+<b class="nc">&nbsp;				inActiveContext = true;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.startTag(TRIPLE_TAG);</b>
+&nbsp;
+<b class="nc">&nbsp;			writeValue(st.getSubject());</b>
+<b class="nc">&nbsp;			writeValue(st.getPredicate());</b>
+<b class="nc">&nbsp;			writeValue(st.getObject());</b>
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.endTag(TRIPLE_TAG);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			xmlWriter.comment(comment);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes out the XML-representation for the supplied value.
+&nbsp;	 */
+&nbsp;	private void writeValue(Value value) throws IOException, RDFHandlerException {
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			IRI uri = (IRI) value;</b>
+<b class="nc">&nbsp;			xmlWriter.textElement(URI_TAG, uri.toString());</b>
+<b class="nc">&nbsp;		} else if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			BNode bNode = (BNode) value;</b>
+<b class="nc">&nbsp;			xmlWriter.textElement(BNODE_TAG, bNode.getID());</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal literal = (Literal) value;</b>
+<b class="nc">&nbsp;			IRI datatype = literal.getDatatype();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (Literals.isLanguageLiteral(literal)) {</b>
+<b class="nc">&nbsp;				xmlWriter.setAttribute(LANGUAGE_ATT, literal.getLanguage().get());</b>
+<b class="nc">&nbsp;				xmlWriter.textElement(PLAIN_LITERAL_TAG, literal.getLabel());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				xmlWriter.setAttribute(DATATYPE_ATT, datatype.toString());</b>
+<b class="nc">&nbsp;				xmlWriter.textElement(TYPED_LITERAL_TAG, literal.getLabel());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(&quot;Unknown value type: &quot; + value.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean contextsEquals(Resource context1, Resource context2) {
+<b class="nc">&nbsp;		if (context1 == null) {</b>
+<b class="nc">&nbsp;			return context2 == null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return context1.equals(context2);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

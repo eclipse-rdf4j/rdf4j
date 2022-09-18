@@ -1,0 +1,1007 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ElasticsearchIndex</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.elasticsearch</a>
+</div>
+
+<h1>Coverage Summary for Class: ElasticsearchIndex (org.eclipse.rdf4j.sail.elasticsearch)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ElasticsearchIndex</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/84)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/306)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ElasticsearchIndex$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ElasticsearchIndex$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ElasticsearchIndex$3</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/84)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/312)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.elasticsearch;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.net.InetAddress;
+&nbsp;import java.text.ParseException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEOF;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.AbstractSearchIndex;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.BulkUpdater;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.DocumentDistance;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.DocumentResult;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.DocumentScore;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchDocument;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchFields;
+&nbsp;import org.elasticsearch.action.ActionRequestBuilder;
+&nbsp;import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequestBuilder;
+&nbsp;import org.elasticsearch.action.admin.cluster.health.ClusterHealthResponse;
+&nbsp;import org.elasticsearch.action.get.GetResponse;
+&nbsp;import org.elasticsearch.action.index.IndexResponse;
+&nbsp;import org.elasticsearch.action.search.SearchRequestBuilder;
+&nbsp;import org.elasticsearch.action.search.SearchResponse;
+&nbsp;import org.elasticsearch.action.support.master.AcknowledgedResponse;
+&nbsp;import org.elasticsearch.action.update.UpdateResponse;
+&nbsp;import org.elasticsearch.client.Client;
+&nbsp;import org.elasticsearch.client.transport.TransportClient;
+&nbsp;import org.elasticsearch.cluster.health.ClusterIndexHealth;
+&nbsp;import org.elasticsearch.cluster.metadata.MappingMetadata;
+&nbsp;import org.elasticsearch.common.Strings;
+&nbsp;import org.elasticsearch.common.collect.ImmutableOpenMap;
+&nbsp;import org.elasticsearch.common.geo.GeoPoint;
+&nbsp;import org.elasticsearch.common.geo.ShapeRelation;
+&nbsp;import org.elasticsearch.common.settings.Settings;
+&nbsp;import org.elasticsearch.common.transport.TransportAddress;
+&nbsp;import org.elasticsearch.common.unit.DistanceUnit;
+&nbsp;import org.elasticsearch.common.xcontent.XContentBuilder;
+&nbsp;import org.elasticsearch.common.xcontent.XContentFactory;
+&nbsp;import org.elasticsearch.common.xcontent.XContentType;
+&nbsp;import org.elasticsearch.index.query.BoolQueryBuilder;
+&nbsp;import org.elasticsearch.index.query.GeoShapeQueryBuilder;
+&nbsp;import org.elasticsearch.index.query.QueryBuilder;
+&nbsp;import org.elasticsearch.index.query.QueryBuilders;
+&nbsp;import org.elasticsearch.index.query.QueryStringQueryBuilder;
+&nbsp;import org.elasticsearch.index.query.functionscore.ScoreFunctionBuilders;
+&nbsp;import org.elasticsearch.index.reindex.DeleteByQueryAction;
+&nbsp;import org.elasticsearch.index.reindex.DeleteByQueryRequestBuilder;
+&nbsp;import org.elasticsearch.rest.RestStatus;
+&nbsp;import org.elasticsearch.search.SearchHit;
+&nbsp;import org.elasticsearch.search.SearchHits;
+&nbsp;import org.elasticsearch.search.builder.SearchSourceBuilder;
+&nbsp;import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
+&nbsp;import org.elasticsearch.transport.client.PreBuiltTransportClient;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContext;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContextFactory;
+&nbsp;import org.locationtech.spatial4j.distance.DistanceUtils;
+&nbsp;import org.locationtech.spatial4j.io.GeohashUtils;
+&nbsp;import org.locationtech.spatial4j.shape.Point;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.base.Function;
+&nbsp;import com.google.common.base.Functions;
+&nbsp;import com.google.common.collect.Iterables;
+&nbsp;
+&nbsp;/**
+&nbsp; * Requires an Elasticsearch cluster with the DeleteByQuery plugin.
+&nbsp; *
+&nbsp; * @see LuceneSail
+&nbsp; */
+&nbsp;public class ElasticsearchIndex extends AbstractSearchIndex {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;indexName=&quot; to specify the index to use.
+&nbsp;	 */
+&nbsp;	public static final String INDEX_NAME_KEY = &quot;indexName&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;documentType=&quot; to specify the document type to use. By default, the document type is
+&nbsp;	 * &quot;resource&quot;.
+&nbsp;	 */
+&nbsp;	public static final String DOCUMENT_TYPE_KEY = &quot;documentType&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;transport=&quot; to specify the address of the cluster to use (e.g. localhost:9300).
+&nbsp;	 */
+&nbsp;	public static final String TRANSPORT_KEY = &quot;transport&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;waitForStatus=&quot; to configure if {@link #initialize(java.util.Properties) initialization}
+&nbsp;	 * should wait for a particular health status. The value can be one of &quot;green&quot; or &quot;yellow&quot;. Does not wait by
+&nbsp;	 * default.
+&nbsp;	 */
+&nbsp;	public static final String WAIT_FOR_STATUS_KEY = &quot;waitForStatus&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;waitForNodes=&quot; to configure if {@link #initialize(java.util.Properties) initialization} should
+&nbsp;	 * wait until the specified number of nodes are available. Does not wait by default.
+&nbsp;	 */
+&nbsp;	public static final String WAIT_FOR_NODES_KEY = &quot;waitForNodes&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;waitForActiveShards=&quot; to configure if {@link #initialize(java.util.Properties) initialization}
+&nbsp;	 * should wait until the specified number of shards to be active. Does not wait by default.
+&nbsp;	 */
+&nbsp;	public static final String WAIT_FOR_ACTIVE_SHARDS_KEY = &quot;waitForActiveShards&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;waitForRelocatingShards=&quot; to configure if {@link #initialize(java.util.Properties)
+&nbsp;	 * initialization} should wait until the specified number of nodes are relocating. Does not wait by default.
+&nbsp;	 *
+&nbsp;	 * @deprecated use {@link #WAIT_FOR_NO_RELOCATING_SHARDS_KEY} in elastic search &gt;= 5.x
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final String WAIT_FOR_RELOCATING_SHARDS_KEY = &quot;waitForRelocatingShards&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parameter &quot;waitForNoRelocatingShards=true|false&quot; to configure if {@link #initialize(java.util.Properties)
+&nbsp;	 * initialization} should wait until the are no relocating shards. Defaults to false, meaning the operation does not
+&nbsp;	 * wait on there being no more relocating shards. Set to true to wait until the number of relocating shards in the
+&nbsp;	 * cluster is 0.
+&nbsp;	 */
+&nbsp;	public static final String WAIT_FOR_NO_RELOCATING_SHARDS_KEY = &quot;waitForNoRelocatingShards&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_INDEX_NAME = &quot;elastic-search-sail&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_DOCUMENT_TYPE = &quot;resource&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_TRANSPORT = &quot;localhost&quot;;
+&nbsp;
+&nbsp;	public static final String DEFAULT_ANALYZER = &quot;standard&quot;;
+&nbsp;
+&nbsp;	public static final String ELASTICSEARCH_KEY_PREFIX = &quot;elasticsearch.&quot;;
+&nbsp;
+&nbsp;	public static final String PROPERTY_FIELD_PREFIX = &quot;p_&quot;;
+&nbsp;
+&nbsp;	public static final String ALL_PROPERTY_FIELDS = &quot;p_*&quot;;
+&nbsp;
+&nbsp;	public static final String GEOPOINT_FIELD_PREFIX = &quot;_geopoint_&quot;;
+&nbsp;
+&nbsp;	public static final String GEOSHAPE_FIELD_PREFIX = &quot;_geoshape_&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(getClass());</b>
+&nbsp;
+&nbsp;	private volatile TransportClient client;
+&nbsp;
+&nbsp;	private String clusterName;
+&nbsp;
+&nbsp;	private String indexName;
+&nbsp;
+&nbsp;	private String documentType;
+&nbsp;
+&nbsp;	private String analyzer;
+&nbsp;
+<b class="nc">&nbsp;	private final String queryAnalyzer = &quot;standard&quot;;</b>
+&nbsp;
+&nbsp;	private Function&lt;? super String, ? extends SpatialContext&gt; geoContextMapper;
+&nbsp;
+<b class="nc">&nbsp;	public ElasticsearchIndex() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getClusterName() {
+<b class="nc">&nbsp;		return clusterName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getIndexName() {
+<b class="nc">&nbsp;		return indexName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String[] getTypes() {
+<b class="nc">&nbsp;		return new String[] { documentType };</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	@Override
+&nbsp;	public void initialize(Properties parameters) throws Exception {
+<b class="nc">&nbsp;		super.initialize(parameters);</b>
+<b class="nc">&nbsp;		indexName = parameters.getProperty(INDEX_NAME_KEY, DEFAULT_INDEX_NAME);</b>
+<b class="nc">&nbsp;		documentType = parameters.getProperty(DOCUMENT_TYPE_KEY, DEFAULT_DOCUMENT_TYPE);</b>
+<b class="nc">&nbsp;		analyzer = parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);</b>
+&nbsp;		// slightly hacky cast to cope with the fact that Properties is
+&nbsp;		// Map&lt;Object,Object&gt;
+&nbsp;		// even though it is effectively Map&lt;String,String&gt;
+<b class="nc">&nbsp;		geoContextMapper = createSpatialContextMapper((Map&lt;String, String&gt;) (Map&lt;?, ?&gt;) parameters);</b>
+&nbsp;
+<b class="nc">&nbsp;		Settings.Builder settingsBuilder = Settings.builder();</b>
+<b class="nc">&nbsp;		for (Enumeration&lt;?&gt; iter = parameters.propertyNames(); iter.hasMoreElements();) {</b>
+<b class="nc">&nbsp;			String propName = (String) iter.nextElement();</b>
+<b class="nc">&nbsp;			if (propName.startsWith(ELASTICSEARCH_KEY_PREFIX)) {</b>
+<b class="nc">&nbsp;				String esName = propName.substring(ELASTICSEARCH_KEY_PREFIX.length());</b>
+<b class="nc">&nbsp;				settingsBuilder.put(esName, parameters.getProperty(propName));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		client = new PreBuiltTransportClient(settingsBuilder.build());</b>
+<b class="nc">&nbsp;		String transport = parameters.getProperty(TRANSPORT_KEY, DEFAULT_TRANSPORT);</b>
+<b class="nc">&nbsp;		for (String addrStr : transport.split(&quot;,&quot;)) {</b>
+&nbsp;			TransportAddress addr;
+<b class="nc">&nbsp;			if (addrStr.startsWith(&quot;local[&quot;)) {</b>
+<b class="nc">&nbsp;				String id = addrStr.substring(&quot;local[&quot;.length(), addrStr.length() - 1);</b>
+&nbsp;				// addr = new LocalTransportAddress(id);
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(&quot;Local Transport Address no longer supported&quot;);</b>
+&nbsp;			} else {
+&nbsp;				String host;
+&nbsp;				int port;
+<b class="nc">&nbsp;				String[] hostPort = addrStr.split(&quot;:&quot;);</b>
+<b class="nc">&nbsp;				host = hostPort[0];</b>
+<b class="nc">&nbsp;				if (hostPort.length &gt; 1) {</b>
+<b class="nc">&nbsp;					port = Integer.parseInt(hostPort[1]);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					port = 9300;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				addr = new TransportAddress(InetAddress.getByName(host), port);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			client.addTransportAddress(addr);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		clusterName = client.settings().get(&quot;cluster.name&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean exists = client.admin().indices().prepareExists(indexName).execute().actionGet().isExists();</b>
+<b class="nc">&nbsp;		if (!exists) {</b>
+<b class="nc">&nbsp;			createIndex();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		logger.info(&quot;Field mappings:\n{}&quot;, getMappings());</b>
+&nbsp;
+<b class="nc">&nbsp;		ClusterHealthRequestBuilder healthReqBuilder = client.admin().cluster().prepareHealth(indexName);</b>
+<b class="nc">&nbsp;		String waitForStatus = parameters.getProperty(WAIT_FOR_STATUS_KEY);</b>
+<b class="nc">&nbsp;		if (&quot;green&quot;.equals(waitForStatus)) {</b>
+<b class="nc">&nbsp;			healthReqBuilder.setWaitForGreenStatus();</b>
+<b class="nc">&nbsp;		} else if (&quot;yellow&quot;.equals(waitForStatus)) {</b>
+<b class="nc">&nbsp;			healthReqBuilder.setWaitForYellowStatus();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String waitForNodes = parameters.getProperty(WAIT_FOR_NODES_KEY);</b>
+<b class="nc">&nbsp;		if (waitForNodes != null) {</b>
+<b class="nc">&nbsp;			healthReqBuilder.setWaitForNodes(waitForNodes);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String waitForActiveShards = parameters.getProperty(WAIT_FOR_ACTIVE_SHARDS_KEY);</b>
+<b class="nc">&nbsp;		if (waitForActiveShards != null) {</b>
+<b class="nc">&nbsp;			healthReqBuilder.setWaitForActiveShards(Integer.parseInt(waitForActiveShards));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String waitForRelocatingShards = parameters.getProperty(WAIT_FOR_RELOCATING_SHARDS_KEY);</b>
+<b class="nc">&nbsp;		if (waitForRelocatingShards != null) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Property &quot; + WAIT_FOR_RELOCATING_SHARDS_KEY + &quot; no longer supported. Use &quot;</b>
+&nbsp;					+ WAIT_FOR_NO_RELOCATING_SHARDS_KEY + &quot; instead&quot;);
+&nbsp;		}
+<b class="nc">&nbsp;		String waitForNoRelocatingShards = parameters.getProperty(WAIT_FOR_NO_RELOCATING_SHARDS_KEY);</b>
+<b class="nc">&nbsp;		if (waitForNoRelocatingShards != null) {</b>
+<b class="nc">&nbsp;			healthReqBuilder.setWaitForNoRelocatingShards(Boolean.parseBoolean(waitForNoRelocatingShards));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		ClusterHealthResponse healthResponse = healthReqBuilder.execute().actionGet();</b>
+<b class="nc">&nbsp;		logger.info(&quot;Cluster health: {}&quot;, healthResponse.getStatus());</b>
+<b class="nc">&nbsp;		logger.info(&quot;Cluster nodes: {} (data {})&quot;, healthResponse.getNumberOfNodes(),</b>
+<b class="nc">&nbsp;				healthResponse.getNumberOfDataNodes());</b>
+<b class="nc">&nbsp;		ClusterIndexHealth indexHealth = healthResponse.getIndices().get(indexName);</b>
+<b class="nc">&nbsp;		logger.info(&quot;Index health: {}&quot;, indexHealth.getStatus());</b>
+<b class="nc">&nbsp;		logger.info(&quot;Index shards: {} (active {} [primary {}], initializing {}, unassigned {}, relocating {})&quot;,</b>
+<b class="nc">&nbsp;				indexHealth.getNumberOfShards(), indexHealth.getActiveShards(), indexHealth.getActivePrimaryShards(),</b>
+<b class="nc">&nbsp;				indexHealth.getInitializingShards(), indexHealth.getUnassignedShards(),</b>
+<b class="nc">&nbsp;				indexHealth.getRelocatingShards());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Function&lt;? super String, ? extends SpatialContext&gt; createSpatialContextMapper(
+&nbsp;			Map&lt;String, String&gt; parameters) {
+&nbsp;		// this should really be based on the schema
+<b class="nc">&nbsp;		ClassLoader classLoader = Thread.currentThread().getContextClassLoader();</b>
+<b class="nc">&nbsp;		SpatialContext geoContext = SpatialContextFactory.makeSpatialContext(parameters, classLoader);</b>
+<b class="nc">&nbsp;		return Functions.constant(geoContext);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;String, Object&gt; getMappings() throws IOException {
+<b class="nc">&nbsp;		ImmutableOpenMap&lt;String, ImmutableOpenMap&lt;String, MappingMetadata&gt;&gt; indexMappings = client.admin()</b>
+<b class="nc">&nbsp;				.indices()</b>
+<b class="nc">&nbsp;				.prepareGetMappings(indexName)</b>
+<b class="nc">&nbsp;				.setTypes(documentType)</b>
+<b class="nc">&nbsp;				.execute()</b>
+<b class="nc">&nbsp;				.actionGet()</b>
+<b class="nc">&nbsp;				.getMappings();</b>
+<b class="nc">&nbsp;		ImmutableOpenMap&lt;String, MappingMetadata&gt; typeMappings = indexMappings.get(indexName);</b>
+<b class="nc">&nbsp;		MappingMetadata mappings = typeMappings.get(documentType);</b>
+<b class="nc">&nbsp;		return mappings.sourceAsMap();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void createIndex() throws IOException {
+<b class="nc">&nbsp;		try (XContentBuilder xContentBuilder = XContentFactory.jsonBuilder()</b>
+<b class="nc">&nbsp;				.startObject()</b>
+<b class="nc">&nbsp;				.field(&quot;index.query.default_field&quot;, SearchFields.TEXT_FIELD_NAME)</b>
+<b class="nc">&nbsp;				.startObject(&quot;analysis&quot;)</b>
+<b class="nc">&nbsp;				.startObject(&quot;analyzer&quot;)</b>
+<b class="nc">&nbsp;				.startObject(&quot;default&quot;)</b>
+<b class="nc">&nbsp;				.field(&quot;type&quot;, analyzer)</b>
+<b class="nc">&nbsp;				.endObject()</b>
+<b class="nc">&nbsp;				.endObject()</b>
+<b class="nc">&nbsp;				.endObject()</b>
+<b class="nc">&nbsp;				.endObject()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			doAcknowledgedRequest(client.admin()</b>
+<b class="nc">&nbsp;					.indices()</b>
+<b class="nc">&nbsp;					.prepareCreate(indexName)</b>
+<b class="nc">&nbsp;					.setSettings(</b>
+<b class="nc">&nbsp;							Settings.builder().loadFromSource(Strings.toString(xContentBuilder), XContentType.JSON)));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// use _source instead of explicit stored = true
+<b class="nc">&nbsp;		try (XContentBuilder typeMapping = XContentFactory.jsonBuilder()) {</b>
+<b class="nc">&nbsp;			typeMapping.startObject().startObject(documentType).startObject(&quot;properties&quot;);</b>
+<b class="nc">&nbsp;			typeMapping.startObject(SearchFields.CONTEXT_FIELD_NAME)</b>
+<b class="nc">&nbsp;					.field(&quot;type&quot;, &quot;keyword&quot;)</b>
+<b class="nc">&nbsp;					.field(&quot;index&quot;, true)</b>
+<b class="nc">&nbsp;					.field(&quot;copy_to&quot;, &quot;_all&quot;)</b>
+<b class="nc">&nbsp;					.endObject();</b>
+<b class="nc">&nbsp;			typeMapping.startObject(SearchFields.URI_FIELD_NAME)</b>
+<b class="nc">&nbsp;					.field(&quot;type&quot;, &quot;keyword&quot;)</b>
+<b class="nc">&nbsp;					.field(&quot;index&quot;, true)</b>
+<b class="nc">&nbsp;					.field(&quot;copy_to&quot;, &quot;_all&quot;)</b>
+<b class="nc">&nbsp;					.endObject();</b>
+<b class="nc">&nbsp;			typeMapping.startObject(SearchFields.TEXT_FIELD_NAME)</b>
+<b class="nc">&nbsp;					.field(&quot;type&quot;, &quot;text&quot;)</b>
+<b class="nc">&nbsp;					.field(&quot;index&quot;, true)</b>
+<b class="nc">&nbsp;					.field(&quot;copy_to&quot;, &quot;_all&quot;)</b>
+<b class="nc">&nbsp;					.endObject();</b>
+<b class="nc">&nbsp;			for (String wktField : wktFields) {</b>
+<b class="nc">&nbsp;				typeMapping.startObject(toGeoPointFieldName(wktField)).field(&quot;type&quot;, &quot;geo_point&quot;).endObject();</b>
+<b class="nc">&nbsp;				if (supportsShapes(wktField)) {</b>
+<b class="nc">&nbsp;					typeMapping.startObject(toGeoShapeFieldName(wktField))</b>
+<b class="nc">&nbsp;							.field(&quot;type&quot;, &quot;geo_shape&quot;)</b>
+<b class="nc">&nbsp;							.field(&quot;copy_to&quot;, &quot;_all&quot;)</b>
+<b class="nc">&nbsp;							.endObject();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			typeMapping.endObject().endObject().endObject();</b>
+&nbsp;
+<b class="nc">&nbsp;			doAcknowledgedRequest(</b>
+<b class="nc">&nbsp;					client.admin().indices().preparePutMapping(indexName).setType(documentType).setSource(typeMapping));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean supportsShapes(String field) {
+<b class="nc">&nbsp;		SpatialContext geoContext = geoContextMapper.apply(field);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			geoContext.readShapeFromWkt(&quot;POLYGON ((0 0, 1 0, 1 1, 0 1, 0 0))&quot;);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (ParseException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected SpatialContext getSpatialContext(String property) {
+<b class="nc">&nbsp;		return geoContextMapper.apply(property);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() throws IOException {
+<b class="nc">&nbsp;		Client toCloseClient = client;</b>
+<b class="nc">&nbsp;		client = null;</b>
+<b class="nc">&nbsp;		if (toCloseClient != null) {</b>
+<b class="nc">&nbsp;			toCloseClient.close();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	// //////////////////////////////// Methods for updating the index
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a Document representing the specified document ID (combination of resource and context), or null when no
+&nbsp;	 * such Document exists yet.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected SearchDocument getDocument(String id) throws IOException {
+<b class="nc">&nbsp;		GetResponse response = client.prepareGet(indexName, documentType, id).execute().actionGet();</b>
+<b class="nc">&nbsp;		if (response.isExists()) {</b>
+<b class="nc">&nbsp;			return new ElasticsearchDocument(response.getId(), response.getType(), response.getIndex(),</b>
+<b class="nc">&nbsp;					response.getSeqNo(), response.getPrimaryTerm(),</b>
+<b class="nc">&nbsp;					response.getSource(), geoContextMapper);</b>
+&nbsp;		}
+&nbsp;		// no such Document
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Iterable&lt;? extends SearchDocument&gt; getDocuments(String resourceId) throws IOException {
+<b class="nc">&nbsp;		SearchHits hits = getDocuments(QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME, resourceId));</b>
+<b class="nc">&nbsp;		return Iterables.transform(hits, new Function&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public SearchDocument apply(SearchHit hit) {
+<b class="nc">&nbsp;				return new ElasticsearchDocument(hit, geoContextMapper);</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected SearchDocument newDocument(String id, String resourceId, String context) {
+<b class="nc">&nbsp;		return new ElasticsearchDocument(id, documentType, indexName, resourceId, context, geoContextMapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected SearchDocument copyDocument(SearchDocument doc) {
+<b class="nc">&nbsp;		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;</b>
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; source = esDoc.getSource();</b>
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; newDocument = new HashMap&lt;&gt;(source);</b>
+<b class="nc">&nbsp;		return new ElasticsearchDocument(esDoc.getId(), esDoc.getType(), esDoc.getIndex(), esDoc.getSeqNo(),</b>
+<b class="nc">&nbsp;				esDoc.getPrimaryTerm(), newDocument, geoContextMapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void addDocument(SearchDocument doc) throws IOException {
+<b class="nc">&nbsp;		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;</b>
+<b class="nc">&nbsp;		doIndexRequest(</b>
+<b class="nc">&nbsp;				client.prepareIndex(esDoc.getIndex(), esDoc.getType(), esDoc.getId()).setSource(esDoc.getSource()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void updateDocument(SearchDocument doc) throws IOException {
+<b class="nc">&nbsp;		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;</b>
+<b class="nc">&nbsp;		doUpdateRequest(client.prepareUpdate(esDoc.getIndex(), esDoc.getType(), esDoc.getId())</b>
+<b class="nc">&nbsp;				.setIfSeqNo(esDoc.getSeqNo())</b>
+<b class="nc">&nbsp;				.setIfPrimaryTerm(esDoc.getPrimaryTerm())</b>
+<b class="nc">&nbsp;				.setDoc(esDoc.getSource()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void deleteDocument(SearchDocument doc) throws IOException {
+<b class="nc">&nbsp;		ElasticsearchDocument esDoc = (ElasticsearchDocument) doc;</b>
+<b class="nc">&nbsp;		client.prepareDelete(esDoc.getIndex(), esDoc.getType(), esDoc.getId())</b>
+<b class="nc">&nbsp;				.setIfSeqNo(esDoc.getSeqNo())</b>
+<b class="nc">&nbsp;				.setIfPrimaryTerm(esDoc.getPrimaryTerm())</b>
+<b class="nc">&nbsp;				.execute()</b>
+<b class="nc">&nbsp;				.actionGet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BulkUpdater newBulkUpdate() {
+<b class="nc">&nbsp;		return new ElasticsearchBulkUpdater(client);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet). Each
+&nbsp;	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+&nbsp;	 * context
+&nbsp;	 */
+&nbsp;	private SearchHits getDocuments(QueryBuilder query) throws IOException {
+<b class="nc">&nbsp;		return search(client.prepareSearch(), query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a Document representing the specified Resource and Context combination, or null when no such Document
+&nbsp;	 * exists yet.
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @param context
+&nbsp;	 * @return search document
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public SearchDocument getDocument(Resource subject, Resource context) throws IOException {
+&nbsp;		// fetch the Document representing this Resource
+<b class="nc">&nbsp;		String resourceId = SearchFields.getResourceID(subject);</b>
+<b class="nc">&nbsp;		String contextId = SearchFields.getContextID(context);</b>
+<b class="nc">&nbsp;		return getDocument(SearchFields.formIdString(resourceId, contextId));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a list of Documents representing the specified Resource (empty when no such Document exists yet).Each
+&nbsp;	 * document represent a set of statements with the specified Resource as a subject, which are stored in a specific
+&nbsp;	 * context
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @return list of documents
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public Iterable&lt;? extends SearchDocument&gt; getDocuments(Resource subject) throws IOException {
+<b class="nc">&nbsp;		String resourceId = SearchFields.getResourceID(subject);</b>
+<b class="nc">&nbsp;		return getDocuments(resourceId);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Filters the given list of fields, retaining all property fields.
+&nbsp;	 *
+&nbsp;	 * @param fields
+&nbsp;	 * @return set of fields
+&nbsp;	 */
+&nbsp;	public static Set&lt;String&gt; getPropertyFields(Set&lt;String&gt; fields) {
+<b class="nc">&nbsp;		Set&lt;String&gt; result = new HashSet&lt;&gt;(fields.size());</b>
+<b class="nc">&nbsp;		for (String field : fields) {</b>
+<b class="nc">&nbsp;			if (SearchFields.isPropertyField(field)) {</b>
+<b class="nc">&nbsp;				result.add(field);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws IOException {
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws IOException {
+<b class="nc">&nbsp;		client.admin().indices().prepareRefresh(indexName).execute().actionGet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws IOException {
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	// //////////////////////////////// Methods for querying the index
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the passed query.
+&nbsp;	 *
+&nbsp;	 * @param subject
+&nbsp;	 * @param query       string
+&nbsp;	 * @param propertyURI
+&nbsp;	 * @param highlight
+&nbsp;	 * @return the parsed query
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected Iterable&lt;? extends DocumentScore&gt; query(Resource subject, String query, IRI propertyURI,
+&nbsp;			boolean highlight) throws MalformedQueryException, IOException {
+<b class="nc">&nbsp;		QueryBuilder qb = prepareQuery(propertyURI, QueryBuilders.queryStringQuery(query));</b>
+<b class="nc">&nbsp;		SearchRequestBuilder request = client.prepareSearch();</b>
+<b class="nc">&nbsp;		if (highlight) {</b>
+<b class="nc">&nbsp;			HighlightBuilder hb = new HighlightBuilder();</b>
+&nbsp;			String field;
+<b class="nc">&nbsp;			if (propertyURI != null) {</b>
+<b class="nc">&nbsp;				field = toPropertyFieldName(SearchFields.getPropertyField(propertyURI));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				field = ALL_PROPERTY_FIELDS;</b>
+<b class="nc">&nbsp;				hb.requireFieldMatch(false);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			hb.field(field);</b>
+<b class="nc">&nbsp;			hb.preTags(SearchFields.HIGHLIGHTER_PRE_TAG);</b>
+<b class="nc">&nbsp;			hb.postTags(SearchFields.HIGHLIGHTER_POST_TAG);</b>
+&nbsp;			// Elastic Search doesn&#39;t really have the same support for fragments as
+&nbsp;			// Lucene.
+&nbsp;			// So, we have to get back the whole highlighted value (comma-separated
+&nbsp;			// if it is a list)
+&nbsp;			// and then post-process it into fragments ourselves.
+<b class="nc">&nbsp;			hb.numOfFragments(0);</b>
+<b class="nc">&nbsp;			request.highlighter(hb);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		SearchHits hits;
+<b class="nc">&nbsp;		if (subject != null) {</b>
+<b class="nc">&nbsp;			hits = search(subject, request, qb);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			hits = search(request, qb);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Iterables.transform(hits, new Function&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public DocumentScore apply(SearchHit hit) {
+<b class="nc">&nbsp;				return new ElasticsearchDocumentScore(hit, geoContextMapper);</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the given query only for the given resource.
+&nbsp;	 *
+&nbsp;	 * @param resource
+&nbsp;	 * @param request
+&nbsp;	 * @param query
+&nbsp;	 * @return search hits
+&nbsp;	 */
+&nbsp;	public SearchHits search(Resource resource, SearchRequestBuilder request, QueryBuilder query) {
+&nbsp;		// rewrite the query
+<b class="nc">&nbsp;		QueryBuilder idQuery = QueryBuilders.termQuery(SearchFields.URI_FIELD_NAME,</b>
+<b class="nc">&nbsp;				SearchFields.getResourceID(resource));</b>
+<b class="nc">&nbsp;		QueryBuilder combinedQuery = QueryBuilders.boolQuery().must(idQuery).must(query);</b>
+<b class="nc">&nbsp;		return search(request, combinedQuery);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Iterable&lt;? extends DocumentDistance&gt; geoQuery(final IRI geoProperty, Point p, final IRI units,
+&nbsp;			double distance, String distanceVar, Var contextVar) throws MalformedQueryException, IOException {
+&nbsp;		double unitDist;
+&nbsp;		final DistanceUnit unit;
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			unit = DistanceUnit.METERS;</b>
+<b class="nc">&nbsp;			unitDist = distance;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			unit = DistanceUnit.KILOMETERS;</b>
+<b class="nc">&nbsp;			unitDist = unit.getDistancePerDegree() * distance;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			unit = DistanceUnit.KILOMETERS;</b>
+<b class="nc">&nbsp;			unitDist = DistanceUtils.radians2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			unit = DistanceUnit.KILOMETERS;</b>
+<b class="nc">&nbsp;			unitDist = distance * Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new MalformedQueryException(&quot;Unsupported units: &quot; + units);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		double lat = p.getY();</b>
+<b class="nc">&nbsp;		double lon = p.getX();</b>
+<b class="nc">&nbsp;		final String fieldName = toGeoPointFieldName(SearchFields.getPropertyField(geoProperty));</b>
+<b class="nc">&nbsp;		QueryBuilder qb = QueryBuilders.functionScoreQuery(</b>
+<b class="nc">&nbsp;				QueryBuilders.geoDistanceQuery(fieldName).point(lat, lon).distance(unitDist, unit),</b>
+<b class="nc">&nbsp;				ScoreFunctionBuilders.linearDecayFunction(fieldName, GeohashUtils.encodeLatLon(lat, lon),</b>
+<b class="nc">&nbsp;						new DistanceUnit.Distance(unitDist, unit).toString()));</b>
+<b class="nc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			qb = addContextTerm(qb, (Resource) contextVar.getValue());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		SearchRequestBuilder request = client.prepareSearch();</b>
+<b class="nc">&nbsp;		SearchHits hits = search(request, qb);</b>
+<b class="nc">&nbsp;		final GeoPoint srcPoint = new GeoPoint(lat, lon);</b>
+<b class="nc">&nbsp;		return Iterables.transform(hits, (Function&lt;SearchHit, DocumentDistance&gt;) hit -&gt; {</b>
+<b class="nc">&nbsp;			return new ElasticsearchDocumentDistance(hit, geoContextMapper, fieldName, units, srcPoint, unit);</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryBuilder addContextTerm(QueryBuilder qb, Resource ctx) {
+<b class="nc">&nbsp;		BoolQueryBuilder combinedQuery = QueryBuilders.boolQuery();</b>
+<b class="nc">&nbsp;		QueryBuilder idQuery = QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, SearchFields.getContextID(ctx));</b>
+<b class="nc">&nbsp;		if (ctx != null) {</b>
+&nbsp;			// the specified named graph
+<b class="nc">&nbsp;			combinedQuery.must(idQuery);</b>
+&nbsp;		} else {
+&nbsp;			// not the unnamed graph
+<b class="nc">&nbsp;			combinedQuery.mustNot(idQuery);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		combinedQuery.must(qb);</b>
+<b class="nc">&nbsp;		return combinedQuery;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Iterable&lt;? extends DocumentResult&gt; geoRelationQuery(String relation, IRI geoProperty, String wkt,
+&nbsp;			Var contextVar) throws MalformedQueryException, IOException {
+&nbsp;
+<b class="nc">&nbsp;		Shape shape = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			shape = super.parseQueryShape(SearchFields.getPropertyField(geoProperty), wkt);</b>
+<b class="nc">&nbsp;		} catch (ParseException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;error while parsing wkt geometry&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		ShapeRelation spatialOp = toSpatialOp(relation);</b>
+<b class="nc">&nbsp;		if (spatialOp == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final String fieldName = toGeoShapeFieldName(SearchFields.getPropertyField(geoProperty));</b>
+<b class="nc">&nbsp;		GeoShapeQueryBuilder fb = QueryBuilders.geoShapeQuery(fieldName,</b>
+<b class="nc">&nbsp;				ElasticsearchSpatialSupport.getSpatialSupport().toShapeBuilder(shape));</b>
+<b class="nc">&nbsp;		fb.relation(spatialOp);</b>
+<b class="nc">&nbsp;		QueryBuilder qb = QueryBuilders.matchAllQuery();</b>
+<b class="nc">&nbsp;		if (contextVar != null) {</b>
+<b class="nc">&nbsp;			qb = addContextTerm(qb, (Resource) contextVar.getValue());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		SearchRequestBuilder request = client.prepareSearch();</b>
+<b class="nc">&nbsp;		SearchHits hits = search(request, QueryBuilders.boolQuery().must(qb).filter(fb));</b>
+<b class="nc">&nbsp;		return Iterables.transform(hits, new Function&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public DocumentResult apply(SearchHit hit) {
+<b class="nc">&nbsp;				return new ElasticsearchDocumentResult(hit, geoContextMapper);</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private ShapeRelation toSpatialOp(String relation) {
+<b class="nc">&nbsp;		if (GEOF.SF_INTERSECTS.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return ShapeRelation.INTERSECTS;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (GEOF.SF_DISJOINT.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return ShapeRelation.DISJOINT;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (GEOF.EH_COVERED_BY.stringValue().equals(relation)) {</b>
+<b class="nc">&nbsp;			return ShapeRelation.WITHIN;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the given query and returns the results as a TopDocs instance.
+&nbsp;	 */
+&nbsp;	public SearchHits search(SearchRequestBuilder request, QueryBuilder query) {
+<b class="nc">&nbsp;		String[] types = getTypes();</b>
+&nbsp;		int nDocs;
+<b class="nc">&nbsp;		if (maxDocs &gt; 0) {</b>
+<b class="nc">&nbsp;			nDocs = maxDocs;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			long docCount = client.prepareSearch(indexName)</b>
+<b class="nc">&nbsp;					.setTypes(types)</b>
+<b class="nc">&nbsp;					.setSource(new SearchSourceBuilder().size(0).query(query))</b>
+<b class="nc">&nbsp;					.get()</b>
+<b class="nc">&nbsp;					.getHits()</b>
+<b class="nc">&nbsp;					.getTotalHits().value;</b>
+<b class="nc">&nbsp;			nDocs = Math.max((int) Math.min(docCount, Integer.MAX_VALUE), 1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		SearchResponse response = request.setIndices(indexName)</b>
+<b class="nc">&nbsp;				.setTypes(types)</b>
+<b class="nc">&nbsp;				.setVersion(false)</b>
+<b class="nc">&nbsp;				.seqNoAndPrimaryTerm(true)</b>
+<b class="nc">&nbsp;				.setQuery(query)</b>
+<b class="nc">&nbsp;				.setSize(nDocs)</b>
+<b class="nc">&nbsp;				.execute()</b>
+<b class="nc">&nbsp;				.actionGet();</b>
+<b class="nc">&nbsp;		return response.getHits();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryStringQueryBuilder prepareQuery(IRI propertyURI, QueryStringQueryBuilder query) {
+&nbsp;		// check out which query parser to use, based on the given property URI
+<b class="nc">&nbsp;		if (propertyURI == null)</b>
+&nbsp;		// if we have no property given, we create a default query parser which
+&nbsp;		// has the TEXT_FIELD_NAME as the default field
+&nbsp;		{
+<b class="nc">&nbsp;			query.defaultField(SearchFields.TEXT_FIELD_NAME).analyzer(queryAnalyzer);</b>
+&nbsp;		} else
+&nbsp;		// otherwise we create a query parser that has the given property as
+&nbsp;		// the default field
+&nbsp;		{
+<b class="nc">&nbsp;			query.defaultField(toPropertyFieldName(SearchFields.getPropertyField(propertyURI))).analyzer(queryAnalyzer);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return query;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param contexts
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void clearContexts(Resource... contexts) throws IOException {
+<b class="nc">&nbsp;		logger.debug(&quot;deleting contexts: {}&quot;, Arrays.toString(contexts));</b>
+&nbsp;		// these resources have to be read from the underlying rdf store
+&nbsp;		// and their triples have to be added to the luceneindex after deletion of
+&nbsp;		// documents
+&nbsp;
+&nbsp;		// remove all contexts passed
+<b class="nc">&nbsp;		for (Resource context : contexts) {</b>
+&nbsp;			// attention: context can be NULL!
+<b class="nc">&nbsp;			String contextString = SearchFields.getContextID(context);</b>
+&nbsp;			// now delete all documents from the deleted context
+<b class="nc">&nbsp;			new DeleteByQueryRequestBuilder(client, DeleteByQueryAction.INSTANCE)</b>
+<b class="nc">&nbsp;					.source(indexName)</b>
+<b class="nc">&nbsp;					.filter(QueryBuilders.termQuery(SearchFields.CONTEXT_FIELD_NAME, contextString))</b>
+<b class="nc">&nbsp;					.get();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public synchronized void clear() throws IOException {
+<b class="nc">&nbsp;		doAcknowledgedRequest(client.admin().indices().prepareDelete(indexName));</b>
+<b class="nc">&nbsp;		createIndex();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String toPropertyFieldName(String prop) {
+<b class="nc">&nbsp;		return PROPERTY_FIELD_PREFIX + encodeFieldName(prop);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String toPropertyName(String field) {
+<b class="nc">&nbsp;		return decodeFieldName(field.substring(PROPERTY_FIELD_PREFIX.length()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String toGeoPointFieldName(String prop) {
+<b class="nc">&nbsp;		return GEOPOINT_FIELD_PREFIX + encodeFieldName(prop);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String toGeoShapeFieldName(String prop) {
+<b class="nc">&nbsp;		return GEOSHAPE_FIELD_PREFIX + encodeFieldName(prop);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String encodeFieldName(String s) {
+<b class="nc">&nbsp;		return s.replace(&#39;.&#39;, &#39;^&#39;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String decodeFieldName(String s) {
+<b class="nc">&nbsp;		return s.replace(&#39;^&#39;, &#39;.&#39;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void doAcknowledgedRequest(ActionRequestBuilder&lt;?, ? extends AcknowledgedResponse&gt; request)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		boolean ok = request.execute().actionGet().isAcknowledged();</b>
+<b class="nc">&nbsp;		if (!ok) {</b>
+<b class="nc">&nbsp;			throw new IOException(&quot;Request not acknowledged: &quot; + request.get().getClass().getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void doIndexRequest(ActionRequestBuilder&lt;?, ? extends IndexResponse&gt; request) throws IOException {
+<b class="nc">&nbsp;		IndexResponse response = request.execute().actionGet();</b>
+<b class="nc">&nbsp;		boolean ok = response.status().equals(RestStatus.CREATED);</b>
+<b class="nc">&nbsp;		if (!ok) {</b>
+<b class="nc">&nbsp;			throw new IOException(&quot;Document not created: &quot; + request.get().getClass().getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void doUpdateRequest(ActionRequestBuilder&lt;?, ? extends UpdateResponse&gt; request)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		UpdateResponse response = request.execute().actionGet();</b>
+<b class="nc">&nbsp;		boolean isUpsert = response.status().equals(RestStatus.CREATED);</b>
+<b class="nc">&nbsp;		if (isUpsert) {</b>
+<b class="nc">&nbsp;			throw new IOException(&quot;Unexpected upsert: &quot; + request.get().getClass().getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

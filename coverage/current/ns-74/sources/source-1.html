@@ -1,0 +1,739 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractQueryModelVisitor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractQueryModelVisitor (org.eclipse.rdf4j.query.algebra.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractQueryModelVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    73.6%
+  </span>
+  <span class="absValue">
+    (67/91)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.9%
+  </span>
+  <span class="absValue">
+    (6/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    69.5%
+  </span>
+  <span class="absValue">
+    (73/105)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.helpers;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Add;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Avg;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Clear;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Coalesce;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAll;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAny;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareSubQueryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Copy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Count;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Create;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DeleteData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Group;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupConcat;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.In;
+&nbsp;import org.eclipse.rdf4j.query.algebra.InsertData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsResource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Label;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LangMatches;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Like;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Load;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LocalName;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Max;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Min;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Modify;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Move;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Namespace;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.OrderElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sample;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Slice;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sum;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TripleRef;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link QueryModelVisitor}s. This class implements all &lt;var&gt;meet(... node)&lt;/var&gt; methods from the
+&nbsp; * visitor interface, forwarding the call to a method for the node&#39;s supertype. This is done recursively until
+&nbsp; * {@link #meetNode} is reached. This allows subclasses to easily define default behaviour for visited nodes of a
+&nbsp; * certain type. The default implementation of {@link #meetNode} is to visit the node&#39;s children.
+&nbsp; */
+<b class="fc">&nbsp;public abstract class AbstractQueryModelVisitor&lt;X extends Exception&gt; implements QueryModelVisitor&lt;X&gt; {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Add node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(And node) throws X {
+<b class="fc">&nbsp;		meetBinaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ArbitraryLengthPath node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Avg node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(BindingSetAssignment node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(BNodeGenerator node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Bound node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Clear node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Coalesce node) throws X {
+<b class="fc">&nbsp;		meetNAryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Compare node) throws X {
+<b class="fc">&nbsp;		meetBinaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAll node) throws X {
+<b class="nc">&nbsp;		meetCompareSubQueryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAny node) throws X {
+<b class="nc">&nbsp;		meetCompareSubQueryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(DescribeOperator node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Copy node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Count node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Create node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Datatype node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(DeleteData node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Difference node) throws X {
+<b class="fc">&nbsp;		meetBinaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Distinct node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(EmptySet node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Exists node) throws X {
+<b class="fc">&nbsp;		meetSubQueryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Extension node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ExtensionElem node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Filter node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(FunctionCall node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(AggregateFunctionCall node) throws X {
+<b class="nc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Group node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(GroupConcat node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(GroupElem node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(If node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(In node) throws X {
+<b class="nc">&nbsp;		meetCompareSubQueryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(InsertData node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Intersection node) throws X {
+<b class="nc">&nbsp;		meetBinaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IRIFunction node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsBNode node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsLiteral node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsNumeric node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsResource node) throws X {
+<b class="nc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsURI node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Join node) throws X {
+<b class="fc">&nbsp;		meetBinaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Label node) throws X {
+<b class="nc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Lang node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LangMatches node) throws X {
+<b class="fc">&nbsp;		meetBinaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LeftJoin node) throws X {
+<b class="fc">&nbsp;		meetBinaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public void meet(Like node) throws X {
+&nbsp;		// From SERQL should not be seen
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Load node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LocalName node) throws X {
+<b class="nc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(MathExpr node) throws X {
+<b class="fc">&nbsp;		meetBinaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Max node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Min node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Modify node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Move node) throws X {
+<b class="nc">&nbsp;		meetUpdateExpr(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(MultiProjection node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Namespace node) throws X {
+<b class="nc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Not node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Or node) throws X {
+<b class="fc">&nbsp;		meetBinaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Order node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(OrderElem node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Projection node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ProjectionElem node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ProjectionElemList node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(QueryRoot node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Reduced node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Regex node) throws X {
+<b class="fc">&nbsp;		meetBinaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(SameTerm node) throws X {
+<b class="fc">&nbsp;		meetBinaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Sample node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Service node) throws X {
+<b class="nc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(SingletonSet node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Slice node) throws X {
+<b class="fc">&nbsp;		meetUnaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(StatementPattern node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Str node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Sum node) throws X {
+<b class="fc">&nbsp;		meetUnaryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Union node) throws X {
+<b class="fc">&nbsp;		meetBinaryTupleOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ValueConstant node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ListMemberOperator node) throws X {
+<b class="fc">&nbsp;		meetNAryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Var node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ZeroLengthPath node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(TripleRef node) throws X {
+<b class="nc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ValueExprTripleRef node) throws X {
+<b class="nc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meetOther(QueryModelNode node) throws X {
+<b class="pc">&nbsp;		if (node instanceof UnaryTupleOperator) {</b>
+<b class="nc">&nbsp;			meetUnaryTupleOperator((UnaryTupleOperator) node);</b>
+<b class="pc">&nbsp;		} else if (node instanceof BinaryTupleOperator) {</b>
+<b class="nc">&nbsp;			meetBinaryTupleOperator((BinaryTupleOperator) node);</b>
+<b class="pc">&nbsp;		} else if (node instanceof CompareSubQueryValueOperator) {</b>
+<b class="nc">&nbsp;			meetCompareSubQueryValueOperator((CompareSubQueryValueOperator) node);</b>
+<b class="pc">&nbsp;		} else if (node instanceof SubQueryValueOperator) {</b>
+<b class="nc">&nbsp;			meetSubQueryValueOperator((SubQueryValueOperator) node);</b>
+<b class="pc">&nbsp;		} else if (node instanceof UnaryValueOperator) {</b>
+<b class="nc">&nbsp;			meetUnaryValueOperator((UnaryValueOperator) node);</b>
+<b class="pc">&nbsp;		} else if (node instanceof BinaryValueOperator) {</b>
+<b class="fc">&nbsp;			meetBinaryValueOperator((BinaryValueOperator) node);</b>
+<b class="nc">&nbsp;		} else if (node instanceof UpdateExpr) {</b>
+<b class="nc">&nbsp;			meetUpdateExpr((UpdateExpr) node);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			meetNode(node);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link BinaryTupleOperator} node as argument. Forwards the
+&nbsp;	 * call to {@link #meetNode} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetBinaryTupleOperator(BinaryTupleOperator node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link BinaryValueOperator} node as argument. Forwards the
+&nbsp;	 * call to {@link #meetNode} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetBinaryValueOperator(BinaryValueOperator node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link CompareSubQueryValueOperator} node as argument.
+&nbsp;	 * Forwards the call to {@link #meetSubQueryValueOperator} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetCompareSubQueryValueOperator(CompareSubQueryValueOperator node) throws X {
+<b class="nc">&nbsp;		meetSubQueryValueOperator(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link org.eclipse.rdf4j.query.algebra.NAryValueOperator}
+&nbsp;	 * node as argument. Forwards the call to {@link #meetNode} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetNAryValueOperator(NAryValueOperator node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all of the other &lt;var&gt;meet&lt;/var&gt; methods that are not overridden in subclasses. This method can
+&nbsp;	 * be overridden in subclasses to define default behaviour when visiting nodes. The default behaviour of this method
+&nbsp;	 * is to visit the node&#39;s children.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetNode(QueryModelNode node) throws X {
+<b class="fc">&nbsp;		node.visitChildren(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link SubQueryValueOperator} node as argument. Forwards the
+&nbsp;	 * call to {@link #meetNode} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetSubQueryValueOperator(SubQueryValueOperator node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link UnaryTupleOperator} node as argument. Forwards the
+&nbsp;	 * call to {@link #meetNode} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetUnaryTupleOperator(UnaryTupleOperator node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link UnaryValueOperator} node as argument. Forwards the
+&nbsp;	 * call to {@link #meetNode} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetUnaryValueOperator(UnaryValueOperator node) throws X {
+<b class="fc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method called by all &lt;var&gt;meet&lt;/var&gt; methods with a {@link UpdateExpr} node as argument. Forwards the call to
+&nbsp;	 * {@link #meetNode} by default.
+&nbsp;	 *
+&nbsp;	 * @param node The node that is being visited.
+&nbsp;	 */
+&nbsp;	protected void meetUpdateExpr(UpdateExpr node) throws X {
+<b class="nc">&nbsp;		meetNode(node);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

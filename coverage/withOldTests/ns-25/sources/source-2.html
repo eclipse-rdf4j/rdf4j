@@ -1,0 +1,498 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HttpServerUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.webapp.util</a>
+</div>
+
+<h1>Coverage Summary for Class: HttpServerUtil (org.eclipse.rdf4j.common.webapp.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HttpServerUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/94)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/131)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.webapp.util;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;
+<b class="nc">&nbsp;public class HttpServerUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Extracts the MIME type from the specified content type string. This method parses the content type string and
+&nbsp;	 * returns just the MIME type, ignoring any parameters that are included.
+&nbsp;	 *
+&nbsp;	 * @param contentType A content type string, e.g. &lt;var&gt;application/xml; charset=utf-8&lt;/var&gt; .
+&nbsp;	 * @return The MIME type part of the specified content type string, or &lt;var&gt;null&lt;/var&gt; if the specified content type
+&nbsp;	 *         string was &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static String getMIMEType(String contentType) {
+<b class="nc">&nbsp;		if (contentType == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return HeaderElement.parse(contentType).getValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Selects from a set of MIME types, the MIME type that has the highest quality score when matched with the Accept
+&nbsp;	 * headers in the supplied request.
+&nbsp;	 *
+&nbsp;	 * @param mimeTypes The set of available MIME types.
+&nbsp;	 * @param request   The request to match the MIME types against.
+&nbsp;	 * @return The MIME type that best matches the types that the client finds acceptable, or &lt;var&gt;null&lt;/var&gt; in case no
+&nbsp;	 *         acceptable MIME type could be found.
+&nbsp;	 */
+&nbsp;	public static String selectPreferredMIMEType(Iterator&lt;String&gt; mimeTypes, HttpServletRequest request) {
+<b class="nc">&nbsp;		List&lt;HeaderElement&gt; acceptElements = getHeaderElements(request, &quot;Accept&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (acceptElements.isEmpty()) {</b>
+&nbsp;			// Client does not specify any requirements, return first MIME type
+&nbsp;			// from the list
+<b class="nc">&nbsp;			if (mimeTypes.hasNext()) {</b>
+<b class="nc">&nbsp;				return mimeTypes.next();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String result = null;</b>
+<b class="nc">&nbsp;		HeaderElement matchingAcceptType = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		double highestQuality = 0.0;</b>
+&nbsp;
+<b class="nc">&nbsp;		while (mimeTypes.hasNext()) {</b>
+<b class="nc">&nbsp;			String mimeType = mimeTypes.next();</b>
+<b class="nc">&nbsp;			HeaderElement acceptType = matchAcceptHeader(mimeType, acceptElements);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (acceptType != null) {</b>
+&nbsp;				// quality defaults to 1.0
+<b class="nc">&nbsp;				double quality = 1.0;</b>
+&nbsp;
+<b class="nc">&nbsp;				String qualityStr = acceptType.getParameterValue(&quot;q&quot;);</b>
+<b class="nc">&nbsp;				if (qualityStr != null) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						quality = Double.parseDouble(qualityStr);</b>
+<b class="nc">&nbsp;					} catch (NumberFormatException e) {</b>
+&nbsp;						// Illegal quality value, assume it has a different meaning
+&nbsp;						// and ignore it
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (quality &gt; highestQuality) {</b>
+<b class="nc">&nbsp;					result = mimeType;</b>
+<b class="nc">&nbsp;					matchingAcceptType = acceptType;</b>
+<b class="nc">&nbsp;					highestQuality = quality;</b>
+<b class="nc">&nbsp;				} else if (quality == highestQuality) {</b>
+&nbsp;					// found a match with equal quality preference. check if the
+&nbsp;					// accept type is more specific
+&nbsp;					// than the previous match.
+<b class="nc">&nbsp;					if (isMoreSpecificType(acceptType, matchingAcceptType)) {</b>
+<b class="nc">&nbsp;						result = mimeType;</b>
+<b class="nc">&nbsp;						matchingAcceptType = acceptType;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the first supplied MIME type is more specific than the second supplied MIME type.
+&nbsp;	 *
+&nbsp;	 * @param leftMimeTypeElem
+&nbsp;	 * @param rightMimeTypeElem
+&nbsp;	 * @return true iff leftMimeTypeElem is a more specific MIME type spec than rightMimeTypeElem, false otherwise.
+&nbsp;	 */
+&nbsp;	private static boolean isMoreSpecificType(HeaderElement leftMimeTypeElem, HeaderElement rightMimeTypeElem) {
+&nbsp;
+<b class="nc">&nbsp;		String[] leftMimeType = splitMIMEType(leftMimeTypeElem.getValue());</b>
+<b class="nc">&nbsp;		String[] rightMimeType = splitMIMEType(rightMimeTypeElem.getValue());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (rightMimeType != null) {</b>
+<b class="nc">&nbsp;			if (rightMimeType[1].equals(&quot;*&quot;)) {</b>
+<b class="nc">&nbsp;				if (!leftMimeType[1].equals(&quot;*&quot;)) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (rightMimeType[0].equals(&quot;*&quot;)) {</b>
+<b class="nc">&nbsp;				if (!leftMimeType[0].equals(&quot;*&quot;)) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String[] splitMIMEType(String mimeTypeString) {
+<b class="nc">&nbsp;		int slashIdx = mimeTypeString.indexOf(&#39;/&#39;);</b>
+<b class="nc">&nbsp;		if (slashIdx &gt; 0) {</b>
+<b class="nc">&nbsp;			String type = mimeTypeString.substring(0, slashIdx);</b>
+<b class="nc">&nbsp;			String subType = mimeTypeString.substring(slashIdx + 1);</b>
+<b class="nc">&nbsp;			return new String[] { type, subType };</b>
+&nbsp;		} else {
+&nbsp;			// invalid mime type
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the elements of the request header with the specified name.
+&nbsp;	 *
+&nbsp;	 * @param request    The request to get the header from.
+&nbsp;	 * @param headerName The name of the header to get the elements of.
+&nbsp;	 * @return A List of {@link HeaderElement} objects.
+&nbsp;	 */
+&nbsp;	public static List&lt;HeaderElement&gt; getHeaderElements(HttpServletRequest request, String headerName) {
+<b class="nc">&nbsp;		List&lt;HeaderElement&gt; elemList = new ArrayList&lt;&gt;(8);</b>
+&nbsp;
+&nbsp;		@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;		Enumeration&lt;String&gt; headerValues = request.getHeaders(headerName);</b>
+<b class="nc">&nbsp;		while (headerValues.hasMoreElements()) {</b>
+<b class="nc">&nbsp;			String value = headerValues.nextElement();</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;String&gt; subValues = splitHeaderString(value, &#39;,&#39;);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String subValue : subValues) {</b>
+&nbsp;				// Ignore any empty header elements
+<b class="nc">&nbsp;				subValue = subValue.trim();</b>
+<b class="nc">&nbsp;				if (subValue.length() &gt; 0) {</b>
+<b class="nc">&nbsp;					elemList.add(HeaderElement.parse(subValue));</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return elemList;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Splits the supplied string into sub parts using the specified splitChar as a separator, ignoring occurrences of
+&nbsp;	 * this character inside quoted strings.
+&nbsp;	 *
+&nbsp;	 * @param s         The header string to split into sub parts.
+&nbsp;	 * @param splitChar The character to use as separator.
+&nbsp;	 * @return A &lt;var&gt;List&lt;/var&gt; of &lt;var&gt;String&lt;/var&gt;s.
+&nbsp;	 */
+&nbsp;	public static List&lt;String&gt; splitHeaderString(String s, char splitChar) {
+<b class="nc">&nbsp;		List&lt;String&gt; result = new ArrayList&lt;&gt;(8);</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean parsingQuotedString = false;</b>
+<b class="nc">&nbsp;		int i, startIdx = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (i = 0; i &lt; s.length(); i++) {</b>
+<b class="nc">&nbsp;			char c = s.charAt(i);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (c == splitChar &amp;&amp; !parsingQuotedString) {</b>
+<b class="nc">&nbsp;				result.add(s.substring(startIdx, i));</b>
+<b class="nc">&nbsp;				startIdx = i + 1;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;&quot;&#39;) {</b>
+<b class="nc">&nbsp;				parsingQuotedString = !parsingQuotedString;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (startIdx &lt; s.length()) {</b>
+<b class="nc">&nbsp;			result.add(s.substring(startIdx));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match the specified MIME type spec against the list of Accept header elements, returning the applicable
+&nbsp;	 * header element if available.
+&nbsp;	 *
+&nbsp;	 * @param mimeTypeSpec   The MIME type to determine the quality for, e.g. &quot;text/plain&quot; or &quot;application/xml;
+&nbsp;	 *                       charset=utf-8&quot;.
+&nbsp;	 * @param acceptElements A List of {@link HeaderElement} objects.
+&nbsp;	 * @return The Accept header element that matches the MIME type spec most closely, or &lt;var&gt;null&lt;/var&gt; if no such
+&nbsp;	 *         header element could be found.
+&nbsp;	 */
+&nbsp;	public static HeaderElement matchAcceptHeader(String mimeTypeSpec, List&lt;HeaderElement&gt; acceptElements) {
+<b class="nc">&nbsp;		HeaderElement mimeTypeElem = HeaderElement.parse(mimeTypeSpec);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (mimeTypeElem != null) {</b>
+<b class="nc">&nbsp;			for (HeaderElement acceptElem : acceptElements) {</b>
+<b class="nc">&nbsp;				if (matchesAcceptHeader(mimeTypeElem, acceptElem)) {</b>
+<b class="nc">&nbsp;					return acceptElem;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// No match found, generalize the MIME type spec and try again
+<b class="nc">&nbsp;			mimeTypeElem = generalizeMIMEType(mimeTypeElem);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean matchesAcceptHeader(HeaderElement mimeTypeElem, HeaderElement acceptElem) {
+<b class="nc">&nbsp;		if (!mimeTypeElem.getValue().equals(acceptElem.getValue())) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Values match, check parameters
+<b class="nc">&nbsp;		if (mimeTypeElem.getParameterCount() &gt; acceptElem.getParameterCount()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; mimeTypeElem.getParameterCount(); i++) {</b>
+<b class="nc">&nbsp;			if (!mimeTypeElem.getParameter(i).equals(acceptElem.getParameter(i))) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Generalizes a MIME type element. The following steps are taken for generalization:
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;If the MIME type element has one or more parameters, the last parameter is removed.
+&nbsp;	 * &lt;li&gt;Otherwise, if the MIME type element&#39;s subtype is not equal to &#39;*&#39; then it is set to this value.
+&nbsp;	 * &lt;li&gt;Otherwise, if the MIME type element&#39;s type is not equal to &#39;*&#39; then it is set to this value.
+&nbsp;	 * &lt;li&gt;Otherwise, the MIME type is equal to &quot;*&amp;slash;*&quot; and cannot be generalized any further; &lt;var&gt;null&lt;/var&gt; is
+&nbsp;	 * returned.
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Example generalizations:
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;table&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;th&gt;input&lt;/th&gt;
+&nbsp;	 * &lt;th&gt;result&lt;/th&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;application/xml; charset=utf-8&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;application/xml&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;application/xml&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;application/*&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;application/*&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;&amp;slash;*&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;tr&gt;
+&nbsp;	 * &lt;td&gt;&amp;slash;*&lt;/td&gt;
+&nbsp;	 * &lt;td&gt;&lt;var&gt;null&lt;/var&gt;&lt;/td&gt;
+&nbsp;	 * &lt;/tr&gt;
+&nbsp;	 * &lt;/table&gt;
+&nbsp;	 *
+&nbsp;	 * @param mimeTypeElem The MIME type element that should be generalized.
+&nbsp;	 * @return The generalized MIME type element, or &lt;var&gt;null&lt;/var&gt; if it could not be generalized any further.
+&nbsp;	 */
+&nbsp;	private static HeaderElement generalizeMIMEType(HeaderElement mimeTypeElem) {
+<b class="nc">&nbsp;		int parameterCount = mimeTypeElem.getParameterCount();</b>
+<b class="nc">&nbsp;		if (parameterCount &gt; 0) {</b>
+&nbsp;			// remove last parameter
+<b class="nc">&nbsp;			mimeTypeElem.removeParameter(parameterCount - 1);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			String mimeType = mimeTypeElem.getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;			int slashIdx = mimeType.indexOf(&#39;/&#39;);</b>
+<b class="nc">&nbsp;			if (slashIdx &gt; 0) {</b>
+<b class="nc">&nbsp;				String type = mimeType.substring(0, slashIdx);</b>
+<b class="nc">&nbsp;				String subType = mimeType.substring(slashIdx + 1);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (!subType.equals(&quot;*&quot;)) {</b>
+&nbsp;					// generalize subtype
+<b class="nc">&nbsp;					mimeTypeElem.setValue(type + &quot;/*&quot;);</b>
+<b class="nc">&nbsp;				} else if (!type.equals(&quot;*&quot;)) {</b>
+&nbsp;					// generalize type
+<b class="nc">&nbsp;					mimeTypeElem.setValue(&quot;*/*&quot;);</b>
+&nbsp;				} else {
+&nbsp;					// Cannot generalize any further
+<b class="nc">&nbsp;					mimeTypeElem = null;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+&nbsp;				// invalid MIME type
+<b class="nc">&nbsp;				mimeTypeElem = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return mimeTypeElem;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the trimmed value of a request parameter as a String.
+&nbsp;	 *
+&nbsp;	 * @return The trimmed value, or null if the parameter does not exist.
+&nbsp;	 */
+&nbsp;	public static String getPostDataParameter(Map&lt;String, Object&gt; formData, String name) {
+<b class="nc">&nbsp;		String result = null;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Object param = formData.get(name);</b>
+<b class="nc">&nbsp;			if (param instanceof String[]) {</b>
+<b class="nc">&nbsp;				String[] paramArray = (String[]) param;</b>
+<b class="nc">&nbsp;				if (paramArray.length &gt; 0) {</b>
+<b class="nc">&nbsp;					result = paramArray[0];</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (param instanceof String) {</b>
+<b class="nc">&nbsp;				result = (String) param;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (result != null) {</b>
+<b class="nc">&nbsp;				result = result.trim();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (ClassCastException cce) {</b>
+&nbsp;			// ignore, return null
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return true if the string is either null or equal to &quot;&quot;
+&nbsp;	 */
+&nbsp;	public static boolean isEmpty(String string) {
+<b class="nc">&nbsp;		boolean result = false;</b>
+<b class="nc">&nbsp;		if (string == null || string.trim().isEmpty()) {</b>
+<b class="nc">&nbsp;			result = true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return true if the string is !isEmpty and equal to &quot;true&quot;
+&nbsp;	 */
+&nbsp;	public static boolean isTrue(String string) {
+<b class="nc">&nbsp;		boolean result = false;</b>
+<b class="nc">&nbsp;		if (!isEmpty(string) &amp;&amp; (string.equalsIgnoreCase(&quot;true&quot;) || string.equalsIgnoreCase(&quot;on&quot;))) {</b>
+<b class="nc">&nbsp;			result = true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return true if the string is !isEmpty and equal to &quot;false&quot;
+&nbsp;	 */
+&nbsp;	public static boolean isFalse(String string) {
+<b class="nc">&nbsp;		boolean result = false;</b>
+<b class="nc">&nbsp;		if (!isEmpty(string) &amp;&amp; (string.equalsIgnoreCase(&quot;false&quot;) || string.equalsIgnoreCase(&quot;off&quot;))) {</b>
+<b class="nc">&nbsp;			result = true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

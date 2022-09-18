@@ -1,0 +1,442 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.base</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractServlet (org.eclipse.rdf4j.workbench.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/66)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/86)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.base;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import javax.servlet.Servlet;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.ServletRequest;
+&nbsp;import javax.servlet.ServletResponse;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.app.AppConfiguration;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public abstract class AbstractServlet implements Servlet {</b>
+&nbsp;
+<b class="nc">&nbsp;	protected final Logger log = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	protected static final String SERVER_USER = &quot;server-user&quot;;
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	protected static final String SERVER_PASSWORD = &quot;server-password&quot;;
+&nbsp;
+&nbsp;	protected static final String SERVER_USER_PASSWORD = &quot;server-user-password&quot;;
+&nbsp;
+&nbsp;	protected static final String ACCEPT = &quot;Accept&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This response content type is always used for JSONP results.
+&nbsp;	 */
+&nbsp;	protected static final String APPLICATION_JAVASCRIPT = &quot;application/javascript&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This response content type is used in cases where application/xml is explicitly requested, or in cases where the
+&nbsp;	 * user agent is known to be a commonly available browser.
+&nbsp;	 */
+&nbsp;	protected static final String APPLICATION_XML = &quot;application/xml&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This response content type is used for SPARQL Results XML results in non-browser user agents or other cases where
+&nbsp;	 * application/xml is not specifically requested.
+&nbsp;	 */
+&nbsp;	protected static final String APPLICATION_SPARQL_RESULTS_XML = &quot;application/sparql-results+xml&quot;;
+&nbsp;
+&nbsp;	protected static final String TEXT_HTML = &quot;text/html&quot;;
+&nbsp;	protected static final String TEXT_PLAIN = &quot;text/plain&quot;;
+&nbsp;
+&nbsp;	protected static final String USER_AGENT = &quot;User-Agent&quot;;
+&nbsp;
+&nbsp;	protected static final String MSIE = &quot;MSIE&quot;;
+&nbsp;
+&nbsp;	protected static final String MOZILLA = &quot;Mozilla&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * JSONP property for enabling/disabling jsonp functionality.
+&nbsp;	 */
+&nbsp;	protected static final String JSONP_ENABLED = &quot;org.eclipse.rdf4j.workbench.jsonp.enabled&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This query parameter is only used in cases where the configuration property is not setup explicitly.
+&nbsp;	 */
+&nbsp;	protected static final String DEFAULT_JSONP_CALLBACK_PARAMETER = &quot;callback&quot;;
+&nbsp;
+<b class="nc">&nbsp;	protected static final Pattern JSONP_VALIDATOR = Pattern.compile(&quot;^[A-Za-z]\\w+$&quot;);</b>
+&nbsp;
+&nbsp;	protected static final String JSONP_CALLBACK_PARAMETER = &quot;org.eclipse.rdf4j.workbench.jsonp.callbackparameter&quot;;
+&nbsp;
+&nbsp;	protected ServletConfig config;
+&nbsp;
+&nbsp;	protected AppConfiguration appConfig;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ServletConfig getServletConfig() {
+<b class="nc">&nbsp;		return config;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getServletInfo() {
+<b class="nc">&nbsp;		return getClass().getSimpleName();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init(final ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		this.config = config;</b>
+<b class="nc">&nbsp;		this.appConfig = new AppConfiguration(&quot;Workbench&quot;, &quot;RDF4J Workbench&quot;);</b>
+&nbsp;		try {
+&nbsp;			// Suppress loading of log configuration.
+<b class="nc">&nbsp;			this.appConfig.init(false);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new ServletException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() {
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final void service(final ServletRequest req, final ServletResponse resp)
+&nbsp;			throws ServletException, IOException {
+<b class="nc">&nbsp;		final HttpServletRequest hreq = (HttpServletRequest) req;</b>
+<b class="nc">&nbsp;		final HttpServletResponse hresp = (HttpServletResponse) resp;</b>
+<b class="nc">&nbsp;		service(hreq, hresp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+&nbsp;		// default empty implementation
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	protected QueryResultFormat getTupleResultFormat(final HttpServletRequest req, final ServletResponse resp) {
+<b class="nc">&nbsp;		String header = null;</b>
+<b class="nc">&nbsp;		if (req instanceof WorkbenchRequest) {</b>
+<b class="nc">&nbsp;			header = ((WorkbenchRequest) req).getParameter(ACCEPT);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (null == header) {</b>
+<b class="nc">&nbsp;			header = req.getHeader(ACCEPT);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (header != null) {</b>
+<b class="nc">&nbsp;			Optional&lt;QueryResultFormat&gt; tupleFormat = QueryResultIO.getParserFormatForMIMEType(header);</b>
+<b class="nc">&nbsp;			if (tupleFormat.isPresent()) {</b>
+<b class="nc">&nbsp;				return tupleFormat.get();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryResultFormat getBooleanResultFormat(final HttpServletRequest req, final ServletResponse resp) {
+<b class="nc">&nbsp;		String header = req.getHeader(ACCEPT);</b>
+<b class="nc">&nbsp;		if (header != null) {</b>
+&nbsp;			// Then try boolean format
+<b class="nc">&nbsp;			Optional&lt;QueryResultFormat&gt; booleanFormat = QueryResultIO.getBooleanParserFormatForMIMEType(header);</b>
+<b class="nc">&nbsp;			if (booleanFormat.isPresent()) {</b>
+<b class="nc">&nbsp;				return booleanFormat.get();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryResultFormat getJSONPResultFormat(final HttpServletRequest req, final ServletResponse resp) {
+<b class="nc">&nbsp;		String header = req.getHeader(ACCEPT);</b>
+<b class="nc">&nbsp;		if (header != null) {</b>
+<b class="nc">&nbsp;			if (header.equals(APPLICATION_JAVASCRIPT)) {</b>
+<b class="nc">&nbsp;				return TupleQueryResultFormat.JSON;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryResultWriter getResultWriter(final HttpServletRequest req, final ServletResponse resp,
+&nbsp;			final OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		QueryResultFormat resultFormat = getTupleResultFormat(req, resp);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (resultFormat == null) {</b>
+<b class="nc">&nbsp;			resultFormat = getBooleanResultFormat(req, resp);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (resultFormat == null) {</b>
+<b class="nc">&nbsp;			resultFormat = getJSONPResultFormat(req, resp);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (resultFormat == null) {</b>
+&nbsp;			// This is safe with the current SPARQL Results XML implementation that
+&nbsp;			// is able to write out boolean results from the &quot;Tuple&quot; writer.
+<b class="nc">&nbsp;			resultFormat = TupleQueryResultFormat.SPARQL;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return QueryResultIO.createWriter(resultFormat, outputStream);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a {@link TupleResultBuilder} based on the Accept header, and sets the result content type to the best
+&nbsp;	 * available match for that, returning a builder that can be used to write out the results.
+&nbsp;	 *
+&nbsp;	 * @param req          the current HTTP request
+&nbsp;	 * @param resp         the current HTTP response
+&nbsp;	 * @param outputStream TODO
+&nbsp;	 * @return a builder that can be used to write out the results
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 */
+&nbsp;	protected TupleResultBuilder getTupleResultBuilder(HttpServletRequest req, HttpServletResponse resp,
+&nbsp;			OutputStream outputStream) throws UnsupportedQueryResultFormatException, IOException {
+&nbsp;		String contentType;
+<b class="nc">&nbsp;		QueryResultWriter resultWriter = checkJSONP(req, outputStream);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (resultWriter != null) {</b>
+&nbsp;			// explicitly set the content type to &quot;application/javascript&quot;
+&nbsp;			// to fit JSONP best practices
+<b class="nc">&nbsp;			contentType = APPLICATION_JAVASCRIPT;</b>
+&nbsp;		} else {
+&nbsp;			// If the JSON-P check above failed, use the normal methods to
+&nbsp;			// determine output format
+<b class="nc">&nbsp;			resultWriter = getResultWriter(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;			contentType = resultWriter.getQueryResultFormat().getDefaultMIMEType();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// HACK: In order to make XSLT stylesheet driven user interface work,
+&nbsp;		// browser user agents must receive application/xml if they are going to
+&nbsp;		// actually get application/sparql-results+xml
+&nbsp;		// NOTE: This will test against both BooleanQueryResultsFormat and
+&nbsp;		// TupleQueryResultsFormat
+<b class="nc">&nbsp;		if (contentType.equals(APPLICATION_SPARQL_RESULTS_XML)) {</b>
+<b class="nc">&nbsp;			String uaHeader = req.getHeader(USER_AGENT);</b>
+<b class="nc">&nbsp;			String acceptHeader = req.getHeader(ACCEPT);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (acceptHeader != null &amp;&amp; acceptHeader.contains(APPLICATION_SPARQL_RESULTS_XML)) {</b>
+&nbsp;				// Do nothing, leave the contentType as
+&nbsp;				// application/sparql-results+xml
+&nbsp;			}
+&nbsp;			// Switch back to application/xml for user agents who claim to be
+&nbsp;			// Mozilla compatible
+<b class="nc">&nbsp;			else if (uaHeader != null &amp;&amp; uaHeader.contains(MOZILLA)) {</b>
+<b class="nc">&nbsp;				contentType = APPLICATION_XML;</b>
+&nbsp;			}
+&nbsp;			// Switch back to application/xml for user agents who accept either
+&nbsp;			// application/xml or text/html
+<b class="nc">&nbsp;			else if (acceptHeader != null</b>
+<b class="nc">&nbsp;					&amp;&amp; (acceptHeader.contains(APPLICATION_XML) || acceptHeader.contains(TEXT_HTML))) {</b>
+<b class="nc">&nbsp;				contentType = APPLICATION_XML;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Setup qname support for result writers who declare that they support it
+<b class="nc">&nbsp;		if (resultWriter.getSupportedSettings().contains(BasicQueryWriterSettings.ADD_SESAME_QNAME)) {</b>
+<b class="nc">&nbsp;			resultWriter.getWriterConfig().set(BasicQueryWriterSettings.ADD_SESAME_QNAME, true);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		resp.setContentType(contentType);</b>
+&nbsp;
+&nbsp;		// TODO: Make the following two settings configurable
+&nbsp;
+&nbsp;		// Convert xsd:string back to plain literals where this behaviour is
+&nbsp;		// supported
+<b class="nc">&nbsp;		if (resultWriter.getSupportedSettings().contains(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL)) {</b>
+<b class="nc">&nbsp;			resultWriter.getWriterConfig().set(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL, true);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Convert rdf:langString back to language literals where this behaviour
+&nbsp;		// is supported
+<b class="nc">&nbsp;		if (resultWriter.getSupportedSettings().contains(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL)) {</b>
+<b class="nc">&nbsp;			resultWriter.getWriterConfig().set(BasicWriterSettings.RDF_LANGSTRING_TO_LANG_LITERAL, true);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new TupleResultBuilder(resultWriter, SimpleValueFactory.getInstance());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryResultWriter checkJSONP(HttpServletRequest req, OutputStream outputStream) throws IOException {
+<b class="nc">&nbsp;		QueryResultWriter resultWriter = null;</b>
+&nbsp;		// HACK : SES-2043 : Need to support Chrome who decide to send Accept: */*
+&nbsp;		// instead of application/javascript for JSONP queries, so need to check
+&nbsp;		// it first as other algorithm fails in this case.
+&nbsp;		// JSONP is enabled in the default properties, but if users setup their
+&nbsp;		// own application.properties file then it must be inserted explicitly
+&nbsp;		// to be enabled
+<b class="nc">&nbsp;		if (appConfig != null &amp;&amp; appConfig.getProperties().containsKey(JSONP_ENABLED)) {</b>
+&nbsp;
+<b class="nc">&nbsp;			String jsonpEnabledProperty = appConfig.getProperties().getProperty(JSONP_ENABLED);</b>
+&nbsp;
+&nbsp;			// check if jsonp is a property and it is set to true
+<b class="nc">&nbsp;			if (jsonpEnabledProperty != null &amp;&amp; Boolean.parseBoolean(jsonpEnabledProperty)) {</b>
+<b class="nc">&nbsp;				String parameterName = null;</b>
+&nbsp;
+&nbsp;				// check whether they customised the parameter to use to identify
+&nbsp;				// the jsonp callback
+<b class="nc">&nbsp;				if (appConfig.getProperties().containsKey(JSONP_CALLBACK_PARAMETER)) {</b>
+<b class="nc">&nbsp;					parameterName = appConfig.getProperties().getProperty(JSONP_CALLBACK_PARAMETER);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Use default parameter name if it was missing in the
+&nbsp;				// configuration after jsonp was enabled
+<b class="nc">&nbsp;				if (parameterName == null || parameterName.trim().isEmpty()) {</b>
+<b class="nc">&nbsp;					parameterName = DEFAULT_JSONP_CALLBACK_PARAMETER;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				String parameter = req.getParameter(parameterName);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (parameter != null) {</b>
+<b class="nc">&nbsp;					parameter = parameter.trim();</b>
+&nbsp;
+<b class="nc">&nbsp;					if (parameter.isEmpty()) {</b>
+<b class="nc">&nbsp;						parameter = BasicQueryWriterSettings.JSONP_CALLBACK.getDefaultValue();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					// check callback function name is a valid javascript function
+&nbsp;					// name
+<b class="nc">&nbsp;					if (!JSONP_VALIDATOR.matcher(parameter).matches()) {</b>
+<b class="nc">&nbsp;						throw new IOException(&quot;Callback function name was invalid&quot;);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					resultWriter = QueryResultIO.createWriter(TupleQueryResultFormat.JSON, outputStream);</b>
+&nbsp;
+<b class="nc">&nbsp;					resultWriter.getWriterConfig().set(BasicQueryWriterSettings.JSONP_CALLBACK, parameter);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return resultWriter;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

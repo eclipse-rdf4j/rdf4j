@@ -1,0 +1,461 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SimpleSAXParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.xml</a>
+</div>
+
+<h1>Coverage Summary for Class: SimpleSAXParser (org.eclipse.rdf4j.common.xml)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SimpleSAXParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    45.5%
+  </span>
+  <span class="absValue">
+    (5/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (8/16)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SimpleSAXParser$SimpleSAXDefaultHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (8/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90%
+  </span>
+  <span class="absValue">
+    (9/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    96.8%
+  </span>
+  <span class="absValue">
+    (30/31)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    68.4%
+  </span>
+  <span class="absValue">
+    (13/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90%
+  </span>
+  <span class="absValue">
+    (9/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    80.9%
+  </span>
+  <span class="absValue">
+    (38/47)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.xml;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.xml.sax.Attributes;
+&nbsp;import org.xml.sax.InputSource;
+&nbsp;import org.xml.sax.Locator;
+&nbsp;import org.xml.sax.SAXException;
+&nbsp;import org.xml.sax.XMLReader;
+&nbsp;import org.xml.sax.helpers.DefaultHandler;
+&nbsp;
+&nbsp;/**
+&nbsp; * An XML parser that generates &quot;simple&quot; SAX-like events from a limited subset of XML documents. The SimpleSAXParser can
+&nbsp; * parse simple XML documents; it doesn&#39;t support processing instructions or elements that contain both sub-element and
+&nbsp; * character data; character data is only supported in the &quot;leaves&quot; of the XML element tree.
+&nbsp; * &lt;h3&gt;Example:&lt;/h3&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * Parsing the following XML:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;lt;?xml version=&#39;1.0&#39; encoding=&#39;UTF-8&#39;?&amp;gt;
+&nbsp; * &amp;lt;xml-doc&amp;gt;
+&nbsp; *   &amp;lt;foo a=&quot;1&quot; b=&quot;2&amp;amp;amp;3&quot;/&amp;gt;
+&nbsp; *   &amp;lt;bar&amp;gt;Hello World!&amp;lt;/bar&amp;gt;
+&nbsp; * &amp;lt;/xml-doc&amp;gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * will result in the following method calls to the &lt;var&gt;SimpleSAXListener&lt;/var&gt;:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * startDocument()
+&nbsp; * startTag(&quot;xml-doc&quot;, emptyMap, &quot;&quot;)
+&nbsp; *
+&nbsp; * startTag(&quot;foo&quot;, a_b_Map, &quot;&quot;)
+&nbsp; * endTag(&quot;foo&quot;)
+&nbsp; *
+&nbsp; * startTag(&quot;bar&quot;, emptyMap, &quot;Hello World!&quot;)
+&nbsp; * endTag(&quot;bar&quot;)
+&nbsp; *
+&nbsp; * endTag(&quot;xml-doc&quot;)
+&nbsp; * endDocument()
+&nbsp; * &lt;/pre&gt;
+&nbsp; */
+&nbsp;public class SimpleSAXParser {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;	/**
+&nbsp;	 * The XMLReader to use for parsing the XML.
+&nbsp;	 */
+&nbsp;	private final XMLReader xmlReader;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The listener to report the events to.
+&nbsp;	 */
+&nbsp;	private SimpleSAXListener listener;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether leading and trailing whitespace in text elements should be preserved.
+&nbsp;	 */
+<b class="fc">&nbsp;	private boolean preserveWhitespace = false;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A Locator indicating a position in the text that is currently being parsed by the SAX parser.
+&nbsp;	 */
+&nbsp;	private Locator locator;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new SimpleSAXParser that will use the supplied &lt;var&gt;XMLReader&lt;/var&gt; for parsing the XML. One must set a
+&nbsp;	 * &lt;var&gt;SimpleSAXListener&lt;/var&gt; on this object before calling one of the &lt;var&gt;parse()&lt;/var&gt; methods.
+&nbsp;	 *
+&nbsp;	 * @param xmlReader The XMLReader to use for parsing.
+&nbsp;	 * @see #setListener
+&nbsp;	 */
+&nbsp;	public SimpleSAXParser(XMLReader xmlReader) {
+<b class="fc">&nbsp;		super();</b>
+<b class="fc">&nbsp;		this.xmlReader = xmlReader;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new SimpleSAXParser that will try to create a new &lt;var&gt;XMLReader&lt;/var&gt; using
+&nbsp;	 * &lt;var&gt;info.aduna.xml.XMLReaderFactory&lt;/var&gt; for parsing the XML. One must set a &lt;var&gt;SimpleSAXListener&lt;/var&gt; on
+&nbsp;	 * this object before calling one of the &lt;var&gt;parse()&lt;/var&gt; methods.
+&nbsp;	 *
+&nbsp;	 * @throws SAXException If the SimpleSAXParser was unable to create an XMLReader.
+&nbsp;	 * @see #setListener
+&nbsp;	 * @see org.xml.sax.XMLReader
+&nbsp;	 * @see org.eclipse.rdf4j.common.xml.XMLReaderFactory
+&nbsp;	 */
+&nbsp;	public SimpleSAXParser() throws SAXException {
+<b class="nc">&nbsp;		this(XMLReaderFactory.createXMLReader());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the (new) listener that should receive any events from this parser. This listener will replace any
+&nbsp;	 * previously set listener.
+&nbsp;	 *
+&nbsp;	 * @param listener The (new) listener for events from this parser.
+&nbsp;	 */
+&nbsp;	public void setListener(SimpleSAXListener listener) {
+<b class="fc">&nbsp;		this.listener = listener;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the listener that currently will receive any events from this parser.
+&nbsp;	 *
+&nbsp;	 * @return The listener for events from this parser.
+&nbsp;	 */
+&nbsp;	public SimpleSAXListener getListener() {
+<b class="nc">&nbsp;		return listener;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Locator getLocator() {
+<b class="nc">&nbsp;		return locator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets whether leading and trailing whitespace characters in text elements should be preserved. Such whitespace
+&nbsp;	 * characters are discarded by default.
+&nbsp;	 */
+&nbsp;	public void setPreserveWhitespace(boolean preserveWhitespace) {
+<b class="fc">&nbsp;		this.preserveWhitespace = preserveWhitespace;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether leading and trailing whitespace characters in text elements are preserved. Defaults to
+&nbsp;	 * &lt;var&gt;false&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public boolean isPreserveWhitespace() {
+<b class="nc">&nbsp;		return preserveWhitespace;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the content of the supplied &lt;var&gt;File&lt;/var&gt; as XML.
+&nbsp;	 *
+&nbsp;	 * @param file The file containing the XML to parse.
+&nbsp;	 */
+&nbsp;	public void parse(File file) throws SAXException, IOException {
+<b class="nc">&nbsp;		try (InputStream in = new FileInputStream(file)) {</b>
+<b class="nc">&nbsp;			parse(in);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the content of the supplied &lt;var&gt;InputStream&lt;/var&gt; as XML.
+&nbsp;	 *
+&nbsp;	 * @param in An &lt;var&gt;InputStream&lt;/var&gt; containing XML data.
+&nbsp;	 */
+&nbsp;	public void parse(InputStream in) throws SAXException, IOException {
+<b class="fc">&nbsp;		parse(new InputSource(in));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the content of the supplied &lt;var&gt;Reader&lt;/var&gt; as XML.
+&nbsp;	 *
+&nbsp;	 * @param reader A &lt;var&gt;Reader&lt;/var&gt; containing XML data.
+&nbsp;	 */
+&nbsp;	public void parse(Reader reader) throws SAXException, IOException {
+<b class="nc">&nbsp;		parse(new InputSource(reader));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the content of the supplied &lt;var&gt;InputSource&lt;/var&gt; as XML.
+&nbsp;	 *
+&nbsp;	 * @param inputSource An &lt;var&gt;InputSource&lt;/var&gt; containing XML data.
+&nbsp;	 */
+&nbsp;	public synchronized void parse(InputSource inputSource) throws SAXException, IOException {
+<b class="fc">&nbsp;		xmlReader.setContentHandler(new SimpleSAXDefaultHandler());</b>
+<b class="fc">&nbsp;		xmlReader.parse(inputSource);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------------------------------*
+&nbsp;	 * Inner class SimpleSAXDefaultHandler *
+&nbsp;	 *-------------------------------------*/
+&nbsp;	class SimpleSAXDefaultHandler extends DefaultHandler {
+&nbsp;
+&nbsp;		/*-----------*
+&nbsp;		 * Variables *
+&nbsp;		 *-----------*/
+&nbsp;		/**
+&nbsp;		 * StringBuilder used to collect text during parsing.
+&nbsp;		 */
+<b class="fc">&nbsp;		private final StringBuilder charBuf = new StringBuilder(512);</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * The tag name of a deferred start tag.
+&nbsp;		 */
+<b class="fc">&nbsp;		private String deferredStartTag = null;</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * The attributes of a deferred start tag.
+&nbsp;		 */
+<b class="fc">&nbsp;		private Map&lt;String, String&gt; deferredAttributes = null;</b>
+&nbsp;
+&nbsp;		/*--------------*
+&nbsp;		 * Constructors *
+&nbsp;		 *--------------*/
+<b class="fc">&nbsp;		public SimpleSAXDefaultHandler() {</b>
+<b class="fc">&nbsp;			super();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*---------*
+&nbsp;		 * Methods *
+&nbsp;		 *---------*/
+&nbsp;		// overrides DefaultHandler.startDocument()
+&nbsp;		@Override
+&nbsp;		public void startDocument() throws SAXException {
+<b class="fc">&nbsp;			listener.startDocument();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// overrides DefaultHandler.endDocument()
+&nbsp;		@Override
+&nbsp;		public void endDocument() throws SAXException {
+<b class="fc">&nbsp;			listener.endDocument();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// overrides DefaultHandler.characters()
+&nbsp;		@Override
+&nbsp;		public void characters(char[] ch, int start, int length) throws SAXException {
+<b class="fc">&nbsp;			charBuf.append(ch, start, length);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// overrides DefaultHandler.startElement()
+&nbsp;		@Override
+&nbsp;		public void startElement(String namespaceURI, String localName, String qName, Attributes attributes)
+&nbsp;				throws SAXException {
+&nbsp;			// Report any deferred start tag
+<b class="fc">&nbsp;			if (deferredStartTag != null) {</b>
+<b class="fc">&nbsp;				reportDeferredStartElement();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Make current tag new deferred start tag
+<b class="fc">&nbsp;			deferredStartTag = localName;</b>
+&nbsp;
+&nbsp;			// Copy attributes to deferredAttributes
+<b class="fc">&nbsp;			int attCount = attributes.getLength();</b>
+<b class="fc">&nbsp;			if (attCount == 0) {</b>
+<b class="fc">&nbsp;				deferredAttributes = Collections.emptyMap();</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				deferredAttributes = new LinkedHashMap&lt;&gt;(attCount * 2);</b>
+&nbsp;
+<b class="fc">&nbsp;				for (int i = 0; i &lt; attCount; i++) {</b>
+<b class="fc">&nbsp;					deferredAttributes.put(attributes.getQName(i), attributes.getValue(i));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// Clear character buffer
+<b class="fc">&nbsp;			charBuf.setLength(0);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void reportDeferredStartElement() throws SAXException {
+<b class="fc">&nbsp;			listener.startTag(deferredStartTag, deferredAttributes, &quot;&quot;);</b>
+<b class="fc">&nbsp;			deferredStartTag = null;</b>
+<b class="fc">&nbsp;			deferredAttributes = null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// overrides DefaultHandler.endElement()
+&nbsp;		@Override
+&nbsp;		public void endElement(String namespaceURI, String localName, String qName) throws SAXException {
+<b class="fc">&nbsp;			if (deferredStartTag != null) {</b>
+&nbsp;				// Check if any character data has been collected in the charBuf
+<b class="fc">&nbsp;				String text = charBuf.toString();</b>
+<b class="pc">&nbsp;				if (!preserveWhitespace) {</b>
+<b class="nc">&nbsp;					text = text.trim();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Report deferred start tag
+<b class="fc">&nbsp;				listener.startTag(deferredStartTag, deferredAttributes, text);</b>
+<b class="fc">&nbsp;				deferredStartTag = null;</b>
+<b class="fc">&nbsp;				deferredAttributes = null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Report the end tag
+<b class="fc">&nbsp;			listener.endTag(localName);</b>
+&nbsp;
+&nbsp;			// Clear character buffer
+<b class="fc">&nbsp;			charBuf.setLength(0);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void setDocumentLocator(Locator loc) {
+<b class="fc">&nbsp;			locator = loc;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

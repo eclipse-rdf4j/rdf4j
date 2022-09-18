@@ -1,0 +1,1418 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLProtocolSession</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.client</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLProtocolSession (org.eclipse.rdf4j.http.client)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLProtocolSession</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/204)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/438)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.client;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.ACCEPT_PARAM_NAME;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.StringReader;
+&nbsp;import java.io.Writer;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.net.HttpURLConnection;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.IllegalCharsetNameException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ExecutorService;
+&nbsp;
+&nbsp;import org.apache.commons.io.IOUtils;
+&nbsp;import org.apache.http.Header;
+&nbsp;import org.apache.http.HeaderElement;
+&nbsp;import org.apache.http.HttpEntity;
+&nbsp;import org.apache.http.HttpException;
+&nbsp;import org.apache.http.HttpHost;
+&nbsp;import org.apache.http.HttpResponse;
+&nbsp;import org.apache.http.NameValuePair;
+&nbsp;import org.apache.http.auth.AuthScope;
+&nbsp;import org.apache.http.auth.UsernamePasswordCredentials;
+&nbsp;import org.apache.http.client.AuthCache;
+&nbsp;import org.apache.http.client.CredentialsProvider;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.apache.http.client.entity.UrlEncodedFormEntity;
+&nbsp;import org.apache.http.client.methods.HttpGet;
+&nbsp;import org.apache.http.client.methods.HttpPost;
+&nbsp;import org.apache.http.client.methods.HttpUriRequest;
+&nbsp;import org.apache.http.client.protocol.HttpClientContext;
+&nbsp;import org.apache.http.client.utils.URIBuilder;
+&nbsp;import org.apache.http.entity.ContentType;
+&nbsp;import org.apache.http.impl.auth.BasicScheme;
+&nbsp;import org.apache.http.impl.client.BasicAuthCache;
+&nbsp;import org.apache.http.impl.client.BasicCookieStore;
+&nbsp;import org.apache.http.impl.client.BasicCredentialsProvider;
+&nbsp;import org.apache.http.message.BasicNameValuePair;
+&nbsp;import org.apache.http.params.BasicHttpParams;
+&nbsp;import org.apache.http.params.CoreConnectionPNames;
+&nbsp;import org.apache.http.params.HttpParams;
+&nbsp;import org.apache.http.protocol.HttpContext;
+&nbsp;import org.apache.http.util.EntityUtils;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JConfigException;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteSink;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.common.io.Sink;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.http.client.shacl.RemoteShaclValidationException;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorType;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+&nbsp;import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserRegistry;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserRegistry;
+&nbsp;import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
+&nbsp;import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParserRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * The SPARQLProtocolSession provides low level HTTP methods for communication with SPARQL endpoints. All methods are
+&nbsp; * compliant to the &lt;a href=&quot;https://www.w3.org/TR/sparql11-protocol/&quot;&gt;SPARQL 1.1 Protocol W3C Recommendation&lt;/a&gt;.
+&nbsp; * &lt;p/&gt;
+&nbsp; * For both Tuple and Graph queries there is a variant which parses the result in the background, see
+&nbsp; * {@link BackgroundTupleResult} and {@link BackgroundGraphResult}. For boolean queries the result is parsed in the
+&nbsp; * current thread. All methods in this class guarantee that HTTP connections are closed properly and returned to the
+&nbsp; * connection pool. The methods in this class are not guaranteed to be thread-safe.
+&nbsp; * &lt;p/&gt;
+&nbsp; * Functionality specific to the RDF4J HTTP protocol can be found in {@link RDF4JProtocolSession} (which is used by
+&nbsp; * HTTPRepository).
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @see RDF4JProtocolSession
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-protocol/&quot;&gt;SPARQL 1.1 Protocol (W3C Recommendation)&lt;/a&gt;
+&nbsp; */
+&nbsp;public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable {
+&nbsp;
+<b class="nc">&nbsp;	protected static final Charset UTF8 = StandardCharsets.UTF_8;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default value of the threshold for URL length, beyond which we use the POST method for SPARQL query requests.
+&nbsp;	 * The default is based on the lowest common denominator for various web servers.
+&nbsp;	 */
+&nbsp;	public static final int DEFAULT_MAXIMUM_URL_LENGTH = 4083;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated use {@link #DEFAULT_MAXIMUM_URL_LENGTH} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static final int MAXIMUM_URL_LENGTH = DEFAULT_MAXIMUM_URL_LENGTH;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * System property for configuration of URL length threshold: {@code rdf4j.sparql.url.maxlength}. A threshold of 0
+&nbsp;	 * (or a negative value) means that the POST method is used for &lt;strong&gt;every&lt;/strong&gt; SPARQL query request.
+&nbsp;	 */
+&nbsp;	public static final String MAXIMUM_URL_LENGTH_PARAM = &quot;rdf4j.sparql.url.maxlength&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The threshold for URL length, beyond which we use the POST method. A threshold of 0 (or a negative value) means
+&nbsp;	 * that the POST method is used for &lt;strong&gt;every&lt;/strong&gt; SPARQL query request.
+&nbsp;	 */
+&nbsp;	private final int maximumUrlLength;
+&nbsp;
+<b class="nc">&nbsp;	final static Logger logger = LoggerFactory.getLogger(SPARQLProtocolSession.class);</b>
+&nbsp;
+&nbsp;	private ValueFactory valueFactory;
+&nbsp;
+&nbsp;	private String queryURL;
+&nbsp;
+&nbsp;	private String updateURL;
+&nbsp;
+&nbsp;	private HttpClient httpClient;
+&nbsp;
+&nbsp;	private final BackgroundResultExecutor background;
+&nbsp;
+&nbsp;	private final HttpClientContext httpContext;
+&nbsp;
+&nbsp;	private HttpParams params;
+&nbsp;
+<b class="nc">&nbsp;	private ParserConfig parserConfig = new ParserConfig();</b>
+&nbsp;
+<b class="nc">&nbsp;	private TupleQueryResultFormat preferredTQRFormat = TupleQueryResultFormat.SPARQL;</b>
+&nbsp;
+<b class="nc">&nbsp;	private BooleanQueryResultFormat preferredBQRFormat = BooleanQueryResultFormat.TEXT;</b>
+&nbsp;
+<b class="nc">&nbsp;	private RDFFormat preferredRDFFormat = RDFFormat.TURTLE;</b>
+&nbsp;
+<b class="nc">&nbsp;	private Map&lt;String, String&gt; additionalHttpHeaders = Collections.emptyMap();</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean passThroughEnabled = true;</b>
+&nbsp;
+<b class="nc">&nbsp;	public SPARQLProtocolSession(HttpClient client, ExecutorService executor) {</b>
+<b class="nc">&nbsp;		this.httpClient = client;</b>
+<b class="nc">&nbsp;		this.httpContext = new HttpClientContext();</b>
+<b class="nc">&nbsp;		this.background = new BackgroundResultExecutor(executor);</b>
+<b class="nc">&nbsp;		valueFactory = SimpleValueFactory.getInstance();</b>
+<b class="nc">&nbsp;		httpContext.setCookieStore(new BasicCookieStore());</b>
+&nbsp;
+&nbsp;		// parser used for processing server response data should be lenient
+<b class="nc">&nbsp;		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+<b class="nc">&nbsp;		parserConfig.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);</b>
+&nbsp;
+&nbsp;		// configure the maximum url length for SPARQL query GET requests
+<b class="nc">&nbsp;		int maximumUrlLength = DEFAULT_MAXIMUM_URL_LENGTH;</b>
+<b class="nc">&nbsp;		String propertyValue = System.getProperty(MAXIMUM_URL_LENGTH_PARAM);</b>
+<b class="nc">&nbsp;		if (propertyValue != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				maximumUrlLength = Integer.parseInt(propertyValue);</b>
+<b class="nc">&nbsp;			} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;				throw new RDF4JConfigException(&quot;integer value expected for property &quot; + MAXIMUM_URL_LENGTH_PARAM, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.maximumUrlLength = maximumUrlLength;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final HttpClient getHttpClient() {
+<b class="nc">&nbsp;		return httpClient;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient httpClient) {
+<b class="nc">&nbsp;		this.httpClient = httpClient;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setValueFactory(ValueFactory valueFactory) {
+<b class="nc">&nbsp;		this.valueFactory = valueFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;		return valueFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setQueryURL(String queryURL) {
+<b class="nc">&nbsp;		if (queryURL == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;queryURL must not be null&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.queryURL = queryURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setUpdateURL(String updateURL) {
+<b class="nc">&nbsp;		if (updateURL == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;updateURL must not be null&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.updateURL = updateURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the preferred format for encoding tuple query results.
+&nbsp;	 *
+&nbsp;	 * @param format The preferred {@link TupleQueryResultFormat}, or &lt;var&gt;null&lt;/var&gt; to indicate no specific format is
+&nbsp;	 *               preferred.
+&nbsp;	 */
+&nbsp;	public void setPreferredTupleQueryResultFormat(TupleQueryResultFormat format) {
+<b class="nc">&nbsp;		preferredTQRFormat = format;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the preferred {@link TupleQueryResultFormat} for encoding tuple query results. The
+&nbsp;	 * {@link TupleQueryResultFormat#SPARQL SPARQL/XML} format is preferred by default.
+&nbsp;	 *
+&nbsp;	 * @return The preferred format, of &lt;var&gt;null&lt;/var&gt; if no specific format is preferred.
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat getPreferredTupleQueryResultFormat() {
+<b class="nc">&nbsp;		return preferredTQRFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the preferred format for encoding RDF documents.
+&nbsp;	 *
+&nbsp;	 * @param format The preferred {@link RDFFormat}, or &lt;var&gt;null&lt;/var&gt; to indicate no specific format is preferred.
+&nbsp;	 */
+&nbsp;	public void setPreferredRDFFormat(RDFFormat format) {
+<b class="nc">&nbsp;		preferredRDFFormat = format;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the preferred {@link RDFFormat} for encoding RDF documents. The {@link RDFFormat#TURTLE Turtle} format is
+&nbsp;	 * preferred by default.
+&nbsp;	 *
+&nbsp;	 * @return The preferred format, of &lt;var&gt;null&lt;/var&gt; if no specific format is preferred.
+&nbsp;	 */
+&nbsp;	public RDFFormat getPreferredRDFFormat() {
+<b class="nc">&nbsp;		return preferredRDFFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the preferred format for encoding boolean query results.
+&nbsp;	 *
+&nbsp;	 * @param format The preferred {@link BooleanQueryResultFormat}, or &lt;var&gt;null&lt;/var&gt; to indicate no specific format
+&nbsp;	 *               is preferred.
+&nbsp;	 */
+&nbsp;	public void setPreferredBooleanQueryResultFormat(BooleanQueryResultFormat format) {
+<b class="nc">&nbsp;		preferredBQRFormat = format;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the preferred {@link BooleanQueryResultFormat} for encoding boolean query results. The
+&nbsp;	 * {@link BooleanQueryResultFormat#TEXT binary} format is preferred by default.
+&nbsp;	 *
+&nbsp;	 * @return The preferred format, of &lt;var&gt;null&lt;/var&gt; if no specific format is preferred.
+&nbsp;	 */
+&nbsp;	public BooleanQueryResultFormat getPreferredBooleanQueryResultFormat() {
+<b class="nc">&nbsp;		return preferredBQRFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the username and password for authentication with the remote server.
+&nbsp;	 *
+&nbsp;	 * @param username the username
+&nbsp;	 * @param password the password
+&nbsp;	 */
+&nbsp;	public void setUsernameAndPassword(String username, String password) {
+<b class="nc">&nbsp;		setUsernameAndPasswordForUrl(username, password, getQueryURL());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setUsernameAndPasswordForUrl(String username, String password, String url) {
+&nbsp;
+<b class="nc">&nbsp;		if (username != null &amp;&amp; password != null) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Setting username &#39;{}&#39; and password for server at {}.&quot;, username, url);</b>
+<b class="nc">&nbsp;			java.net.URI requestURI = java.net.URI.create(url);</b>
+<b class="nc">&nbsp;			String host = requestURI.getHost();</b>
+<b class="nc">&nbsp;			int port = requestURI.getPort();</b>
+<b class="nc">&nbsp;			AuthScope scope = new AuthScope(host, port);</b>
+<b class="nc">&nbsp;			UsernamePasswordCredentials cred = new UsernamePasswordCredentials(username, password);</b>
+<b class="nc">&nbsp;			CredentialsProvider credsProvider = new BasicCredentialsProvider();</b>
+<b class="nc">&nbsp;			credsProvider.setCredentials(scope, cred);</b>
+<b class="nc">&nbsp;			httpContext.setCredentialsProvider(credsProvider);</b>
+<b class="nc">&nbsp;			AuthCache authCache = new BasicAuthCache();</b>
+<b class="nc">&nbsp;			BasicScheme basicAuth = new BasicScheme();</b>
+<b class="nc">&nbsp;			HttpHost httpHost = new HttpHost(requestURI.getHost(), requestURI.getPort(), requestURI.getScheme());</b>
+<b class="nc">&nbsp;			authCache.put(httpHost, basicAuth);</b>
+<b class="nc">&nbsp;			httpContext.setAuthCache(authCache);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			httpContext.removeAttribute(HttpClientContext.AUTH_CACHE);</b>
+<b class="nc">&nbsp;			httpContext.removeAttribute(HttpClientContext.CREDS_PROVIDER);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getQueryURL() {
+<b class="nc">&nbsp;		return queryURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getUpdateURL() {
+<b class="nc">&nbsp;		return updateURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() {
+<b class="nc">&nbsp;		background.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------*
+&nbsp;	 * Query evaluation *
+&nbsp;	 *------------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerRef argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public TupleQueryResult sendTupleQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
+&nbsp;			WeakReference&lt;?&gt; callerRef,
+&nbsp;			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		return sendTupleQuery(ql, query, null, dataset, includeInferred, 0, callerRef, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerRef argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public TupleQueryResult sendTupleQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, int maxQueryTime, WeakReference&lt;?&gt; callerRef, Binding... bindings)
+&nbsp;			throws IOException, RepositoryException,
+&nbsp;			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);</b>
+<b class="nc">&nbsp;		return getBackgroundTupleQueryResult(method, callerRef);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void sendTupleQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset, boolean includeInferred,
+&nbsp;			int maxQueryTime, TupleQueryResultHandler handler, Binding... bindings)
+&nbsp;			throws IOException, TupleQueryResultHandlerException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);</b>
+<b class="nc">&nbsp;		getTupleQueryResult(method, handler);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void sendUpdate(QueryLanguage ql, String update, String baseURI, Dataset dataset, boolean includeInferred,
+&nbsp;			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		sendUpdate(ql, update, baseURI, dataset, includeInferred, 0, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void sendUpdate(QueryLanguage ql, String update, String baseURI, Dataset dataset, boolean includeInferred,
+&nbsp;			int maxQueryTime, Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		HttpUriRequest method = getUpdateMethod(ql, update, baseURI, dataset, includeInferred, maxQueryTime, bindings);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			executeNoContent(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerRef argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public GraphQueryResult sendGraphQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
+&nbsp;			WeakReference&lt;?&gt; callerRef,
+&nbsp;			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		return sendGraphQuery(ql, query, null, dataset, includeInferred, 0, callerRef, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerRef argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public GraphQueryResult sendGraphQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, int maxQueryTime, WeakReference&lt;?&gt; callerRef, Binding... bindings)
+&nbsp;			throws IOException, RepositoryException,
+&nbsp;			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
+&nbsp;		try {
+<b class="nc">&nbsp;			HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime,</b>
+&nbsp;					bindings);
+<b class="nc">&nbsp;			return getRDFBackground(method, false, callerRef);</b>
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+&nbsp;			// Found a bug in TupleQueryResultBuilder?
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void sendGraphQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
+&nbsp;			RDFHandler handler, Binding... bindings) throws IOException, RDFHandlerException, RepositoryException,
+&nbsp;			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		sendGraphQuery(ql, query, null, dataset, includeInferred, 0, handler, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void sendGraphQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset, boolean includeInferred,
+&nbsp;			int maxQueryTime, RDFHandler handler, Binding... bindings) throws IOException, RDFHandlerException,
+&nbsp;			RepositoryException, MalformedQueryException, UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);</b>
+<b class="nc">&nbsp;		getRDF(method, handler, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean sendBooleanQuery(QueryLanguage ql, String query, Dataset dataset, boolean includeInferred,
+&nbsp;			Binding... bindings) throws IOException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		return sendBooleanQuery(ql, query, null, dataset, includeInferred, 0, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean sendBooleanQuery(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, int maxQueryTime, Binding... bindings) throws IOException, RepositoryException,
+&nbsp;			MalformedQueryException, UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		HttpUriRequest method = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return getBoolean(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the additional HTTP headers which will be used
+&nbsp;	 *
+&nbsp;	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
+&nbsp;	 */
+&nbsp;	public Map&lt;String, String&gt; getAdditionalHttpHeaders() {
+<b class="nc">&nbsp;		return Collections.unmodifiableMap(additionalHttpHeaders);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
+&nbsp;	 * unusual server configurations.
+&nbsp;	 *
+&nbsp;	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
+&nbsp;	 */
+&nbsp;	public void setAdditionalHttpHeaders(Map&lt;String, String&gt; additionalHttpHeaders) {
+<b class="nc">&nbsp;		if (additionalHttpHeaders == null) {</b>
+<b class="nc">&nbsp;			this.additionalHttpHeaders = Collections.emptyMap();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.additionalHttpHeaders = additionalHttpHeaders;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected HttpUriRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, int maxQueryTime, Binding... bindings) {
+<b class="nc">&nbsp;		List&lt;NameValuePair&gt; queryParams = getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred,</b>
+&nbsp;				maxQueryTime, bindings);
+&nbsp;		HttpUriRequest method;
+&nbsp;		String queryUrlWithParams;
+&nbsp;		try {
+<b class="nc">&nbsp;			URIBuilder urib = new URIBuilder(getQueryURL());</b>
+<b class="nc">&nbsp;			for (NameValuePair nvp : queryParams) {</b>
+<b class="nc">&nbsp;				urib.addParameter(nvp.getName(), nvp.getValue());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			queryUrlWithParams = urib.toString();</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new AssertionError(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (shouldUsePost(queryUrlWithParams)) {</b>
+&nbsp;			// we just built up a URL for nothing. oh well.
+&nbsp;			// It&#39;s probably not much overhead against
+&nbsp;			// the poor triplestore having to process such as massive query
+<b class="nc">&nbsp;			HttpPost postMethod = new HttpPost(getQueryURL());</b>
+<b class="nc">&nbsp;			postMethod.setHeader(&quot;Content-Type&quot;, Protocol.FORM_MIME_TYPE + &quot;; charset=utf-8&quot;);</b>
+<b class="nc">&nbsp;			postMethod.setEntity(new UrlEncodedFormEntity(queryParams, UTF8));</b>
+<b class="nc">&nbsp;			method = postMethod;</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			method = new HttpGet(queryUrlWithParams);</b>
+&nbsp;		}
+&nbsp;		// functionality to provide custom http headers as required by the
+&nbsp;		// applications
+<b class="nc">&nbsp;		for (Map.Entry&lt;String, String&gt; additionalHeader : additionalHttpHeaders.entrySet()) {</b>
+<b class="nc">&nbsp;			method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return method;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return whether the provided query should use POST (otherwise use GET)
+&nbsp;	 *
+&nbsp;	 * @param fullQueryUrl the complete URL, including hostname and all HTTP query parameters
+&nbsp;	 */
+&nbsp;	protected boolean shouldUsePost(String fullQueryUrl) {
+<b class="nc">&nbsp;		return fullQueryUrl.length() &gt; maximumUrlLength;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, Binding... bindings) {
+<b class="nc">&nbsp;		return getUpdateMethod(ql, update, baseURI, dataset, includeInferred, 0, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, int maxQueryTime, Binding... bindings) {
+<b class="nc">&nbsp;		HttpPost method = new HttpPost(getUpdateURL());</b>
+&nbsp;
+<b class="nc">&nbsp;		method.setHeader(&quot;Content-Type&quot;, Protocol.FORM_MIME_TYPE + &quot;; charset=utf-8&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;NameValuePair&gt; queryParams = getUpdateMethodParameters(ql, update, baseURI, dataset, includeInferred,</b>
+&nbsp;				maxQueryTime, bindings);
+&nbsp;
+<b class="nc">&nbsp;		method.setEntity(new UrlEncodedFormEntity(queryParams, UTF8));</b>
+&nbsp;
+<b class="nc">&nbsp;		if (this.additionalHttpHeaders != null) {</b>
+<b class="nc">&nbsp;			for (Map.Entry&lt;String, String&gt; additionalHeader : additionalHttpHeaders.entrySet()) {</b>
+<b class="nc">&nbsp;				method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return method;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected List&lt;NameValuePair&gt; getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
+&nbsp;			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
+<b class="nc">&nbsp;		List&lt;NameValuePair&gt; queryParams = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * Only query, default-graph-uri, and named-graph-uri are standard parameters in SPARQL Protocol 1.1.
+&nbsp;		 */
+&nbsp;
+<b class="nc">&nbsp;		if (query != null) {</b>
+<b class="nc">&nbsp;			if (baseURI != null &amp;&amp; !baseURI.isEmpty()) {</b>
+&nbsp;				// prepend query string with base URI declaration
+<b class="nc">&nbsp;				query = &quot;BASE &lt;&quot; + baseURI + &quot;&gt; \n&quot; + query;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams.add(</b>
+<b class="nc">&nbsp;						new BasicNameValuePair(Protocol.DEFAULT_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			for (IRI namedGraphURI : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams.add(new BasicNameValuePair(Protocol.NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return queryParams;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected List&lt;NameValuePair&gt; getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
+&nbsp;			Dataset dataset, boolean includeInferred, Binding... bindings) {
+<b class="nc">&nbsp;		return getUpdateMethodParameters(ql, update, baseURI, dataset, includeInferred, 0, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected List&lt;NameValuePair&gt; getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
+&nbsp;			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;NameValuePair&gt; queryParams = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (update != null) {</b>
+<b class="nc">&nbsp;			if (baseURI != null &amp;&amp; !baseURI.isEmpty()) {</b>
+&nbsp;				// prepend update string with base URI declaration
+<b class="nc">&nbsp;				update = &quot;BASE &lt;&quot; + baseURI + &quot;&gt; \n&quot; + update;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));</b>
+<b class="nc">&nbsp;			logger.debug(&quot;added update string {}&quot;, update);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			if (dataset.getDefaultRemoveGraphs().size() &gt; 0) {</b>
+<b class="nc">&nbsp;				if (!(dataset.getDefaultRemoveGraphs().equals(dataset.getDefaultGraphs()))) {</b>
+<b class="nc">&nbsp;					logger.warn(</b>
+&nbsp;							&quot;ambiguous dataset spec for SPARQL endpoint: default graphs and default remove graphs both defined but not equal&quot;);
+&nbsp;				}
+<b class="nc">&nbsp;				for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {</b>
+<b class="nc">&nbsp;					if (dataset.getDefaultInsertGraph() != null) {</b>
+<b class="nc">&nbsp;						if (!dataset.getDefaultInsertGraph().equals(graphURI)) {</b>
+<b class="nc">&nbsp;							logger.warn(</b>
+&nbsp;									&quot;ambiguous dataset spec for SPARQL endpoint: default insert graph ({}) and default remove graph ({}) both defined but not equal. &quot;,
+<b class="nc">&nbsp;									dataset.getDefaultInsertGraph(), graphURI);</b>
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;					queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(graphURI)));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (dataset.getDefaultInsertGraph() != null) {</b>
+<b class="nc">&nbsp;				if (!dataset.getDefaultGraphs().isEmpty()) {</b>
+<b class="nc">&nbsp;					if (!(dataset.getDefaultGraphs().size() == 1</b>
+<b class="nc">&nbsp;							&amp;&amp; dataset.getDefaultGraphs().contains(dataset.getDefaultInsertGraph()))) {</b>
+<b class="nc">&nbsp;						logger.warn(</b>
+&nbsp;								&quot;ambiguous dataset spec for SPARQL endpoint: default insert graph ({}) and default graphs both defined but not equal. &quot;,
+<b class="nc">&nbsp;								dataset.getDefaultInsertGraph());</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				queryParams.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME,</b>
+<b class="nc">&nbsp;						String.valueOf(dataset.getDefaultInsertGraph())));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams</b>
+<b class="nc">&nbsp;						.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			for (IRI namedGraphURI : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams.add(</b>
+<b class="nc">&nbsp;						new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return queryParams;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------*
+&nbsp;	 * Response parsing *
+&nbsp;	 *------------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundTupleResult}
+&nbsp;	 * or (in the error-case) in this method.
+&nbsp;	 * 
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerRef argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	protected TupleQueryResult getBackgroundTupleQueryResult(HttpUriRequest method, WeakReference&lt;?&gt; callerRef)
+&nbsp;			throws RepositoryException, QueryInterruptedException, MalformedQueryException, IOException {
+&nbsp;
+<b class="nc">&nbsp;		boolean submitted = false;</b>
+&nbsp;
+&nbsp;		// Specify which formats we support
+<b class="nc">&nbsp;		Set&lt;QueryResultFormat&gt; tqrFormats = TupleQueryResultParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;		if (tqrFormats.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;No tuple query result parsers have been registered&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		TupleQueryResult tRes;
+&nbsp;		// send the tuple query
+<b class="nc">&nbsp;		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);</b>
+&nbsp;		try {
+&nbsp;
+&nbsp;			// if we get here, HTTP code is 200
+<b class="nc">&nbsp;			String mimeType = getResponseMIMEType(response);</b>
+<b class="nc">&nbsp;			QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType, tqrFormats)</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new RepositoryException(</b>
+&nbsp;							&quot;Server responded with an unsupported file format: &quot; + mimeType));
+<b class="nc">&nbsp;			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());</b>
+<b class="nc">&nbsp;			tRes = background.parse(parser, response.getEntity().getContent(), callerRef);</b>
+<b class="nc">&nbsp;			submitted = true;</b>
+<b class="nc">&nbsp;			return tRes;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (!submitted) {</b>
+<b class="nc">&nbsp;				EntityUtils.consumeQuietly(response.getEntity());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the response in this thread using the provided {@link TupleQueryResultHandler}. All HTTP connections are
+&nbsp;	 * closed and released in this method
+&nbsp;	 */
+&nbsp;	protected void getTupleQueryResult(HttpUriRequest method, TupleQueryResultHandler handler)
+&nbsp;			throws IOException, TupleQueryResultHandlerException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+&nbsp;		// Specify which formats we support
+<b class="nc">&nbsp;		Set&lt;QueryResultFormat&gt; tqrFormats = TupleQueryResultParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;		if (tqrFormats.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;No tuple query result parsers have been registered&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// send the tuple query
+<b class="nc">&nbsp;		HttpResponse response = sendTupleQueryViaHttp(method, tqrFormats);</b>
+&nbsp;		try {
+&nbsp;
+&nbsp;			// if we get here, HTTP code is 200
+<b class="nc">&nbsp;			String mimeType = getResponseMIMEType(response);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType, tqrFormats)</b>
+<b class="nc">&nbsp;						.orElseThrow(() -&gt; new RepositoryException(</b>
+&nbsp;								&quot;Server responded with an unsupported file format: &quot; + mimeType));
+&nbsp;
+&nbsp;				// Check if we can pass through to the writer directly
+<b class="nc">&nbsp;				if (handler instanceof Sink &amp;&amp; passThrough(response, format, ((Sink) handler))) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+&nbsp;				// we need to parse the result and re-serialize.
+<b class="nc">&nbsp;				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());</b>
+<b class="nc">&nbsp;				parser.setQueryResultHandler(handler);</b>
+<b class="nc">&nbsp;				parser.parseQueryResult(response.getEntity().getContent());</b>
+<b class="nc">&nbsp;			} catch (QueryResultParseException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;Malformed query result from server&quot;, e);</b>
+<b class="nc">&nbsp;			} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;				if (e instanceof TupleQueryResultHandlerException) {</b>
+<b class="nc">&nbsp;					throw (TupleQueryResultHandlerException) e;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new TupleQueryResultHandlerException(e);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			EntityUtils.consumeQuietly(response.getEntity());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Send the tuple query via HTTP and throws an exception in case anything goes wrong, i.e. only for HTTP 200 the
+&nbsp;	 * method returns without exception. If HTTP status code is not equal to 200, the request is aborted, however pooled
+&nbsp;	 * connections are not released.
+&nbsp;	 *
+&nbsp;	 * @param method
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws HttpException
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws QueryInterruptedException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 */
+&nbsp;	private HttpResponse sendTupleQueryViaHttp(HttpUriRequest method, Set&lt;QueryResultFormat&gt; tqrFormats)
+&nbsp;			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
+&nbsp;
+<b class="nc">&nbsp;		final List&lt;String&gt; acceptValues = new ArrayList&lt;&gt;(tqrFormats.size());</b>
+<b class="nc">&nbsp;		for (QueryResultFormat format : tqrFormats) {</b>
+&nbsp;
+&nbsp;			// Determine a q-value that reflects the user specified preference
+<b class="nc">&nbsp;			int qValue = 10;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (preferredTQRFormat != null &amp;&amp; !preferredTQRFormat.equals(format)) {</b>
+&nbsp;				// Prefer specified format over other formats
+<b class="nc">&nbsp;				qValue -= 2;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (String mimeType : format.getMIMETypes()) {</b>
+<b class="nc">&nbsp;				String acceptParam = mimeType;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (qValue &lt; 10) {</b>
+<b class="nc">&nbsp;					acceptParam += &quot;;q=0.&quot; + qValue;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				acceptValues.add(acceptParam);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		method.addHeader(ACCEPT_PARAM_NAME, String.join(&quot;, &quot;, acceptValues));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			return executeOK(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundGraphResult}
+&nbsp;	 * or (in the error-case) in this method.
+&nbsp;	 * 
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerRef argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	protected GraphQueryResult getRDFBackground(HttpUriRequest method, boolean requireContext,
+&nbsp;			WeakReference&lt;?&gt; callerRef)
+&nbsp;			throws IOException, RDFHandlerException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+&nbsp;
+<b class="nc">&nbsp;		boolean submitted = false;</b>
+&nbsp;
+&nbsp;		// Specify which formats we support using Accept headers
+<b class="nc">&nbsp;		Set&lt;RDFFormat&gt; rdfFormats = RDFParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;		if (rdfFormats.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;No tuple RDF parsers have been registered&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		GraphQueryResult gRes;
+&nbsp;		// send the tuple query
+<b class="nc">&nbsp;		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);</b>
+&nbsp;		try {
+&nbsp;
+&nbsp;			// if we get here, HTTP code is 200
+<b class="nc">&nbsp;			String mimeType = getResponseMIMEType(response);</b>
+<b class="nc">&nbsp;			RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats)</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new RepositoryException(</b>
+&nbsp;							&quot;Server responded with an unsupported file format: &quot; + mimeType));
+<b class="nc">&nbsp;			RDFParser parser = Rio.createParser(format, getValueFactory());</b>
+<b class="nc">&nbsp;			parser.setParserConfig(getParserConfig());</b>
+<b class="nc">&nbsp;			parser.setParseErrorListener(new ParseErrorLogger());</b>
+&nbsp;
+<b class="nc">&nbsp;			Charset charset = null;</b>
+&nbsp;
+&nbsp;			// SES-1793 : Do not attempt to check for a charset if the format is
+&nbsp;			// defined not to have a charset
+&nbsp;			// This prevents errors caused by people erroneously attaching a
+&nbsp;			// charset to a binary formatted document
+<b class="nc">&nbsp;			HttpEntity entity = response.getEntity();</b>
+<b class="nc">&nbsp;			if (format.hasCharset() &amp;&amp; entity != null &amp;&amp; entity.getContentType() != null) {</b>
+&nbsp;				// TODO copied from SPARQLGraphQuery repository, is this
+&nbsp;				// required?
+&nbsp;				try {
+<b class="nc">&nbsp;					charset = ContentType.parse(entity.getContentType().getValue()).getCharset();</b>
+<b class="nc">&nbsp;				} catch (IllegalCharsetNameException e) {</b>
+&nbsp;					// work around for Joseki-3.2
+&nbsp;					// Content-Type: application/rdf+xml;
+&nbsp;					// charset=application/rdf+xml
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				if (charset == null) {</b>
+<b class="nc">&nbsp;					charset = UTF8;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (entity == null) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;Server response was empty.&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			String baseURI = method.getURI().toASCIIString();</b>
+<b class="nc">&nbsp;			gRes = background.parse(parser, entity.getContent(), charset, baseURI, callerRef);</b>
+<b class="nc">&nbsp;			submitted = true;</b>
+<b class="nc">&nbsp;			return gRes;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (!submitted) {</b>
+<b class="nc">&nbsp;				EntityUtils.consumeQuietly(response.getEntity());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the response in this thread using the provided {@link RDFHandler}. All HTTP connections are closed and
+&nbsp;	 * released in this method
+&nbsp;	 */
+&nbsp;	protected void getRDF(HttpUriRequest method, RDFHandler handler, boolean requireContext)
+&nbsp;			throws IOException, RDFHandlerException, RepositoryException, MalformedQueryException,
+&nbsp;			UnauthorizedException, QueryInterruptedException {
+&nbsp;		// Specify which formats we support using Accept headers
+<b class="nc">&nbsp;		Set&lt;RDFFormat&gt; rdfFormats = RDFParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;		if (rdfFormats.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;No tuple RDF parsers have been registered&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// send the tuple query
+<b class="nc">&nbsp;		HttpResponse response = sendGraphQueryViaHttp(method, requireContext, rdfFormats);</b>
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			String mimeType = getResponseMIMEType(response);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				RDFFormat format = RDFFormat.matchMIMEType(mimeType, rdfFormats)</b>
+<b class="nc">&nbsp;						.orElseThrow(() -&gt; new RepositoryException(</b>
+&nbsp;								&quot;Server responded with an unsupported file format: &quot; + mimeType));
+&nbsp;
+&nbsp;				// Check if we can pass through to the writer directly
+<b class="nc">&nbsp;				if (handler instanceof Sink &amp;&amp; passThrough(response, format, ((Sink) handler))) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+&nbsp;				// we need to parse the result and re-serialize.
+<b class="nc">&nbsp;				RDFParser parser = Rio.createParser(format, getValueFactory());</b>
+<b class="nc">&nbsp;				parser.setParserConfig(getParserConfig());</b>
+<b class="nc">&nbsp;				parser.setParseErrorListener(new ParseErrorLogger());</b>
+<b class="nc">&nbsp;				parser.setRDFHandler(handler);</b>
+<b class="nc">&nbsp;				parser.parse(response.getEntity().getContent(), method.getURI().toASCIIString());</b>
+<b class="nc">&nbsp;			} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;Malformed query result from server&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			EntityUtils.consumeQuietly(response.getEntity());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Pass through response content directly to the supplied sink if possible.
+&nbsp;	 *
+&nbsp;	 * @param response       the {@link HttpResponse} with the content.
+&nbsp;	 * @param responseFormat the format of the response.
+&nbsp;	 * @param sink           the {@link Sink} to pass the content through to.
+&nbsp;	 * @return {@code true} if the content was passed through, {@code false} otherwise.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private boolean passThrough(HttpResponse response, FileFormat responseFormat, Sink sink)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		if (!isPassThroughEnabled()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (sink.acceptsFileFormat(responseFormat)) {</b>
+<b class="nc">&nbsp;			InputStream in = response.getEntity().getContent();</b>
+<b class="nc">&nbsp;			if (sink instanceof CharSink) {</b>
+<b class="nc">&nbsp;				Writer out = ((CharSink) sink).getWriter();</b>
+<b class="nc">&nbsp;				IOUtils.copy(in, out,</b>
+<b class="nc">&nbsp;						getResponseCharset(response).orElse(responseFormat.getCharset()));</b>
+<b class="nc">&nbsp;				out.flush();</b>
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} else if (sink instanceof ByteSink) {</b>
+<b class="nc">&nbsp;				OutputStream out = ((ByteSink) sink).getOutputStream();</b>
+<b class="nc">&nbsp;				IOUtils.copy(in, out);</b>
+<b class="nc">&nbsp;				out.flush();</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private HttpResponse sendGraphQueryViaHttp(HttpUriRequest method, boolean requireContext, Set&lt;RDFFormat&gt; rdfFormats)
+&nbsp;			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;String&gt; acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext, getPreferredRDFFormat());</b>
+&nbsp;
+<b class="nc">&nbsp;		method.addHeader(ACCEPT_PARAM_NAME, String.join(&quot;, &quot;, acceptParams));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			return executeOK(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException | QueryInterruptedException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the response in this thread using a suitable {@link BooleanQueryResultParser}. All HTTP connections are
+&nbsp;	 * closed and released in this method
+&nbsp;	 *
+&nbsp;	 * @throws RDF4JException
+&nbsp;	 */
+&nbsp;	protected boolean getBoolean(HttpUriRequest method) throws IOException, RDF4JException {
+&nbsp;		// Specify which formats we support using Accept headers
+<b class="nc">&nbsp;		Set&lt;QueryResultFormat&gt; booleanFormats = BooleanQueryResultParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;		if (booleanFormats.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;No boolean query result parsers have been registered&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// send the tuple query
+<b class="nc">&nbsp;		HttpResponse response = sendBooleanQueryViaHttp(method, booleanFormats);</b>
+&nbsp;		try {
+&nbsp;
+&nbsp;			// if we get here, HTTP code is 200
+<b class="nc">&nbsp;			String mimeType = getResponseMIMEType(response);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				QueryResultFormat format = BooleanQueryResultFormat.matchMIMEType(mimeType, booleanFormats)</b>
+<b class="nc">&nbsp;						.orElseThrow(() -&gt; new RepositoryException(</b>
+&nbsp;								&quot;Server responded with an unsupported file format: &quot; + mimeType));
+<b class="nc">&nbsp;				BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(format);</b>
+<b class="nc">&nbsp;				QueryResultCollector results = new QueryResultCollector();</b>
+<b class="nc">&nbsp;				parser.setQueryResultHandler(results);</b>
+<b class="nc">&nbsp;				parser.parseQueryResult(response.getEntity().getContent());</b>
+<b class="nc">&nbsp;				return results.getBoolean();</b>
+<b class="nc">&nbsp;			} catch (QueryResultParseException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;Malformed query result from server&quot;, e);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			EntityUtils.consumeQuietly(response.getEntity());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private HttpResponse sendBooleanQueryViaHttp(HttpUriRequest method, Set&lt;QueryResultFormat&gt; booleanFormats)
+&nbsp;			throws IOException, RDF4JException {
+&nbsp;
+<b class="nc">&nbsp;		final List&lt;String&gt; acceptValues = new ArrayList&lt;&gt;(booleanFormats.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		for (QueryResultFormat format : booleanFormats) {</b>
+&nbsp;			// Determine a q-value that reflects the user specified preference
+<b class="nc">&nbsp;			int qValue = 10;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (preferredBQRFormat != null &amp;&amp; !preferredBQRFormat.equals(format)) {</b>
+&nbsp;				// Prefer specified format over other formats
+<b class="nc">&nbsp;				qValue -= 2;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (String mimeType : format.getMIMETypes()) {</b>
+<b class="nc">&nbsp;				String acceptParam = mimeType;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (qValue &lt; 10) {</b>
+<b class="nc">&nbsp;					acceptParam += &quot;;q=0.&quot; + qValue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				acceptValues.add(acceptParam);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		method.addHeader(ACCEPT_PARAM_NAME, String.join(&quot;, &quot;, acceptValues));</b>
+&nbsp;
+<b class="nc">&nbsp;		return executeOK(method);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience method to deal with HTTP level errors of tuple, graph and boolean queries in the same way. This
+&nbsp;	 * method aborts the HTTP connection.
+&nbsp;	 *
+&nbsp;	 * @param method
+&nbsp;	 * @throws RDF4JException
+&nbsp;	 */
+&nbsp;	protected HttpResponse executeOK(HttpUriRequest method) throws IOException, RDF4JException {
+<b class="nc">&nbsp;		boolean fail = true;</b>
+<b class="nc">&nbsp;		HttpResponse response = execute(method);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			int httpCode = response.getStatusLine().getStatusCode();</b>
+<b class="nc">&nbsp;			if (httpCode == HttpURLConnection.HTTP_OK || httpCode == HttpURLConnection.HTTP_NOT_AUTHORITATIVE) {</b>
+<b class="nc">&nbsp;				fail = false;</b>
+<b class="nc">&nbsp;				return response; // everything OK, control flow can continue</b>
+&nbsp;			} else {
+&nbsp;				// trying to contact a non-SPARQL server?
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;Request failed with status &quot; + httpCode + &quot;: &quot;</b>
+<b class="nc">&nbsp;						+ method.getURI().toString());</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (fail) {</b>
+<b class="nc">&nbsp;				EntityUtils.consumeQuietly(response.getEntity());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void executeNoContent(HttpUriRequest method) throws IOException, RDF4JException {
+<b class="nc">&nbsp;		HttpResponse response = execute(method);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (response.getStatusLine().getStatusCode() &gt;= 300) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(&quot;Failed to get server protocol; no such resource on this server: &quot;</b>
+<b class="nc">&nbsp;						+ method.getURI().toString());</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			EntityUtils.consume(response.getEntity());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected HttpResponse execute(HttpUriRequest method) throws IOException, RDF4JException {
+<b class="nc">&nbsp;		boolean consume = true;</b>
+<b class="nc">&nbsp;		if (params != null) {</b>
+<b class="nc">&nbsp;			method.setParams(params);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		HttpResponse response = httpClient.execute(method, httpContext);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			int httpCode = response.getStatusLine().getStatusCode();</b>
+<b class="nc">&nbsp;			if (httpCode &gt;= 200 &amp;&amp; httpCode &lt; 300 || httpCode == HttpURLConnection.HTTP_NOT_FOUND) {</b>
+<b class="nc">&nbsp;				consume = false;</b>
+<b class="nc">&nbsp;				return response; // everything OK, control flow can continue</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				switch (httpCode) {</b>
+&nbsp;				case HttpURLConnection.HTTP_UNAUTHORIZED: // 401
+<b class="nc">&nbsp;					throw new UnauthorizedException();</b>
+&nbsp;				case HttpURLConnection.HTTP_UNAVAILABLE: // 503
+<b class="nc">&nbsp;					throw new QueryInterruptedException();</b>
+&nbsp;				default:
+<b class="nc">&nbsp;					ErrorInfo errInfo = getErrorInfo(response);</b>
+&nbsp;					// Throw appropriate exception
+<b class="nc">&nbsp;					if (errInfo.getErrorType() == ErrorType.MALFORMED_DATA) {</b>
+<b class="nc">&nbsp;						throw new RDFParseException(errInfo.getErrorMessage());</b>
+<b class="nc">&nbsp;					} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_FILE_FORMAT) {</b>
+<b class="nc">&nbsp;						throw new UnsupportedRDFormatException(errInfo.getErrorMessage());</b>
+<b class="nc">&nbsp;					} else if (errInfo.getErrorType() == ErrorType.MALFORMED_QUERY) {</b>
+<b class="nc">&nbsp;						throw new MalformedQueryException(errInfo.getErrorMessage());</b>
+<b class="nc">&nbsp;					} else if (errInfo.getErrorType() == ErrorType.UNSUPPORTED_QUERY_LANGUAGE) {</b>
+<b class="nc">&nbsp;						throw new UnsupportedQueryLanguageException(errInfo.getErrorMessage());</b>
+<b class="nc">&nbsp;					} else if (contentTypeIs(response, &quot;application/shacl-validation-report&quot;)) {</b>
+<b class="nc">&nbsp;						RDFFormat format = getContentTypeSerialisation(response);</b>
+<b class="nc">&nbsp;						throw new RepositoryException(new RemoteShaclValidationException(</b>
+<b class="nc">&nbsp;								new StringReader(errInfo.toString()), &quot;&quot;, format));</b>
+&nbsp;
+<b class="nc">&nbsp;					} else if (errInfo.toString().length() &gt; 0) {</b>
+<b class="nc">&nbsp;						throw new RepositoryException(errInfo.toString());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						throw new RepositoryException(response.getStatusLine().getReasonPhrase());</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (consume) {</b>
+<b class="nc">&nbsp;				EntityUtils.consumeQuietly(response.getEntity());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static RDFFormat getContentTypeSerialisation(HttpResponse response) {
+<b class="nc">&nbsp;		Header[] headers = response.getHeaders(&quot;Content-Type&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;RDFFormat&gt; rdfFormats = RDFParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;		if (rdfFormats.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;No tuple RDF parsers have been registered&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (Header header : headers) {</b>
+<b class="nc">&nbsp;			for (HeaderElement element : header.getElements()) {</b>
+&nbsp;				// SHACL Validation report Content-Type gets transformed from:
+&nbsp;				// application/shacl-validation-report+n-quads =&gt; application/n-quads
+&nbsp;				// application/shacl-validation-report+ld+json =&gt; application/ld+json
+&nbsp;				// text/shacl-validation-report+turtle =&gt; text/turtle
+&nbsp;
+<b class="nc">&nbsp;				String[] split = element.getName().split(&quot;\\+&quot;);</b>
+<b class="nc">&nbsp;				StringBuilder serialisation = new StringBuilder(element.getName().split(&quot;/&quot;)[0] + &quot;/&quot;);</b>
+<b class="nc">&nbsp;				for (int i = 1; i &lt; split.length; i++) {</b>
+<b class="nc">&nbsp;					serialisation.append(split[i]);</b>
+<b class="nc">&nbsp;					if (i + 1 &lt; split.length) {</b>
+<b class="nc">&nbsp;						serialisation.append(&quot;+&quot;);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				logger.debug(&quot;SHACL validation report is serialised as: &quot; + serialisation.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;				Optional&lt;RDFFormat&gt; rdfFormat = RDFFormat.matchMIMEType(serialisation.toString(), rdfFormats);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (rdfFormat.isPresent()) {</b>
+<b class="nc">&nbsp;					return rdfFormat.get();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new RepositoryException(&quot;Unsupported content-type for SHACL Validation Report: &quot;</b>
+<b class="nc">&nbsp;				+ Arrays.toString(response.getHeaders(&quot;Content-Type&quot;))</b>
+&nbsp;				+ &quot;! If the format seems correct, then you may need a maven dependency for that.&quot;);
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean contentTypeIs(HttpResponse response, String contentType) {
+<b class="nc">&nbsp;		Header[] headers = response.getHeaders(&quot;Content-Type&quot;);</b>
+<b class="nc">&nbsp;		if (headers.length == 0) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (Header header : headers) {</b>
+<b class="nc">&nbsp;			for (HeaderElement element : header.getElements()) {</b>
+<b class="nc">&nbsp;				String name = element.getName().split(&quot;\\+&quot;)[0];</b>
+<b class="nc">&nbsp;				if (contentType.equals(name)) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------------------*
+&nbsp;	 * General utility methods *
+&nbsp;	 *-------------------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the MIME type specified in the response headers of the supplied method, if any. For example, if the response
+&nbsp;	 * headers contain &lt;var&gt;Content-Type: application/xml;charset=UTF-8&lt;/var&gt;, this method will return
+&nbsp;	 * &lt;var&gt;application/xml&lt;/var&gt; as the MIME type.
+&nbsp;	 *
+&nbsp;	 * @param method The method to get the reponse MIME type from.
+&nbsp;	 * @return The response MIME type, or &lt;var&gt;null&lt;/var&gt; if not available.
+&nbsp;	 */
+&nbsp;	protected String getResponseMIMEType(HttpResponse method) throws IOException {
+<b class="nc">&nbsp;		Header[] headers = method.getHeaders(&quot;Content-Type&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Header header : headers) {</b>
+<b class="nc">&nbsp;			HeaderElement[] headerElements = header.getElements();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (HeaderElement headerEl : headerElements) {</b>
+<b class="nc">&nbsp;				String mimeType = headerEl.getName();</b>
+<b class="nc">&nbsp;				if (mimeType != null) {</b>
+<b class="nc">&nbsp;					logger.debug(&quot;response MIME type is {}&quot;, mimeType);</b>
+<b class="nc">&nbsp;					return mimeType;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the character encoding specified in the HTTP headers of the supplied response, if any. For example, if the
+&nbsp;	 * response headers contain &lt;var&gt;Content-Type: application/xml;charset=UTF-8&lt;/var&gt;, this method will return
+&nbsp;	 * {@link StandardCharsets#UTF_8 UTF-8} as the character encoding.
+&nbsp;	 *
+&nbsp;	 * @param response the response to get the character encoding from.
+&nbsp;	 * @return the response character encoding, {@link Optional#empty()} if it can not be determined.
+&nbsp;	 */
+&nbsp;	Optional&lt;Charset&gt; getResponseCharset(HttpResponse response) {
+<b class="nc">&nbsp;		Header[] headers = response.getHeaders(&quot;Content-Type&quot;);</b>
+<b class="nc">&nbsp;		for (Header header : headers) {</b>
+<b class="nc">&nbsp;			HeaderElement[] headerElements = header.getElements();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (HeaderElement element : headerElements) {</b>
+<b class="nc">&nbsp;				NameValuePair charsetParam = element.getParameterByName(&quot;charset&quot;);</b>
+<b class="nc">&nbsp;				if (charsetParam != null) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						Charset charset = Charset.forName(charsetParam.getValue());</b>
+<b class="nc">&nbsp;						logger.debug(&quot;response charset is {}&quot;, charset);</b>
+<b class="nc">&nbsp;						return Optional.ofNullable(charset);</b>
+<b class="nc">&nbsp;					} catch (IllegalArgumentException e) {</b>
+&nbsp;						// continue
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected ErrorInfo getErrorInfo(HttpResponse response) throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			ErrorInfo errInfo = ErrorInfo.parse(EntityUtils.toString(response.getEntity()));</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Server reports problem: {} (enable debug logging for full details)&quot;, errInfo.getErrorType());</b>
+<b class="nc">&nbsp;			logger.debug(&quot;full error message: {}&quot;, errInfo.getErrorMessage());</b>
+<b class="nc">&nbsp;			return errInfo;</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Unable to retrieve error info from server&quot;);</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;Unable to retrieve error info from server&quot;, e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the parser configuration used to process HTTP response data.
+&nbsp;	 *
+&nbsp;	 * @param parserConfig The parserConfig to set.
+&nbsp;	 */
+&nbsp;	public void setParserConfig(ParserConfig parserConfig) {
+<b class="nc">&nbsp;		this.parserConfig = parserConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the parser configuration used to process HTTP response data.
+&nbsp;	 */
+&nbsp;	public ParserConfig getParserConfig() {
+<b class="nc">&nbsp;		return parserConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the http connection read timeout in milliseconds.
+&nbsp;	 */
+&nbsp;	public long getConnectionTimeout() {
+<b class="nc">&nbsp;		if (params == null) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return params.getIntParameter(CoreConnectionPNames.SO_TIMEOUT, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the http connection read timeout.
+&nbsp;	 *
+&nbsp;	 * @param timeout timeout in milliseconds. Zero sets to infinity.
+&nbsp;	 */
+&nbsp;	public void setConnectionTimeout(long timeout) {
+<b class="nc">&nbsp;		if (params == null) {</b>
+<b class="nc">&nbsp;			params = new BasicHttpParams();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		params.setIntParameter(CoreConnectionPNames.SO_TIMEOUT, (int) timeout);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the {@link HttpContext} used for sending HTTP requests.
+&nbsp;	 *
+&nbsp;	 * @return the {@link HttpContext} instance used for all protocol session requests.
+&nbsp;	 */
+&nbsp;	protected HttpContext getHttpContext() {
+<b class="nc">&nbsp;		return this.httpContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates if direct pass-through of the endpoint result to the supplied {@link Sink} is enabled.
+&nbsp;	 *
+&nbsp;	 * @return the passThroughEnabled setting.
+&nbsp;	 */
+&nbsp;	public boolean isPassThroughEnabled() {
+<b class="nc">&nbsp;		return passThroughEnabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configure direct pass-through of the endpoint result to the supplied {@link Sink}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If not explicitly configured, the setting defaults to {@code true}.
+&nbsp;	 *
+&nbsp;	 * @param passThroughEnabled the passThroughEnabled to set.
+&nbsp;	 */
+&nbsp;	public void setPassThroughEnabled(boolean passThroughEnabled) {
+<b class="nc">&nbsp;		this.passThroughEnabled = passThroughEnabled;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

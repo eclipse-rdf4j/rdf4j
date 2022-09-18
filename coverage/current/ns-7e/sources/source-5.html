@@ -1,0 +1,221 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BooleanQueryResultFormat</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: BooleanQueryResultFormat (org.eclipse.rdf4j.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BooleanQueryResultFormat</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (3/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    81.8%
+  </span>
+  <span class="absValue">
+    (9/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio;
+&nbsp;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;/**
+&nbsp; * Represents the concept of a boolean query result serialization format. Boolean query result formats are identified by
+&nbsp; * a {@link #getName() name} and can have one or more associated MIME types, zero or more associated file extensions and
+&nbsp; * can specify a (default) character encoding.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class BooleanQueryResultFormat extends QueryResultFormat {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL Query Results XML Format.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final BooleanQueryResultFormat SPARQL = new BooleanQueryResultFormat(&quot;SPARQL/XML&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/sparql-results+xml&quot;, &quot;application/xml&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;srx&quot;, &quot;xml&quot;), SPARQL_RESULTS_XML_URI);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL Query Results JSON Format.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final BooleanQueryResultFormat JSON = new BooleanQueryResultFormat(&quot;SPARQL/JSON&quot;,</b>
+&nbsp;			// Note: The MIME type for SPARQL-star JSON is handled by this format in order to handle BooleanQueryResult
+&nbsp;			// when SPARQL-star JSON is requested.
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/sparql-results+json&quot;, &quot;application/json&quot;,</b>
+&nbsp;					&quot;application/x-sparqlstar-results+json&quot;),
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, Arrays.asList(&quot;srj&quot;, &quot;json&quot;), SPARQL_RESULTS_JSON_URI);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Plain text encoding using values &quot;true&quot; and &quot;false&quot; (case-insensitive).
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final BooleanQueryResultFormat TEXT = new BooleanQueryResultFormat(&quot;TEXT&quot;, &quot;text/boolean&quot;,</b>
+&nbsp;			StandardCharsets.US_ASCII, &quot;txt&quot;);
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BooleanQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name     The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeType The MIME type of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the SPARQL/XML
+&nbsp;	 *                 format.
+&nbsp;	 * @param fileExt  The (default) file extension for the format, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML.
+&nbsp;	 */
+&nbsp;	public BooleanQueryResultFormat(String name, String mimeType, String fileExt) {
+<b class="nc">&nbsp;		this(name, mimeType, null, fileExt);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BooleanQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name     The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeType The MIME type of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the SPARQL/XML
+&nbsp;	 *                 format.
+&nbsp;	 * @param charset  The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExt  The (default) file extension for the format, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML.
+&nbsp;	 */
+&nbsp;	public BooleanQueryResultFormat(String name, String mimeType, Charset charset, String fileExt) {
+<b class="fc">&nbsp;		super(name, mimeType, charset, fileExt);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BooleanQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name           The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeTypes      The MIME types of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+&nbsp;	 *                       the format.
+&nbsp;	 * @param charset        The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExtensions The format&#39;s file extensions, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML files. The first item in
+&nbsp;	 *                       the list is interpreted as the default file extension for the format.
+&nbsp;	 */
+&nbsp;	public BooleanQueryResultFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset,
+&nbsp;			Collection&lt;String&gt; fileExtensions) {
+<b class="nc">&nbsp;		super(name, mimeTypes, charset, fileExtensions);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BooleanQueryResultFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name           The name of the format, e.g. &quot;SPARQL/XML&quot;.
+&nbsp;	 * @param mimeTypes      The MIME types of the format, e.g. &lt;var&gt;application/sparql-results+xml&lt;/var&gt; for the
+&nbsp;	 *                       SPARQL/XML format. The first item in the list is interpreted as the default MIME type for
+&nbsp;	 *                       the format.
+&nbsp;	 * @param charset        The default character encoding of the format. Specify &lt;var&gt;null&lt;/var&gt; if not applicable.
+&nbsp;	 * @param fileExtensions The format&#39;s file extensions, e.g. &lt;var&gt;srx&lt;/var&gt; for SPARQL/XML files. The first item in
+&nbsp;	 *                       the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param standardURI    The standard URI that has been assigned to this format by a standards organisation or null
+&nbsp;	 *                       if it does not currently have a standard URI.
+&nbsp;	 */
+&nbsp;	public BooleanQueryResultFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset,
+&nbsp;			Collection&lt;String&gt; fileExtensions, IRI standardURI) {
+<b class="fc">&nbsp;		super(name, mimeTypes, charset, fileExtensions, standardURI);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

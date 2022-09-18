@@ -1,0 +1,722 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXConnection (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/158)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">FedXConnection$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FedXConnection$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FedXConnection$3</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FedXConnection$SailBaseDefaultImpl</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/175)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.StopRemainingExecutionsOnCloseIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryType;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.federated.write.WriteStrategy;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.explanation.Explanation;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.AbstractSail;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of RepositoryConnection that uses {@link FederationEvalStrategy} to evaluate provided queries.
+&nbsp; * Prior to evaluation various optimizations are performed, see
+&nbsp; * {@link org.eclipse.rdf4j.federated.optimizer.FedXOptimizer} for further details.
+&nbsp; * &lt;p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * Since 4.0 FedX supports write operations using the supplied {@link WriteStrategy}, e.g. by writing to a designated
+&nbsp; * federation member. Note: the {@link WriteStrategy} is initialized lazily upon first access to a write operation, see
+&nbsp; * {@link #getWriteStrategyInternal()}.
+&nbsp; * &lt;p&gt;
+&nbsp; * Implementation notes: - not all methods are implemented as of now
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see FederationEvalStrategy
+&nbsp; * @see WriteStrategy
+&nbsp; */
+&nbsp;public class FedXConnection extends AbstractSailConnection {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FedXConnection.class);</b>
+&nbsp;	protected final FedX federation;
+&nbsp;	protected final FederationContext federationContext;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If set, contains the write strategy. Always access via {@link #getWriteStrategyInternal()}
+&nbsp;	 */
+&nbsp;	private WriteStrategy writeStrategy;
+&nbsp;
+&nbsp;	public FedXConnection(FedX federation, FederationContext federationContext)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		super(federation);</b>
+<b class="nc">&nbsp;		this.federation = federation;</b>
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTransactionSettings(TransactionSetting... settings) {
+<b class="nc">&nbsp;		super.setTransactionSettings(settings);</b>
+<b class="nc">&nbsp;		this.getWriteStrategyInternal().setTransactionSettings(settings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; evaluateInternal(
+&nbsp;			TupleExpr query, Dataset dataset, BindingSet bindings,
+&nbsp;			boolean includeInferred) throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		final TupleExpr originalQuery = query;</b>
+&nbsp;
+<b class="nc">&nbsp;		FederationEvalStrategy strategy = federationContext.createStrategy(dataset);</b>
+&nbsp;
+<b class="nc">&nbsp;		long start = 0;</b>
+<b class="nc">&nbsp;		String queryString = getOriginalQueryString(bindings);</b>
+<b class="nc">&nbsp;		if (queryString == null) {</b>
+<b class="nc">&nbsp;			log.warn(&quot;Query string is null. Please check your FedX setup.&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		QueryInfo queryInfo = new QueryInfo(queryString, getOriginalBaseURI(bindings), getOriginalQueryType(bindings),</b>
+<b class="nc">&nbsp;				getOriginalMaxExecutionTime(bindings), includeInferred, federationContext, strategy, dataset);</b>
+&nbsp;
+&nbsp;		// check if we have pass-through result handler information for single source queries
+<b class="nc">&nbsp;		if (query instanceof PassThroughTupleExpr) {</b>
+<b class="nc">&nbsp;			PassThroughTupleExpr node = ((PassThroughTupleExpr) query);</b>
+<b class="nc">&nbsp;			queryInfo.setResultHandler(node.getResultHandler());</b>
+<b class="nc">&nbsp;			query = node.getExpr();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;Optimization start (Query: &quot; + queryInfo.getQueryID() + &quot;)&quot;);</b>
+<b class="nc">&nbsp;			start = System.currentTimeMillis();</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			federationContext.getMonitoringService().monitorQuery(queryInfo);</b>
+<b class="nc">&nbsp;			FederationEvaluationStatistics stats = new FederationEvaluationStatistics(queryInfo, dataset);</b>
+<b class="nc">&nbsp;			query = strategy.optimize(query, stats, bindings);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			log.warn(&quot;Exception occured during optimization (Query: &quot; + queryInfo.getQueryID() + &quot;): &quot;</b>
+<b class="nc">&nbsp;					+ e.getMessage());</b>
+<b class="nc">&nbsp;			log.debug(&quot;Details: &quot;, e);</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			log.debug((&quot;Optimization duration: &quot; + ((System.currentTimeMillis() - start))) + &quot; (Query: &quot;</b>
+<b class="nc">&nbsp;					+ queryInfo.getQueryID() + &quot;)&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// log the optimized query plan, if Config#isLogQueryPlan(), otherwise void operation
+<b class="nc">&nbsp;		federationContext.getMonitoringService().logQueryPlan(query);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (federationContext.getConfig().isDebugQueryPlan()) {</b>
+<b class="nc">&nbsp;			System.out.println(&quot;Optimized query execution plan: \n&quot; + query);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;Optimized query execution plan (Query: &quot; + queryInfo.getQueryID() + &quot;);&quot; + query);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+&nbsp;			// make sure to apply any external bindings
+<b class="nc">&nbsp;			BindingSet queryBindings = EmptyBindingSet.getInstance();</b>
+<b class="nc">&nbsp;			if (!FedXRepositoryConnection.FEDX_BINDINGS.containsAll(bindings.getBindingNames())) {</b>
+<b class="nc">&nbsp;				MapBindingSet actualQueryBindings = new MapBindingSet();</b>
+<b class="nc">&nbsp;				bindings.forEach(binding -&gt; {</b>
+<b class="nc">&nbsp;					if (!FedXRepositoryConnection.FEDX_BINDINGS.contains(binding.getName())) {</b>
+<b class="nc">&nbsp;						actualQueryBindings.addBinding(binding);</b>
+&nbsp;					}
+&nbsp;				});
+<b class="nc">&nbsp;				queryBindings = actualQueryBindings;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; res = null;</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				res = strategy.evaluate(query, queryBindings);</b>
+&nbsp;
+&nbsp;				// mark the query as PassedThrough, such that outer result handlers are aware of this
+&nbsp;				// Note: for SingleSourceQuery (i.e. where we use pass through) res is explicitly
+&nbsp;				// EmptyIteration. Thus we can use it as indicator
+<b class="nc">&nbsp;				if (originalQuery instanceof PassThroughTupleExpr &amp;&amp; res instanceof EmptyIteration) {</b>
+<b class="nc">&nbsp;					((PassThroughTupleExpr) originalQuery).setPassedThrough(true);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				res = new StopRemainingExecutionsOnCloseIteration(res, queryInfo);</b>
+<b class="nc">&nbsp;				return res;</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				if (res != null) {</b>
+<b class="nc">&nbsp;					res.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throw t;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void clearInternal(Resource... contexts) throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			getWriteStrategyInternal().clear(contexts);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void clearNamespacesInternal() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			getWriteStrategyInternal().clearNamespaces();</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void closeInternal() throws SailException {
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * think about it: the federation connection should remain open until the federation is shutdown. we use a
+&nbsp;		 * singleton connection!!
+&nbsp;		 */
+&nbsp;
+&nbsp;		// the write strategy needs to be closed
+&nbsp;		try {
+<b class="nc">&nbsp;			if (this.writeStrategy != null) {</b>
+<b class="nc">&nbsp;				this.writeStrategy.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void commitInternal() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			getWriteStrategyInternal().commit();</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends Resource, SailException&gt; getContextIDsInternal() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		FederationEvalStrategy strategy = federationContext.createStrategy(new SimpleDataset());</b>
+<b class="nc">&nbsp;		WorkerUnionBase&lt;Resource&gt; union = new SynchronousWorkerUnion&lt;&gt;(new QueryInfo(&quot;getContextIDsInternal&quot;, null,</b>
+<b class="nc">&nbsp;				QueryType.UNKNOWN, 0, federationContext.getConfig().getIncludeInferredDefault(), federationContext,</b>
+&nbsp;				strategy, new SimpleDataset()));
+&nbsp;
+<b class="nc">&nbsp;		for (Endpoint e : federation.getMembers()) {</b>
+<b class="nc">&nbsp;			union.addTask(new ParallelTask&lt;&gt;() {</b>
+&nbsp;				@Override
+&nbsp;				public CloseableIteration&lt;Resource, QueryEvaluationException&gt; performTask() throws Exception {
+<b class="nc">&nbsp;					try (RepositoryConnection conn = e.getConnection()) {</b>
+&nbsp;						// we need to materialize the contexts as they are only accessible
+&nbsp;						// while the connection is open
+<b class="nc">&nbsp;						return new CollectionIteration&lt;&gt;(</b>
+<b class="nc">&nbsp;								Iterations.asList(conn.getContextIDs()));</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public ParallelExecutor&lt;Resource&gt; getControl() {
+<b class="nc">&nbsp;					return union;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void cancel() {
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// execute the union in a separate thread
+<b class="nc">&nbsp;		federationContext.getManager().getExecutor().execute(union);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new DistinctIteration&lt;&gt;(</b>
+<b class="nc">&nbsp;				new ExceptionConvertingIteration&lt;&gt;(union) {</b>
+&nbsp;					@Override
+&nbsp;					protected SailException convert(Exception e) {
+<b class="nc">&nbsp;						return new SailException(e);</b>
+&nbsp;					}
+&nbsp;				});
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected String getNamespaceInternal(String prefix) throws SailException {
+&nbsp;		// do not support this feature, but also do not throw an exception
+&nbsp;		// as this method is expected for the RDF4J workbench to work
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends Namespace, SailException&gt; getNamespacesInternal()
+&nbsp;			throws SailException {
+&nbsp;		// do not support this feature, but also do not throw an exception
+&nbsp;		// as this method is expected for the RDF4J workbench to work
+<b class="nc">&nbsp;		return new EmptyIteration&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends Statement, SailException&gt; getStatementsInternal(Resource subj, IRI pred,
+&nbsp;			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Dataset dataset = new SimpleDataset();</b>
+<b class="nc">&nbsp;			FederationEvalStrategy strategy = federationContext.createStrategy(dataset);</b>
+<b class="nc">&nbsp;			QueryInfo queryInfo = new QueryInfo(subj, pred, obj, 0, includeInferred, federationContext, strategy,</b>
+&nbsp;					dataset);
+<b class="nc">&nbsp;			federationContext.getMonitoringService().monitorQuery(queryInfo);</b>
+<b class="nc">&nbsp;			CloseableIteration&lt;Statement, QueryEvaluationException&gt; res = null;</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				res = strategy.getStatements(queryInfo, subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;				return new ExceptionConvertingIteration&lt;&gt;(res) {</b>
+&nbsp;					@Override
+&nbsp;					protected SailException convert(Exception e) {
+<b class="nc">&nbsp;						return new SailException(e);</b>
+&nbsp;					}
+&nbsp;				};
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				if (res != null) {</b>
+<b class="nc">&nbsp;					res.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throw t;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void addStatementInternal(Resource subj, IRI pred, Value obj,
+&nbsp;			Resource... contexts) throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			getWriteStrategyInternal().addStatement(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void removeNamespaceInternal(String prefix) throws SailException {
+&nbsp;		// do not support this feature, but also do not throw an exception
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj,
+&nbsp;			Resource... contexts) throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			getWriteStrategyInternal().removeStatement(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void rollbackInternal() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			getWriteStrategyInternal().rollback();</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void setNamespaceInternal(String prefix, String name) throws SailException {
+&nbsp;		// do not support this feature, but also do not throw an exception
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected long sizeInternal(Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		if (contexts != null &amp;&amp; contexts.length &gt; 0) {</b>
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;Context handling for size() not supported&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		long size = 0;</b>
+<b class="nc">&nbsp;		List&lt;String&gt; errorEndpoints = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (Endpoint e : federation.getMembers()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				size += e.size();</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e1) {</b>
+<b class="nc">&nbsp;				errorEndpoints.add(e.getId());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (errorEndpoints.size() &gt; 0) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Could not determine size for members &quot; + errorEndpoints +</b>
+&nbsp;					&quot;(Supported for NativeStore and RemoteRepository only). Computed size: &quot; + size);
+&nbsp;		}
+<b class="nc">&nbsp;		return size;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void startTransactionInternal() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			getWriteStrategyInternal().begin();</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the initialized {@link #writeStrategy}. If this has not been done yet, {@link WriteStrategy#initialize()}
+&nbsp;	 * is returned. This method guarantees lazy initialization upon the first write operation on this
+&nbsp;	 * {@link FedXConnection} instance.
+&nbsp;	 *
+&nbsp;	 * @return the {@link WriteStrategy}
+&nbsp;	 */
+&nbsp;	protected synchronized WriteStrategy getWriteStrategyInternal() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		if (writeStrategy == null) {</b>
+<b class="nc">&nbsp;			writeStrategy = federation.getWriteStrategy();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return writeStrategy;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String getOriginalQueryString(BindingSet b) {
+<b class="nc">&nbsp;		if (b == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY);</b>
+<b class="nc">&nbsp;		if (q != null) {</b>
+<b class="nc">&nbsp;			return q.stringValue();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String getOriginalBaseURI(BindingSet b) {
+<b class="nc">&nbsp;		if (b == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Literals.getLabel(b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_BASE_URI), null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static QueryType getOriginalQueryType(BindingSet b) {
+<b class="nc">&nbsp;		if (b == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_QUERY_TYPE);</b>
+<b class="nc">&nbsp;		if (q != null) {</b>
+<b class="nc">&nbsp;			return QueryType.valueOf(q.stringValue());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the original explicit {@link Operation#getMaxExecutionTime()} in seconds, 0 if
+&nbsp;	 * {@link FedXConfig#getEnforceMaxQueryTime()} should be applied.
+&nbsp;	 *
+&nbsp;	 * @param b
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private static int getOriginalMaxExecutionTime(BindingSet b) {
+<b class="nc">&nbsp;		if (b == null) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value q = b.getValue(FedXRepositoryConnection.BINDING_ORIGINAL_MAX_EXECUTION_TIME);</b>
+<b class="nc">&nbsp;		if (q != null) {</b>
+<b class="nc">&nbsp;			return Integer.parseInt(q.stringValue());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A default implementation for {@link AbstractSail}. This implementation has no further use, however it is needed
+&nbsp;	 * for the constructor call.
+&nbsp;	 *
+&nbsp;	 * @author as
+&nbsp;	 */
+<b class="nc">&nbsp;	protected static class SailBaseDefaultImpl extends AbstractSail {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected SailConnection getConnectionInternal() throws SailException {
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void shutDownInternal() throws SailException {
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;			return FedXUtil.valueFactory();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isWritable() throws SailException {
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void connectionClosed(SailConnection connection) {
+&nbsp;			// we do not need this in FedX
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean pendingRemovals() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+&nbsp;			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

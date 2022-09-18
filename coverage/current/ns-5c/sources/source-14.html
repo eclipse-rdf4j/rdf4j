@@ -1,0 +1,620 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PROV</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: PROV (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PROV</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/120)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the Provenance Ontology.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/prov-overview/&quot;&gt;Provenance Ontology&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class PROV {</b>
+&nbsp;	/**
+&nbsp;	 * The PROV-O namespace: http://www.w3.org/ns/prov#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/ns/prov#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the namespace: &quot;prov&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;prov&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** prov:Accept */
+&nbsp;	public static final IRI ACCEPT;
+&nbsp;
+&nbsp;	/** prov:Activity */
+&nbsp;	public static final IRI ACTIVITY;
+&nbsp;
+&nbsp;	/** prov:ActivityInfluence */
+&nbsp;	public static final IRI ACTIVITY_INFLUENCE;
+&nbsp;
+&nbsp;	/** prov:Agent */
+&nbsp;	public static final IRI AGENT;
+&nbsp;
+&nbsp;	/** prov:AgentInfluence */
+&nbsp;	public static final IRI AGENT_INFLUENCE;
+&nbsp;
+&nbsp;	/** prov:Association */
+&nbsp;	public static final IRI ASSOCIATION;
+&nbsp;
+&nbsp;	/** prov:Attribution */
+&nbsp;	public static final IRI ATTRIBUTION;
+&nbsp;
+&nbsp;	/** prov:Bundle */
+&nbsp;	public static final IRI BUNDLE;
+&nbsp;
+&nbsp;	/** prov:Collection */
+&nbsp;	public static final IRI COLLECTION;
+&nbsp;
+&nbsp;	/** prov:Communication */
+&nbsp;	public static final IRI COMMUNICATION;
+&nbsp;
+&nbsp;	/** prov:Contribute */
+&nbsp;	public static final IRI CONTRIBUTE;
+&nbsp;
+&nbsp;	/** prov:Contributor */
+&nbsp;	public static final IRI CONTRIBUTOR;
+&nbsp;
+&nbsp;	/** prov:Copyright */
+&nbsp;	public static final IRI COPYRIGHT;
+&nbsp;
+&nbsp;	/** prov:Create */
+&nbsp;	public static final IRI CREATE;
+&nbsp;
+&nbsp;	/** prov:Creator */
+&nbsp;	public static final IRI CREATOR;
+&nbsp;
+&nbsp;	/** prov:Delegation */
+&nbsp;	public static final IRI DELEGATION;
+&nbsp;
+&nbsp;	/** prov:Derivation */
+&nbsp;	public static final IRI DERIVATION;
+&nbsp;
+&nbsp;	/** prov:Dictionary */
+&nbsp;	public static final IRI DICTIONARY;
+&nbsp;
+&nbsp;	/** prov:DirectQueryService */
+&nbsp;	public static final IRI DIRECT_QUERY_SERVICE;
+&nbsp;
+&nbsp;	/** prov:EmptyCollection */
+&nbsp;	public static final IRI EMPTY_COLLECTION;
+&nbsp;
+&nbsp;	/** prov:EmptyDictionary */
+&nbsp;	public static final IRI EMPTY_DICTIONARY;
+&nbsp;
+&nbsp;	/** prov:End */
+&nbsp;	public static final IRI END;
+&nbsp;
+&nbsp;	/** prov:Entity */
+&nbsp;	public static final IRI ENTITY;
+&nbsp;
+&nbsp;	/** prov:EntityInfluence */
+&nbsp;	public static final IRI ENTITY_INFLUENCE;
+&nbsp;
+&nbsp;	/** prov:Generation */
+&nbsp;	public static final IRI GENERATION;
+&nbsp;
+&nbsp;	/** prov:Influence */
+&nbsp;	public static final IRI INFLUENCE;
+&nbsp;
+&nbsp;	/** prov:Insertion */
+&nbsp;	public static final IRI INSERTION;
+&nbsp;
+&nbsp;	/** prov:InstantaneousEvent */
+&nbsp;	public static final IRI INSTANTANEOUS_EVENT;
+&nbsp;
+&nbsp;	/** prov:Invalidation */
+&nbsp;	public static final IRI INVALIDATION;
+&nbsp;
+&nbsp;	/** prov:KeyEntityPair */
+&nbsp;	public static final IRI KEY_ENTITY_PAIR;
+&nbsp;
+&nbsp;	/** prov:Location */
+&nbsp;	public static final IRI LOCATION;
+&nbsp;
+&nbsp;	/** prov:Modify */
+&nbsp;	public static final IRI MODIFY;
+&nbsp;
+&nbsp;	/** prov:Organization */
+&nbsp;	public static final IRI ORGANIZATION;
+&nbsp;
+&nbsp;	/** prov:Person */
+&nbsp;	public static final IRI PERSON;
+&nbsp;
+&nbsp;	/** prov:Plan */
+&nbsp;	public static final IRI PLAN;
+&nbsp;
+&nbsp;	/** prov:PrimarySource */
+&nbsp;	public static final IRI PRIMARY_SOURCE;
+&nbsp;
+&nbsp;	/** prov:Publish */
+&nbsp;	public static final IRI PUBLISH;
+&nbsp;
+&nbsp;	/** prov:Publisher */
+&nbsp;	public static final IRI PUBLISHER;
+&nbsp;
+&nbsp;	/** prov:Quotation */
+&nbsp;	public static final IRI QUOTATION;
+&nbsp;
+&nbsp;	/** prov:Removal */
+&nbsp;	public static final IRI REMOVAL;
+&nbsp;
+&nbsp;	/** prov:Replace */
+&nbsp;	public static final IRI REPLACE;
+&nbsp;
+&nbsp;	/** prov:Revision */
+&nbsp;	public static final IRI REVISION;
+&nbsp;
+&nbsp;	/** prov:RightsAssignment */
+&nbsp;	public static final IRI RIGHTS_ASSIGNMENT;
+&nbsp;
+&nbsp;	/** prov:RightsHolder */
+&nbsp;	public static final IRI RIGHTS_HOLDER;
+&nbsp;
+&nbsp;	/** prov:Role */
+&nbsp;	public static final IRI ROLE;
+&nbsp;
+&nbsp;	/** prov:ServiceDescription */
+&nbsp;	public static final IRI SERVICE_DESCRIPTION;
+&nbsp;
+&nbsp;	/** prov:SoftwareAgent */
+&nbsp;	public static final IRI SOFTWARE_AGENT;
+&nbsp;
+&nbsp;	/** prov:Start */
+&nbsp;	public static final IRI START;
+&nbsp;
+&nbsp;	/** prov:Submit */
+&nbsp;	public static final IRI SUBMIT;
+&nbsp;
+&nbsp;	/** prov:Usage */
+&nbsp;	public static final IRI USAGE;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** prov:actedOnBehalfOf */
+&nbsp;	public static final IRI ACTED_ON_BEHALF_OF;
+&nbsp;
+&nbsp;	/** prov:activity */
+&nbsp;	public static final IRI ACTIVITY_PROP;
+&nbsp;
+&nbsp;	/** prov:agent */
+&nbsp;	public static final IRI AGENT_PROP;
+&nbsp;
+&nbsp;	/** prov:alternateOf */
+&nbsp;	public static final IRI ALTERNATE_OF;
+&nbsp;
+&nbsp;	/** prov:asInBundle */
+&nbsp;	public static final IRI AS_IN_BUNDLE;
+&nbsp;
+&nbsp;	/** prov:atLocation */
+&nbsp;	public static final IRI AT_LOCATION;
+&nbsp;
+&nbsp;	/** prov:atTime */
+&nbsp;	public static final IRI AT_TIME;
+&nbsp;
+&nbsp;	/** prov:derivedByInsertionFrom */
+&nbsp;	public static final IRI DERIVED_BY_INSERTION_FROM;
+&nbsp;
+&nbsp;	/** prov:derivedByRemovalFrom */
+&nbsp;	public static final IRI DERIVED_BY_REMOVAL_FROM;
+&nbsp;
+&nbsp;	/** prov:describesService */
+&nbsp;	public static final IRI DESCRIBES_SERVICE;
+&nbsp;
+&nbsp;	/** prov:dictionary */
+&nbsp;	public static final IRI DICTIONARY_PROP;
+&nbsp;
+&nbsp;	/** prov:endedAtTime */
+&nbsp;	public static final IRI ENDED_AT_TIME;
+&nbsp;
+&nbsp;	/** prov:entity */
+&nbsp;	public static final IRI ENTITY_PROP;
+&nbsp;
+&nbsp;	/** prov:generated */
+&nbsp;	public static final IRI GENERATED;
+&nbsp;
+&nbsp;	/** prov:generatedAtTime */
+&nbsp;	public static final IRI GENERATED_AT_TIME;
+&nbsp;
+&nbsp;	/** prov:hadActivity */
+&nbsp;	public static final IRI HAD_ACTIVITY;
+&nbsp;
+&nbsp;	/** prov:hadDictionaryMember */
+&nbsp;	public static final IRI HAD_DICTIONARY_MEMBER;
+&nbsp;
+&nbsp;	/** prov:hadGeneration */
+&nbsp;	public static final IRI HAD_GENERATION;
+&nbsp;
+&nbsp;	/** prov:hadMember */
+&nbsp;	public static final IRI HAD_MEMBER;
+&nbsp;
+&nbsp;	/** prov:hadPlan */
+&nbsp;	public static final IRI HAD_PLAN;
+&nbsp;
+&nbsp;	/** prov:hadPrimarySource */
+&nbsp;	public static final IRI HAD_PRIMARY_SOURCE;
+&nbsp;
+&nbsp;	/** prov:hadRole */
+&nbsp;	public static final IRI HAD_ROLE;
+&nbsp;
+&nbsp;	/** prov:hadUsage */
+&nbsp;	public static final IRI HAD_USAGE;
+&nbsp;
+&nbsp;	/** prov:has_anchor */
+&nbsp;	public static final IRI HAS_ANCHOR;
+&nbsp;
+&nbsp;	/** prov:has_provenance */
+&nbsp;	public static final IRI HAS_PROVENANCE;
+&nbsp;
+&nbsp;	/** prov:has_query_service */
+&nbsp;	public static final IRI HAS_QUERY_SERVICE;
+&nbsp;
+&nbsp;	/** prov:influenced */
+&nbsp;	public static final IRI INFLUENCED;
+&nbsp;
+&nbsp;	/** prov:influencer */
+&nbsp;	public static final IRI INFLUENCER;
+&nbsp;
+&nbsp;	/** prov:insertedKeyEntityPair */
+&nbsp;	public static final IRI INSERTED_KEY_ENTITY_PAIR;
+&nbsp;
+&nbsp;	/** prov:invalidated */
+&nbsp;	public static final IRI INVALIDATED;
+&nbsp;
+&nbsp;	/** prov:invalidatedAtTime */
+&nbsp;	public static final IRI INVALIDATED_AT_TIME;
+&nbsp;
+&nbsp;	/** prov:mentionOf */
+&nbsp;	public static final IRI MENTION_OF;
+&nbsp;
+&nbsp;	/** prov:pairEntity */
+&nbsp;	public static final IRI PAIR_ENTITY;
+&nbsp;
+&nbsp;	/** prov:pairKey */
+&nbsp;	public static final IRI PAIR_KEY;
+&nbsp;
+&nbsp;	/** prov:pingback */
+&nbsp;	public static final IRI PINGBACK;
+&nbsp;
+&nbsp;	/** prov:provenanceUriTemplate */
+&nbsp;	public static final IRI PROVENANCE_URI_TEMPLATE;
+&nbsp;
+&nbsp;	/** prov:qualifiedAssociation */
+&nbsp;	public static final IRI QUALIFIED_ASSOCIATION;
+&nbsp;
+&nbsp;	/** prov:qualifiedAttribution */
+&nbsp;	public static final IRI QUALIFIED_ATTRIBUTION;
+&nbsp;
+&nbsp;	/** prov:qualifiedCommunication */
+&nbsp;	public static final IRI QUALIFIED_COMMUNICATION;
+&nbsp;
+&nbsp;	/** prov:qualifiedDelegation */
+&nbsp;	public static final IRI QUALIFIED_DELEGATION;
+&nbsp;
+&nbsp;	/** prov:qualifiedDerivation */
+&nbsp;	public static final IRI QUALIFIED_DERIVATION;
+&nbsp;
+&nbsp;	/** prov:qualifiedEnd */
+&nbsp;	public static final IRI QUALIFIED_END;
+&nbsp;
+&nbsp;	/** prov:qualifiedGeneration */
+&nbsp;	public static final IRI QUALIFIED_GENERATION;
+&nbsp;
+&nbsp;	/** prov:qualifiedInfluence */
+&nbsp;	public static final IRI QUALIFIED_INFLUENCE;
+&nbsp;
+&nbsp;	/** prov:qualifiedInsertion */
+&nbsp;	public static final IRI QUALIFIED_INSERTION;
+&nbsp;
+&nbsp;	/** prov:qualifiedInvalidation */
+&nbsp;	public static final IRI QUALIFIED_INVALIDATION;
+&nbsp;
+&nbsp;	/** prov:qualifiedPrimarySource */
+&nbsp;	public static final IRI QUALIFIED_PRIMARY_SOURCE;
+&nbsp;
+&nbsp;	/** prov:qualifiedQuotation */
+&nbsp;	public static final IRI QUALIFIED_QUOTATION;
+&nbsp;
+&nbsp;	/** prov:qualifiedRemoval */
+&nbsp;	public static final IRI QUALIFIED_REMOVAL;
+&nbsp;
+&nbsp;	/** prov:qualifiedRevision */
+&nbsp;	public static final IRI QUALIFIED_REVISION;
+&nbsp;
+&nbsp;	/** prov:qualifiedStart */
+&nbsp;	public static final IRI QUALIFIED_START;
+&nbsp;
+&nbsp;	/** prov:qualifiedUsage */
+&nbsp;	public static final IRI QUALIFIED_USAGE;
+&nbsp;
+&nbsp;	/** prov:removedKey */
+&nbsp;	public static final IRI REMOVED_KEY;
+&nbsp;
+&nbsp;	/** prov:specializationOf */
+&nbsp;	public static final IRI SPECIALIZATION_OF;
+&nbsp;
+&nbsp;	/** prov:startedAtTime */
+&nbsp;	public static final IRI STARTED_AT_TIME;
+&nbsp;
+&nbsp;	/** prov:used */
+&nbsp;	public static final IRI USED;
+&nbsp;
+&nbsp;	/** prov:value */
+&nbsp;	public static final IRI VALUE;
+&nbsp;
+&nbsp;	/** prov:wasAssociatedWith */
+&nbsp;	public static final IRI WAS_ASSOCIATED_WITH;
+&nbsp;
+&nbsp;	/** prov:wasAttributedTo */
+&nbsp;	public static final IRI WAS_ATTRIBUTED_TO;
+&nbsp;
+&nbsp;	/** prov:wasDerivedFrom */
+&nbsp;	public static final IRI WAS_DERIVED_FROM;
+&nbsp;
+&nbsp;	/** prov:wasEndedBy */
+&nbsp;	public static final IRI WAS_ENDED_BY;
+&nbsp;
+&nbsp;	/** prov:wasGeneratedBy */
+&nbsp;	public static final IRI WAS_GENERATED_BY;
+&nbsp;
+&nbsp;	/** prov:wasInfluencedBy */
+&nbsp;	public static final IRI WAS_INFLUENCED_BY;
+&nbsp;
+&nbsp;	/** prov:wasInformedBy */
+&nbsp;	public static final IRI WAS_INFORMED_BY;
+&nbsp;
+&nbsp;	/** prov:wasInvalidatedBy */
+&nbsp;	public static final IRI WAS_INVALIDATED_BY;
+&nbsp;
+&nbsp;	/** prov:wasQuotedFrom */
+&nbsp;	public static final IRI WAS_QUOTED_FROM;
+&nbsp;
+&nbsp;	/** prov:wasRevisionOf */
+&nbsp;	public static final IRI WAS_REVISION_OF;
+&nbsp;
+&nbsp;	/** prov:wasStartedBy */
+&nbsp;	public static final IRI WAS_STARTED_BY;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		ACCEPT = Vocabularies.createIRI(NAMESPACE, &quot;Accept&quot;);</b>
+<b class="nc">&nbsp;		ACTIVITY = Vocabularies.createIRI(NAMESPACE, &quot;Activity&quot;);</b>
+<b class="nc">&nbsp;		ACTIVITY_INFLUENCE = Vocabularies.createIRI(NAMESPACE, &quot;ActivityInfluence&quot;);</b>
+<b class="nc">&nbsp;		AGENT = Vocabularies.createIRI(NAMESPACE, &quot;Agent&quot;);</b>
+<b class="nc">&nbsp;		AGENT_INFLUENCE = Vocabularies.createIRI(NAMESPACE, &quot;AgentInfluence&quot;);</b>
+<b class="nc">&nbsp;		ASSOCIATION = Vocabularies.createIRI(NAMESPACE, &quot;Association&quot;);</b>
+<b class="nc">&nbsp;		ATTRIBUTION = Vocabularies.createIRI(NAMESPACE, &quot;Attribution&quot;);</b>
+<b class="nc">&nbsp;		BUNDLE = Vocabularies.createIRI(NAMESPACE, &quot;Bundle&quot;);</b>
+<b class="nc">&nbsp;		COLLECTION = Vocabularies.createIRI(NAMESPACE, &quot;Collection&quot;);</b>
+<b class="nc">&nbsp;		COMMUNICATION = Vocabularies.createIRI(NAMESPACE, &quot;Communication&quot;);</b>
+<b class="nc">&nbsp;		CONTRIBUTE = Vocabularies.createIRI(NAMESPACE, &quot;Contribute&quot;);</b>
+<b class="nc">&nbsp;		CONTRIBUTOR = Vocabularies.createIRI(NAMESPACE, &quot;Contributor&quot;);</b>
+<b class="nc">&nbsp;		COPYRIGHT = Vocabularies.createIRI(NAMESPACE, &quot;Copyright&quot;);</b>
+<b class="nc">&nbsp;		CREATE = Vocabularies.createIRI(NAMESPACE, &quot;Create&quot;);</b>
+<b class="nc">&nbsp;		CREATOR = Vocabularies.createIRI(NAMESPACE, &quot;Creator&quot;);</b>
+<b class="nc">&nbsp;		DELEGATION = Vocabularies.createIRI(NAMESPACE, &quot;Delegation&quot;);</b>
+<b class="nc">&nbsp;		DERIVATION = Vocabularies.createIRI(NAMESPACE, &quot;Derivation&quot;);</b>
+<b class="nc">&nbsp;		DICTIONARY = Vocabularies.createIRI(NAMESPACE, &quot;Dictionary&quot;);</b>
+<b class="nc">&nbsp;		DIRECT_QUERY_SERVICE = Vocabularies.createIRI(NAMESPACE, &quot;DirectQueryService&quot;);</b>
+<b class="nc">&nbsp;		EMPTY_COLLECTION = Vocabularies.createIRI(NAMESPACE, &quot;EmptyCollection&quot;);</b>
+<b class="nc">&nbsp;		EMPTY_DICTIONARY = Vocabularies.createIRI(NAMESPACE, &quot;EmptyDictionary&quot;);</b>
+<b class="nc">&nbsp;		END = Vocabularies.createIRI(NAMESPACE, &quot;End&quot;);</b>
+<b class="nc">&nbsp;		ENTITY = Vocabularies.createIRI(NAMESPACE, &quot;Entity&quot;);</b>
+<b class="nc">&nbsp;		ENTITY_INFLUENCE = Vocabularies.createIRI(NAMESPACE, &quot;EntityInfluence&quot;);</b>
+<b class="nc">&nbsp;		GENERATION = Vocabularies.createIRI(NAMESPACE, &quot;Generation&quot;);</b>
+<b class="nc">&nbsp;		INFLUENCE = Vocabularies.createIRI(NAMESPACE, &quot;Influence&quot;);</b>
+<b class="nc">&nbsp;		INSERTION = Vocabularies.createIRI(NAMESPACE, &quot;Insertion&quot;);</b>
+<b class="nc">&nbsp;		INSTANTANEOUS_EVENT = Vocabularies.createIRI(NAMESPACE, &quot;InstantaneousEvent&quot;);</b>
+<b class="nc">&nbsp;		INVALIDATION = Vocabularies.createIRI(NAMESPACE, &quot;Invalidation&quot;);</b>
+<b class="nc">&nbsp;		KEY_ENTITY_PAIR = Vocabularies.createIRI(NAMESPACE, &quot;KeyEntityPair&quot;);</b>
+<b class="nc">&nbsp;		LOCATION = Vocabularies.createIRI(NAMESPACE, &quot;Location&quot;);</b>
+<b class="nc">&nbsp;		MODIFY = Vocabularies.createIRI(NAMESPACE, &quot;Modify&quot;);</b>
+<b class="nc">&nbsp;		ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;Organization&quot;);</b>
+<b class="nc">&nbsp;		PERSON = Vocabularies.createIRI(NAMESPACE, &quot;Person&quot;);</b>
+<b class="nc">&nbsp;		PLAN = Vocabularies.createIRI(NAMESPACE, &quot;Plan&quot;);</b>
+<b class="nc">&nbsp;		PRIMARY_SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;PrimarySource&quot;);</b>
+<b class="nc">&nbsp;		PUBLISH = Vocabularies.createIRI(NAMESPACE, &quot;Publish&quot;);</b>
+<b class="nc">&nbsp;		PUBLISHER = Vocabularies.createIRI(NAMESPACE, &quot;Publisher&quot;);</b>
+<b class="nc">&nbsp;		QUOTATION = Vocabularies.createIRI(NAMESPACE, &quot;Quotation&quot;);</b>
+<b class="nc">&nbsp;		REMOVAL = Vocabularies.createIRI(NAMESPACE, &quot;Removal&quot;);</b>
+<b class="nc">&nbsp;		REPLACE = Vocabularies.createIRI(NAMESPACE, &quot;Replace&quot;);</b>
+<b class="nc">&nbsp;		REVISION = Vocabularies.createIRI(NAMESPACE, &quot;Revision&quot;);</b>
+<b class="nc">&nbsp;		RIGHTS_ASSIGNMENT = Vocabularies.createIRI(NAMESPACE, &quot;RightsAssignment&quot;);</b>
+<b class="nc">&nbsp;		RIGHTS_HOLDER = Vocabularies.createIRI(NAMESPACE, &quot;RightsHolder&quot;);</b>
+<b class="nc">&nbsp;		ROLE = Vocabularies.createIRI(NAMESPACE, &quot;Role&quot;);</b>
+<b class="nc">&nbsp;		SERVICE_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;ServiceDescription&quot;);</b>
+<b class="nc">&nbsp;		SOFTWARE_AGENT = Vocabularies.createIRI(NAMESPACE, &quot;SoftwareAgent&quot;);</b>
+<b class="nc">&nbsp;		START = Vocabularies.createIRI(NAMESPACE, &quot;Start&quot;);</b>
+<b class="nc">&nbsp;		SUBMIT = Vocabularies.createIRI(NAMESPACE, &quot;Submit&quot;);</b>
+<b class="nc">&nbsp;		USAGE = Vocabularies.createIRI(NAMESPACE, &quot;Usage&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ACTED_ON_BEHALF_OF = Vocabularies.createIRI(NAMESPACE, &quot;actedOnBehalfOf&quot;);</b>
+<b class="nc">&nbsp;		ACTIVITY_PROP = Vocabularies.createIRI(NAMESPACE, &quot;activity&quot;);</b>
+<b class="nc">&nbsp;		AGENT_PROP = Vocabularies.createIRI(NAMESPACE, &quot;agent&quot;);</b>
+<b class="nc">&nbsp;		ALTERNATE_OF = Vocabularies.createIRI(NAMESPACE, &quot;alternateOf&quot;);</b>
+<b class="nc">&nbsp;		AS_IN_BUNDLE = Vocabularies.createIRI(NAMESPACE, &quot;asInBundle&quot;);</b>
+<b class="nc">&nbsp;		AT_LOCATION = Vocabularies.createIRI(NAMESPACE, &quot;atLocation&quot;);</b>
+<b class="nc">&nbsp;		AT_TIME = Vocabularies.createIRI(NAMESPACE, &quot;atTime&quot;);</b>
+<b class="nc">&nbsp;		DERIVED_BY_INSERTION_FROM = Vocabularies.createIRI(NAMESPACE, &quot;derivedByInsertionFrom&quot;);</b>
+<b class="nc">&nbsp;		DERIVED_BY_REMOVAL_FROM = Vocabularies.createIRI(NAMESPACE, &quot;derivedByRemovalFrom&quot;);</b>
+<b class="nc">&nbsp;		DESCRIBES_SERVICE = Vocabularies.createIRI(NAMESPACE, &quot;describesService&quot;);</b>
+<b class="nc">&nbsp;		DICTIONARY_PROP = Vocabularies.createIRI(NAMESPACE, &quot;dictionary&quot;);</b>
+<b class="nc">&nbsp;		ENDED_AT_TIME = Vocabularies.createIRI(NAMESPACE, &quot;endedAtTime&quot;);</b>
+<b class="nc">&nbsp;		ENTITY_PROP = Vocabularies.createIRI(NAMESPACE, &quot;entity&quot;);</b>
+<b class="nc">&nbsp;		GENERATED = Vocabularies.createIRI(NAMESPACE, &quot;generated&quot;);</b>
+<b class="nc">&nbsp;		GENERATED_AT_TIME = Vocabularies.createIRI(NAMESPACE, &quot;generatedAtTime&quot;);</b>
+<b class="nc">&nbsp;		HAD_ACTIVITY = Vocabularies.createIRI(NAMESPACE, &quot;hadActivity&quot;);</b>
+<b class="nc">&nbsp;		HAD_DICTIONARY_MEMBER = Vocabularies.createIRI(NAMESPACE, &quot;hadDictionaryMember&quot;);</b>
+<b class="nc">&nbsp;		HAD_GENERATION = Vocabularies.createIRI(NAMESPACE, &quot;hadGeneration&quot;);</b>
+<b class="nc">&nbsp;		HAD_MEMBER = Vocabularies.createIRI(NAMESPACE, &quot;hadMember&quot;);</b>
+<b class="nc">&nbsp;		HAD_PLAN = Vocabularies.createIRI(NAMESPACE, &quot;hadPlan&quot;);</b>
+<b class="nc">&nbsp;		HAD_PRIMARY_SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;hadPrimarySource&quot;);</b>
+<b class="nc">&nbsp;		HAD_ROLE = Vocabularies.createIRI(NAMESPACE, &quot;hadRole&quot;);</b>
+<b class="nc">&nbsp;		HAD_USAGE = Vocabularies.createIRI(NAMESPACE, &quot;hadUsage&quot;);</b>
+<b class="nc">&nbsp;		HAS_ANCHOR = Vocabularies.createIRI(NAMESPACE, &quot;has_anchor&quot;);</b>
+<b class="nc">&nbsp;		HAS_PROVENANCE = Vocabularies.createIRI(NAMESPACE, &quot;has_provenance&quot;);</b>
+<b class="nc">&nbsp;		HAS_QUERY_SERVICE = Vocabularies.createIRI(NAMESPACE, &quot;has_query_service&quot;);</b>
+<b class="nc">&nbsp;		INFLUENCED = Vocabularies.createIRI(NAMESPACE, &quot;influenced&quot;);</b>
+<b class="nc">&nbsp;		INFLUENCER = Vocabularies.createIRI(NAMESPACE, &quot;influencer&quot;);</b>
+<b class="nc">&nbsp;		INSERTED_KEY_ENTITY_PAIR = Vocabularies.createIRI(NAMESPACE, &quot;insertedKeyEntityPair&quot;);</b>
+<b class="nc">&nbsp;		INVALIDATED = Vocabularies.createIRI(NAMESPACE, &quot;invalidated&quot;);</b>
+<b class="nc">&nbsp;		INVALIDATED_AT_TIME = Vocabularies.createIRI(NAMESPACE, &quot;invalidatedAtTime&quot;);</b>
+<b class="nc">&nbsp;		MENTION_OF = Vocabularies.createIRI(NAMESPACE, &quot;mentionOf&quot;);</b>
+<b class="nc">&nbsp;		PAIR_ENTITY = Vocabularies.createIRI(NAMESPACE, &quot;pairEntity&quot;);</b>
+<b class="nc">&nbsp;		PAIR_KEY = Vocabularies.createIRI(NAMESPACE, &quot;pairKey&quot;);</b>
+<b class="nc">&nbsp;		PINGBACK = Vocabularies.createIRI(NAMESPACE, &quot;pingback&quot;);</b>
+<b class="nc">&nbsp;		PROVENANCE_URI_TEMPLATE = Vocabularies.createIRI(NAMESPACE, &quot;provenanceUriTemplate&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_ASSOCIATION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedAssociation&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_ATTRIBUTION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedAttribution&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_COMMUNICATION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedCommunication&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_DELEGATION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedDelegation&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_DERIVATION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedDerivation&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_END = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedEnd&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_GENERATION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedGeneration&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_INFLUENCE = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedInfluence&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_INSERTION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedInsertion&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_INVALIDATION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedInvalidation&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_PRIMARY_SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedPrimarySource&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_QUOTATION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedQuotation&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_REMOVAL = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedRemoval&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_REVISION = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedRevision&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_START = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedStart&quot;);</b>
+<b class="nc">&nbsp;		QUALIFIED_USAGE = Vocabularies.createIRI(NAMESPACE, &quot;qualifiedUsage&quot;);</b>
+<b class="nc">&nbsp;		REMOVED_KEY = Vocabularies.createIRI(NAMESPACE, &quot;removedKey&quot;);</b>
+<b class="nc">&nbsp;		SPECIALIZATION_OF = Vocabularies.createIRI(NAMESPACE, &quot;specializationOf&quot;);</b>
+<b class="nc">&nbsp;		STARTED_AT_TIME = Vocabularies.createIRI(NAMESPACE, &quot;startedAtTime&quot;);</b>
+<b class="nc">&nbsp;		USED = Vocabularies.createIRI(NAMESPACE, &quot;used&quot;);</b>
+<b class="nc">&nbsp;		VALUE = Vocabularies.createIRI(NAMESPACE, &quot;value&quot;);</b>
+<b class="nc">&nbsp;		WAS_ASSOCIATED_WITH = Vocabularies.createIRI(NAMESPACE, &quot;wasAssociatedWith&quot;);</b>
+<b class="nc">&nbsp;		WAS_ATTRIBUTED_TO = Vocabularies.createIRI(NAMESPACE, &quot;wasAttributedTo&quot;);</b>
+<b class="nc">&nbsp;		WAS_DERIVED_FROM = Vocabularies.createIRI(NAMESPACE, &quot;wasDerivedFrom&quot;);</b>
+<b class="nc">&nbsp;		WAS_ENDED_BY = Vocabularies.createIRI(NAMESPACE, &quot;wasEndedBy&quot;);</b>
+<b class="nc">&nbsp;		WAS_GENERATED_BY = Vocabularies.createIRI(NAMESPACE, &quot;wasGeneratedBy&quot;);</b>
+<b class="nc">&nbsp;		WAS_INFLUENCED_BY = Vocabularies.createIRI(NAMESPACE, &quot;wasInfluencedBy&quot;);</b>
+<b class="nc">&nbsp;		WAS_INFORMED_BY = Vocabularies.createIRI(NAMESPACE, &quot;wasInformedBy&quot;);</b>
+<b class="nc">&nbsp;		WAS_INVALIDATED_BY = Vocabularies.createIRI(NAMESPACE, &quot;wasInvalidatedBy&quot;);</b>
+<b class="nc">&nbsp;		WAS_QUOTED_FROM = Vocabularies.createIRI(NAMESPACE, &quot;wasQuotedFrom&quot;);</b>
+<b class="nc">&nbsp;		WAS_REVISION_OF = Vocabularies.createIRI(NAMESPACE, &quot;wasRevisionOf&quot;);</b>
+<b class="nc">&nbsp;		WAS_STARTED_BY = Vocabularies.createIRI(NAMESPACE, &quot;wasStartedBy&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

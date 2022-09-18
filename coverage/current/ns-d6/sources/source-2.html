@@ -1,0 +1,338 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DataStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.datastore</a>
+</div>
+
+<h1>Coverage Summary for Class: DataStore (org.eclipse.rdf4j.sail.nativerdf.datastore)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DataStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/60)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.datastore;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.zip.CRC32;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Class that provides indexed storage and retrieval of arbitrary length data.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class DataStore implements Closeable {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final DataFile dataFile;
+&nbsp;
+&nbsp;	private final IDFile idFile;
+&nbsp;
+&nbsp;	private final HashFile hashFile;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public DataStore(File dataDir, String filePrefix) throws IOException {
+<b class="nc">&nbsp;		this(dataDir, filePrefix, false);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public DataStore(File dataDir, String filePrefix, boolean forceSync) throws IOException {</b>
+<b class="nc">&nbsp;		dataFile = new DataFile(new File(dataDir, filePrefix + &quot;.dat&quot;), forceSync);</b>
+<b class="nc">&nbsp;		idFile = new IDFile(new File(dataDir, filePrefix + &quot;.id&quot;), forceSync);</b>
+<b class="nc">&nbsp;		hashFile = new HashFile(new File(dataDir, filePrefix + &quot;.hash&quot;), forceSync);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the value for the specified ID.
+&nbsp;	 *
+&nbsp;	 * @param id A value ID, should be larger than 0.
+&nbsp;	 * @return The value for the ID, or &lt;var&gt;null&lt;/var&gt; if no such value could be found.
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public byte[] getData(int id) throws IOException {
+<b class="nc">&nbsp;		assert id &gt; 0 : &quot;id must be larger than 0, is: &quot; + id;</b>
+&nbsp;
+&nbsp;		// Data not in cache or cache not used, fetch from file
+<b class="nc">&nbsp;		long offset = idFile.getOffset(id);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (offset != 0L) {</b>
+<b class="nc">&nbsp;			return dataFile.getData(offset);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the ID for the specified value.
+&nbsp;	 *
+&nbsp;	 * @param queryData The value to get the ID for, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return The ID for the specified value, or &lt;var&gt;-1&lt;/var&gt; if no such ID could be found.
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public int getID(byte[] queryData) throws IOException {
+<b class="nc">&nbsp;		assert queryData != null : &quot;queryData must not be null&quot;;</b>
+&nbsp;
+&nbsp;		int id;
+&nbsp;
+&nbsp;		// Value not in cache or cache not used, fetch from file
+<b class="nc">&nbsp;		int hash = getDataHash(queryData);</b>
+<b class="nc">&nbsp;		HashFile.IDIterator iter = hashFile.getIDIterator(hash);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			while ((id = iter.next()) &gt;= 0) {</b>
+<b class="nc">&nbsp;				long offset = idFile.getOffset(id);</b>
+<b class="nc">&nbsp;				byte[] data = dataFile.getData(offset);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (Arrays.equals(queryData, data)) {</b>
+&nbsp;					// Matching data found
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			iter.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the maximum value-ID that is in use.
+&nbsp;	 *
+&nbsp;	 * @return The largest ID, or &lt;var&gt;0&lt;/var&gt; if the store does not contain any values.
+&nbsp;	 * @throws IOException If an I/O error occurs.
+&nbsp;	 */
+&nbsp;	public int getMaxID() throws IOException {
+<b class="nc">&nbsp;		return idFile.getMaxID();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stores the supplied value and returns the ID that has been assigned to it. In case the data to store is already
+&nbsp;	 * present, the ID of this existing data is returned.
+&nbsp;	 *
+&nbsp;	 * @param data The data to store, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return The ID that has been assigned to the value.
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public int storeData(byte[] data) throws IOException {
+<b class="nc">&nbsp;		assert data != null : &quot;data must not be null&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		int id = getID(data);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (id == -1) {</b>
+&nbsp;			// Data not stored yet, store it under a new ID.
+<b class="nc">&nbsp;			long offset = dataFile.storeData(data);</b>
+<b class="nc">&nbsp;			id = idFile.storeOffset(offset);</b>
+<b class="nc">&nbsp;			hashFile.storeID(getDataHash(data), id);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Synchronizes any recent changes to the data to disk.
+&nbsp;	 *
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public void sync() throws IOException {
+<b class="nc">&nbsp;		hashFile.sync();</b>
+<b class="nc">&nbsp;		idFile.sync();</b>
+<b class="nc">&nbsp;		dataFile.sync();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all values from the DataStore.
+&nbsp;	 *
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public void clear() throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			hashFile.clear();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				idFile.clear();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				dataFile.clear();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the DataStore, releasing any file references, etc. In case a transaction is currently open, it will be
+&nbsp;	 * rolled back. Once closed, the DataStore can no longer be used.
+&nbsp;	 *
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void close() throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			hashFile.close();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				idFile.close();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				dataFile.close();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a hash code for the supplied data.
+&nbsp;	 *
+&nbsp;	 * @param data The data to calculate the hash code for.
+&nbsp;	 * @return A hash code for the supplied data.
+&nbsp;	 */
+&nbsp;	private int getDataHash(byte[] data) {
+<b class="nc">&nbsp;		CRC32 crc32 = new CRC32();</b>
+<b class="nc">&nbsp;		crc32.update(data);</b>
+<b class="nc">&nbsp;		return (int) crc32.getValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------------*
+&nbsp;	 * Test/debug methods *
+&nbsp;	 *--------------------*/
+&nbsp;
+&nbsp;	public static void main(String[] args) throws Exception {
+<b class="nc">&nbsp;		if (args.length &lt; 2) {</b>
+<b class="nc">&nbsp;			System.err.println(</b>
+&nbsp;					&quot;Usage: java org.eclipse.rdf4j.sesame.sailimpl.nativerdf.datastore.DataStore &lt;data-dir&gt; &lt;file-prefix&gt;&quot;);
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		System.out.println(&quot;Dumping DataStore contents...&quot;);</b>
+<b class="nc">&nbsp;		File dataDir = new File(args[0]);</b>
+&nbsp;		DataFile.DataIterator iter;
+<b class="nc">&nbsp;		try (DataStore dataStore = new DataStore(dataDir, args[1])) {</b>
+<b class="nc">&nbsp;			iter = dataStore.dataFile.iterator();</b>
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				byte[] data = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				System.out.println(ByteArrayUtil.toHexString(data));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

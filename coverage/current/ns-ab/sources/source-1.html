@@ -1,0 +1,210 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NDJSONLDParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.ndjsonld</a>
+</div>
+
+<h1>Coverage Summary for Class: NDJSONLDParser (org.eclipse.rdf4j.rio.ndjsonld)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NDJSONLDParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.ndjsonld;
+&nbsp;
+&nbsp;import java.io.BufferedReader;
+&nbsp;import java.io.ByteArrayInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.Reader;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.apache.commons.io.input.BOMInputStream;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.jsonld.JSONLDParser;
+&nbsp;
+&nbsp;import com.fasterxml.jackson.core.JsonFactory;
+&nbsp;import com.fasterxml.jackson.core.JsonParser;
+&nbsp;import com.github.jsonldjava.utils.JsonUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * Introduce a parser capable of parsing Newline Delimited JSON-LD, where each line is a serialized JSON-LD record. The
+&nbsp; * format is inspired by Newline Delimited JSON format&lt;a&gt;http://ndjson.org/&lt;/a&gt;. Even though each line is a separate
+&nbsp; * JSON-LD document, the whole document is treated as a single RDF document, having one single BNodes context to
+&nbsp; * preserve BNodes identifiers.
+&nbsp; *
+&nbsp; * @author Desislava Hristova
+&nbsp; */
+&nbsp;public class NDJSONLDParser extends JSONLDParser {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default constructor
+&nbsp;	 */
+&nbsp;	public NDJSONLDParser() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a RDF4J NDJSONLD Parser using the given {@link ValueFactory} to create new {@link Value}s.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory The ValueFactory to use
+&nbsp;	 */
+&nbsp;	public NDJSONLDParser(final ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.NDJSONLD;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Object getJSONObject(InputStream in, Reader reader, JsonFactory factory) throws IOException {
+<b class="nc">&nbsp;		List&lt;Object&gt; arrayOfJSONLD = new LinkedList&lt;&gt;();</b>
+<b class="nc">&nbsp;		try (BufferedReader bufferedReader = new BufferedReader(reader)) {</b>
+&nbsp;			String line;
+<b class="nc">&nbsp;			while ((line = bufferedReader.readLine()) != null) {</b>
+<b class="nc">&nbsp;				if (!line.isEmpty()) {</b>
+<b class="nc">&nbsp;					JsonParser nextParser = factory</b>
+<b class="nc">&nbsp;							.createParser(new ByteArrayInputStream(line.getBytes(StandardCharsets.UTF_8)));</b>
+<b class="nc">&nbsp;					Object singleJSONLD = JsonUtils.fromJsonParser(nextParser);</b>
+<b class="nc">&nbsp;					if (singleJSONLD instanceof List) {</b>
+<b class="nc">&nbsp;						arrayOfJSONLD.addAll((List) singleJSONLD);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						arrayOfJSONLD.add(singleJSONLD);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return arrayOfJSONLD;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(InputStream in, String baseURI) throws RDFParseException, RDFHandlerException, IOException {
+<b class="nc">&nbsp;		if (in == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Input stream must not be &#39;null&#39;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		parse(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8), baseURI);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

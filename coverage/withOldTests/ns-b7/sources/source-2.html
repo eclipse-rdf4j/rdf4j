@@ -1,0 +1,1258 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Changeset</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: Changeset (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Changeset</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.3%
+  </span>
+  <span class="absValue">
+    (33/49)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.6%
+  </span>
+  <span class="absValue">
+    (190/446)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.4%
+  </span>
+  <span class="absValue">
+    (233/406)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Changeset$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (2/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (2/3)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">Changeset$AdderBasedReadWriteLock</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    37.5%
+  </span>
+  <span class="absValue">
+    (3/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    73.9%
+  </span>
+  <span class="absValue">
+    (17/23)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">Changeset$SimpleStatementPattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    61.5%
+  </span>
+  <span class="absValue">
+    (40/65)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40.4%
+  </span>
+  <span class="absValue">
+    (193/478)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    55%
+  </span>
+  <span class="absValue">
+    (252/458)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.IdentityHashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.Semaphore;
+&nbsp;import java.util.concurrent.atomic.LongAdder;
+&nbsp;import java.util.concurrent.locks.StampedLock;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Statements;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.sail.SailConflictException;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Set of changes applied to an {@link SailSourceBranch} awaiting to be flushed into its backing {@link SailSource}.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="fc">&nbsp;@InternalUseOnly</b>
+<b class="fc">&nbsp;public abstract class Changeset implements SailSink, ModelFactory {</b>
+&nbsp;
+<b class="fc">&nbsp;	AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();</b>
+<b class="fc">&nbsp;	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();</b>
+<b class="fc">&nbsp;	Semaphore prependLock = new Semaphore(1);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set of {@link SailDataset}s that are currently using this {@link Changeset} to derive the state of the
+&nbsp;	 * {@link SailSource}.
+&nbsp;	 */
+&nbsp;	private List&lt;SailDatasetImpl&gt; refbacks;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@link Changeset}s that have been {@link #flush()}ed to the same {@link SailSourceBranch}, since this object was
+&nbsp;	 * {@link #flush()}ed.
+&nbsp;	 */
+&nbsp;	private Set&lt;Changeset&gt; prepend;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * When in {@link IsolationLevels#SERIALIZABLE} this contains all the observed {@link StatementPattern}s that were
+&nbsp;	 * observed by {@link ObservingSailDataset}.
+&nbsp;	 */
+&nbsp;	private volatile Set&lt;SimpleStatementPattern&gt; observed;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Statements that have been added as part of a transaction, but has not yet been committed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
+&nbsp;	 */
+&nbsp;	private volatile Model approved;
+<b class="fc">&nbsp;	private volatile boolean approvedEmpty = true;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Explicit statements that have been removed as part of a transaction, but have not yet been committed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
+&nbsp;	 */
+&nbsp;	private volatile Model deprecated;
+<b class="fc">&nbsp;	private volatile boolean deprecatedEmpty = true;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set of contexts of the {@link #approved} statements.
+&nbsp;	 */
+&nbsp;	private Set&lt;Resource&gt; approvedContexts;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set of contexts that were passed to {@link #clear(Resource...)}.
+&nbsp;	 */
+&nbsp;	private volatile Set&lt;Resource&gt; deprecatedContexts;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Additional namespaces added.
+&nbsp;	 */
+&nbsp;	private Map&lt;String, String&gt; addedNamespaces;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Namespace prefixes that were removed.
+&nbsp;	 */
+&nbsp;	private Set&lt;String&gt; removedPrefixes;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If all namespaces were removed, other than {@link #addedNamespaces}.
+&nbsp;	 */
+&nbsp;	private volatile boolean namespaceCleared;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If all statements were removed, other than {@link #approved}.
+&nbsp;	 */
+&nbsp;	private volatile boolean statementCleared;
+&nbsp;
+&nbsp;	private boolean closed;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws SailException {
+<b class="fc">&nbsp;		closed = true;</b>
+<b class="fc">&nbsp;		refbacks = null;</b>
+<b class="fc">&nbsp;		prepend = null;</b>
+<b class="fc">&nbsp;		observed = null;</b>
+<b class="fc">&nbsp;		approved = null;</b>
+<b class="fc">&nbsp;		deprecated = null;</b>
+<b class="fc">&nbsp;		approvedContexts = null;</b>
+<b class="fc">&nbsp;		deprecatedContexts = null;</b>
+<b class="fc">&nbsp;		addedNamespaces = null;</b>
+<b class="fc">&nbsp;		removedPrefixes = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void prepare() throws SailException {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		if (prepend != null &amp;&amp; observed != null) {</b>
+<b class="nc">&nbsp;			for (SimpleStatementPattern p : observed) {</b>
+<b class="nc">&nbsp;				Resource subj = p.getSubject();</b>
+<b class="nc">&nbsp;				IRI pred = p.getPredicate();</b>
+<b class="nc">&nbsp;				Value obj = p.getObject();</b>
+<b class="nc">&nbsp;				Resource context = p.getContext();</b>
+&nbsp;				Resource[] contexts;
+<b class="nc">&nbsp;				if (p.isAllContexts()) {</b>
+<b class="nc">&nbsp;					contexts = new Resource[0];</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					contexts = new Resource[] { context };</b>
+&nbsp;				}
+<b class="nc">&nbsp;				for (Changeset changeset : prepend) {</b>
+<b class="nc">&nbsp;					if (changeset.hasApproved(subj, pred, obj, contexts)</b>
+<b class="nc">&nbsp;							|| (changeset.hasDeprecated(subj, pred, obj, contexts))) {</b>
+<b class="nc">&nbsp;						throw new SailConflictException(&quot;Observed State has Changed&quot;);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		if (approved == null || approvedEmpty) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return approved.contains(subj, pred, obj, contexts);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		if ((deprecated == null || deprecatedEmpty) &amp;&amp; deprecatedContexts == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (deprecatedContexts != null) {</b>
+<b class="nc">&nbsp;				for (Resource context : contexts) {</b>
+<b class="nc">&nbsp;					if (deprecatedContexts.contains(context)) {</b>
+<b class="nc">&nbsp;						return true;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return deprecated.contains(subj, pred, obj, contexts);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addRefback(SailDatasetImpl dataset) {
+<b class="pc">&nbsp;		assert !closed;</b>
+&nbsp;
+<b class="fc">&nbsp;		long writeLock = refBacksReadWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			if (refbacks == null) {</b>
+<b class="fc">&nbsp;				refbacks = new ArrayList&lt;&gt;();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			refbacks.add(dataset);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			refBacksReadWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removeRefback(SailDatasetImpl dataset) {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		long writeLock = refBacksReadWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="pc">&nbsp;			if (refbacks != null) {</b>
+<b class="fc">&nbsp;				refbacks.removeIf(d -&gt; d == dataset);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			refBacksReadWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isRefback() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		boolean readLock = refBacksReadWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			return refbacks != null &amp;&amp; !refbacks.isEmpty();</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			refBacksReadWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void prepend(Changeset changeset) {
+<b class="pc">&nbsp;		assert !closed;</b>
+&nbsp;
+<b class="fc">&nbsp;		prependLock.acquireUninterruptibly();</b>
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			if (prepend == null) {</b>
+<b class="fc">&nbsp;				prepend = Collections.newSetFromMap(new IdentityHashMap&lt;&gt;());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			prepend.add(changeset);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			prependLock.release();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(String prefix, String name) {
+<b class="pc">&nbsp;		assert !closed;</b>
+&nbsp;
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			if (removedPrefixes == null) {</b>
+<b class="fc">&nbsp;				removedPrefixes = new HashSet&lt;&gt;();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			removedPrefixes.add(prefix);</b>
+<b class="fc">&nbsp;			if (addedNamespaces == null) {</b>
+<b class="fc">&nbsp;				addedNamespaces = new HashMap&lt;&gt;();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			addedNamespaces.put(prefix, name);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeNamespace(String prefix) {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			if (addedNamespaces != null) {</b>
+<b class="fc">&nbsp;				addedNamespaces.remove(prefix);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (removedPrefixes == null) {</b>
+<b class="fc">&nbsp;				removedPrefixes = new HashSet&lt;&gt;();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			removedPrefixes.add(prefix);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearNamespaces() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		namespaceCleared = true;</b>
+&nbsp;
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+&nbsp;
+<b class="pc">&nbsp;			if (removedPrefixes != null) {</b>
+<b class="nc">&nbsp;				removedPrefixes.clear();</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (addedNamespaces != null) {</b>
+<b class="nc">&nbsp;				addedNamespaces.clear();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailConflictException {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (observed == null) {</b>
+<b class="nc">&nbsp;				observed = new HashSet&lt;&gt;();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (contexts == null) {</b>
+<b class="nc">&nbsp;				observed.add(new SimpleStatementPattern(subj, pred, obj, null, false));</b>
+<b class="nc">&nbsp;			} else if (contexts.length == 0) {</b>
+<b class="nc">&nbsp;				observed.add(new SimpleStatementPattern(subj, pred, obj, null, true));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				for (Resource ctx : contexts) {</b>
+<b class="nc">&nbsp;					observed.add(new SimpleStatementPattern(subj, pred, obj, ctx, false));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void observe(Resource subj, IRI pred, Value obj, Resource context)
+&nbsp;			throws SailConflictException {
+&nbsp;
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (observed == null) {</b>
+<b class="nc">&nbsp;				observed = new HashSet&lt;&gt;();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			observed.add(new SimpleStatementPattern(subj, pred, obj, context, false));</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void observeAll(Set&lt;SimpleStatementPattern&gt; observed) {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (this.observed == null) {</b>
+<b class="nc">&nbsp;				this.observed = new HashSet&lt;&gt;(observed);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				this.observed.addAll(observed);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) {
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="pc">&nbsp;			if (contexts != null &amp;&amp; contexts.length == 0) {</b>
+<b class="fc">&nbsp;				statementCleared = true;</b>
+&nbsp;
+<b class="pc">&nbsp;				if (approved != null) {</b>
+<b class="nc">&nbsp;					approved.clear();</b>
+&nbsp;				}
+<b class="pc">&nbsp;				if (approvedContexts != null) {</b>
+<b class="nc">&nbsp;					approvedContexts.clear();</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="fc">&nbsp;				if (deprecatedContexts == null) {</b>
+<b class="fc">&nbsp;					deprecatedContexts = new HashSet&lt;&gt;();</b>
+&nbsp;				}
+<b class="fc">&nbsp;				if (approved != null) {</b>
+<b class="fc">&nbsp;					approved.remove(null, null, null, contexts);</b>
+&nbsp;				}
+<b class="pc">&nbsp;				if (approvedContexts != null &amp;&amp; contexts != null) {</b>
+<b class="fc">&nbsp;					for (Resource resource : contexts) {</b>
+<b class="fc">&nbsp;						approvedContexts.remove(resource);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="pc">&nbsp;				if (contexts != null) {</b>
+<b class="fc">&nbsp;					deprecatedContexts.addAll(Arrays.asList(contexts));</b>
+&nbsp;				}
+&nbsp;			}
+<b class="pc">&nbsp;			approvedEmpty = approved == null || approved.isEmpty();</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void approve(Statement statement) {
+&nbsp;
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+&nbsp;
+<b class="fc">&nbsp;			if (deprecated != null) {</b>
+<b class="fc">&nbsp;				deprecated.remove(statement);</b>
+<b class="pc">&nbsp;				deprecatedEmpty = deprecated == null || deprecated.isEmpty();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (approved == null) {</b>
+<b class="fc">&nbsp;				approved = createEmptyModel();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			approved.add(statement);</b>
+<b class="pc">&nbsp;			approvedEmpty = approved == null || approved.isEmpty();</b>
+<b class="fc">&nbsp;			if (statement.getContext() != null) {</b>
+<b class="fc">&nbsp;				if (approvedContexts == null) {</b>
+<b class="fc">&nbsp;					approvedContexts = new HashSet&lt;&gt;();</b>
+&nbsp;				}
+<b class="fc">&nbsp;				approvedContexts.add(statement.getContext());</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+<b class="fc">&nbsp;		approve(Statements.statement(subj, pred, obj, ctx));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void deprecate(Statement statement) {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			if (approved != null) {</b>
+<b class="fc">&nbsp;				approved.remove(statement);</b>
+<b class="pc">&nbsp;				approvedEmpty = approved == null || approved.isEmpty();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (deprecated == null) {</b>
+<b class="fc">&nbsp;				deprecated = createEmptyModel();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			deprecated.add(statement);</b>
+<b class="pc">&nbsp;			deprecatedEmpty = deprecated == null || deprecated.isEmpty();</b>
+<b class="fc">&nbsp;			Resource ctx = statement.getContext();</b>
+<b class="pc">&nbsp;			if (approvedContexts != null &amp;&amp; approvedContexts.contains(ctx)</b>
+<b class="nc">&nbsp;					&amp;&amp; !approved.contains(null, null, null, ctx)) {</b>
+<b class="nc">&nbsp;				approvedContexts.remove(ctx);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		if (observed != null) {</b>
+<b class="nc">&nbsp;			sb.append(observed.size());</b>
+<b class="nc">&nbsp;			sb.append(&quot; observations, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (namespaceCleared) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;namespaceCleared, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (removedPrefixes != null) {</b>
+<b class="nc">&nbsp;			sb.append(removedPrefixes.size());</b>
+<b class="nc">&nbsp;			sb.append(&quot; removedPrefixes, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (addedNamespaces != null) {</b>
+<b class="nc">&nbsp;			sb.append(addedNamespaces.size());</b>
+<b class="nc">&nbsp;			sb.append(&quot; addedNamespaces, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (statementCleared) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;statementCleared, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (deprecatedContexts != null &amp;&amp; !deprecatedContexts.isEmpty()) {</b>
+<b class="nc">&nbsp;			sb.append(deprecatedContexts.size());</b>
+<b class="nc">&nbsp;			sb.append(&quot; deprecatedContexts, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (deprecated != null) {</b>
+<b class="nc">&nbsp;			sb.append(deprecated.size());</b>
+<b class="nc">&nbsp;			sb.append(&quot; deprecated, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (approved != null) {</b>
+<b class="nc">&nbsp;			sb.append(approved.size());</b>
+<b class="nc">&nbsp;			sb.append(&quot; approved, &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (sb.length() &gt; 0) {</b>
+<b class="nc">&nbsp;			return sb.substring(0, sb.length() - 2);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.toString();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setChangeset(Changeset from) {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="pc">&nbsp;		assert !from.closed;</b>
+&nbsp;
+<b class="fc">&nbsp;		this.observed = from.observed;</b>
+<b class="fc">&nbsp;		this.approved = from.approved;</b>
+<b class="fc">&nbsp;		this.approvedEmpty = from.approvedEmpty;</b>
+<b class="fc">&nbsp;		this.deprecated = from.deprecated;</b>
+<b class="fc">&nbsp;		this.deprecatedEmpty = from.deprecatedEmpty;</b>
+<b class="fc">&nbsp;		this.approvedContexts = from.approvedContexts;</b>
+<b class="fc">&nbsp;		this.deprecatedContexts = from.deprecatedContexts;</b>
+<b class="fc">&nbsp;		this.addedNamespaces = from.addedNamespaces;</b>
+<b class="fc">&nbsp;		this.removedPrefixes = from.removedPrefixes;</b>
+<b class="fc">&nbsp;		this.namespaceCleared = from.namespaceCleared;</b>
+<b class="fc">&nbsp;		this.statementCleared = from.statementCleared;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a shallow clone of this Changeset. The shallow clone does not clone the underlying data structures, this
+&nbsp;	 * means that any changes made to the original will potentially be reflected in the clone and vice versa.
+&nbsp;	 *
+&nbsp;	 * @return a new Changeset that is a shallow clone of the current Changeset.
+&nbsp;	 */
+&nbsp;	public Changeset shallowClone() {
+&nbsp;
+<b class="pc">&nbsp;		assert !closed;</b>
+&nbsp;
+<b class="fc">&nbsp;		Changeset changeset = new Changeset() {</b>
+&nbsp;			@Override
+&nbsp;			public void flush() throws SailException {
+<b class="nc">&nbsp;				throw new UnsupportedOperationException();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Model createEmptyModel() {
+<b class="fc">&nbsp;				return Changeset.this.createEmptyModel();</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+<b class="fc">&nbsp;		changeset.setChangeset(this);</b>
+&nbsp;
+<b class="fc">&nbsp;		return changeset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;SimpleStatementPattern&gt; getObserved() {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			return observed == null ? null : Collections.unmodifiableSet(observed);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated Use getObserved() instead!
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public Set&lt;StatementPattern&gt; getObservations() {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (observed == null) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return observed.stream()</b>
+<b class="nc">&nbsp;					.map(simpleStatementPattern -&gt; new StatementPattern(</b>
+<b class="nc">&nbsp;							new Var(&quot;s&quot;, simpleStatementPattern.getSubject()),</b>
+<b class="nc">&nbsp;							new Var(&quot;p&quot;, simpleStatementPattern.getPredicate()),</b>
+<b class="nc">&nbsp;							new Var(&quot;o&quot;, simpleStatementPattern.getObject()),</b>
+<b class="nc">&nbsp;							simpleStatementPattern.isAllContexts() ? null</b>
+<b class="nc">&nbsp;									: new Var(&quot;c&quot;, simpleStatementPattern.getContext())</b>
+&nbsp;					)
+&nbsp;					)
+<b class="nc">&nbsp;					.collect(Collectors.toCollection(HashSet::new));</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;Resource&gt; getApprovedContexts() {
+<b class="nc">&nbsp;		assert !closed;</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return cloneSet(approvedContexts);</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;Resource&gt; getDeprecatedContexts() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		if (deprecatedContexts == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			return cloneSet(deprecatedContexts);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isStatementCleared() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		return statementCleared;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;String, String&gt; getAddedNamespaces() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			return addedNamespaces;</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;String&gt; getRemovedPrefixes() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			return cloneSet(removedPrefixes);</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isNamespaceCleared() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		return namespaceCleared;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasDeprecated() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		if (deprecatedContexts == null) {</b>
+<b class="pc">&nbsp;			return deprecated != null &amp;&amp; !deprecatedEmpty;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			boolean readLock = readWriteLock.readLock();</b>
+&nbsp;			try {
+<b class="pc">&nbsp;				return (deprecated != null &amp;&amp; !deprecatedEmpty) || !deprecatedContexts.isEmpty();</b>
+&nbsp;			} finally {
+<b class="fc">&nbsp;				readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean isChanged() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="pc">&nbsp;		return approved != null || deprecated != null || approvedContexts != null</b>
+&nbsp;				|| deprecatedContexts != null || addedNamespaces != null
+&nbsp;				|| removedPrefixes != null || statementCleared || namespaceCleared
+&nbsp;				|| observed != null;
+&nbsp;	}
+&nbsp;
+&nbsp;	List&lt;Statement&gt; getDeprecatedStatements() {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		if (deprecated == null || deprecatedEmpty) {</b>
+<b class="nc">&nbsp;			return Collections.emptyList();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return new ArrayList&lt;&gt;(deprecated);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	List&lt;Statement&gt; getApprovedStatements() {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		if (approved == null || approvedEmpty) {</b>
+<b class="nc">&nbsp;			return Collections.emptyList();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return new ArrayList&lt;&gt;(approved);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean hasDeprecated(Statement statement) {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="pc">&nbsp;		if ((deprecated == null || deprecatedEmpty) &amp;&amp; deprecatedContexts == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			if (deprecatedContexts != null) {</b>
+<b class="pc">&nbsp;				if (deprecatedContexts.contains(statement.getContext())) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;			if (deprecated != null) {</b>
+<b class="fc">&nbsp;				return deprecated.contains(statement);</b>
+&nbsp;			} else
+<b class="fc">&nbsp;				return false;</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean hasApproved() {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="pc">&nbsp;		return approved != null &amp;&amp; !approvedEmpty;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Iterable&lt;Statement&gt; getApprovedStatements(Resource subj, IRI pred, Value obj,
+&nbsp;			Resource[] contexts) {
+<b class="pc">&nbsp;		assert !closed;</b>
+&nbsp;
+<b class="pc">&nbsp;		if (approved == null || approvedEmpty) {</b>
+<b class="nc">&nbsp;			return Collections.emptyList();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+&nbsp;
+<b class="fc">&nbsp;			Iterable&lt;Statement&gt; statements = approved.getStatements(subj, pred, obj, contexts);</b>
+&nbsp;
+&nbsp;			// This is a synchronized context, users of this method will be allowed to use the results at their leisure.
+&nbsp;			// We
+&nbsp;			// provide a copy of the data so that there will be no concurrent modification exceptions!
+<b class="pc">&nbsp;			if (statements instanceof Collection) {</b>
+<b class="nc">&nbsp;				return new ArrayList&lt;&gt;((Collection&lt;? extends Statement&gt;) statements);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				List&lt;Statement&gt; ret = List.of();</b>
+<b class="fc">&nbsp;				for (Statement statement : statements) {</b>
+<b class="fc">&nbsp;					if (ret.isEmpty()) {</b>
+<b class="fc">&nbsp;						ret = List.of(statement);</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						if (ret.size() == 1) {</b>
+<b class="fc">&nbsp;							ret = new ArrayList&lt;&gt;(ret);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						ret.add(statement);</b>
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+<b class="fc">&nbsp;				return ret;</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	Iterable&lt;Triple&gt; getApprovedTriples(Resource subj, IRI pred, Value obj) {
+<b class="nc">&nbsp;		assert !closed;</b>
+<b class="nc">&nbsp;		if (approved == null || approvedEmpty) {</b>
+<b class="nc">&nbsp;			return Collections.emptyList();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+&nbsp;			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
+&nbsp;			// for functionally complete first.
+<b class="nc">&nbsp;			Stream&lt;Triple&gt; approvedSubjectTriples = approved.parallelStream()</b>
+<b class="nc">&nbsp;					.filter(st -&gt; st.getSubject().isTriple())</b>
+<b class="nc">&nbsp;					.map(st -&gt; (Triple) st.getSubject())</b>
+<b class="nc">&nbsp;					.filter(t -&gt; {</b>
+<b class="nc">&nbsp;						if (subj != null &amp;&amp; !subj.equals(t.getSubject())) {</b>
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (pred != null &amp;&amp; !pred.equals(t.getPredicate())) {</b>
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						return obj == null || obj.equals(t.getObject());</b>
+&nbsp;					});
+&nbsp;
+<b class="nc">&nbsp;			Stream&lt;Triple&gt; approvedObjectTriples = approved.parallelStream()</b>
+<b class="nc">&nbsp;					.filter(st -&gt; st.getObject().isTriple())</b>
+<b class="nc">&nbsp;					.map(st -&gt; (Triple) st.getObject())</b>
+<b class="nc">&nbsp;					.filter(t -&gt; {</b>
+<b class="nc">&nbsp;						if (subj != null &amp;&amp; !subj.equals(t.getSubject())) {</b>
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (pred != null &amp;&amp; !pred.equals(t.getPredicate())) {</b>
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						return obj == null || obj.equals(t.getObject());</b>
+&nbsp;					});
+&nbsp;
+<b class="nc">&nbsp;			return Stream.concat(approvedSubjectTriples, approvedObjectTriples).collect(Collectors.toList());</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void removeApproved(Statement next) {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+<b class="pc">&nbsp;			if (approved != null) {</b>
+<b class="fc">&nbsp;				approved.remove(next);</b>
+<b class="pc">&nbsp;				approvedEmpty = approved == null || approved.isEmpty();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T&gt; Set&lt;T&gt; cloneSet(Set&lt;T&gt; set) {
+<b class="pc">&nbsp;		assert !closed;</b>
+<b class="fc">&nbsp;		if (set == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return new HashSet&lt;&gt;(set);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void sinkApproved(SailSink sink) {
+<b class="fc">&nbsp;		if (approved == null || approvedEmpty) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="pc">&nbsp;			if (approved != null) {</b>
+<b class="fc">&nbsp;				sink.approveAll(approved, approvedContexts);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void sinkDeprecated(SailSink sink) {
+<b class="pc">&nbsp;		if (deprecated == null || deprecatedEmpty) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="pc">&nbsp;			if (deprecated != null) {</b>
+<b class="fc">&nbsp;				sink.deprecateAll(deprecated);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void sinkObserved(SailSink sink) {
+<b class="pc">&nbsp;		if (observed == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean readLock = readWriteLock.readLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (observed != null) {</b>
+<b class="nc">&nbsp;				sink.observeAll(observed);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			readWriteLock.unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void approveAll(Set&lt;Statement&gt; approve, Set&lt;Resource&gt; approveContexts) {
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+&nbsp;
+<b class="fc">&nbsp;			if (deprecated != null) {</b>
+<b class="fc">&nbsp;				deprecated.removeAll(approve);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (approved == null) {</b>
+<b class="fc">&nbsp;				approved = createEmptyModel();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			approved.addAll(approve);</b>
+<b class="pc">&nbsp;			approvedEmpty = approved == null || approved.isEmpty();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (approveContexts != null) {</b>
+<b class="fc">&nbsp;				if (approvedContexts == null) {</b>
+<b class="fc">&nbsp;					approvedContexts = new HashSet&lt;&gt;();</b>
+&nbsp;				}
+<b class="fc">&nbsp;				approvedContexts.addAll(approveContexts);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void deprecateAll(Set&lt;Statement&gt; deprecate) {
+<b class="fc">&nbsp;		long writeLock = readWriteLock.writeLock();</b>
+&nbsp;		try {
+&nbsp;
+<b class="fc">&nbsp;			if (approved != null) {</b>
+<b class="fc">&nbsp;				approved.removeAll(deprecate);</b>
+<b class="pc">&nbsp;				approvedEmpty = approved == null || approved.isEmpty();</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (deprecated == null) {</b>
+<b class="fc">&nbsp;				deprecated = createEmptyModel();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			deprecated.addAll(deprecate);</b>
+<b class="pc">&nbsp;			deprecatedEmpty = deprecated == null || deprecated.isEmpty();</b>
+&nbsp;
+<b class="fc">&nbsp;			for (Statement statement : deprecate) {</b>
+<b class="fc">&nbsp;				Resource ctx = statement.getContext();</b>
+<b class="pc">&nbsp;				if (approvedContexts != null &amp;&amp; approvedContexts.contains(ctx)</b>
+<b class="nc">&nbsp;						&amp;&amp; !approved.contains(null, null, null, ctx)) {</b>
+<b class="nc">&nbsp;					approvedContexts.remove(ctx);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			readWriteLock.unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class AdderBasedReadWriteLock {</b>
+&nbsp;
+<b class="fc">&nbsp;		StampedLock writeLock = new StampedLock();</b>
+&nbsp;
+&nbsp;		// LongAdder for handling readers. When the count is equal then there are no active readers.
+<b class="fc">&nbsp;		private final LongAdder readersLocked = new LongAdder();</b>
+<b class="fc">&nbsp;		private final LongAdder readersUnlocked = new LongAdder();</b>
+&nbsp;		// do not use this directly, use the VarHandle instead
+&nbsp;
+&nbsp;		public boolean readLock() {
+&nbsp;			while (true) {
+<b class="fc">&nbsp;				readersLocked.increment();</b>
+<b class="pc">&nbsp;				if (!writeLock.isWriteLocked()) {</b>
+&nbsp;					// Everything is good! We have acquired a read-lock and there are no active writers.
+<b class="fc">&nbsp;					return true;</b>
+&nbsp;				} else {
+&nbsp;					// Release our read lock, so we don&#39;t block any writers.
+<b class="nc">&nbsp;					readersUnlocked.increment();</b>
+<b class="nc">&nbsp;					while (writeLock.isWriteLocked()) {</b>
+<b class="nc">&nbsp;						Thread.onSpinWait();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public void unlockReader(boolean locked) {
+<b class="pc">&nbsp;			if (locked) {</b>
+<b class="fc">&nbsp;				VarHandle.acquireFence();</b>
+<b class="fc">&nbsp;				readersUnlocked.increment();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IllegalMonitorStateException();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public long writeLock() {
+&nbsp;			// Acquire a write-lock.
+<b class="fc">&nbsp;			long stamp = writeLock.writeLock();</b>
+&nbsp;
+&nbsp;			// Wait for active readers to finish.
+&nbsp;			while (true) {
+&nbsp;				// The order is important here.
+<b class="fc">&nbsp;				long unlockedSum = readersUnlocked.sum();</b>
+<b class="fc">&nbsp;				long lockedSum = readersLocked.sum();</b>
+<b class="pc">&nbsp;				if (unlockedSum == lockedSum) {</b>
+&nbsp;					// No active readers.
+<b class="fc">&nbsp;					VarHandle.releaseFence();</b>
+<b class="fc">&nbsp;					return stamp;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					Thread.onSpinWait();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void unlockWriter(long stamp) {
+<b class="fc">&nbsp;			writeLock.unlockWrite(stamp);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static class SimpleStatementPattern {
+&nbsp;		final private Resource subject;
+&nbsp;		final private IRI predicate;
+&nbsp;		final private Value object;
+&nbsp;		final private Resource context;
+&nbsp;
+&nbsp;		// true if the context is the union of all contexts
+&nbsp;		final private boolean allContexts;
+&nbsp;
+&nbsp;		public SimpleStatementPattern(Resource subject, IRI predicate, Value object, Resource context,
+<b class="nc">&nbsp;				boolean allContexts) {</b>
+<b class="nc">&nbsp;			this.subject = subject;</b>
+<b class="nc">&nbsp;			this.predicate = predicate;</b>
+<b class="nc">&nbsp;			this.object = object;</b>
+<b class="nc">&nbsp;			this.context = context;</b>
+<b class="nc">&nbsp;			this.allContexts = allContexts;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Resource getSubject() {
+<b class="nc">&nbsp;			return subject;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public IRI getPredicate() {
+<b class="nc">&nbsp;			return predicate;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Value getObject() {
+<b class="nc">&nbsp;			return object;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Resource getContext() {
+<b class="nc">&nbsp;			return context;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isAllContexts() {
+<b class="nc">&nbsp;			return allContexts;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean equals(Object o) {
+<b class="nc">&nbsp;			if (this == o) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			SimpleStatementPattern that = (SimpleStatementPattern) o;</b>
+<b class="nc">&nbsp;			return allContexts == that.allContexts &amp;&amp; Objects.equals(subject, that.subject)</b>
+<b class="nc">&nbsp;					&amp;&amp; Objects.equals(predicate, that.predicate) &amp;&amp; Objects.equals(object, that.object)</b>
+<b class="nc">&nbsp;					&amp;&amp; Objects.equals(context, that.context);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int hashCode() {
+<b class="nc">&nbsp;			int result = 1;</b>
+&nbsp;
+<b class="nc">&nbsp;			result = 31 * result + (subject == null ? 0 : subject.hashCode());</b>
+<b class="nc">&nbsp;			result = 31 * result + (predicate == null ? 0 : ((Object) predicate).hashCode());</b>
+<b class="nc">&nbsp;			result = 31 * result + (object == null ? 0 : object.hashCode());</b>
+<b class="nc">&nbsp;			result = 31 * result + (context == null ? 0 : context.hashCode());</b>
+<b class="nc">&nbsp;			result = 31 * result + ((Object) allContexts).hashCode();</b>
+&nbsp;
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

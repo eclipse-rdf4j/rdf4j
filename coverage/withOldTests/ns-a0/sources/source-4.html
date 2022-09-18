@@ -1,0 +1,198 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLCrossProductIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sparql.federation</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLCrossProductIteration (org.eclipse.rdf4j.repository.sparql.federation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLCrossProductIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sparql.federation;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * Iteration which forms the cross product of a list of materialized input bindings with each result obtained from the
+&nbsp; * inner iteration. Example: &lt;source&gt; inputBindings := {b1, b2, ...} resultIteration := {r1, r2, ...} getNextElement()
+&nbsp; * returns (r1,b1), (r1, b2), ..., (r2, b1), (r2, b2), ... i.e. compute the cross product per result binding &lt;/source&gt;
+&nbsp; * Note that this class is a fully equivalent copy of
+&nbsp; * {@link org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration}, and is only included here to avoid
+&nbsp; * a circular dependency between the algebra-evaluation module and the sparql-repository module.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class SPARQLCrossProductIteration extends LookAheadIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	protected final List&lt;BindingSet&gt; inputBindings;
+&nbsp;
+&nbsp;	protected final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; resultIteration;
+&nbsp;
+<b class="nc">&nbsp;	protected Iterator&lt;BindingSet&gt; inputBindingsIterator = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	protected BindingSet currentInputBinding = null;</b>
+&nbsp;
+&nbsp;	public SPARQLCrossProductIteration(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; resultIteration,
+&nbsp;			List&lt;BindingSet&gt; inputBindings) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.resultIteration = resultIteration;</b>
+<b class="nc">&nbsp;		this.inputBindings = inputBindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet getNextElement() throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (currentInputBinding == null) {</b>
+<b class="nc">&nbsp;			inputBindingsIterator = inputBindings.iterator();</b>
+<b class="nc">&nbsp;			if (resultIteration.hasNext()) {</b>
+<b class="nc">&nbsp;				currentInputBinding = resultIteration.next();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return null; // no more results</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (inputBindingsIterator.hasNext()) {</b>
+<b class="nc">&nbsp;			BindingSet next = inputBindingsIterator.next();</b>
+<b class="nc">&nbsp;			SPARQLQueryBindingSet res = new SPARQLQueryBindingSet(next.size() + currentInputBinding.size());</b>
+<b class="nc">&nbsp;			res.addAll(next);</b>
+<b class="nc">&nbsp;			res.addAll(currentInputBinding);</b>
+<b class="nc">&nbsp;			if (!inputBindingsIterator.hasNext()) {</b>
+<b class="nc">&nbsp;				currentInputBinding = null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return res;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			resultIteration.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

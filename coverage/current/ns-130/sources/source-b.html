@@ -1,0 +1,419 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > WorkbenchRequest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.util</a>
+</div>
+
+<h1>Coverage Summary for Class: WorkbenchRequest (org.eclipse.rdf4j.workbench.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">WorkbenchRequest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/68)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/93)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.util;
+&nbsp;
+&nbsp;import static java.net.URLDecoder.decode;
+&nbsp;
+&nbsp;import java.io.BufferedReader;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.Cookie;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletRequestWrapper;
+&nbsp;
+&nbsp;import org.apache.commons.fileupload.FileItemIterator;
+&nbsp;import org.apache.commons.fileupload.FileItemStream;
+&nbsp;import org.apache.commons.fileupload.FileUploadException;
+&nbsp;import org.apache.commons.fileupload.servlet.ServletFileUpload;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Request wrapper used by {@link org.eclipse.rdf4j.workbench.base TransformationServlet}.
+&nbsp; */
+&nbsp;public class WorkbenchRequest extends HttpServletRequestWrapper {
+&nbsp;
+&nbsp;	private Map&lt;String, String&gt; parameters;
+&nbsp;
+&nbsp;	private final Map&lt;String, String&gt; defaults;
+&nbsp;
+&nbsp;	private InputStream content;
+&nbsp;
+&nbsp;	private String contentFileName;
+&nbsp;
+&nbsp;	private final ValueDecoder decoder;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Wrap a request with an object aware of the current repository and application defaults.
+&nbsp;	 *
+&nbsp;	 * @param repository currently connected repository
+&nbsp;	 * @param request    current request
+&nbsp;	 * @param defaults   application default parameter values
+&nbsp;	 * @throws RepositoryException if there is an issue retrieving the parameter map
+&nbsp;	 * @throws IOException         if there is an issue retrieving the parameter map
+&nbsp;	 * @throws FileUploadException if there is an issue retrieving the parameter map
+&nbsp;	 */
+&nbsp;	public WorkbenchRequest(Repository repository, HttpServletRequest request, Map&lt;String, String&gt; defaults)
+&nbsp;			throws RepositoryException, IOException, FileUploadException {
+<b class="nc">&nbsp;		super(request);</b>
+<b class="nc">&nbsp;		this.defaults = defaults;</b>
+<b class="nc">&nbsp;		this.decoder = new ValueDecoder(repository,</b>
+<b class="nc">&nbsp;				(repository == null) ? SimpleValueFactory.getInstance() : repository.getValueFactory());</b>
+<b class="nc">&nbsp;		String url = request.getRequestURL().toString();</b>
+<b class="nc">&nbsp;		if (ServletFileUpload.isMultipartContent(this)) {</b>
+<b class="nc">&nbsp;			parameters = getMultipartParameterMap();</b>
+<b class="nc">&nbsp;		} else if (request.getQueryString() == null &amp;&amp; url.contains(&quot;;&quot;)) {</b>
+<b class="nc">&nbsp;			parameters = getUrlParameterMap(url);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the content of any uploaded file that is part of this request.
+&nbsp;	 *
+&nbsp;	 * @return the uploaded file contents, or null if not applicable
+&nbsp;	 */
+&nbsp;	public InputStream getContentParameter() {
+<b class="nc">&nbsp;		return content;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the name of any uploaded file that is part of this request.
+&nbsp;	 *
+&nbsp;	 * @return the uploaded file name, or null if not applicable
+&nbsp;	 */
+&nbsp;	public String getContentFileName() {
+<b class="nc">&nbsp;		return contentFileName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/***
+&nbsp;	 * Get the integer value associated with the given parameter name. Internally uses getParameter(String), so looks in
+&nbsp;	 * this order: 1. the query parameters that were parsed at construction, using the last value if multiple exist. 2.
+&nbsp;	 * Request cookies. 3. The defaults.
+&nbsp;	 *
+&nbsp;	 * @return the value of the parameter, or zero if it is not present
+&nbsp;	 * @throws BadRequestException if the parameter is present but does not parse as an integer
+&nbsp;	 */
+&nbsp;	public int getInt(String name) throws BadRequestException {
+<b class="nc">&nbsp;		int result = 0;</b>
+<b class="nc">&nbsp;		String limit = getParameter(name);</b>
+<b class="nc">&nbsp;		if (limit != null &amp;&amp; !limit.isEmpty()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				result = Integer.parseInt(limit);</b>
+<b class="nc">&nbsp;			} catch (NumberFormatException exc) {</b>
+<b class="nc">&nbsp;				throw new BadRequestException(exc.getMessage(), exc);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getParameter(String name) {
+&nbsp;		String result;
+<b class="nc">&nbsp;		if (parameters != null &amp;&amp; parameters.containsKey(name)) {</b>
+<b class="nc">&nbsp;			result = parameters.get(name);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			String[] values = super.getParameterValues(name);</b>
+<b class="nc">&nbsp;			if (values != null &amp;&amp; values.length &gt; 0) {</b>
+&nbsp;				// use the last one as it may be appended in JavaScript
+<b class="nc">&nbsp;				result = values[values.length - 1];</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				result = getCookie(name);</b>
+<b class="nc">&nbsp;				if (result == null &amp;&amp; defaults != null &amp;&amp; defaults.containsKey(name)) {</b>
+<b class="nc">&nbsp;					result = defaults.get(name);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getCookie(String name) {
+<b class="nc">&nbsp;		String result = null;</b>
+<b class="nc">&nbsp;		Cookie[] cookies = getCookies();</b>
+<b class="nc">&nbsp;		if (cookies != null) {</b>
+<b class="nc">&nbsp;			for (Cookie cookie : cookies) {</b>
+<b class="nc">&nbsp;				if (name.equals(cookie.getName())) {</b>
+<b class="nc">&nbsp;					result = cookie.getValue();</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String[] getParameterValues(String name) {
+<b class="nc">&nbsp;		return (parameters != null &amp;&amp; parameters.containsKey(name)) ? new String[] { parameters.get(name) }</b>
+<b class="nc">&nbsp;				: super.getParameterValues(name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns whether a non-null, non-empty value is available for the given parameter name.
+&nbsp;	 *
+&nbsp;	 * @param name parameter name to check
+&nbsp;	 * @return true if a non-null, non-empty value exists, false otherwise
+&nbsp;	 */
+&nbsp;	public boolean isParameterPresent(String name) {
+<b class="nc">&nbsp;		boolean result = false;</b>
+<b class="nc">&nbsp;		if (parameters == null || parameters.get(name) == null) {</b>
+<b class="nc">&nbsp;			String[] values = super.getParameterValues(name);</b>
+<b class="nc">&nbsp;			if (values != null &amp;&amp; values.length &gt; 0) {</b>
+&nbsp;				// use the last one as it may be appended in JavaScript
+<b class="nc">&nbsp;				result = !values[values.length - 1].isEmpty();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			result = !parameters.get(name).isEmpty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link org.eclipse.rdf4j.model.Resource} corresponding to the value of the given parameter name.
+&nbsp;	 *
+&nbsp;	 * @param name of parameter to retrieve resource from
+&nbsp;	 * @return value corresponding to the given parameter name
+&nbsp;	 * @throws BadRequestException if a problem occurs parsing the parameter value
+&nbsp;	 */
+&nbsp;	public Resource getResource(String name) throws BadRequestException, RepositoryException {
+<b class="nc">&nbsp;		Value value = getValue(name);</b>
+<b class="nc">&nbsp;		if (value == null || value instanceof Resource) {</b>
+<b class="nc">&nbsp;			return (Resource) value;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new BadRequestException(&quot;Not a BNode or URI: &quot; + value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a map of the all parameters with values, also caching them in this {@link WorkbenchRequest}.
+&nbsp;	 *
+&nbsp;	 * @return a map of all parameters with values
+&nbsp;	 */
+&nbsp;	public Map&lt;String, String&gt; getSingleParameterMap() {
+&nbsp;		@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;		Map&lt;String, String[]&gt; map = super.getParameterMap();</b>
+<b class="nc">&nbsp;		Map&lt;String, String&gt; parameters = new HashMap&lt;&gt;(map.size());</b>
+<b class="nc">&nbsp;		for (String name : map.keySet()) {</b>
+<b class="nc">&nbsp;			if (isParameterPresent(name)) {</b>
+<b class="nc">&nbsp;				parameters.put(name, getParameter(name));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (this.parameters != null) {</b>
+<b class="nc">&nbsp;			parameters.putAll(this.parameters);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return parameters;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the value of the &#39;type&#39; parameter.
+&nbsp;	 *
+&nbsp;	 * @return the value of the &#39;type&#39; parameter
+&nbsp;	 */
+&nbsp;	public String getTypeParameter() {
+<b class="nc">&nbsp;		return getParameter(&quot;type&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the URI referred to by the parameter value.
+&nbsp;	 *
+&nbsp;	 * @param name of the parameter to check
+&nbsp;	 * @return the URI, or null if the parameter has no value, is only whitespace, or equals &quot;null&quot;
+&nbsp;	 * @throws BadRequestException if the value doesn&#39;t parse as a URI
+&nbsp;	 * @throws RepositoryException if the name space prefix is not resolvable
+&nbsp;	 */
+&nbsp;	public IRI getURI(String name) throws BadRequestException, RepositoryException {
+<b class="nc">&nbsp;		Value value = getValue(name);</b>
+<b class="nc">&nbsp;		if (value == null || value instanceof IRI) {</b>
+<b class="nc">&nbsp;			return (IRI) value;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new BadRequestException(&quot;Not a URI: &quot; + value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the URL referred to by the parameter value.
+&nbsp;	 *
+&nbsp;	 * @param name of the parameter to check
+&nbsp;	 * @return the URL
+&nbsp;	 * @throws BadRequestException if the value doesn&#39;t parse as a URL
+&nbsp;	 */
+&nbsp;	public URL getUrl(String name) throws BadRequestException {
+<b class="nc">&nbsp;		String url = getParameter(name);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return new URL(url);</b>
+<b class="nc">&nbsp;		} catch (MalformedURLException exc) {</b>
+<b class="nc">&nbsp;			throw new BadRequestException(exc.getMessage(), exc);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the {@link org.eclipse.rdf4j.model.Value} referred to by the parameter value.
+&nbsp;	 *
+&nbsp;	 * @param name of the parameter to check
+&nbsp;	 * @return the value, or null if the parameter has no value, is only whitespace, or equals &quot;null&quot;
+&nbsp;	 * @throws BadRequestException if the value doesn&#39;t parse as a URI
+&nbsp;	 * @throws RepositoryException if any name space prefix is not resolvable
+&nbsp;	 */
+&nbsp;	public Value getValue(String name) throws BadRequestException, RepositoryException {
+<b class="nc">&nbsp;		return decoder.decodeValue(getParameter(name));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String firstLine(FileItemStream item) throws IOException {
+<b class="nc">&nbsp;		try (BufferedReader reader = new BufferedReader(new InputStreamReader(item.openStream()))) {</b>
+<b class="nc">&nbsp;			return reader.readLine();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Map&lt;String, String&gt; getMultipartParameterMap()
+&nbsp;			throws RepositoryException, IOException, FileUploadException {
+<b class="nc">&nbsp;		Map&lt;String, String&gt; parameters = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		ServletFileUpload upload = new ServletFileUpload();</b>
+<b class="nc">&nbsp;		FileItemIterator iter = upload.getItemIterator(this);</b>
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			FileItemStream item = iter.next();</b>
+<b class="nc">&nbsp;			String name = item.getFieldName();</b>
+<b class="nc">&nbsp;			if (&quot;content&quot;.equals(name)) {</b>
+<b class="nc">&nbsp;				content = item.openStream();</b>
+<b class="nc">&nbsp;				contentFileName = item.getName();</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				parameters.put(name, firstLine(item));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return parameters;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Map&lt;String, String&gt; getUrlParameterMap(String url) throws UnsupportedEncodingException {
+<b class="nc">&nbsp;		String qry = url.substring(url.indexOf(&#39;;&#39;) + 1);</b>
+<b class="nc">&nbsp;		Map&lt;String, String&gt; parameters = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (String param : qry.split(&quot;&amp;&quot;)) {</b>
+<b class="nc">&nbsp;			int idx = param.indexOf(&#39;=&#39;);</b>
+<b class="nc">&nbsp;			String name = decode(param.substring(0, idx), StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;			String value = decode(param.substring(idx + 1), StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;			parameters.put(name, value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return parameters;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

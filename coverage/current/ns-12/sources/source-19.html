@@ -1,0 +1,194 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SilentIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iteration</a>
+</div>
+
+<h1>Coverage Summary for Class: SilentIteration (org.eclipse.rdf4j.common.iteration)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SilentIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iteration;
+&nbsp;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link IterationWrapper} that silently ignores any errors that occur during processing.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class SilentIteration&lt;T, E extends Exception&gt; extends IterationWrapper&lt;T, E&gt; {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SilentIteration.class);</b>
+&nbsp;
+&nbsp;	public SilentIteration(CloseableIteration&lt;T, E&gt; iter) {
+<b class="nc">&nbsp;		super(iter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() throws E {
+&nbsp;		try {
+<b class="nc">&nbsp;			return super.hasNext();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (logger.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;				logger.trace(&quot;Suppressed error in SILENT iteration: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public T next() throws E {
+&nbsp;		try {
+<b class="nc">&nbsp;			return super.next();</b>
+<b class="nc">&nbsp;		} catch (NoSuchElementException e) {</b>
+&nbsp;			// pass through
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (logger.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;				logger.trace(&quot;Converted error in SILENT iteration: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new NoSuchElementException(e.getMessage());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws E {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (logger.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;				logger.trace(&quot;Suppressed error in SILENT iteration: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

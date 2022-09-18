@@ -1,0 +1,235 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DC</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: DC (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DC</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    94.1%
+  </span>
+  <span class="absValue">
+    (16/17)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Vocabulary constants for the Dublin Core Metadata Element Set, version 1.1
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @see &lt;a href=&quot;http://dublincore.org/documents/dces/&quot;&gt;Dublin Core Metadata Element Set, Version 1.1&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;public class DC {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Dublin Core elements namespace: http://purl.org/dc/elements/1.1/
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://purl.org/dc/elements/1.1/&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommend prefix for the Dublin Core elements namespace: &quot;dc&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;dc&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the Dublin Core namespace.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:title
+&nbsp;	 */
+&nbsp;	public static final IRI TITLE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:source
+&nbsp;	 */
+&nbsp;	public static final IRI SOURCE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:contributor
+&nbsp;	 */
+&nbsp;	public static final IRI CONTRIBUTOR;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:coverage
+&nbsp;	 */
+&nbsp;	public static final IRI COVERAGE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:creator
+&nbsp;	 */
+&nbsp;	public static final IRI CREATOR;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:date
+&nbsp;	 */
+&nbsp;	public static final IRI DATE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:description
+&nbsp;	 */
+&nbsp;	public static final IRI DESCRIPTION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:format
+&nbsp;	 */
+&nbsp;	public static final IRI FORMAT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:identifier
+&nbsp;	 */
+&nbsp;	public static final IRI IDENTIFIER;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:language
+&nbsp;	 */
+&nbsp;	public static final IRI LANGUAGE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:publisher
+&nbsp;	 */
+&nbsp;	public static final IRI PUBLISHER;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:relation
+&nbsp;	 */
+&nbsp;	public static final IRI RELATION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:rights
+&nbsp;	 */
+&nbsp;	public static final IRI RIGHTS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:subject
+&nbsp;	 */
+&nbsp;	public static final IRI SUBJECT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * dc:type
+&nbsp;	 */
+&nbsp;	public static final IRI TYPE;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="fc">&nbsp;		CONTRIBUTOR = Vocabularies.createIRI(NAMESPACE, &quot;contributor&quot;);</b>
+<b class="fc">&nbsp;		COVERAGE = Vocabularies.createIRI(NAMESPACE, &quot;coverage&quot;);</b>
+<b class="fc">&nbsp;		CREATOR = Vocabularies.createIRI(NAMESPACE, &quot;creator&quot;);</b>
+<b class="fc">&nbsp;		DATE = Vocabularies.createIRI(NAMESPACE, &quot;date&quot;);</b>
+<b class="fc">&nbsp;		DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;description&quot;);</b>
+<b class="fc">&nbsp;		FORMAT = Vocabularies.createIRI(NAMESPACE, &quot;format&quot;);</b>
+<b class="fc">&nbsp;		IDENTIFIER = Vocabularies.createIRI(NAMESPACE, &quot;identifier&quot;);</b>
+<b class="fc">&nbsp;		LANGUAGE = Vocabularies.createIRI(NAMESPACE, &quot;language&quot;);</b>
+<b class="fc">&nbsp;		PUBLISHER = Vocabularies.createIRI(NAMESPACE, &quot;publisher&quot;);</b>
+<b class="fc">&nbsp;		RELATION = Vocabularies.createIRI(NAMESPACE, &quot;relation&quot;);</b>
+<b class="fc">&nbsp;		RIGHTS = Vocabularies.createIRI(NAMESPACE, &quot;rights&quot;);</b>
+<b class="fc">&nbsp;		SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;source&quot;);</b>
+<b class="fc">&nbsp;		SUBJECT = Vocabularies.createIRI(NAMESPACE, &quot;subject&quot;);</b>
+<b class="fc">&nbsp;		TITLE = Vocabularies.createIRI(NAMESPACE, &quot;title&quot;);</b>
+<b class="fc">&nbsp;		TYPE = Vocabularies.createIRI(NAMESPACE, &quot;type&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

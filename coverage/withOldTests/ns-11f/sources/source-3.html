@@ -1,0 +1,245 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PositiveParserTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: PositiveParserTest (org.eclipse.rdf4j.testsuite.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PositiveParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.rio;
+&nbsp;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import junit.framework.TestCase;
+&nbsp;
+&nbsp;public class PositiveParserTest extends TestCase {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final String inputURL;
+&nbsp;
+&nbsp;	private String outputURL;
+&nbsp;
+&nbsp;	private final String baseURL;
+&nbsp;
+&nbsp;	private final RDFParser targetParser;
+&nbsp;
+&nbsp;	private final RDFParser ntriplesParser;
+&nbsp;
+&nbsp;	protected IRI testUri;
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(PositiveParserTest.class);</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public PositiveParserTest(IRI testUri, String testName, String inputURL, String outputURL, String baseURL,
+&nbsp;			RDFParser targetParser, RDFParser ntriplesParser) throws MalformedURLException {
+<b class="nc">&nbsp;		super(testName);</b>
+<b class="nc">&nbsp;		this.testUri = testUri;</b>
+<b class="nc">&nbsp;		this.inputURL = inputURL;</b>
+<b class="nc">&nbsp;		if (outputURL != null) {</b>
+<b class="nc">&nbsp;			this.outputURL = outputURL;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.baseURL = baseURL;</b>
+<b class="nc">&nbsp;		this.targetParser = targetParser;</b>
+<b class="nc">&nbsp;		this.ntriplesParser = ntriplesParser;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void runTest() throws Exception {
+&nbsp;		// Parse input data
+&nbsp;		// targetParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;Statement&gt; inputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		StatementCollector inputCollector = new StatementCollector(inputCollection);</b>
+<b class="nc">&nbsp;		targetParser.setRDFHandler(inputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;		InputStream in = this.getClass().getResourceAsStream(inputURL);</b>
+<b class="nc">&nbsp;		assertNotNull(&quot;Test resource was not found: inputURL=&quot; + inputURL, in);</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;test: &quot; + inputURL);</b>
+&nbsp;
+<b class="nc">&nbsp;		ParseErrorCollector el = new ParseErrorCollector();</b>
+<b class="nc">&nbsp;		targetParser.setParseErrorListener(el);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			targetParser.parse(in, baseURL);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			in.close();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!el.getFatalErrors().isEmpty()) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;[Turtle] Input file had fatal parsing errors: \n&quot; + el.getFatalErrors());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!el.getErrors().isEmpty()) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;[Turtle] Input file had parsing errors: \n&quot; + el.getErrors());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!el.getWarnings().isEmpty()) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;[Turtle] Input file had parsing warnings: \n&quot; + el.getWarnings());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (outputURL != null) {</b>
+&nbsp;			// Parse expected output data
+<b class="nc">&nbsp;			Set&lt;Statement&gt; outputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementCollector outputCollector = new StatementCollector(outputCollection);</b>
+<b class="nc">&nbsp;			ntriplesParser.setRDFHandler(outputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;			in = this.getClass().getResourceAsStream(outputURL);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				ntriplesParser.parse(in, baseURL);</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				in.close();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// Check equality of the two models
+<b class="nc">&nbsp;			if (!Models.isomorphic(inputCollection, outputCollection)) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;===models not equal===\n&quot;</b>
+&nbsp;						+ &quot;Expected: &quot; + outputCollection + &quot;\n&quot;
+&nbsp;						+ &quot;Actual  : &quot; + inputCollection + &quot;\n&quot;
+&nbsp;						+ &quot;======================&quot;);
+&nbsp;
+<b class="nc">&nbsp;				fail(&quot;models not equal&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;} // end inner class PositiveParserTest
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

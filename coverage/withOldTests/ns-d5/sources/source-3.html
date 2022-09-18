@@ -1,0 +1,159 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NativeStoreSchema</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.config</a>
+</div>
+
+<h1>Coverage Summary for Class: NativeStoreSchema (org.eclipse.rdf4j.sail.nativerdf.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NativeStoreSchema</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.config;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+&nbsp;
+&nbsp;/**
+&nbsp; * Defines constants for the NativeStore schema which is used by {@link NativeStoreFactory}s to initialize
+&nbsp; * {@link NativeStore}s.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class NativeStoreSchema {</b>
+&nbsp;
+&nbsp;	/** The NativeStore schema namespace (&lt;var&gt;http://www.openrdf.org/config/sail/native#&lt;/var&gt;). */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.openrdf.org/config/sail/native#&quot;;
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.openrdf.org/config/sail/native#tripleIndexes&lt;/var&gt; */
+&nbsp;	public final static IRI TRIPLE_INDEXES;
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.openrdf.org/config/sail/native#forceSync&lt;/var&gt; */
+&nbsp;	public final static IRI FORCE_SYNC;
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.openrdf.org/config/sail/native#valueCacheSize&lt;/var&gt; */
+&nbsp;	public final static IRI VALUE_CACHE_SIZE;
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.openrdf.org/config/sail/native#valueIDCacheSize&lt;/var&gt; */
+&nbsp;	public final static IRI VALUE_ID_CACHE_SIZE;
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.openrdf.org/config/sail/native#namespaceCacheSize&lt;/var&gt; */
+&nbsp;	public final static IRI NAMESPACE_CACHE_SIZE;
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.openrdf.org/config/sail/native#namespaceIDCacheSize&lt;/var&gt; */
+&nbsp;	public final static IRI NAMESPACE_ID_CACHE_SIZE;
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		ValueFactory factory = SimpleValueFactory.getInstance();</b>
+<b class="nc">&nbsp;		TRIPLE_INDEXES = factory.createIRI(NAMESPACE, &quot;tripleIndexes&quot;);</b>
+<b class="nc">&nbsp;		FORCE_SYNC = factory.createIRI(NAMESPACE, &quot;forceSync&quot;);</b>
+<b class="nc">&nbsp;		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, &quot;valueCacheSize&quot;);</b>
+<b class="nc">&nbsp;		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, &quot;valueIDCacheSize&quot;);</b>
+<b class="nc">&nbsp;		NAMESPACE_CACHE_SIZE = factory.createIRI(NAMESPACE, &quot;namespaceCacheSize&quot;);</b>
+<b class="nc">&nbsp;		NAMESPACE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, &quot;namespaceIDCacheSize&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

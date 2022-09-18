@@ -1,0 +1,176 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > VarNameCollector</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.helpers.collectors</a>
+</div>
+
+<h1>Coverage Summary for Class: VarNameCollector (org.eclipse.rdf4j.query.algebra.helpers.collectors)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">VarNameCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (7/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (14/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.query.algebra.helpers.collectors;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * A QueryModelVisitor that collects the names of (non-constant) variables that are used in a query model.
+&nbsp; */
+&nbsp;public class VarNameCollector extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+<b class="fc">&nbsp;	private final List&lt;String&gt; varNames = new ArrayList&lt;&gt;();</b>
+&nbsp;	private Set&lt;String&gt; varNamesSet;
+&nbsp;
+&nbsp;	public VarNameCollector() {
+<b class="fc">&nbsp;		super(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Set&lt;String&gt; process(QueryModelNode node) {
+<b class="fc">&nbsp;		VarNameCollector collector = new VarNameCollector();</b>
+<b class="fc">&nbsp;		node.visit(collector);</b>
+&nbsp;
+<b class="fc">&nbsp;		return collector.getVarNames();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;String&gt; getVarNames() {
+<b class="pc">&nbsp;		if (varNamesSet == null) {</b>
+<b class="fc">&nbsp;			if (varNames.isEmpty()) {</b>
+<b class="fc">&nbsp;				varNamesSet = Set.of();</b>
+<b class="fc">&nbsp;			} else if (varNames.size() == 1) {</b>
+<b class="fc">&nbsp;				varNamesSet = Set.of(varNames.get(0));</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				varNamesSet = new LinkedHashSet&lt;&gt;(varNames);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return varNamesSet;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Var var) {
+<b class="fc">&nbsp;		if (!var.hasValue()) {</b>
+<b class="fc">&nbsp;			varNames.add(var.getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

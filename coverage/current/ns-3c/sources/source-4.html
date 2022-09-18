@@ -1,0 +1,297 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GenericInfoOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: GenericInfoOptimizer (org.eclipse.rdf4j.federated.optimizer)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GenericInfoOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.optimizer;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NJoin;
+&nbsp;import org.eclipse.rdf4j.federated.exception.OptimizationException;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Slice;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * Generic optimizer
+&nbsp; *
+&nbsp; * Tasks: - Collect information (hasUnion, hasFilter, hasService) - Collect all statements in a list (for source
+&nbsp; * selection), do not collect SERVICE expressions - Collect all Join arguments and group them in the NJoin structure for
+&nbsp; * easier optimization (flatten)
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor&lt;OptimizationException&gt;
+&nbsp;		implements FedXOptimizer {
+&nbsp;
+<b class="nc">&nbsp;	protected boolean hasFilter = false;</b>
+<b class="nc">&nbsp;	protected boolean hasUnion = false;</b>
+<b class="nc">&nbsp;	protected List&lt;Service&gt; services = null;</b>
+<b class="nc">&nbsp;	protected long limit = -1; // set to a positive number if the main query has a limit</b>
+<b class="nc">&nbsp;	protected List&lt;StatementPattern&gt; stmts = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	// internal helpers
+<b class="nc">&nbsp;	private boolean seenProjection = false; // whether the main projection has been visited</b>
+&nbsp;
+&nbsp;	protected final QueryInfo queryInfo;
+&nbsp;
+&nbsp;	public GenericInfoOptimizer(QueryInfo queryInfo) {
+<b class="nc">&nbsp;		super(true);</b>
+<b class="nc">&nbsp;		this.queryInfo = queryInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasFilter() {
+<b class="nc">&nbsp;		return hasFilter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasUnion() {
+<b class="nc">&nbsp;		return hasUnion;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;StatementPattern&gt; getStatements() {
+<b class="nc">&nbsp;		return stmts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasLimit() {
+<b class="nc">&nbsp;		return limit &gt; 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getLimit() {
+<b class="nc">&nbsp;		return limit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr) {
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			tupleExpr.visit(this);</b>
+<b class="nc">&nbsp;		} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Union union) {
+<b class="nc">&nbsp;		hasUnion = true;</b>
+<b class="nc">&nbsp;		super.meet(union);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Filter filter) {
+<b class="nc">&nbsp;		hasFilter = true;</b>
+<b class="nc">&nbsp;		super.meet(filter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Service service) {
+<b class="nc">&nbsp;		if (services == null) {</b>
+<b class="nc">&nbsp;			services = new ArrayList&lt;&gt;();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		services.add(service);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Join node) {
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * Optimization task:
+&nbsp;		 *
+&nbsp;		 * Collect all join arguments recursively and create the NJoin structure for easier join order optimization
+&nbsp;		 */
+&nbsp;
+<b class="nc">&nbsp;		NJoin newJoin = OptimizerUtil.flattenJoin(node, queryInfo);</b>
+<b class="nc">&nbsp;		newJoin.visitChildren(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		node.replaceWith(newJoin);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LeftJoin node) throws OptimizationException {
+&nbsp;		/**
+&nbsp;		 * Wrap the left join in order to keep a reference to the query info object
+&nbsp;		 */
+<b class="nc">&nbsp;		FedXLeftJoin join = new FedXLeftJoin(node, queryInfo);</b>
+<b class="nc">&nbsp;		join.visitChildren(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		node.replaceWith(join);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(StatementPattern node) {
+<b class="nc">&nbsp;		stmts.add(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Projection node) throws OptimizationException {
+<b class="nc">&nbsp;		seenProjection = true;</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Slice node) throws OptimizationException {
+&nbsp;		// remember the limit of the main query (i.e. outside of a projection)
+<b class="nc">&nbsp;		if (!seenProjection) {</b>
+<b class="nc">&nbsp;			limit = node.getLimit();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(DescribeOperator node) throws OptimizationException {
+&nbsp;		/*
+&nbsp;		 * Replace with a FedX Describe Operator
+&nbsp;		 */
+<b class="nc">&nbsp;		FederatedDescribeOperator newNode = new FederatedDescribeOperator(node.getArg(), queryInfo);</b>
+<b class="nc">&nbsp;		newNode.visitChildren(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		node.replaceWith(newNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasService() {
+<b class="nc">&nbsp;		return services != null &amp;&amp; services.size() &gt; 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;Service&gt; getServices() {
+<b class="nc">&nbsp;		return services == null ? Collections.emptyList() : services;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

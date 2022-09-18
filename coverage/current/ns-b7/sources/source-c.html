@@ -1,0 +1,738 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailSourceBranch</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: SailSourceBranch (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailSourceBranch</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (18/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    61.2%
+  </span>
+  <span class="absValue">
+    (49/80)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    78.4%
+  </span>
+  <span class="absValue">
+    (131/167)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailSourceBranch$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    10%
+  </span>
+  <span class="absValue">
+    (2/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    30%
+  </span>
+  <span class="absValue">
+    (9/30)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailSourceBranch$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (8/8)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailSourceBranch$3</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailSourceBranch$4</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (24/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    51%
+  </span>
+  <span class="absValue">
+    (51/100)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70.8%
+  </span>
+  <span class="absValue">
+    (148/209)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.IdentityHashMap;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.locks.ReentrantLock;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link SailSource} that keeps a delta of its state from a backing {@link SailSource}.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;class SailSourceBranch implements SailSource {
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SailSourceBranch.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Used to prevent changes to this object&#39;s field from multiple threads.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final ReentrantLock semaphore = new ReentrantLock();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final ArrayDeque&lt;Changeset&gt; changes = new ArrayDeque&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@link SailSink} that have been created, but not yet {@link SailSink#flush()}ed to this {@link SailSource}.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Set&lt;Changeset&gt; pending = Collections</b>
+<b class="fc">&nbsp;			.synchronizedSet(Collections.newSetFromMap(new IdentityHashMap&lt;&gt;()));</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set of open {@link SailDataset} for this {@link SailSource}.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Collection&lt;SailDataset&gt; observers = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The underly {@link SailSource} this {@link SailSource} is derived from.
+&nbsp;	 */
+&nbsp;	private final SailSource backingSource;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The {@link Model} instances that should be used to store {@link SailSink#approve(Resource, IRI, Value, Resource)}
+&nbsp;	 * and {@link SailSink#deprecate(Resource, IRI, Value, Resource)} statements.
+&nbsp;	 */
+&nbsp;	private final ModelFactory modelFactory;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If this {@link SailSource} should be flushed to the backing {@link SailSource} when it is not in use.
+&nbsp;	 */
+&nbsp;	private final boolean autoFlush;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Non-null when in {@link IsolationLevels#SNAPSHOT} (or higher) mode.
+&nbsp;	 */
+&nbsp;	private SailDataset snapshot;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Non-null when in {@link IsolationLevels#SERIALIZABLE} (or higher) mode.
+&nbsp;	 */
+&nbsp;	private SailSink serializable;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Non-null after {@link #prepare()}, but before {@link #flush()}.
+&nbsp;	 */
+&nbsp;	private SailSink prepared;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new in-memory {@link SailSource} derived from the given {@link SailSource}.
+&nbsp;	 *
+&nbsp;	 * @param backingSource
+&nbsp;	 */
+&nbsp;	public SailSourceBranch(SailSource backingSource) {
+<b class="fc">&nbsp;		this(backingSource, new DynamicModelFactory(), false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link SailSource} derived from the given {@link SailSource}.
+&nbsp;	 *
+&nbsp;	 * @param backingSource
+&nbsp;	 * @param modelFactory
+&nbsp;	 */
+&nbsp;	public SailSourceBranch(SailSource backingSource, ModelFactory modelFactory) {
+<b class="nc">&nbsp;		this(backingSource, modelFactory, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link SailSource} derived from the given {@link SailSource} and if &lt;code&gt;autoFlush&lt;/code&gt; is true,
+&nbsp;	 * will automatically call {@link #flush()} when not in use.
+&nbsp;	 *
+&nbsp;	 * @param backingSource
+&nbsp;	 * @param modelFactory
+&nbsp;	 * @param autoFlush
+&nbsp;	 */
+<b class="fc">&nbsp;	public SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush) {</b>
+<b class="fc">&nbsp;		this.backingSource = backingSource;</b>
+<b class="fc">&nbsp;		this.modelFactory = modelFactory;</b>
+<b class="fc">&nbsp;		this.autoFlush = autoFlush;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws SailException {
+<b class="fc">&nbsp;		semaphore.lock();</b>
+&nbsp;		try {
+&nbsp;			try {
+&nbsp;				try {
+<b class="fc">&nbsp;					SailDataset toCloseSnapshot = snapshot;</b>
+<b class="fc">&nbsp;					snapshot = null;</b>
+<b class="pc">&nbsp;					if (toCloseSnapshot != null) {</b>
+<b class="nc">&nbsp;						toCloseSnapshot.close();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="fc">&nbsp;					SailSink toCloseSerializable = serializable;</b>
+<b class="fc">&nbsp;					serializable = null;</b>
+<b class="pc">&nbsp;					if (toCloseSerializable != null) {</b>
+<b class="nc">&nbsp;						toCloseSerializable.close();</b>
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+&nbsp;			} finally {
+<b class="fc">&nbsp;				SailSink toClosePrepared = prepared;</b>
+<b class="fc">&nbsp;				prepared = null;</b>
+<b class="pc">&nbsp;				if (toClosePrepared != null) {</b>
+<b class="nc">&nbsp;					toClosePrepared.close();</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailSink sink(IsolationLevel level) throws SailException {
+<b class="fc">&nbsp;		Changeset changeset = new Changeset() {</b>
+&nbsp;
+&nbsp;			private boolean prepared;
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void prepare() throws SailException {
+<b class="nc">&nbsp;				if (!prepared) {</b>
+<b class="nc">&nbsp;					preparedChangeset(this);</b>
+<b class="nc">&nbsp;					prepared = true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				super.prepare();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void flush() throws SailException {
+<b class="fc">&nbsp;				merge(this);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void close() throws SailException {
+&nbsp;				try {
+&nbsp;					// ´this´ Changeset should have been removed from `pending` already, unless we are rolling back a
+&nbsp;					// transaction in which case we need to remove it when closing the Changeset.
+<b class="pc">&nbsp;					if (pending.contains(this)) {</b>
+<b class="nc">&nbsp;						removeThisFromPendingWithoutCausingDeadlock();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="fc">&nbsp;						super.close();</b>
+&nbsp;					} finally {
+<b class="pc">&nbsp;						if (prepared) {</b>
+<b class="nc">&nbsp;							closeChangeset(this);</b>
+<b class="nc">&nbsp;							prepared = false;</b>
+&nbsp;						}
+<b class="fc">&nbsp;						autoFlush();</b>
+<b class="fc">&nbsp;					}</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			/**
+&nbsp;			 * The outer SailSourceBranch could be in use in a SERIALIZABLE transaction, so we don&#39;t want to cause any
+&nbsp;			 * deadlocks by taking the ´semaphore´ if ´this´ Changeset is already in the process of being removed from
+&nbsp;			 * ´pending´.
+&nbsp;			 */
+&nbsp;			private void removeThisFromPendingWithoutCausingDeadlock() {
+<b class="nc">&nbsp;				long tryLockMillis = 10;</b>
+<b class="nc">&nbsp;				while (pending.contains(this)) {</b>
+<b class="nc">&nbsp;					boolean locked = false;</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						locked = semaphore.tryLock(tryLockMillis *= 2, TimeUnit.MILLISECONDS);</b>
+<b class="nc">&nbsp;						if (locked) {</b>
+<b class="nc">&nbsp;							pending.remove(this);</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;						Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;						throw new SailException(e);</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						if (locked) {</b>
+<b class="nc">&nbsp;							semaphore.unlock();</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Model createEmptyModel() {
+<b class="fc">&nbsp;				return modelFactory.createEmptyModel();</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="fc">&nbsp;			pending.add(changeset);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return changeset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailDataset dataset(IsolationLevel level) throws SailException {
+<b class="fc">&nbsp;		SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void close() throws SailException {
+<b class="fc">&nbsp;				super.close();</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					semaphore.lock();</b>
+<b class="fc">&nbsp;					observers.remove(this);</b>
+<b class="fc">&nbsp;					compressChanges();</b>
+<b class="fc">&nbsp;					autoFlush();</b>
+&nbsp;				} finally {
+<b class="fc">&nbsp;					semaphore.unlock();</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="fc">&nbsp;			observers.add(dataset);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return dataset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailSource fork() {
+<b class="nc">&nbsp;		return new SailSourceBranch(this, modelFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void prepare() throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="fc">&nbsp;			if (!changes.isEmpty()) {</b>
+<b class="pc">&nbsp;				if (prepared == null &amp;&amp; serializable == null) {</b>
+<b class="fc">&nbsp;					prepared = backingSource.sink(IsolationLevels.NONE);</b>
+<b class="nc">&nbsp;				} else if (prepared == null) {</b>
+<b class="nc">&nbsp;					prepared = serializable;</b>
+&nbsp;				}
+<b class="fc">&nbsp;				prepare(prepared);</b>
+<b class="fc">&nbsp;				prepared.prepare();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flush() throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="fc">&nbsp;			if (!changes.isEmpty()) {</b>
+<b class="pc">&nbsp;				if (prepared == null) {</b>
+<b class="nc">&nbsp;					prepare();</b>
+&nbsp;				}
+<b class="fc">&nbsp;				flush(prepared);</b>
+<b class="fc">&nbsp;				prepared.flush();</b>
+&nbsp;				try {
+<b class="pc">&nbsp;					if (prepared != serializable) {</b>
+<b class="fc">&nbsp;						prepared.close();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="fc">&nbsp;					prepared = null;</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+&nbsp;			// clear changes if flush fails
+<b class="nc">&nbsp;			changes.clear();</b>
+<b class="nc">&nbsp;			prepared = null;</b>
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isChanged() {
+&nbsp;		try {
+<b class="nc">&nbsp;			semaphore.lock();</b>
+<b class="nc">&nbsp;			return !changes.isEmpty();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			semaphore.unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return backingSource.toString() + &quot;\n&quot; + changes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void preparedChangeset(Changeset changeset) {
+<b class="nc">&nbsp;		semaphore.lock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void merge(Changeset change) {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="fc">&nbsp;			pending.remove(change);</b>
+<b class="fc">&nbsp;			if (isChanged(change)) {</b>
+&nbsp;				Changeset merged;
+<b class="fc">&nbsp;				changes.add(change.shallowClone());</b>
+<b class="fc">&nbsp;				compressChanges();</b>
+<b class="fc">&nbsp;				merged = changes.getLast();</b>
+&nbsp;
+&nbsp;				// ´pending´ is a synchronized collection, so we should in theory use a synchronized block here to
+&nbsp;				// protect our iterator. The ´semaphore´ is already protecting all writes, and we have already acquired
+&nbsp;				// the ´semaphore´. Synchronizing on the ´pending´ collection could potentially lead to a deadlock when
+&nbsp;				// closing a Changeset during rollback.
+<b class="fc">&nbsp;				for (Changeset c : pending) {</b>
+<b class="fc">&nbsp;					c.prepend(merged);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void compressChanges() {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="fc">&nbsp;			while (changes.size() &gt; 1) {</b>
+<b class="fc">&nbsp;				Changeset pop = changes.removeLast();</b>
+<b class="fc">&nbsp;				if (changes.peekLast().isRefback()) {</b>
+<b class="fc">&nbsp;					changes.addLast(pop);</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				try {
+<b class="fc">&nbsp;					prepare(pop, changes.getLast());</b>
+<b class="fc">&nbsp;					flush(pop, changes.getLast());</b>
+<b class="nc">&nbsp;				} catch (SailException e) {</b>
+&nbsp;					// Changeset does not throw SailException
+<b class="nc">&nbsp;					throw new AssertionError(e);</b>
+<b class="fc">&nbsp;				}</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void closeChangeset(Changeset changeset) {
+<b class="nc">&nbsp;		semaphore.unlock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void autoFlush() throws SailException {
+<b class="pc">&nbsp;		if (autoFlush &amp;&amp; semaphore.tryLock()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (observers.isEmpty()) {</b>
+<b class="nc">&nbsp;					flush();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				semaphore.unlock();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isChanged(Changeset change) {
+<b class="fc">&nbsp;		return change.isChanged();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private SailDataset derivedFromSerializable(IsolationLevel level) throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="pc">&nbsp;			if (serializable == null &amp;&amp; level.isCompatibleWith(IsolationLevels.SERIALIZABLE)) {</b>
+<b class="nc">&nbsp;				serializable = backingSource.sink(level);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			SailDataset derivedFrom = derivedFromSnapshot(level);</b>
+<b class="pc">&nbsp;			if (serializable == null) {</b>
+<b class="fc">&nbsp;				return derivedFrom;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return new ObservingSailDataset(derivedFrom, sink(level));</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private SailDataset derivedFromSnapshot(IsolationLevel level) throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+&nbsp;			SailDataset derivedFrom;
+<b class="pc">&nbsp;			if (this.snapshot != null) {</b>
+&nbsp;				// this object is already has at least snapshot isolation
+<b class="nc">&nbsp;				derivedFrom = new DelegatingSailDataset(this.snapshot) {</b>
+&nbsp;
+&nbsp;					@Override
+&nbsp;					public void close() throws SailException {
+&nbsp;						// don&#39;t close snapshot yet
+<b class="nc">&nbsp;					}</b>
+&nbsp;				};
+&nbsp;			} else {
+<b class="fc">&nbsp;				derivedFrom = backingSource.dataset(level);</b>
+<b class="pc">&nbsp;				if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {</b>
+<b class="nc">&nbsp;					this.snapshot = derivedFrom;</b>
+&nbsp;					// don&#39;t release snapshot until this SailSource is released
+<b class="nc">&nbsp;					derivedFrom = new DelegatingSailDataset(derivedFrom) {</b>
+&nbsp;
+&nbsp;						@Override
+&nbsp;						public void close() throws SailException {
+&nbsp;							// don&#39;t close snapshot yet
+<b class="nc">&nbsp;						}</b>
+&nbsp;					};
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;			Iterator&lt;Changeset&gt; iter = changes.iterator();</b>
+<b class="fc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="fc">&nbsp;				derivedFrom = new SailDatasetImpl(derivedFrom, iter.next());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return derivedFrom;</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void prepare(SailSink sink) throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="fc">&nbsp;			for (Changeset change : changes) {</b>
+<b class="fc">&nbsp;				prepare(change, sink);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void prepare(Changeset change, SailSink sink) throws SailException {
+<b class="fc">&nbsp;		change.sinkObserved(sink);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void flush(SailSink sink) throws SailException {
+&nbsp;		try {
+<b class="fc">&nbsp;			semaphore.lock();</b>
+<b class="pc">&nbsp;			if (changes.size() == 1 &amp;&amp; !changes.getFirst().isRefback() &amp;&amp; sink instanceof Changeset</b>
+<b class="nc">&nbsp;					&amp;&amp; !isChanged((Changeset) sink)) {</b>
+&nbsp;				// one change to apply that is not in use to an empty Changeset
+<b class="nc">&nbsp;				Changeset dst = (Changeset) sink;</b>
+<b class="nc">&nbsp;				dst.setChangeset(changes.pop());</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				Iterator&lt;Changeset&gt; iter = changes.iterator();</b>
+<b class="fc">&nbsp;				while (iter.hasNext()) {</b>
+<b class="fc">&nbsp;					flush(iter.next(), sink);</b>
+<b class="fc">&nbsp;					iter.remove();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			semaphore.unlock();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void flush(Changeset change, SailSink sink) throws SailException {
+<b class="fc">&nbsp;		prepare(change, sink);</b>
+<b class="fc">&nbsp;		if (change.isNamespaceCleared()) {</b>
+<b class="fc">&nbsp;			sink.clearNamespaces();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		Set&lt;String&gt; removedPrefixes = change.getRemovedPrefixes();</b>
+<b class="fc">&nbsp;		if (removedPrefixes != null) {</b>
+<b class="fc">&nbsp;			for (String prefix : removedPrefixes) {</b>
+<b class="fc">&nbsp;				sink.removeNamespace(prefix);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+<b class="fc">&nbsp;		Map&lt;String, String&gt; addedNamespaces = change.getAddedNamespaces();</b>
+<b class="fc">&nbsp;		if (addedNamespaces != null) {</b>
+<b class="fc">&nbsp;			for (Map.Entry&lt;String, String&gt; e : addedNamespaces.entrySet()) {</b>
+<b class="fc">&nbsp;				sink.setNamespace(e.getKey(), e.getValue());</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (change.isStatementCleared()) {</b>
+<b class="fc">&nbsp;			sink.clear();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		Set&lt;Resource&gt; deprecatedContexts = change.getDeprecatedContexts();</b>
+<b class="pc">&nbsp;		if (deprecatedContexts != null &amp;&amp; !deprecatedContexts.isEmpty()) {</b>
+<b class="fc">&nbsp;			sink.clear(deprecatedContexts.toArray(new Resource[0]));</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		change.sinkDeprecated(sink);</b>
+<b class="fc">&nbsp;		change.sinkApproved(sink);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

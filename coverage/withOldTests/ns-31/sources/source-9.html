@@ -1,0 +1,223 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExclusiveStatement</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: ExclusiveStatement (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ExclusiveStatement</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
+&nbsp;import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Represents a StatementPattern that can only produce results at a single endpoint, the owner.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class ExclusiveStatement extends FedXStatementPattern implements ExclusiveTupleExpr {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -6963394279179263763L;
+&nbsp;
+&nbsp;	public ExclusiveStatement(StatementPattern node, StatementSource owner, QueryInfo queryInfo) {
+<b class="nc">&nbsp;		super(node, queryInfo);</b>
+<b class="nc">&nbsp;		statementSources.add(owner);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public StatementSource getOwner() {
+<b class="nc">&nbsp;		return getStatementSources().get(0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			Endpoint ownedEndpoint = queryInfo.getFederationContext()</b>
+<b class="nc">&nbsp;					.getEndpointManager()</b>
+<b class="nc">&nbsp;					.getEndpoint(getOwner().getEndpointID());</b>
+<b class="nc">&nbsp;			TripleSource t = ownedEndpoint.getTripleSource();</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * Implementation note: for some endpoint types it is much more efficient to use prepared queries as there
+&nbsp;			 * might be some overhead (obsolete optimization) in the native implementation. This is for instance the
+&nbsp;			 * case for SPARQL connections. In contrast for NativeRepositories it is much more efficient to use
+&nbsp;			 * getStatements(subj, pred, obj) instead of evaluating a prepared query.
+&nbsp;			 */
+&nbsp;
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res;
+<b class="nc">&nbsp;			if (t.usePreparedQuery(this, queryInfo)) {</b>
+&nbsp;
+<b class="nc">&nbsp;				AtomicBoolean isEvaluated = new AtomicBoolean(false); // is filter evaluated</b>
+&nbsp;				String preparedQuery;
+&nbsp;				try {
+<b class="nc">&nbsp;					preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,</b>
+<b class="nc">&nbsp;							queryInfo.getDataset());</b>
+<b class="nc">&nbsp;				} catch (IllegalQueryException e1) {</b>
+&nbsp;					// TODO there might be an issue with filters being evaluated =&gt; investigate
+&nbsp;					/* all vars are bound, this must be handled as a check query, can occur in joins */
+<b class="nc">&nbsp;					if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset())) {</b>
+<b class="nc">&nbsp;						res = new SingleBindingSetIteration(bindings);</b>
+<b class="nc">&nbsp;						if (boundFilters != null) {</b>
+&nbsp;							// make sure to insert any values from FILTER expressions that are directly
+&nbsp;							// bound in this expression
+<b class="nc">&nbsp;							res = new InsertBindingsIteration(res, boundFilters);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						return res;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return new EmptyIteration&lt;&gt;();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				res = t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterExpr), queryInfo);</b>
+&nbsp;
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				res = t.getStatements(this, bindings, filterExpr, queryInfo);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (boundFilters != null) {</b>
+&nbsp;				// make sure to insert any values from FILTER expressions that are directly
+&nbsp;				// bound in this expression
+<b class="nc">&nbsp;				res = new InsertBindingsIteration(res, boundFilters);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return res;</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

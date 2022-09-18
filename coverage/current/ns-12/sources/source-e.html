@@ -1,0 +1,175 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Iteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iteration</a>
+</div>
+
+<h1>Coverage Summary for Class: Iteration (org.eclipse.rdf4j.common.iteration)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Iteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iteration;
+&nbsp;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;/**
+&nbsp; * An Iteration is a typed Iterator-like object that can throw (typed) Exceptions while iterating. This is used in cases
+&nbsp; * where the iteration is lazy and evaluates over a (remote) connection, for example accessing a database. In such cases
+&nbsp; * an error can occur at any time and needs to be communicated through a checked exception, something
+&nbsp; * {@link java.util.Iterator} can not do (it can only throw {@link RuntimeException}s.
+&nbsp; *
+&nbsp; * @param &lt;E&gt; Object type of objects contained in the iteration.
+&nbsp; * @param &lt;X&gt; Exception type that is thrown when a problem occurs during iteration.
+&nbsp; * @see java.util.Iterator
+&nbsp; * @author jeen
+&nbsp; * @author Herko ter Horst
+&nbsp; * @deprecated For performance and simplification the Iteration interface is deprecated and will be removed in 5.0.0.
+&nbsp; *             Use CloseableIteration instead, even if your iteration doesn&#39;t require AutoCloseable.
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;public interface Iteration&lt;E, X extends Exception&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns &lt;var&gt;true&lt;/var&gt; if the iteration has more elements. (In other words, returns &lt;var&gt;true&lt;/var&gt; if
+&nbsp;	 * {@link #next} would return an element rather than throwing a &lt;var&gt;NoSuchElementException&lt;/var&gt;.)
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the iteration has more elements.
+&nbsp;	 * @throws X
+&nbsp;	 */
+&nbsp;	boolean hasNext() throws X;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the next element in the iteration.
+&nbsp;	 *
+&nbsp;	 * @return the next element in the iteration.
+&nbsp;	 * @throws NoSuchElementException if the iteration has no more elements or if it has been closed.
+&nbsp;	 */
+&nbsp;	E next() throws X;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes from the underlying collection the last element returned by the iteration (optional operation). This
+&nbsp;	 * method can be called only once per call to next.
+&nbsp;	 *
+&nbsp;	 * @throws UnsupportedOperationException if the remove operation is not supported by this Iteration.
+&nbsp;	 * @throws IllegalStateException         If the Iteration has been closed, or if &lt;var&gt;next()&lt;/var&gt; has not yet been
+&nbsp;	 *                                       called, or &lt;var&gt;remove()&lt;/var&gt; has already been called after the last call
+&nbsp;	 *                                       to &lt;var&gt;next()&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	void remove() throws X;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * Convert the results to a Java 8 Stream. If this iteration implements CloseableIteration it should be closed (by
+&nbsp;	 * calling Stream#close() or using try-with-resource) if it is not fully consumed.
+&nbsp;	 *
+&nbsp;	 * @return stream
+&nbsp;	 */
+&nbsp;	default Stream&lt;E&gt; stream() {
+<b class="nc">&nbsp;		return Iterations.stream(this);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

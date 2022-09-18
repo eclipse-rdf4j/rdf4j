@@ -1,0 +1,725 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFXMLPrettyWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.rdfxml.util</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFXMLPrettyWriter (org.eclipse.rdf4j.rio.rdfxml.util)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFXMLPrettyWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/80)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/148)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RDFXMLPrettyWriter$Node</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/84)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/164)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.rdfxml.util;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.Flushable;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Writer;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Stack;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
+&nbsp;
+&nbsp;/**
+&nbsp; * An extension of RDFXMLWriter that outputs a more concise form of RDF/XML. The resulting output is semantically
+&nbsp; * equivalent to the output of an RDFXMLWriter (it produces the same set of statements), but it is usually easier to
+&nbsp; * read for humans.
+&nbsp; * &lt;p&gt;
+&nbsp; * This is a quasi-streaming RDFWriter. Statements are cached as long as the striped syntax is followed (i.e. the
+&nbsp; * subject of the next statement is the object of the previous statement) and written to the output when the stripe is
+&nbsp; * broken.
+&nbsp; * &lt;p&gt;
+&nbsp; * The abbreviations used are &lt;a href=&quot;http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-typed-nodes&quot; &gt;typed node
+&nbsp; * elements&lt;/a&gt;, &lt;a href= &quot;http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-empty-property-elements&quot; &gt;empty
+&nbsp; * property elements&lt;/a&gt; and
+&nbsp; * &lt;a href= &quot;http://www.w3.org/TR/rdf-syntax-grammar/#section-Syntax-node-property-elements&quot; &gt;striped syntax&lt;/a&gt;. Note
+&nbsp; * that these abbreviations require that statements are written in the appropriate order.
+&nbsp; * &lt;p&gt;
+&nbsp; * Striped syntax means that when the object of a statement is the subject of the next statement we can nest the
+&nbsp; * descriptions in each other.
+&nbsp; * &lt;p&gt;
+&nbsp; * Example:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;lt;rdf:Seq&amp;gt;
+&nbsp; *    &amp;lt;rdf:li&amp;gt;
+&nbsp; *       &amp;lt;foaf:Person&amp;gt;
+&nbsp; *          &amp;lt;foaf:knows&amp;gt;
+&nbsp; *             &amp;lt;foaf:Person&amp;gt;
+&nbsp; *               &amp;lt;foaf:mbox rdf:resource=&amp;quot;...&amp;quot;/&amp;gt;
+&nbsp; *             &amp;lt;/foaf:Person&amp;gt;
+&nbsp; *          &amp;lt;/foaf:knows&amp;gt;
+&nbsp; *       &amp;lt;/foaf:Person&amp;gt;
+&nbsp; *    &amp;lt;/rdf:li&amp;gt;
+&nbsp; * &amp;lt;/rdf:Seq&amp;gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * Typed node elements means that we write out type information in the short form of
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;lt;foaf:Person rdf:about=&amp;quot;...&amp;quot;&amp;gt;
+&nbsp; *     ...
+&nbsp; *  &amp;lt;/foaf:Person&amp;gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * instead of
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;lt;rdf:Description rdf:about=&amp;quot;...&amp;quot;&amp;gt;
+&nbsp; *    &amp;lt;rdf:type rdf:resource=&amp;quot;http://xmlns.com/foaf/0.1/Person&amp;quot;/&amp;gt;
+&nbsp; *     ...
+&nbsp; *  &amp;lt;/rdf:Description&amp;gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * Empty property elements are of the form
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;lt;foaf:Person&amp;gt;
+&nbsp; *    &amp;lt;foaf:homepage rdf:resource=&amp;quot;http://www.cs.vu.nl/&amp;tilde;marta&amp;quot;/&amp;gt;
+&nbsp; * &amp;lt;/foaf:Person&amp;gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * instead of
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &amp;lt;foaf:Person&amp;gt;
+&nbsp; *    &amp;lt;foaf:homepage&amp;gt;
+&nbsp; *       &amp;lt;rdf:Description rdf:about=&amp;quot;http://www.cs.vu.nl/&amp;tilde;marta&amp;quot;/&amp;gt;
+&nbsp; *    &amp;lt;foaf:homepage&amp;gt;
+&nbsp; * &amp;lt;/foaf:Person&amp;gt;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Peter Mika (pmika@cs.vu.nl)
+&nbsp; */
+&nbsp;public class RDFXMLPrettyWriter extends RDFXMLWriter implements Closeable, Flushable {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * We implement striped syntax by using two stacks, one for predicates and one for subjects/objects.
+&nbsp;	 */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stack for remembering the nodes (subjects/objects) of statements at each level.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final Stack&lt;Node&gt; nodeStack = new Stack&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stack for remembering the predicate of statements at each level.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final Stack&lt;IRI&gt; predicateStack = new Stack&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private boolean writingEnded;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLPrintWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out The OutputStream to write the RDF/XML document to.
+&nbsp;	 */
+&nbsp;	public RDFXMLPrettyWriter(OutputStream out) {
+<b class="nc">&nbsp;		super(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLPrintWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out The OutputStream to write the RDF/XML document to.
+&nbsp;	 */
+&nbsp;	public RDFXMLPrettyWriter(OutputStream out, ParsedIRI baseIRI) {
+<b class="nc">&nbsp;		super(out, baseIRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLPrintWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param out The Writer to write the RDF/XML document to.
+&nbsp;	 */
+&nbsp;	public RDFXMLPrettyWriter(Writer out) {
+<b class="nc">&nbsp;		super(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLPrintWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer  the Writer to write the RDF/XML document to
+&nbsp;	 * @param baseIRI base IRI
+&nbsp;	 */
+&nbsp;	public RDFXMLPrettyWriter(Writer writer, ParsedIRI baseIRI) {
+<b class="nc">&nbsp;		super(writer, baseIRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		if (!writingEnded) {</b>
+<b class="nc">&nbsp;			super.endRDF();</b>
+<b class="nc">&nbsp;			writingEnded = true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void writeHeader() throws IOException {
+&nbsp;		// This export format needs the RDF Schema namespace to be defined:
+<b class="nc">&nbsp;		setNamespace(RDFS.PREFIX, RDFS.NAMESPACE);</b>
+&nbsp;
+<b class="nc">&nbsp;		super.writeHeader();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flush() throws IOException {
+<b class="nc">&nbsp;		if (isWritingStarted()) {</b>
+<b class="nc">&nbsp;			if (!headerWritten) {</b>
+<b class="nc">&nbsp;				writeHeader();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				flushPendingStatements();</b>
+<b class="nc">&nbsp;			} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				if (e.getCause() != null &amp;&amp; e.getCause() instanceof IOException) {</b>
+<b class="nc">&nbsp;					throw (IOException) e.getCause();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new IOException(e);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			writer.flush();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		final Collection&lt;RioSetting&lt;?&gt;&gt; settings = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+<b class="nc">&nbsp;		settings.add(BasicWriterSettings.INLINE_BLANK_NODES);</b>
+<b class="nc">&nbsp;		return settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (isWritingStarted() &amp;&amp; !writingEnded) {</b>
+<b class="nc">&nbsp;				endRDF();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof IOException) {</b>
+<b class="nc">&nbsp;				throw (IOException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IOException(e);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			nodeStack.clear();</b>
+<b class="nc">&nbsp;			predicateStack.clear();</b>
+<b class="nc">&nbsp;			writer.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void flushPendingStatements() throws IOException, RDFHandlerException {
+<b class="nc">&nbsp;		if (!nodeStack.isEmpty()) {</b>
+<b class="nc">&nbsp;			popStacks(null);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write out the stacks until we find subject. If subject == null, write out the entire stack
+&nbsp;	 *
+&nbsp;	 * @param newSubject
+&nbsp;	 */
+&nbsp;	private void popStacks(Resource newSubject) throws IOException, RDFHandlerException {
+&nbsp;		// Write start tags for the part of the stacks that are not yet
+&nbsp;		// written
+<b class="nc">&nbsp;		for (int i = 0; i &lt; nodeStack.size() - 1; i++) {</b>
+<b class="nc">&nbsp;			Node node = nodeStack.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!node.isWritten()) {</b>
+<b class="nc">&nbsp;				if (i &gt; 0) {</b>
+<b class="nc">&nbsp;					writeIndents(i * 2 - 1);</b>
+&nbsp;
+<b class="nc">&nbsp;					IRI predicate = predicateStack.get(i - 1);</b>
+&nbsp;
+<b class="nc">&nbsp;					writeStartTag(predicate.getNamespace(), predicate.getLocalName());</b>
+<b class="nc">&nbsp;					writeNewLine();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				writeIndents(i * 2);</b>
+<b class="nc">&nbsp;				writeNodeStartTag(node);</b>
+<b class="nc">&nbsp;				node.setIsWritten(true);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Write tags for the top subject
+<b class="nc">&nbsp;		Node topNode = nodeStack.pop();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (predicateStack.isEmpty()) {</b>
+&nbsp;			// write out an empty subject
+<b class="nc">&nbsp;			writeIndents(nodeStack.size() * 2);</b>
+<b class="nc">&nbsp;			writeNodeEmptyTag(topNode);</b>
+<b class="nc">&nbsp;			writeNewLine();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			IRI topPredicate = predicateStack.pop();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!topNode.hasType()) {</b>
+&nbsp;				// we can use an abbreviated predicate
+<b class="nc">&nbsp;				writeIndents(nodeStack.size() * 2 - 1);</b>
+<b class="nc">&nbsp;				writeAbbreviatedPredicate(topPredicate, topNode.getValue());</b>
+&nbsp;			} else {
+&nbsp;				// we cannot use an abbreviated predicate because the type needs to
+&nbsp;				// written out as well
+&nbsp;
+<b class="nc">&nbsp;				writeIndents(nodeStack.size() * 2 - 1);</b>
+<b class="nc">&nbsp;				writeStartTag(topPredicate.getNamespace(), topPredicate.getLocalName());</b>
+<b class="nc">&nbsp;				writeNewLine();</b>
+&nbsp;
+&nbsp;				// write out an empty subject
+<b class="nc">&nbsp;				writeIndents(nodeStack.size() * 2);</b>
+<b class="nc">&nbsp;				writeNodeEmptyTag(topNode);</b>
+<b class="nc">&nbsp;				writeNewLine();</b>
+&nbsp;
+<b class="nc">&nbsp;				writeIndents(nodeStack.size() * 2 - 1);</b>
+<b class="nc">&nbsp;				writeEndTag(topPredicate.getNamespace(), topPredicate.getLocalName());</b>
+<b class="nc">&nbsp;				writeNewLine();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Write out the end tags until we find the subject
+<b class="nc">&nbsp;		while (!nodeStack.isEmpty()) {</b>
+<b class="nc">&nbsp;			Node nextElement = nodeStack.peek();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (nextElement.getValue().equals(newSubject)) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				nodeStack.pop();</b>
+&nbsp;
+&nbsp;				// We have already written out the subject/object,
+&nbsp;				// but we still need to close the tag
+<b class="nc">&nbsp;				writeIndents(predicateStack.size() + nodeStack.size());</b>
+&nbsp;
+<b class="nc">&nbsp;				writeNodeEndTag(nextElement);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (predicateStack.size() &gt; 0) {</b>
+<b class="nc">&nbsp;					IRI nextPredicate = predicateStack.pop();</b>
+&nbsp;
+<b class="nc">&nbsp;					writeIndents(predicateStack.size() + nodeStack.size());</b>
+&nbsp;
+<b class="nc">&nbsp;					writeEndTag(nextPredicate.getNamespace(), nextPredicate.getLocalName());</b>
+&nbsp;
+<b class="nc">&nbsp;					writeNewLine();</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void consumeStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		Resource subj = st.getSubject();</b>
+<b class="nc">&nbsp;		IRI pred = st.getPredicate();</b>
+<b class="nc">&nbsp;		Value obj = st.getObject();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!headerWritten) {</b>
+<b class="nc">&nbsp;				writeHeader();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!nodeStack.isEmpty() &amp;&amp; !subj.equals(nodeStack.peek().getValue())) {</b>
+&nbsp;				// Different subject than we had before, empty the stack
+&nbsp;				// until we find it
+<b class="nc">&nbsp;				popStacks(subj);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Stack is either empty or contains the same subject at top
+&nbsp;
+<b class="nc">&nbsp;			if (nodeStack.isEmpty()) {</b>
+&nbsp;				// Push subject
+<b class="nc">&nbsp;				nodeStack.push(new Node(subj));</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Stack now contains at least one element
+<b class="nc">&nbsp;			Node topSubject = nodeStack.peek();</b>
+&nbsp;
+&nbsp;			// Check if current statement is a type statement and use a typed node
+&nbsp;			// element is possible
+&nbsp;			// FIXME: verify that an XML namespace-qualified name can be created
+&nbsp;			// for the type URI
+<b class="nc">&nbsp;			if (pred.equals(RDF.TYPE) &amp;&amp; obj instanceof IRI &amp;&amp; !topSubject.hasType() &amp;&amp; !topSubject.isWritten()) {</b>
+&nbsp;				// Use typed node element
+<b class="nc">&nbsp;				topSubject.setType((IRI) obj);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (!nodeStack.isEmpty() &amp;&amp; pred.equals(nodeStack.peek().nextLi())) {</b>
+<b class="nc">&nbsp;					pred = RDF.LI;</b>
+<b class="nc">&nbsp;					nodeStack.peek().incrementNextLi();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Push predicate and object
+<b class="nc">&nbsp;				predicateStack.push(pred);</b>
+<b class="nc">&nbsp;				nodeStack.push(new Node(obj));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write out the opening tag of the subject or object of a statement up to (but not including) the end of the tag.
+&nbsp;	 * Used both in writeStartSubject and writeEmptySubject.
+&nbsp;	 */
+&nbsp;	private void writeNodeStartOfStartTag(Node node) throws IOException, RDFHandlerException {
+<b class="nc">&nbsp;		Boolean inlineBlankNodes = getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES);</b>
+<b class="nc">&nbsp;		Value value = node.getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (node.hasType()) {</b>
+&nbsp;			// We can use abbreviated syntax
+<b class="nc">&nbsp;			writeStartOfStartTag(node.getType().getNamespace(), node.getType().getLocalName());</b>
+&nbsp;		} else {
+&nbsp;			// We cannot use abbreviated syntax
+<b class="nc">&nbsp;			writeStartOfStartTag(RDF.NAMESPACE, &quot;Description&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			IRI uri = (IRI) value;</b>
+<b class="nc">&nbsp;			writeAttribute(RDF.NAMESPACE, &quot;about&quot;, uri.toString());</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			BNode bNode = (BNode) value;</b>
+<b class="nc">&nbsp;			if (!inlineBlankNodes) {</b>
+<b class="nc">&nbsp;				writeAttribute(RDF.NAMESPACE, &quot;nodeID&quot;, getValidNodeId(bNode));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write out the opening tag of the subject or object of a statement.
+&nbsp;	 */
+&nbsp;	private void writeNodeStartTag(Node node) throws IOException, RDFHandlerException {
+<b class="nc">&nbsp;		writeNodeStartOfStartTag(node);</b>
+<b class="nc">&nbsp;		writeEndOfStartTag();</b>
+<b class="nc">&nbsp;		writeNewLine();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write out the closing tag for the subject or object of a statement.
+&nbsp;	 */
+&nbsp;	private void writeNodeEndTag(Node node) throws IOException {
+<b class="nc">&nbsp;		if (node.getType() != null) {</b>
+<b class="nc">&nbsp;			writeEndTag(node.getType().getNamespace(), node.getType().getLocalName());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeEndTag(RDF.NAMESPACE, &quot;Description&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		writeNewLine();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write out an empty tag for the subject or object of a statement.
+&nbsp;	 */
+&nbsp;	private void writeNodeEmptyTag(Node node) throws IOException, RDFHandlerException {
+<b class="nc">&nbsp;		writeNodeStartOfStartTag(node);</b>
+<b class="nc">&nbsp;		writeEndOfEmptyTag();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write out an empty property element.
+&nbsp;	 */
+&nbsp;	private void writeAbbreviatedPredicate(IRI pred, Value obj) throws IOException, RDFHandlerException {
+<b class="nc">&nbsp;		writeStartOfStartTag(pred.getNamespace(), pred.getLocalName());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (obj instanceof Resource) {</b>
+<b class="nc">&nbsp;			Resource objRes = (Resource) obj;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (objRes instanceof IRI) {</b>
+<b class="nc">&nbsp;				IRI uri = (IRI) objRes;</b>
+<b class="nc">&nbsp;				writeAttribute(RDF.NAMESPACE, &quot;resource&quot;, uri.toString());</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				BNode bNode = (BNode) objRes;</b>
+<b class="nc">&nbsp;				writeAttribute(RDF.NAMESPACE, &quot;nodeID&quot;, getValidNodeId(bNode));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			writeEndOfEmptyTag();</b>
+<b class="nc">&nbsp;		} else if (obj instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal objLit = (Literal) obj;</b>
+&nbsp;			// datatype attribute
+<b class="nc">&nbsp;			CoreDatatype datatype = objLit.getCoreDatatype();</b>
+&nbsp;			// Check if datatype is rdf:XMLLiteral
+<b class="nc">&nbsp;			boolean isXmlLiteral = datatype == CoreDatatype.RDF.XMLLITERAL;</b>
+&nbsp;
+&nbsp;			// language attribute
+<b class="nc">&nbsp;			if (Literals.isLanguageLiteral(objLit)) {</b>
+<b class="nc">&nbsp;				writeAttribute(&quot;xml:lang&quot;, objLit.getLanguage().get());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (isXmlLiteral) {</b>
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;parseType&quot;, &quot;Literal&quot;);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;datatype&quot;, objLit.getDatatype().toString());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			writeEndOfStartTag();</b>
+&nbsp;
+&nbsp;			// label
+<b class="nc">&nbsp;			if (isXmlLiteral) {</b>
+&nbsp;				// Write XML literal as plain XML
+<b class="nc">&nbsp;				writer.write(objLit.getLabel());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeCharacterData(objLit.getLabel());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			writeEndTag(pred.getNamespace(), pred.getLocalName());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writeNewLine();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeStartTag(String namespace, String localName) throws IOException {
+<b class="nc">&nbsp;		writeStartOfStartTag(namespace, localName);</b>
+<b class="nc">&nbsp;		writeEndOfStartTag();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes &lt;var&gt;n&lt;/var&gt; indents.
+&nbsp;	 */
+&nbsp;	protected void writeIndents(int n) throws IOException {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; n; i++) {</b>
+<b class="nc">&nbsp;			writeIndent();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------*
+&nbsp;	 * Inner class Node *
+&nbsp;	 *------------------*/
+&nbsp;
+&nbsp;	private static class Node {
+&nbsp;
+<b class="nc">&nbsp;		private int nextLiIndex = 1;</b>
+&nbsp;
+&nbsp;		private Resource nextLi;
+&nbsp;
+&nbsp;		private final Value value;
+&nbsp;
+&nbsp;		// type == null means that we use &lt;rdf:Description&gt;
+<b class="nc">&nbsp;		private IRI type = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		private boolean isWritten = false;</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Creates a new Node for the supplied Value.
+&nbsp;		 */
+<b class="nc">&nbsp;		public Node(Value value) {</b>
+<b class="nc">&nbsp;			this.value = value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		Resource nextLi() {
+<b class="nc">&nbsp;			if (nextLi == null) {</b>
+<b class="nc">&nbsp;				nextLi = SimpleValueFactory.getInstance().createIRI(RDF.NAMESPACE + &quot;_&quot; + nextLiIndex);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return nextLi;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void incrementNextLi() {
+<b class="nc">&nbsp;			nextLiIndex++;</b>
+<b class="nc">&nbsp;			nextLi = null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Value getValue() {
+<b class="nc">&nbsp;			return value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void setType(IRI type) {
+<b class="nc">&nbsp;			this.type = type;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public IRI getType() {
+<b class="nc">&nbsp;			return type;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean hasType() {
+<b class="nc">&nbsp;			return type != null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void setIsWritten(boolean isWritten) {
+<b class="nc">&nbsp;			this.isWritten = isWritten;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isWritten() {
+<b class="nc">&nbsp;			return isWritten;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

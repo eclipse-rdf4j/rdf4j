@@ -1,0 +1,217 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractPlatform</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.platform</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractPlatform (org.eclipse.rdf4j.common.platform)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractPlatform</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.platform;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility base class for Platform implementations.
+&nbsp; */
+<b class="nc">&nbsp;public abstract class AbstractPlatform implements Platform {</b>
+&nbsp;
+<b class="nc">&nbsp;	protected final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+<b class="nc">&nbsp;	protected String whitespaceReplacement = &quot;-&quot;;</b>
+<b class="nc">&nbsp;	protected String separatorReplacement = &quot;-&quot;;</b>
+<b class="nc">&nbsp;	protected String colonReplacement = &quot;&quot;;</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public File getUserHome() {
+&nbsp;		File result;
+&nbsp;
+<b class="nc">&nbsp;		String userHome = System.getProperty(&quot;user.home&quot;);</b>
+<b class="nc">&nbsp;		result = new File(userHome);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final File getApplicationDataDir() {
+&nbsp;		File result;
+&nbsp;		String sysProp;
+&nbsp;
+<b class="nc">&nbsp;		if ((sysProp = System.getProperty(APPDATA_BASEDIR_PROPERTY)) != null) {</b>
+<b class="nc">&nbsp;			result = new File(sysProp);</b>
+<b class="nc">&nbsp;		} else if ((sysProp = System.getProperty(OLD_DATADIR_PROPERTY)) != null) {</b>
+<b class="nc">&nbsp;			logger.info(</b>
+&nbsp;					&quot;Old Aduna datadir property \&quot;{}\&quot; detected. This property has been replaced with \&quot;{}\&quot;. &quot;
+&nbsp;							+ &quot;Support for the old property may be removed in a future version of this application.&quot;,
+&nbsp;					OLD_DATADIR_PROPERTY, APPDATA_BASEDIR_PROPERTY);
+&nbsp;
+<b class="nc">&nbsp;			result = new File(sysProp);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			result = getOSApplicationDataDir();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final File getApplicationDataDir(String applicationName) {
+<b class="nc">&nbsp;		return new File(getApplicationDataDir(), getRelativeApplicationDataDir(applicationName));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final File getOSApplicationDataDir(String applicationName) {
+<b class="nc">&nbsp;		return new File(getOSApplicationDataDir(), getRelativeApplicationDataDir(applicationName));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getRelativeApplicationDataDir(String applicationName) {
+<b class="nc">&nbsp;		return getRelativeApplicationDataDir(applicationName, dataDirPreserveCase(), dataDirReplaceWhitespace(),</b>
+<b class="nc">&nbsp;				dataDirReplaceColon());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the relative name of the application directory
+&nbsp;	 *
+&nbsp;	 * @param applicationName   name of the application
+&nbsp;	 * @param caseSensitive     true when case-sensitive
+&nbsp;	 * @param replaceWhitespace true when whitespace is to be replaced
+&nbsp;	 * @param replaceColon      true when colon needs to be replaced
+&nbsp;	 * @return name of the application directory
+&nbsp;	 */
+&nbsp;	public String getRelativeApplicationDataDir(String applicationName, boolean caseSensitive,
+&nbsp;			boolean replaceWhitespace, boolean replaceColon) {
+<b class="nc">&nbsp;		String result = applicationName.replace(File.separator, separatorReplacement);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!caseSensitive) {</b>
+<b class="nc">&nbsp;			result = result.toLowerCase();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (replaceWhitespace) {</b>
+<b class="nc">&nbsp;			result = result.replaceAll(&quot;\\s&quot;, whitespaceReplacement);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (replaceColon) {</b>
+<b class="nc">&nbsp;			result = result.replace(&quot;:&quot;, colonReplacement);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

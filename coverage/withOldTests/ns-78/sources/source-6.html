@@ -1,0 +1,269 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BackgroundGraphResult</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: BackgroundGraphResult (org.eclipse.rdf4j.query.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BackgroundGraphResult</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.impl;
+&nbsp;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.CountDownLatch;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;
+&nbsp;/**
+&nbsp; * Provides concurrent access to statements as they are being parsed when instances of this class are run as Threads.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class BackgroundGraphResult extends IterationWrapper&lt;Statement, QueryEvaluationException&gt;
+&nbsp;		implements GraphQueryResult, Runnable, RDFHandler {
+&nbsp;
+&nbsp;	private final RDFParser parser;
+&nbsp;
+&nbsp;	private final Charset charset;
+&nbsp;
+&nbsp;	private final InputStream in;
+&nbsp;
+&nbsp;	private final String baseURI;
+&nbsp;
+<b class="nc">&nbsp;	private final CountDownLatch namespacesReady = new CountDownLatch(1);</b>
+&nbsp;
+<b class="nc">&nbsp;	private final CountDownLatch finishedParsing = new CountDownLatch(1);</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;String, String&gt; namespaces = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private final QueueCursor&lt;Statement&gt; queue;
+&nbsp;
+&nbsp;	public BackgroundGraphResult(RDFParser parser, InputStream in, Charset charset, String baseURI,
+&nbsp;			WeakReference&lt;?&gt; callerRef) {
+<b class="nc">&nbsp;		this(new QueueCursor&lt;&gt;(10, callerRef), parser, in, charset, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public BackgroundGraphResult(QueueCursor&lt;Statement&gt; queue, RDFParser parser, InputStream in, Charset charset,
+&nbsp;			String baseURI) {
+<b class="nc">&nbsp;		super(queue);</b>
+<b class="nc">&nbsp;		this.queue = queue;</b>
+<b class="nc">&nbsp;		this.parser = parser;</b>
+<b class="nc">&nbsp;		this.in = in;</b>
+<b class="nc">&nbsp;		this.charset = charset;</b>
+<b class="nc">&nbsp;		this.baseURI = baseURI;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			queue.done();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			finishedParsing.await();</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			queue.checkException();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void run() {
+&nbsp;		try {
+&nbsp;			try {
+<b class="nc">&nbsp;				parser.setRDFHandler(this);</b>
+<b class="nc">&nbsp;				if (charset == null) {</b>
+<b class="nc">&nbsp;					parser.parse(in, baseURI);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					parser.parse(new InputStreamReader(in, charset), baseURI);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				in.close();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			queue.toss(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			queue.done();</b>
+<b class="nc">&nbsp;			namespacesReady.countDown();</b>
+<b class="nc">&nbsp;			finishedParsing.countDown();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Map&lt;String, String&gt; getNamespaces() {
+&nbsp;		try {
+<b class="nc">&nbsp;			namespacesReady.await();</b>
+&nbsp;			// Show the user an unmodifiable view on the map but we can still change it here
+<b class="nc">&nbsp;			return Collections.unmodifiableMap(namespaces);</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;			return Collections.emptyMap();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			queue.checkException();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+&nbsp;		// ignore
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+<b class="nc">&nbsp;		namespaces.put(prefix, uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		namespacesReady.countDown();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			queue.put(st);</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;			queue.toss(e);</b>
+<b class="nc">&nbsp;			queue.done();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		namespacesReady.countDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

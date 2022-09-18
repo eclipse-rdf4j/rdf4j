@@ -1,0 +1,325 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GraphPattern</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.graphpattern</a>
+</div>
+
+<h1>Coverage Summary for Class: GraphPattern (org.eclipse.rdf4j.sparqlbuilder.graphpattern)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GraphPattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
+&nbsp;
+&nbsp;/**
+&nbsp; * Denotes a SPARQL Graph Pattern
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GraphPattern&quot;&gt; SPARQL Graph Patterns&lt;/a&gt;
+&nbsp; */
+&nbsp;public interface GraphPattern extends QueryElement {
+&nbsp;	/**
+&nbsp;	 * Convert this graph pattern into a group graph pattern, combining this graph pattern with the given patterns: &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * {
+&nbsp;	 *   thisPattern .
+&nbsp;	 *   pattern1 .
+&nbsp;	 *   pattern2 .
+&nbsp;	 *   ...
+&nbsp;	 *   patternN
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param patterns the patterns to add
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns&quot;&gt;SPARQL Group Graph
+&nbsp;	 *      Pattern&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern and(GraphPattern... patterns) {
+<b class="nc">&nbsp;		return GraphPatterns.and(this).and(patterns);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert this graph pattern into an alternative graph pattern, combining this graph pattern with the given
+&nbsp;	 * patterns: &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * {
+&nbsp;	 *   { thisPattern } UNION
+&nbsp;	 *   { pattern1 } UNION
+&nbsp;	 *   { pattern2 } UNION
+&nbsp;	 *   ...
+&nbsp;	 *   { patternN }
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param patterns the patterns to add
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives&quot;&gt;SPARQL Alternative Graph
+&nbsp;	 *      Pattern&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern union(GraphPattern... patterns) {
+<b class="nc">&nbsp;		return GraphPatterns.union(this).union(patterns);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert this graph pattern into an optional group graph pattern: &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * OPTIONAL {thisPattern}
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals&quot;&gt; SPARQL Optional Graph
+&nbsp;	 *      Patterns&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern optional() {
+<b class="nc">&nbsp;		return optional(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify if this graph pattern should be optional.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * NOTE: This converts this graph pattern into a group graph pattern.
+&nbsp;	 *
+&nbsp;	 * @param isOptional if this graph pattern should be optional or not
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals&quot;&gt; SPARQL Optional Graph
+&nbsp;	 *      Patterns&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern optional(boolean isOptional) {
+<b class="nc">&nbsp;		return and().optional(isOptional);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert this graph pattern into a group graph pattern and add a filter: &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * {
+&nbsp;	 *   thisPattern
+&nbsp;	 *   FILTER { constraint }
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param constraint the filter constraint
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#termConstraint&quot;&gt; SPARQL Filter&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern filter(Expression&lt;?&gt; constraint) {
+<b class="nc">&nbsp;		return and().filter(constraint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create an &lt;code&gt;EXISTS{}&lt;/code&gt; filter expression with the given graph patterns and add it to this graph pattern
+&nbsp;	 * (converting this to a group graph pattern in the process): &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * {
+&nbsp;	 * 	thisPattern
+&nbsp;	 * 	FILTER EXISTS { patterns }
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param patterns the patterns to pass as arguments to the &lt;code&gt;EXISTS&lt;/code&gt; expression
+&nbsp;	 *
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern&quot;&gt; Filtering using Graph
+&nbsp;	 *      Pattern&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern filterExists(GraphPattern... patterns) {
+<b class="nc">&nbsp;		return filterExists(true, patterns);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a &lt;code&gt;NOT EXISTS{}&lt;/code&gt; filter expression with the given graph patterns and add it to this graph
+&nbsp;	 * pattern (converting this to a group graph pattern in the process): &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * {
+&nbsp;	 * 	thisPattern
+&nbsp;	 * 	FILTER NOT EXISTS { patterns }
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param patterns the patterns to pass as arguments to the &lt;code&gt;NOT EXISTS&lt;/code&gt; expression
+&nbsp;	 *
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern&quot;&gt; Filtering using Graph
+&nbsp;	 *      Pattern&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern filterNotExists(GraphPattern... patterns) {
+<b class="nc">&nbsp;		return filterExists(false, patterns);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create an {@code EXISTS} or {@code NOT EXISTS} filter expression with the given patterns based on the
+&nbsp;	 * {@code exists} paramater and add it to this graph pattern (converting this to a group graph pattern in the
+&nbsp;	 * process)
+&nbsp;	 *
+&nbsp;	 * @param exists   if the filter should ensure the patterns exist or not
+&nbsp;	 * @param patterns the patterns to pass to the filter
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 */
+&nbsp;	default GraphPattern filterExists(boolean exists, GraphPattern... patterns) {
+<b class="nc">&nbsp;		return and(GraphPatterns.filterExists(exists, patterns));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a &lt;code&gt;MINUS&lt;/code&gt; graph pattern with the given graph patterns and add it to this graph pattern
+&nbsp;	 * (converting this to a group graph pattern in the process): &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * {
+&nbsp;	 * 	thisPattern
+&nbsp;	 * 	MINUS { patterns }
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param patterns the patterns to construct the &lt;code&gt;MINUS&lt;/code&gt; graph pattern with
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-minus&quot;&gt; SPARQL MINUS Graph Pattern&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern minus(GraphPattern... patterns) {
+<b class="nc">&nbsp;		return and(GraphPatterns.minus(patterns));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert this graph pattern into a named group graph pattern: &lt;br&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * GRAPH graphName { thisPattern }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param name the name to specify
+&nbsp;	 * @return the new {@code GraphPattern} instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#queryDataset&quot;&gt; Specifying Datasets in SPARQL
+&nbsp;	 *      Queries&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default GraphPattern from(GraphName name) {
+<b class="nc">&nbsp;		return and().from(name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return if this pattern is a collection of GraphPatterns (ie., Group or Alternative patterns), returns if the
+&nbsp;	 *         collection contains any patterns
+&nbsp;	 */
+&nbsp;	default boolean isEmpty() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

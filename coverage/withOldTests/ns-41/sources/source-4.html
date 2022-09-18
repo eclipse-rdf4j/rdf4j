@@ -1,0 +1,548 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SharedHttpClientSessionManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.client</a>
+</div>
+
+<h1>Coverage Summary for Class: SharedHttpClientSessionManager (org.eclipse.rdf4j.http.client)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SharedHttpClientSessionManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SharedHttpClientSessionManager$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SharedHttpClientSessionManager$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SharedHttpClientSessionManager$RetryHandlerStale</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SharedHttpClientSessionManager$ServiceUnavailableRetryHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/119)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.client;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.net.HttpURLConnection;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.ExecutorService;
+&nbsp;import java.util.concurrent.Executors;
+&nbsp;import java.util.concurrent.ScheduledExecutorService;
+&nbsp;import java.util.concurrent.ThreadFactory;
+&nbsp;import java.util.concurrent.ThreadPoolExecutor;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import org.apache.http.HttpConnection;
+&nbsp;import org.apache.http.HttpResponse;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.apache.http.client.HttpRequestRetryHandler;
+&nbsp;import org.apache.http.client.ServiceUnavailableRetryStrategy;
+&nbsp;import org.apache.http.client.config.CookieSpecs;
+&nbsp;import org.apache.http.client.config.RequestConfig;
+&nbsp;import org.apache.http.client.protocol.HttpClientContext;
+&nbsp;import org.apache.http.client.utils.HttpClientUtils;
+&nbsp;import org.apache.http.impl.client.CloseableHttpClient;
+&nbsp;import org.apache.http.impl.client.HttpClientBuilder;
+&nbsp;import org.apache.http.protocol.HttpContext;
+&nbsp;import org.eclipse.rdf4j.http.client.util.HttpClientBuilders;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A Manager for HTTP sessions that uses a shared {@link HttpClient} to manage HTTP connections.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public class SharedHttpClientSessionManager implements HttpClientSessionManager, HttpClientDependent {
+&nbsp;	/**
+&nbsp;	 * Configurable system property {@code org.eclipse.rdf4j.client.executors.corePoolSize} for specifying the
+&nbsp;	 * background executor core thread pool size.
+&nbsp;	 */
+&nbsp;	public static final String CORE_POOL_SIZE_PROPERTY = &quot;org.eclipse.rdf4j.client.executors.corePoolSize&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private static final AtomicLong threadCount = new AtomicLong();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(SharedHttpClientSessionManager.class);</b>
+&nbsp;
+&nbsp;	/** independent life cycle */
+&nbsp;	private volatile HttpClient httpClient;
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private volatile CloseableHttpClient dependentClient;
+&nbsp;
+&nbsp;	private final ExecutorService executor;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if not provided externally)
+&nbsp;	 */
+&nbsp;	private volatile HttpClientBuilder httpClientBuilder;
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;SPARQLProtocolSession, Boolean&gt; openSessions = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final HttpRequestRetryHandler retryHandlerStale = new RetryHandlerStale();</b>
+<b class="nc">&nbsp;	private static final ServiceUnavailableRetryStrategy serviceUnavailableRetryHandler = new ServiceUnavailableRetryHandler();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retry handler: closes stale connections and suggests to simply retry the HTTP request once. Just closing the
+&nbsp;	 * stale connection is enough: the connection will be reopened elsewhere. This seems to be necessary for Jetty
+&nbsp;	 * 9.4.24+.
+&nbsp;	 *
+&nbsp;	 * Other HTTP issues are considered to be more severe, so these requests are not retried.
+&nbsp;	 */
+<b class="nc">&nbsp;	private static class RetryHandlerStale implements HttpRequestRetryHandler {</b>
+<b class="nc">&nbsp;		private final Logger logger = LoggerFactory.getLogger(RetryHandlerStale.class);</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean retryRequest(IOException ioe, int count, HttpContext context) {
+&nbsp;			// only try this once
+<b class="nc">&nbsp;			if (count &gt; 1) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			HttpClientContext clientContext = HttpClientContext.adapt(context);</b>
+<b class="nc">&nbsp;			HttpConnection conn = clientContext.getConnection();</b>
+<b class="nc">&nbsp;			if (conn != null) {</b>
+<b class="nc">&nbsp;				synchronized (this) {</b>
+<b class="nc">&nbsp;					if (conn.isStale()) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							logger.warn(&quot;Closing stale connection&quot;);</b>
+<b class="nc">&nbsp;							conn.close();</b>
+<b class="nc">&nbsp;							return true;</b>
+<b class="nc">&nbsp;						} catch (IOException e) {</b>
+<b class="nc">&nbsp;							logger.error(&quot;Error closing stale connection&quot;, e);</b>
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private static class ServiceUnavailableRetryHandler implements ServiceUnavailableRetryStrategy {</b>
+<b class="nc">&nbsp;		private final Logger logger = LoggerFactory.getLogger(ServiceUnavailableRetryHandler.class);</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean retryRequest(HttpResponse response, int executionCount, HttpContext context) {
+&nbsp;			// only retry on `408`
+<b class="nc">&nbsp;			if (response.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CLIENT_TIMEOUT) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// when `keepAlive` is disabled every connection is fresh (with the default `useSystemProperties` http
+&nbsp;			// client configuration we use), a 408 in that case is an unexpected issue we don&#39;t handle here
+<b class="nc">&nbsp;			String keepAlive = System.getProperty(&quot;http.keepAlive&quot;, &quot;true&quot;);</b>
+<b class="nc">&nbsp;			if (!&quot;true&quot;.equalsIgnoreCase(keepAlive)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// worst case, the connection pool is filled to the max and all of them idled out on the server already
+&nbsp;			// we then need to clean up the pool and finally retry with a fresh connection. Hence, we need at most
+&nbsp;			// pooledConnections+1 retries.
+&nbsp;			// the pool size setting used here is taken from `HttpClientBuilder` when `useSystemProperties()` is used
+<b class="nc">&nbsp;			int pooledConnections = Integer.parseInt(System.getProperty(&quot;http.maxConnections&quot;, &quot;5&quot;));</b>
+<b class="nc">&nbsp;			if (executionCount &gt; (pooledConnections + 1)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			HttpClientContext clientContext = HttpClientContext.adapt(context);</b>
+<b class="nc">&nbsp;			HttpConnection conn = clientContext.getConnection();</b>
+&nbsp;
+<b class="nc">&nbsp;			synchronized (this) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					logger.info(&quot;Cleaning up closed connection&quot;);</b>
+<b class="nc">&nbsp;					conn.close();</b>
+<b class="nc">&nbsp;					return true;</b>
+<b class="nc">&nbsp;				} catch (IOException e) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Error cleaning up closed connection&quot;, e);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public long getRetryInterval() {
+<b class="nc">&nbsp;			return 1000;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	public SharedHttpClientSessionManager() {</b>
+<b class="nc">&nbsp;		final ThreadFactory backingThreadFactory = Executors.defaultThreadFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		ExecutorService threadPoolExecutor = Executors.newCachedThreadPool((Runnable runnable) -&gt; {</b>
+<b class="nc">&nbsp;			Thread thread = backingThreadFactory.newThread(runnable);</b>
+<b class="nc">&nbsp;			thread.setName(</b>
+<b class="nc">&nbsp;					String.format(&quot;rdf4j-SharedHttpClientSessionManager-%d&quot;, threadCount.getAndIncrement()));</b>
+<b class="nc">&nbsp;			thread.setDaemon(true);</b>
+<b class="nc">&nbsp;			return thread;</b>
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		Integer corePoolSize = Integer.getInteger(CORE_POOL_SIZE_PROPERTY, 1);</b>
+<b class="nc">&nbsp;		((ThreadPoolExecutor) threadPoolExecutor).setCorePoolSize(corePoolSize);</b>
+<b class="nc">&nbsp;		this.executor = threadPoolExecutor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SharedHttpClientSessionManager(CloseableHttpClient dependentClient,
+<b class="nc">&nbsp;			ScheduledExecutorService dependentExecutorService) {</b>
+<b class="nc">&nbsp;		this.httpClient = this.dependentClient = Objects.requireNonNull(dependentClient, &quot;HTTP client was null&quot;);</b>
+<b class="nc">&nbsp;		this.executor = Objects.requireNonNull(dependentExecutorService, &quot;Executor service was null&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClient getHttpClient() {
+<b class="nc">&nbsp;		HttpClient result = httpClient;</b>
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				result = httpClient;</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+<b class="nc">&nbsp;					result = httpClient = dependentClient = createHttpClient();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param httpClient The httpClient to use for remote/service calls.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient httpClient) {
+<b class="nc">&nbsp;		synchronized (this) {</b>
+<b class="nc">&nbsp;			this.httpClient = Objects.requireNonNull(httpClient, &quot;HTTP Client cannot be null&quot;);</b>
+&nbsp;			// If they set a client, we need to check whether we need to
+&nbsp;			// close any existing dependentClient
+<b class="nc">&nbsp;			CloseableHttpClient toCloseDependentClient = dependentClient;</b>
+<b class="nc">&nbsp;			dependentClient = null;</b>
+<b class="nc">&nbsp;			if (toCloseDependentClient != null) {</b>
+<b class="nc">&nbsp;				HttpClientUtils.closeQuietly(toCloseDependentClient);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set an optional {@link HttpClientBuilder} to create the inner {@link #httpClient} (if the latter is not provided
+&nbsp;	 * externally as dependent client).
+&nbsp;	 *
+&nbsp;	 * @param httpClientBuilder the builder for the managed HttpClient
+&nbsp;	 * @see HttpClientBuilders
+&nbsp;	 */
+&nbsp;	public void setHttpClientBuilder(HttpClientBuilder httpClientBuilder) {
+<b class="nc">&nbsp;		this.httpClientBuilder = httpClientBuilder;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl) {
+<b class="nc">&nbsp;		SPARQLProtocolSession session = new SPARQLProtocolSession(getHttpClient(), executor) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void close() {
+&nbsp;				try {
+<b class="nc">&nbsp;					super.close();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					openSessions.remove(this);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+<b class="nc">&nbsp;		session.setQueryURL(queryEndpointUrl);</b>
+<b class="nc">&nbsp;		session.setUpdateURL(updateEndpointUrl);</b>
+<b class="nc">&nbsp;		openSessions.put(session, true);</b>
+<b class="nc">&nbsp;		return session;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDF4JProtocolSession createRDF4JProtocolSession(String serverURL) {
+<b class="nc">&nbsp;		RDF4JProtocolSession session = new RDF4JProtocolSession(getHttpClient(), executor) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void close() {
+&nbsp;				try {
+<b class="nc">&nbsp;					super.close();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					openSessions.remove(this);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+<b class="nc">&nbsp;		session.setServerURL(serverURL);</b>
+<b class="nc">&nbsp;		openSessions.put(session, true);</b>
+<b class="nc">&nbsp;		return session;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() {
+&nbsp;		try {
+<b class="nc">&nbsp;			openSessions.keySet().forEach(session -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					session.close();</b>
+<b class="nc">&nbsp;				} catch (Exception e) {</b>
+<b class="nc">&nbsp;					logger.error(e.toString(), e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+<b class="nc">&nbsp;			CloseableHttpClient toCloseDependentClient = dependentClient;</b>
+<b class="nc">&nbsp;			dependentClient = null;</b>
+<b class="nc">&nbsp;			if (toCloseDependentClient != null) {</b>
+<b class="nc">&nbsp;				HttpClientUtils.closeQuietly(toCloseDependentClient);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				executor.shutdown();</b>
+<b class="nc">&nbsp;				executor.awaitTermination(10, TimeUnit.SECONDS);</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+&nbsp;				// Preserve the interrupt status so others can check it as necessary
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				if (!executor.isTerminated()) {</b>
+<b class="nc">&nbsp;					executor.shutdownNow();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * No-op
+&nbsp;	 *
+&nbsp;	 * @deprecated Create a new instance instead of trying to reactivate an old instance.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public void initialize() {
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the {@link ExecutorService} used by this session manager.
+&nbsp;	 *
+&nbsp;	 * @return a {@link ExecutorService} used by all {@link SPARQLProtocolSession} and {@link RDF4JProtocolSession}
+&nbsp;	 *         instances created by this session manager.
+&nbsp;	 */
+&nbsp;	protected final ExecutorService getExecutorService() {
+<b class="nc">&nbsp;		return this.executor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private CloseableHttpClient createHttpClient() {
+<b class="nc">&nbsp;		HttpClientBuilder nextHttpClientBuilder = httpClientBuilder;</b>
+<b class="nc">&nbsp;		if (nextHttpClientBuilder != null) {</b>
+<b class="nc">&nbsp;			return nextHttpClientBuilder.build();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return HttpClientBuilder.create()</b>
+<b class="nc">&nbsp;				.evictExpiredConnections()</b>
+<b class="nc">&nbsp;				.setRetryHandler(retryHandlerStale)</b>
+<b class="nc">&nbsp;				.setServiceUnavailableRetryStrategy(serviceUnavailableRetryHandler)</b>
+<b class="nc">&nbsp;				.useSystemProperties()</b>
+<b class="nc">&nbsp;				.setDefaultRequestConfig(RequestConfig.custom().setCookieSpec(CookieSpecs.STANDARD).build())</b>
+<b class="nc">&nbsp;				.build();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

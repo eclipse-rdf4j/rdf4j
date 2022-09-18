@@ -1,0 +1,220 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Drop</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: Drop (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Drop</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Dale Visser
+&nbsp; */
+&nbsp;public class Drop extends ConsoleCommand {
+&nbsp;	private final Close close;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;drop&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Drops a repository&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return PrintHelp.USAGE + &quot;drop &lt;repositoryID&gt;   Drops the repository with the specified id\n&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 * @param close
+&nbsp;	 */
+&nbsp;	public Drop(ConsoleIO consoleIO, ConsoleState state, Close close) {
+<b class="nc">&nbsp;		super(consoleIO, state);</b>
+<b class="nc">&nbsp;		this.close = close;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(String... tokens) throws IOException {
+<b class="nc">&nbsp;		if (tokens.length &lt; 2) {</b>
+<b class="nc">&nbsp;			writeln(getHelpLong());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			final String repoID = tokens[1];</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				dropRepository(repoID);</b>
+<b class="nc">&nbsp;			} catch (RepositoryConfigException e) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Unable to drop repository &#39;&quot; + repoID, e);</b>
+<b class="nc">&nbsp;			} catch (RepositoryReadOnlyException e) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					execute(tokens);</b>
+<b class="nc">&nbsp;				} catch (RepositoryException e2) {</b>
+<b class="nc">&nbsp;					writeError(&quot;Failed to restart system&quot;, e2);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Failed to update configuration in system repository&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Try to drop a repository after confirmation from user
+&nbsp;	 *
+&nbsp;	 * @param repoID repository ID
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws RepositoryConfigException
+&nbsp;	 */
+&nbsp;	private void dropRepository(final String repoID)
+&nbsp;			throws IOException, RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		boolean proceed = askProceed(&quot;WARNING: you are about to drop repository &#39;&quot; + repoID + &quot;&#39;.&quot;, true);</b>
+<b class="nc">&nbsp;		if (proceed &amp;&amp; !state.getManager().isSafeToRemove(repoID)) {</b>
+<b class="nc">&nbsp;			proceed = askProceed(&quot;WARNING: dropping this repository may break another that is proxying it.&quot;,</b>
+&nbsp;					false);
+&nbsp;		}
+<b class="nc">&nbsp;		if (proceed) {</b>
+<b class="nc">&nbsp;			if (repoID.equals(state.getRepositoryID())) {</b>
+<b class="nc">&nbsp;				close.closeRepository(false);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			final boolean isRemoved = state.getManager().removeRepository(repoID);</b>
+<b class="nc">&nbsp;			if (isRemoved) {</b>
+<b class="nc">&nbsp;				writeInfo(&quot;Dropped repository &#39;&quot; + repoID + &quot;&#39;&quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeInfo(&quot;Unknown repository &#39;&quot; + repoID + &quot;&#39;&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			writeln(&quot;Drop aborted&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

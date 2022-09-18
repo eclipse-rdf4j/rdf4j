@@ -1,0 +1,588 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ArrangedWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.turtle</a>
+</div>
+
+<h1>Coverage Summary for Class: ArrangedWriter (org.eclipse.rdf4j.rio.turtle)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ArrangedWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/152)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/178)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ArrangedWriter$SubjectInContext</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/174)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/209)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2017 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.turtle;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.Deque;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.TreeMap;
+&nbsp;import java.util.TreeSet;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * Internal wrapper that sorts statements for pretty printing and repeats blank nodes if inlining them.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; * @since 2.3
+&nbsp; *
+&nbsp; * @deprecated since 3.3.1. pretty printing / bnode inlining logic has been moved to {@link TurtleWriter} internally.
+&nbsp; */
+<b class="nc">&nbsp;@Deprecated</b>
+&nbsp;public class ArrangedWriter extends AbstractRDFWriter {
+&nbsp;
+&nbsp;	private final static int DEFAULT_QUEUE_SIZE = 100;
+&nbsp;
+&nbsp;	private final RDFWriter delegate;
+&nbsp;
+&nbsp;	private boolean repeatBlankNodes;
+&nbsp;
+&nbsp;	private int targetQueueSize;
+&nbsp;
+<b class="nc">&nbsp;	private int queueSize = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Deque&lt;SubjectInContext&gt; stack = new LinkedList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;String, String&gt; prefixes = new TreeMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;SubjectInContext, Set&lt;Statement&gt;&gt; stmtBySubject = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Model blanks = new LinkedHashModel();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Model blankReferences = new LinkedHashModel();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Comparator&lt;Statement&gt; comparator = (Statement s1, Statement s2) -&gt; {</b>
+<b class="nc">&nbsp;		IRI p1 = s1.getPredicate();</b>
+<b class="nc">&nbsp;		IRI p2 = s2.getPredicate();</b>
+<b class="nc">&nbsp;		if (p1.equals(RDF.TYPE) &amp;&amp; !p2.equals(RDF.TYPE)) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+<b class="nc">&nbsp;		} else if (!p1.equals(RDF.TYPE) &amp;&amp; p2.equals(RDF.TYPE)) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		int cmp = p1.stringValue().compareTo(p2.stringValue());</b>
+<b class="nc">&nbsp;		if (cmp != 0) {</b>
+<b class="nc">&nbsp;			return cmp;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value o1 = s1.getObject();</b>
+<b class="nc">&nbsp;		Value o2 = s2.getObject();</b>
+<b class="nc">&nbsp;		if (o1.equals(o2)) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!(o1 instanceof BNode) &amp;&amp; o2 instanceof BNode) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+<b class="nc">&nbsp;		} else if (o1 instanceof BNode &amp;&amp; !(o2 instanceof BNode)) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!(o1 instanceof IRI) &amp;&amp; o2 instanceof IRI) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+<b class="nc">&nbsp;		} else if (o1 instanceof IRI &amp;&amp; !(o2 instanceof IRI)) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!(o1 instanceof Triple) &amp;&amp; o2 instanceof Triple) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+<b class="nc">&nbsp;		} else if (o1 instanceof Triple &amp;&amp; !(o2 instanceof Triple)) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		int str_cmp = o1.stringValue().compareTo(o2.stringValue());</b>
+<b class="nc">&nbsp;		if (str_cmp != 0) {</b>
+<b class="nc">&nbsp;			return str_cmp;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Literal lit1 = (Literal) o1;</b>
+<b class="nc">&nbsp;		Literal lit2 = (Literal) o2;</b>
+<b class="nc">&nbsp;		int dt_cmp = lit1.getDatatype().stringValue().compareTo(lit2.getDatatype().stringValue());</b>
+<b class="nc">&nbsp;		if (dt_cmp != 0) {</b>
+<b class="nc">&nbsp;			return dt_cmp;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return lit1.getLanguage().orElse(&quot;&quot;).compareTo(lit2.getLanguage().orElse(&quot;&quot;));</b>
+&nbsp;	};
+&nbsp;
+&nbsp;	public ArrangedWriter(RDFWriter delegate) {
+<b class="nc">&nbsp;		this(delegate, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ArrangedWriter(RDFWriter delegate, int size) {
+<b class="nc">&nbsp;		this(delegate, size, size == -1);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public ArrangedWriter(RDFWriter delegate, int size, boolean repeatBlankNodes) {</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+<b class="nc">&nbsp;		this.targetQueueSize = size;</b>
+<b class="nc">&nbsp;		this.repeatBlankNodes = repeatBlankNodes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return delegate.getRDFFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFWriter setWriterConfig(WriterConfig config) {
+<b class="nc">&nbsp;		return delegate.setWriterConfig(config);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public WriterConfig getWriterConfig() {
+<b class="nc">&nbsp;		return delegate.getWriterConfig();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		return delegate.getSupportedSettings();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;T&gt; RDFWriter set(RioSetting&lt;T&gt; setting, T value) {
+<b class="nc">&nbsp;		return delegate.set(setting, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		super.startRDF();</b>
+<b class="nc">&nbsp;		if (getWriterConfig().get(BasicWriterSettings.INLINE_BLANK_NODES)) {</b>
+<b class="nc">&nbsp;			targetQueueSize = -1;</b>
+<b class="nc">&nbsp;			repeatBlankNodes = true;</b>
+<b class="nc">&nbsp;		} else if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {</b>
+<b class="nc">&nbsp;			targetQueueSize = DEFAULT_QUEUE_SIZE;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		delegate.startRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		trimNamespaces();</b>
+<b class="nc">&nbsp;		flushStatements();</b>
+<b class="nc">&nbsp;		delegate.endRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+<b class="nc">&nbsp;		flushStatements();</b>
+<b class="nc">&nbsp;		if (targetQueueSize == 0) {</b>
+<b class="nc">&nbsp;			delegate.handleNamespace(prefix, uri);</b>
+<b class="nc">&nbsp;		} else if (!prefixes.containsKey(uri)) {</b>
+<b class="nc">&nbsp;			prefixes.put(uri, prefix);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		flushStatements();</b>
+<b class="nc">&nbsp;		delegate.handleComment(comment);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected synchronized void consumeStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		if (targetQueueSize == 0) {</b>
+<b class="nc">&nbsp;			delegate.handleStatement(st);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			queueStatement(st);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		while (targetQueueSize &gt;= 0 &amp;&amp; queueSize &gt; targetQueueSize) {</b>
+<b class="nc">&nbsp;			flushNamespaces();</b>
+<b class="nc">&nbsp;			delegate.handleStatement(nextStatement());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized Statement nextStatement() {
+<b class="nc">&nbsp;		if (stmtBySubject.isEmpty() &amp;&amp; blanks.isEmpty()) {</b>
+<b class="nc">&nbsp;			assert queueSize == 0;</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Set&lt;Statement&gt; stmts = null;</b>
+<b class="nc">&nbsp;		while (stmts == null) {</b>
+<b class="nc">&nbsp;			SubjectInContext last = stack.peekLast();</b>
+<b class="nc">&nbsp;			stmts = stmtBySubject.get(last);</b>
+<b class="nc">&nbsp;			if (stmts == null &amp;&amp; last != null &amp;&amp; blanks.contains(last.getSubject(), null, null, last.getContext())) {</b>
+<b class="nc">&nbsp;				stmts = queueBlankStatements(last);</b>
+<b class="nc">&nbsp;			} else if (stmts == null) {</b>
+<b class="nc">&nbsp;				stack.pollLast();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (stack.isEmpty() &amp;&amp; stmtBySubject.isEmpty()) {</b>
+<b class="nc">&nbsp;				Statement st = blanks.iterator().next();</b>
+<b class="nc">&nbsp;				stmts = queueBlankStatements(new SubjectInContext(st));</b>
+<b class="nc">&nbsp;			} else if (stack.isEmpty()) {</b>
+<b class="nc">&nbsp;				stmts = stmtBySubject.values().iterator().next();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		Iterator&lt;Statement&gt; iter = stmts.iterator();</b>
+<b class="nc">&nbsp;		Statement next = iter.next();</b>
+<b class="nc">&nbsp;		queueSize--;</b>
+<b class="nc">&nbsp;		iter.remove();</b>
+<b class="nc">&nbsp;		SubjectInContext key = new SubjectInContext(next);</b>
+<b class="nc">&nbsp;		if (!key.equals(stack.peekLast())) {</b>
+<b class="nc">&nbsp;			stack.addLast(key);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!iter.hasNext()) {</b>
+<b class="nc">&nbsp;			stmtBySubject.remove(key);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value obj = next.getObject();</b>
+<b class="nc">&nbsp;		if (obj instanceof BNode) {</b>
+&nbsp;			// follow blank nodes before continuing with this subject
+<b class="nc">&nbsp;			SubjectInContext bkey = new SubjectInContext((BNode) obj, next.getContext());</b>
+<b class="nc">&nbsp;			if (stack.contains(bkey)) {</b>
+&nbsp;				// cycle detected
+<b class="nc">&nbsp;				if (repeatBlankNodes) {</b>
+<b class="nc">&nbsp;					throw new RDFHandlerException(&quot;Blank node cycle detected. Try disabling &quot;</b>
+<b class="nc">&nbsp;							+ BasicWriterSettings.INLINE_BLANK_NODES.getKey());</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				stack.addLast(bkey);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return next;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized Set&lt;Statement&gt; queueBlankStatements(SubjectInContext key) {
+<b class="nc">&nbsp;		Model firstMatch = blanks.filter(key.getSubject(), null, null, key.getContext());</b>
+<b class="nc">&nbsp;		Model matches = firstMatch.isEmpty() ? blankReferences.filter(key.getSubject(), null, null, key.getContext())</b>
+<b class="nc">&nbsp;				: firstMatch;</b>
+<b class="nc">&nbsp;		if (matches.isEmpty()) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Set&lt;Statement&gt; set = stmtBySubject.get(key);</b>
+<b class="nc">&nbsp;		if (set == null) {</b>
+<b class="nc">&nbsp;			stmtBySubject.put(key, set = new TreeSet&lt;&gt;(comparator));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		set.addAll(matches);</b>
+<b class="nc">&nbsp;		if (firstMatch.isEmpty()) {</b>
+&nbsp;			// repeat blank node values
+<b class="nc">&nbsp;			queueSize += matches.size();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (repeatBlankNodes &amp;&amp; key.getSubject() instanceof BNode &amp;&amp; isStillReferenced(key)) {</b>
+<b class="nc">&nbsp;				blankReferences.addAll(matches);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			blanks.remove(key.getSubject(), null, null, key.getContext());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return set;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isStillReferenced(SubjectInContext key) {
+<b class="nc">&nbsp;		if (blanks.contains(null, null, key.getSubject(), key.getContext())) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (SubjectInContext subj : stack) {</b>
+<b class="nc">&nbsp;			Set&lt;Statement&gt; stmts = stmtBySubject.get(subj);</b>
+<b class="nc">&nbsp;			if (stmts != null) {</b>
+<b class="nc">&nbsp;				for (Statement st : stmts) {</b>
+<b class="nc">&nbsp;					if (st.getObject().equals(key.getSubject()) || Objects.equals(st.getContext(), key.getContext())) {</b>
+<b class="nc">&nbsp;						return true;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized void queueStatement(Statement st) {
+<b class="nc">&nbsp;		SubjectInContext key = new SubjectInContext(st);</b>
+<b class="nc">&nbsp;		Set&lt;Statement&gt; stmts = stmtBySubject.get(key);</b>
+<b class="nc">&nbsp;		if (stmts == null &amp;&amp; st.getSubject() instanceof BNode &amp;&amp; !stack.contains(key)) {</b>
+<b class="nc">&nbsp;			blanks.add(st);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (stmts == null) {</b>
+<b class="nc">&nbsp;				stmtBySubject.put(key, stmts = new TreeSet&lt;&gt;(comparator));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			stmts.add(st);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		queueSize++;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized void flushStatements() throws RDFHandlerException {
+<b class="nc">&nbsp;		if (!stmtBySubject.isEmpty() || !blanks.isEmpty()) {</b>
+<b class="nc">&nbsp;			flushNamespaces();</b>
+&nbsp;			Statement st;
+<b class="nc">&nbsp;			while ((st = nextStatement()) != null) {</b>
+<b class="nc">&nbsp;				delegate.handleStatement(st);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			assert queueSize == 0;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized void flushNamespaces() throws RDFHandlerException {
+<b class="nc">&nbsp;		Map&lt;String, String&gt; namespaces = new TreeMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (Map.Entry&lt;String, String&gt; e : prefixes.entrySet()) {</b>
+<b class="nc">&nbsp;			namespaces.put(e.getValue(), e.getKey());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		for (Map.Entry&lt;String, String&gt; e : namespaces.entrySet()) {</b>
+<b class="nc">&nbsp;			delegate.handleNamespace(e.getKey(), e.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		prefixes.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized void trimNamespaces() {
+<b class="nc">&nbsp;		if (!prefixes.isEmpty()) {</b>
+<b class="nc">&nbsp;			Set&lt;String&gt; used = new HashSet&lt;&gt;(prefixes.size());</b>
+<b class="nc">&nbsp;			for (Set&lt;Statement&gt; stmts : stmtBySubject.values()) {</b>
+<b class="nc">&nbsp;				getUsedNamespaces(stmts, used);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			getUsedNamespaces(blanks, used);</b>
+<b class="nc">&nbsp;			prefixes.keySet().retainAll(used);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void getUsedNamespaces(Set&lt;Statement&gt; stmts, Set&lt;String&gt; used) {
+<b class="nc">&nbsp;		for (Statement st : stmts) {</b>
+<b class="nc">&nbsp;			if (st.getSubject() instanceof IRI) {</b>
+<b class="nc">&nbsp;				IRI uri = (IRI) st.getSubject();</b>
+<b class="nc">&nbsp;				used.add(uri.getNamespace());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			used.add(st.getPredicate().getNamespace());</b>
+<b class="nc">&nbsp;			if (st.getObject() instanceof IRI) {</b>
+<b class="nc">&nbsp;				IRI uri = (IRI) st.getObject();</b>
+<b class="nc">&nbsp;				used.add(uri.getNamespace());</b>
+<b class="nc">&nbsp;			} else if (st.getObject() instanceof Literal) {</b>
+<b class="nc">&nbsp;				Literal lit = (Literal) st.getObject();</b>
+<b class="nc">&nbsp;				if (lit.getDatatype() != null) {</b>
+<b class="nc">&nbsp;					used.add(lit.getDatatype().getNamespace());</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private class SubjectInContext {</b>
+&nbsp;
+&nbsp;		private final Resource subject;
+&nbsp;
+&nbsp;		private final Resource context;
+&nbsp;
+&nbsp;		private SubjectInContext(Statement st) {
+<b class="nc">&nbsp;			this(st.getSubject(), st.getContext());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		private SubjectInContext(Resource subject, Resource context) {</b>
+<b class="nc">&nbsp;			assert subject != null;</b>
+<b class="nc">&nbsp;			this.subject = subject;</b>
+<b class="nc">&nbsp;			this.context = context;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Resource getSubject() {
+<b class="nc">&nbsp;			return subject;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Resource getContext() {
+<b class="nc">&nbsp;			return context;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			if (context == null) {</b>
+<b class="nc">&nbsp;				return subject.toString();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return subject.toString() + &quot; [&quot; + context.toString() + &quot;]&quot;;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int hashCode() {
+<b class="nc">&nbsp;			final int prime = 31;</b>
+<b class="nc">&nbsp;			int result = 1;</b>
+<b class="nc">&nbsp;			result = prime * result + subject.hashCode();</b>
+<b class="nc">&nbsp;			result = prime * result + ((context == null) ? 0 : context.hashCode());</b>
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean equals(Object obj) {
+<b class="nc">&nbsp;			if (this == obj) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (obj == null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (getClass() != obj.getClass()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			SubjectInContext other = (SubjectInContext) obj;</b>
+<b class="nc">&nbsp;			if (!subject.equals(other.subject)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (context == null) {</b>
+<b class="nc">&nbsp;				if (other.context != null) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (!context.equals(other.context)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

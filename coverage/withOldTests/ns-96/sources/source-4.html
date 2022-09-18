@@ -1,0 +1,499 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HTTPRepository</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.http</a>
+</div>
+
+<h1>Coverage Summary for Class: HTTPRepository (org.eclipse.rdf4j.repository.http)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HTTPRepository</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/102)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.http;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+&nbsp;import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+&nbsp;import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.base.AbstractRepository;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;
+&nbsp;/**
+&nbsp; * A repository that serves as a client for a remote repository on an RDF4J Server. Methods in this class may throw the
+&nbsp; * specific {@link RepositoryException} subclass {@link UnauthorizedException}, the semantics of which is defined by the
+&nbsp; * HTTP protocol.
+&nbsp; * &lt;p&gt;
+&nbsp; * This repository client uses a &lt;a href=&quot;https://rdf4j.org/documentation/reference/rest-api/&quot;&gt;RDF4J-specific extension
+&nbsp; * of the SPARQL 1.1 Protocol&lt;/a&gt; to communicate with the server. For communicating with a SPARQL endpoint that is not
+&nbsp; * based on RDF4J, it is recommended to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository
+&nbsp; * SPARQLRepository} instead.
+&nbsp; *
+&nbsp; * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class HTTPRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The HTTP client that takes care of the client-server communication.
+&nbsp;	 */
+&nbsp;	private volatile HttpClientSessionManager sessionManager;
+&nbsp;
+&nbsp;	/** dependent life cycle */
+&nbsp;	private volatile SharedHttpClientSessionManager dependentSessionManager;
+&nbsp;
+&nbsp;	private String username;
+&nbsp;
+&nbsp;	private String password;
+&nbsp;
+&nbsp;	private String serverURL;
+&nbsp;
+&nbsp;	private String repositoryURL;
+&nbsp;
+&nbsp;	private RDFFormat rdfFormat;
+&nbsp;
+&nbsp;	private TupleQueryResultFormat tupleFormat;
+&nbsp;
+&nbsp;	private File dataDir;
+&nbsp;
+<b class="nc">&nbsp;	private volatile Boolean compatibleMode = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	private volatile Map&lt;String, String&gt; additionalHttpHeaders = Collections.emptyMap();</b>
+&nbsp;
+&nbsp;	private HTTPRepository() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public HTTPRepository(final String serverURL, final String repositoryID) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		this.serverURL = serverURL;</b>
+<b class="nc">&nbsp;		this.repositoryURL = Protocol.getRepositoryLocation(serverURL, repositoryID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public HTTPRepository(final String repositoryURL) {
+<b class="nc">&nbsp;		this();</b>
+&nbsp;		// Try to parse the server URL from the repository URL
+<b class="nc">&nbsp;		Pattern urlPattern = Pattern.compile(&quot;(.*)/&quot; + Protocol.REPOSITORIES + &quot;/[^/]*/?&quot;);</b>
+<b class="nc">&nbsp;		Matcher matcher = urlPattern.matcher(repositoryURL);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (matcher.matches() &amp;&amp; matcher.groupCount() == 1) {</b>
+<b class="nc">&nbsp;			this.serverURL = matcher.group(1);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;URL must be to a RDF4J Repository (not just the server)&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.repositoryURL = repositoryURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataDir(final File dataDir) {
+<b class="nc">&nbsp;		this.dataDir = dataDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public File getDataDir() {
+<b class="nc">&nbsp;		return dataDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClientSessionManager getHttpClientSessionManager() {
+<b class="nc">&nbsp;		HttpClientSessionManager result = sessionManager;</b>
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				result = sessionManager;</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+<b class="nc">&nbsp;					result = sessionManager = dependentSessionManager = new SharedHttpClientSessionManager();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClientSessionManager(HttpClientSessionManager client) {
+<b class="nc">&nbsp;		synchronized (this) {</b>
+<b class="nc">&nbsp;			this.sessionManager = client;</b>
+&nbsp;			// If they set a client, we need to check whether we need to
+&nbsp;			// shutdown any existing dependentClient
+<b class="nc">&nbsp;			SharedHttpClientSessionManager toCloseDependentClient = dependentSessionManager;</b>
+<b class="nc">&nbsp;			dependentSessionManager = null;</b>
+<b class="nc">&nbsp;			if (toCloseDependentClient != null) {</b>
+<b class="nc">&nbsp;				toCloseDependentClient.shutDown();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the additional HTTP headers which will be used
+&nbsp;	 *
+&nbsp;	 * @return a read-only view of the additional HTTP headers which will be included in every request to the server.
+&nbsp;	 */
+&nbsp;	public Map&lt;String, String&gt; getAdditionalHttpHeaders() {
+<b class="nc">&nbsp;		return Collections.unmodifiableMap(additionalHttpHeaders);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set additional HTTP headers to be included in every request to the server, which may be required for certain
+&nbsp;	 * unusual server configurations. This will only take effect on connections subsequently returned by
+&nbsp;	 * {@link #getConnection()}.
+&nbsp;	 *
+&nbsp;	 * @param additionalHttpHeaders a map containing pairs of header names and values. May be null
+&nbsp;	 */
+&nbsp;	public void setAdditionalHttpHeaders(Map&lt;String, String&gt; additionalHttpHeaders) {
+<b class="nc">&nbsp;		if (additionalHttpHeaders == null) {</b>
+<b class="nc">&nbsp;			this.additionalHttpHeaders = Collections.emptyMap();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.additionalHttpHeaders = additionalHttpHeaders;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final HttpClient getHttpClient() {
+<b class="nc">&nbsp;		return getHttpClientSessionManager().getHttpClient();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient httpClient) {
+<b class="nc">&nbsp;		SharedHttpClientSessionManager toSetDependentSessionManager = dependentSessionManager;</b>
+<b class="nc">&nbsp;		if (toSetDependentSessionManager == null) {</b>
+<b class="nc">&nbsp;			getHttpClientSessionManager();</b>
+<b class="nc">&nbsp;			toSetDependentSessionManager = dependentSessionManager;</b>
+&nbsp;		}
+&nbsp;		// The strange lifecycle results in the possibility that the
+&nbsp;		// dependentSessionManger will be null due to a call to setHttpClient, so add
+&nbsp;		// a null guard here for that possibility
+<b class="nc">&nbsp;		if (toSetDependentSessionManager != null) {</b>
+<b class="nc">&nbsp;			toSetDependentSessionManager.setHttpClient(httpClient);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;		return SimpleValueFactory.getInstance();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryConnection getConnection() throws RepositoryException {
+<b class="nc">&nbsp;		if (!isInitialized()) {</b>
+<b class="nc">&nbsp;			init();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new HTTPRepositoryConnection(this, createHTTPClient());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isWritable() throws RepositoryException {
+<b class="nc">&nbsp;		if (!isInitialized()) {</b>
+<b class="nc">&nbsp;			init();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean isWritable = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RDF4JProtocolSession client = createHTTPClient()) {</b>
+<b class="nc">&nbsp;			final String repositoryURL = client.getRepositoryURL();</b>
+<b class="nc">&nbsp;			try (TupleQueryResult repositoryList = client.getRepositoryList()) {</b>
+<b class="nc">&nbsp;				while (repositoryList.hasNext()) {</b>
+<b class="nc">&nbsp;					final BindingSet bindingSet = repositoryList.next();</b>
+<b class="nc">&nbsp;					final Value uri = bindingSet.getValue(&quot;uri&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (uri != null &amp;&amp; uri.stringValue().equals(repositoryURL)) {</b>
+<b class="nc">&nbsp;						isWritable = Literals.getBooleanValue(bindingSet.getValue(&quot;writable&quot;), false);</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return isWritable;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the preferred serialization format for tuple query results to the supplied {@link TupleQueryResultFormat},
+&nbsp;	 * overriding the {@link SPARQLProtocolSession} &#39;s default preference. Setting this parameter is not necessary in
+&nbsp;	 * most cases as the {@link SPARQLProtocolSession} by default indicates a preference for the most compact and
+&nbsp;	 * efficient format available.
+&nbsp;	 *
+&nbsp;	 * @param format the preferred {@link TupleQueryResultFormat}. If set to &#39;null&#39; no explicit preference will be
+&nbsp;	 *               stated.
+&nbsp;	 */
+&nbsp;	public void setPreferredTupleQueryResultFormat(final TupleQueryResultFormat format) {
+<b class="nc">&nbsp;		this.tupleFormat = format;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates the current preferred {@link TupleQueryResultFormat}.
+&nbsp;	 *
+&nbsp;	 * @return The preferred format, of &#39;null&#39; if no explicit preference is defined.
+&nbsp;	 */
+&nbsp;	public TupleQueryResultFormat getPreferredTupleQueryResultFormat() {
+<b class="nc">&nbsp;		return tupleFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the preferred serialization format for RDF to the supplied {@link RDFFormat}, overriding the
+&nbsp;	 * {@link SPARQLProtocolSession}&#39;s default preference. Setting this parameter is not necessary in most cases as the
+&nbsp;	 * {@link SPARQLProtocolSession} by default indicates a preference for the most compact and efficient format
+&nbsp;	 * available.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Use with caution: if set to a format that does not support context serialization any context info contained in
+&nbsp;	 * the query result will be lost.
+&nbsp;	 *
+&nbsp;	 * @param format the preferred {@link RDFFormat}. If set to &#39;null&#39; no explicit preference will be stated.
+&nbsp;	 */
+&nbsp;	public void setPreferredRDFFormat(final RDFFormat format) {
+<b class="nc">&nbsp;		this.rdfFormat = format;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates the current preferred {@link RDFFormat}.
+&nbsp;	 *
+&nbsp;	 * @return The preferred format, of &#39;null&#39; if no explicit preference is defined.
+&nbsp;	 */
+&nbsp;	public RDFFormat getPreferredRDFFormat() {
+<b class="nc">&nbsp;		return rdfFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the username and password to use for authenticating with the remote repository.
+&nbsp;	 *
+&nbsp;	 * @param username the username. Setting this to null will disable authentication.
+&nbsp;	 * @param password the password. Setting this to null will disable authentication.
+&nbsp;	 */
+&nbsp;	public void setUsernameAndPassword(final String username, final String password) {
+<b class="nc">&nbsp;		this.username = username;</b>
+<b class="nc">&nbsp;		this.password = password;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getRepositoryURL() {
+<b class="nc">&nbsp;		return repositoryURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * -------------------* non-public methods * -------------------
+&nbsp;	 */
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void initializeInternal() throws RepositoryException {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void shutDownInternal() throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			SharedHttpClientSessionManager toCloseDependentClient = dependentSessionManager;</b>
+<b class="nc">&nbsp;			dependentSessionManager = null;</b>
+<b class="nc">&nbsp;			if (toCloseDependentClient != null) {</b>
+<b class="nc">&nbsp;				toCloseDependentClient.shutDown();</b>
+&nbsp;			}
+&nbsp;		} finally {
+&nbsp;			// remove reference but do not shut down, client may be shared by
+&nbsp;			// other repos.
+<b class="nc">&nbsp;			sessionManager = null;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link RDF4JProtocolSession} object.
+&nbsp;	 *
+&nbsp;	 * @return a {@link RDF4JProtocolSession} object.
+&nbsp;	 */
+&nbsp;	protected RDF4JProtocolSession createHTTPClient() {
+&nbsp;		// initialize HTTP client
+<b class="nc">&nbsp;		RDF4JProtocolSession httpClient = getHttpClientSessionManager().createRDF4JProtocolSession(serverURL);</b>
+<b class="nc">&nbsp;		httpClient.setValueFactory(SimpleValueFactory.getInstance());</b>
+<b class="nc">&nbsp;		if (repositoryURL != null) {</b>
+<b class="nc">&nbsp;			httpClient.setRepository(repositoryURL);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tupleFormat != null) {</b>
+<b class="nc">&nbsp;			httpClient.setPreferredTupleQueryResultFormat(tupleFormat);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (rdfFormat != null) {</b>
+<b class="nc">&nbsp;			httpClient.setPreferredRDFFormat(rdfFormat);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (username != null) {</b>
+<b class="nc">&nbsp;			httpClient.setUsernameAndPassword(username, password);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		httpClient.setAdditionalHttpHeaders(additionalHttpHeaders);</b>
+<b class="nc">&nbsp;		return httpClient;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verify if transaction handling should be done in backward-compatible mode (this is the case when communicating
+&nbsp;	 * with an older RDF4J Server).
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the Server does not support the extended transaction protocol, &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 * @throws RepositoryException if something went wrong while querying the server for the protocol version.
+&nbsp;	 */
+&nbsp;	boolean useCompatibleMode() throws RepositoryException {
+<b class="nc">&nbsp;		Boolean result = compatibleMode;</b>
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				result = compatibleMode;</b>
+<b class="nc">&nbsp;				if (result == null) {</b>
+&nbsp;					// protocol version 7 supports the new transaction
+&nbsp;					// handling. If the server is older, we need to run in
+&nbsp;					// backward-compatible mode.
+<b class="nc">&nbsp;					result = compatibleMode = (getServerProtocolVersion() &lt; 7);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the RDF4J Server&#39;s protocol version, as an integer
+&nbsp;	 *
+&nbsp;	 * @return the protocol version implemented by the RDF4J, as an integer number.
+&nbsp;	 */
+&nbsp;	int getServerProtocolVersion() {
+<b class="nc">&nbsp;		try (RDF4JProtocolSession client = createHTTPClient()) {</b>
+<b class="nc">&nbsp;			final String serverProtocolVersion = client.getServerProtocol();</b>
+<b class="nc">&nbsp;			return Integer.parseInt(serverProtocolVersion);</b>
+<b class="nc">&nbsp;		} catch (NumberFormatException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;could not read protocol version from server: &quot;, e);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

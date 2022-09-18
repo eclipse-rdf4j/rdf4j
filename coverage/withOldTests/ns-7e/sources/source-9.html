@@ -1,0 +1,597 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryResultIO</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryResultIO (org.eclipse.rdf4j.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryResultIO</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (6/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    3.8%
+  </span>
+  <span class="absValue">
+    (1/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    16.7%
+  </span>
+  <span class="absValue">
+    (17/102)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.concurrent.ForkJoinPool;
+&nbsp;import java.util.concurrent.LinkedBlockingQueue;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.CleanerTupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.impl.QueueCursor;
+&nbsp;import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+&nbsp;import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
+&nbsp;import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Class offering utility methods related to query results.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;public class QueryResultIO {</b>
+&nbsp;
+<b class="fc">&nbsp;	private final static ConcurrentCleaner cleaner = new ConcurrentCleaner();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match a MIME type against the list of tuple query result formats that can be parsed.
+&nbsp;	 *
+&nbsp;	 * @param mimeType A MIME type, e.g. &quot;application/sparql-results+xml&quot;.
+&nbsp;	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getParserFormatForMIMEType(String mimeType) {
+<b class="nc">&nbsp;		return TupleQueryResultParserRegistry.getInstance().getFileFormatForMIMEType(mimeType);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match the extension of a file name against the list of RDF formats that can be parsed.
+&nbsp;	 *
+&nbsp;	 * @param fileName A file name.
+&nbsp;	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getParserFormatForFileName(String fileName) {
+<b class="fc">&nbsp;		return TupleQueryResultParserRegistry.getInstance().getFileFormatForFileName(fileName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match a MIME type against the list of tuple query result formats that can be written.
+&nbsp;	 *
+&nbsp;	 * @param mimeType A MIME type, e.g. &quot;application/sparql-results+xml&quot;.
+&nbsp;	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getWriterFormatForMIMEType(String mimeType) {
+<b class="nc">&nbsp;		return TupleQueryResultWriterRegistry.getInstance().getFileFormatForMIMEType(mimeType);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match the extension of a file name against the list of RDF formats that can be written.
+&nbsp;	 *
+&nbsp;	 * @param fileName A file name.
+&nbsp;	 * @return An TupleQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getWriterFormatForFileName(String fileName) {
+<b class="nc">&nbsp;		return TupleQueryResultWriterRegistry.getInstance().getFileFormatForFileName(fileName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match a MIME type against the list of boolean query result formats that can be parsed.
+&nbsp;	 *
+&nbsp;	 * @param mimeType A MIME type, e.g. &quot;application/sparql-results+xml&quot;.
+&nbsp;	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getBooleanParserFormatForMIMEType(String mimeType) {
+<b class="nc">&nbsp;		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForMIMEType(mimeType);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match the extension of a file name against the list of RDF formats that can be parsed.
+&nbsp;	 *
+&nbsp;	 * @param fileName A file name.
+&nbsp;	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getBooleanParserFormatForFileName(String fileName) {
+<b class="nc">&nbsp;		return BooleanQueryResultParserRegistry.getInstance().getFileFormatForFileName(fileName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match a MIME type against the list of boolean query result formats that can be written.
+&nbsp;	 *
+&nbsp;	 * @param mimeType A MIME type, e.g. &quot;application/sparql-results+xml&quot;.
+&nbsp;	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getBooleanWriterFormatForMIMEType(String mimeType) {
+<b class="nc">&nbsp;		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForMIMEType(mimeType);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match the extension of a file name against the list of RDF formats that can be written.
+&nbsp;	 *
+&nbsp;	 * @param fileName A file name.
+&nbsp;	 * @return An BooleanQueryResultFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;QueryResultFormat&gt; getBooleanWriterFormatForFileName(String fileName) {
+<b class="nc">&nbsp;		return BooleanQueryResultWriterRegistry.getInstance().getFileFormatForFileName(fileName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating TupleQueryResultParser objects. This method uses the registry returned by
+&nbsp;	 * {@link TupleQueryResultParserRegistry#getInstance()} to get a factory for the specified format and uses this
+&nbsp;	 * factory to create the appropriate parser.
+&nbsp;	 *
+&nbsp;	 * @return A TupleQueryResultParser matching the given format.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If no parser is available for the specified tuple query result
+&nbsp;	 *                                               format.
+&nbsp;	 */
+&nbsp;	public static TupleQueryResultParser createTupleParser(QueryResultFormat format)
+&nbsp;			throws UnsupportedQueryResultFormatException {
+<b class="fc">&nbsp;		TupleQueryResultParserFactory factory = TupleQueryResultParserRegistry.getInstance()</b>
+<b class="fc">&nbsp;				.get(format)</b>
+<b class="fc">&nbsp;				.orElseThrow(() -&gt; new UnsupportedQueryResultFormatException(</b>
+&nbsp;						&quot;No parser factory available for tuple query result format &quot; + format));
+&nbsp;
+<b class="fc">&nbsp;		return factory.getParser();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating TupleQueryResultParser objects that use the specified ValueFactory to create RDF
+&nbsp;	 * model objects.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param valueFactory
+&nbsp;	 * @return A TupleQueryResultParser matching the given format.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If no parser is available for the specified tuple query result
+&nbsp;	 *                                               format.
+&nbsp;	 * @see TupleQueryResultParser#setValueFactory(ValueFactory)
+&nbsp;	 */
+&nbsp;	public static TupleQueryResultParser createTupleParser(QueryResultFormat format, ValueFactory valueFactory)
+&nbsp;			throws UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		TupleQueryResultParser parser = createTupleParser(format);</b>
+<b class="nc">&nbsp;		parser.setValueFactory(valueFactory);</b>
+<b class="nc">&nbsp;		return parser;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating TupleQueryResultWriter objects.This method uses the registry returned by
+&nbsp;	 * {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
+&nbsp;	 * factory to create the appropriate writer.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param out
+&nbsp;	 * @return A TupleQueryResultWriter matching the given format.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If no writer is available for the specified tuple query result
+&nbsp;	 *                                               format.
+&nbsp;	 */
+&nbsp;	public static TupleQueryResultWriter createTupleWriter(QueryResultFormat format, OutputStream out)
+&nbsp;			throws UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		TupleQueryResultWriterFactory factory = TupleQueryResultWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(format)</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new UnsupportedQueryResultFormatException(</b>
+&nbsp;						&quot;No writer factory available for tuple query result format &quot; + format));
+&nbsp;
+<b class="nc">&nbsp;		return factory.getWriter(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating BooleanQueryResultParser objects.This method uses the registry returned by
+&nbsp;	 * {@link BooleanQueryResultParserRegistry#getInstance()} to get a factory for the specified format and uses this
+&nbsp;	 * factory to create the appropriate parser.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @return A BooleanQueryResultParser matching the given format.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If no parser is available for the specified boolean query result
+&nbsp;	 *                                               format.
+&nbsp;	 */
+&nbsp;	public static BooleanQueryResultParser createBooleanParser(QueryResultFormat format)
+&nbsp;			throws UnsupportedQueryResultFormatException {
+<b class="fc">&nbsp;		BooleanQueryResultParserFactory factory = BooleanQueryResultParserRegistry.getInstance()</b>
+<b class="fc">&nbsp;				.get(format)</b>
+<b class="fc">&nbsp;				.orElseThrow(() -&gt; new UnsupportedQueryResultFormatException(</b>
+&nbsp;						&quot;No parser factory available for boolean query result format &quot; + format));
+&nbsp;
+<b class="fc">&nbsp;		return factory.getParser();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating BooleanQueryResultWriter objects.This method uses the registry returned by
+&nbsp;	 * {@link BooleanQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
+&nbsp;	 * factory to create the appropriate writer.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param out
+&nbsp;	 * @return A BooleanQueryResultWriter matching the given format.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If no writer is available for the specified boolean query result
+&nbsp;	 *                                               format.
+&nbsp;	 */
+&nbsp;	public static BooleanQueryResultWriter createBooleanWriter(QueryResultFormat format, OutputStream out)
+&nbsp;			throws UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		BooleanQueryResultWriterFactory factory = BooleanQueryResultWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(format)</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new UnsupportedQueryResultFormatException(</b>
+&nbsp;						&quot;No writer factory available for boolean query result format &quot; + format));
+&nbsp;
+<b class="nc">&nbsp;		return factory.getWriter(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating QueryResultWriter objects.This method uses the registry returned by
+&nbsp;	 * {@link TupleQueryResultWriterRegistry#getInstance()} to get a factory for the specified format and uses this
+&nbsp;	 * factory to create the appropriate writer.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param out
+&nbsp;	 * @return A QueryResultWriter matching the given format.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If no writer is available for the specified tuple query result
+&nbsp;	 *                                               format.
+&nbsp;	 */
+&nbsp;	public static QueryResultWriter createWriter(QueryResultFormat format, OutputStream out)
+&nbsp;			throws UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		Supplier&lt;UnsupportedQueryResultFormatException&gt; exception = () -&gt; new UnsupportedQueryResultFormatException(</b>
+&nbsp;				&quot;No writer factory available for query result format &quot; + format);
+&nbsp;
+<b class="nc">&nbsp;		if (format instanceof TupleQueryResultFormat) {</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleQueryResultWriterFactory factory = TupleQueryResultWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;					.get((TupleQueryResultFormat) format)</b>
+<b class="nc">&nbsp;					.orElseThrow(exception);</b>
+&nbsp;
+<b class="nc">&nbsp;			return factory.getWriter(out);</b>
+<b class="nc">&nbsp;		} else if (format instanceof BooleanQueryResultFormat) {</b>
+<b class="nc">&nbsp;			BooleanQueryResultWriterFactory factory = BooleanQueryResultWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;					.get((BooleanQueryResultFormat) format)</b>
+<b class="nc">&nbsp;					.orElseThrow(exception);</b>
+&nbsp;
+<b class="nc">&nbsp;			return factory.getWriter(out);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw exception.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a query result document, reporting the parsed solutions to the supplied TupleQueryResultHandler.
+&nbsp;	 *
+&nbsp;	 * @param in           An InputStream to read the query result document from.
+&nbsp;	 * @param format       The query result format of the document to parse. See {@link TupleQueryResultFormat} for the
+&nbsp;	 *                     list of supported formats.
+&nbsp;	 * @param handler      The TupleQueryResultHandler to report the parse results to.
+&nbsp;	 * @param valueFactory
+&nbsp;	 * @throws IOException                           If an I/O error occurred while reading the query result document
+&nbsp;	 *                                               from the stream.
+&nbsp;	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the supplied
+&nbsp;	 *                                               TupleQueryResultHandler.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
+&nbsp;	 */
+&nbsp;	public static void parseTuple(InputStream in, QueryResultFormat format, TupleQueryResultHandler handler,
+&nbsp;			ValueFactory valueFactory) throws IOException, QueryResultParseException, TupleQueryResultHandlerException,
+&nbsp;			UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		TupleQueryResultParser parser = createTupleParser(format);</b>
+<b class="nc">&nbsp;		parser.setValueFactory(valueFactory);</b>
+<b class="nc">&nbsp;		parser.setQueryResultHandler(handler);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			parser.parseQueryResult(in);</b>
+<b class="nc">&nbsp;		} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;			if (e instanceof TupleQueryResultHandlerException) {</b>
+<b class="nc">&nbsp;				throw (TupleQueryResultHandlerException) e;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new TupleQueryResultHandlerException(e);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a query result document and returns it as a TupleQueryResult object.
+&nbsp;	 *
+&nbsp;	 * @param in     An InputStream to read the query result document from.
+&nbsp;	 * @param format The query result format of the document to parse. See {@link TupleQueryResultFormat} for the list
+&nbsp;	 *               of supported formats.
+&nbsp;	 * @return A TupleQueryResult containing the query results.
+&nbsp;	 * @throws IOException                           If an I/O error occurred while reading the query result document
+&nbsp;	 *                                               from the stream.
+&nbsp;	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result parser.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerReference argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public static TupleQueryResult parseTuple(InputStream in, QueryResultFormat format,
+&nbsp;			WeakReference&lt;?&gt; callerReference) throws IOException,
+&nbsp;			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		assert callerReference == null;</b>
+<b class="nc">&nbsp;		return parseTupleInternal(in, format, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a query result document and returns it as a TupleQueryResult object, with parsing done on a separate
+&nbsp;	 * thread in the background.&lt;br&gt;
+&nbsp;	 * IMPORTANT: As this method may spawn a new thread in the background, it is vitally important that the
+&nbsp;	 * TupleQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
+&nbsp;	 *
+&nbsp;	 * @param in     An InputStream to read the query result document from.
+&nbsp;	 * @param format The query result format of the document to parse. See {@link TupleQueryResultFormat} for the list
+&nbsp;	 *               of supported formats.
+&nbsp;	 * @return A TupleQueryResult containing the query results, which must be closed to prevent resource leaks.
+&nbsp;	 * @throws IOException                           If an I/O error occurred while reading the query result document
+&nbsp;	 *                                               from the stream.
+&nbsp;	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result parser.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 * @throws IllegalArgumentException              If an unsupported query result file format was specified.
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerReference argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public static TupleQueryResult parseTupleBackground(InputStream in, QueryResultFormat format,
+&nbsp;			WeakReference&lt;?&gt; callerReference) throws IOException,
+&nbsp;			QueryResultParseException, TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		assert callerReference == null;</b>
+<b class="nc">&nbsp;		return parseTupleInternal(in, format, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static TupleQueryResult parseTupleInternal(InputStream in, QueryResultFormat format,
+&nbsp;			boolean parseOnBackgroundThread)
+&nbsp;			throws IOException, QueryResultParseException,
+&nbsp;			TupleQueryResultHandlerException, UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		TupleQueryResultParser parser = createTupleParser(format);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (parseOnBackgroundThread) {</b>
+<b class="nc">&nbsp;			BackgroundTupleResult result = new BackgroundTupleResult(</b>
+&nbsp;					new QueueCursor&lt;&gt;(new LinkedBlockingQueue&lt;&gt;(1)),
+&nbsp;					parser, in);
+&nbsp;			// Start a new thread in the background, which will be completed
+&nbsp;			// when the BackgroundTupleResult is either closed or interrupted
+&nbsp;			try {
+<b class="nc">&nbsp;				ForkJoinPool.commonPool().submit(result);</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				result.close();</b>
+<b class="nc">&nbsp;				throw t;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return new CleanerTupleQueryResult(result, cleaner);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			TupleQueryResultBuilder qrBuilder = new TupleQueryResultBuilder();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				parser.setQueryResultHandler(qrBuilder).parseQueryResult(in);</b>
+<b class="nc">&nbsp;			} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;				if (e instanceof TupleQueryResultHandlerException) {</b>
+<b class="nc">&nbsp;					throw (TupleQueryResultHandlerException) e;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new TupleQueryResultHandlerException(e);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return qrBuilder.getQueryResult();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a boolean query result document and returns the parsed value.
+&nbsp;	 *
+&nbsp;	 * @param in     An InputStream to read the query result document from.
+&nbsp;	 * @param format The file format of the document to parse.
+&nbsp;	 * @return A boolean representing the result of parsing the given InputStream.
+&nbsp;	 * @throws IOException                           If an I/O error occurred while reading the query result document
+&nbsp;	 *                                               from the stream.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If an unsupported query result file format was specified.
+&nbsp;	 */
+&nbsp;	public static boolean parseBoolean(InputStream in, QueryResultFormat format)
+&nbsp;			throws IOException, QueryResultParseException, UnsupportedQueryResultFormatException {
+<b class="fc">&nbsp;		BooleanQueryResultParser parser = createBooleanParser(format);</b>
+&nbsp;		try {
+&nbsp;
+<b class="fc">&nbsp;			QueryResultCollector handler = new QueryResultCollector();</b>
+<b class="fc">&nbsp;			parser.setQueryResultHandler(handler);</b>
+<b class="fc">&nbsp;			parser.parseQueryResult(in);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (handler.getHandledBoolean()) {</b>
+<b class="fc">&nbsp;				return handler.getBoolean();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new QueryResultParseException(&quot;Did not find a boolean result&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;			throw new QueryResultParseException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a query result document in a specific query result format to an output stream.
+&nbsp;	 *
+&nbsp;	 * @param tqr    The query result to write.
+&nbsp;	 * @param format The file format of the document to write.
+&nbsp;	 * @param out    An OutputStream to write the document to.
+&nbsp;	 * @throws IOException                           If an I/O error occurred while writing the query result document to
+&nbsp;	 *                                               the stream.
+&nbsp;	 * @throws TupleQueryResultHandlerException      If such an exception is thrown by the used query result writer.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException
+&nbsp;	 * @throws QueryEvaluationException              If an unsupported query result file format was specified.
+&nbsp;	 */
+&nbsp;	public static void writeTuple(TupleQueryResult tqr, QueryResultFormat format, OutputStream out) throws IOException,
+&nbsp;			TupleQueryResultHandlerException, UnsupportedQueryResultFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		TupleQueryResultWriter writer = createTupleWriter(format, out);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			writer.startDocument();</b>
+<b class="nc">&nbsp;			writer.startHeader();</b>
+<b class="nc">&nbsp;			QueryResults.report(tqr, writer);</b>
+<b class="nc">&nbsp;		} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() instanceof IOException) {</b>
+<b class="nc">&nbsp;				throw (IOException) e.getCause();</b>
+<b class="nc">&nbsp;			} else if (e instanceof TupleQueryResultHandlerException) {</b>
+<b class="nc">&nbsp;				throw (TupleQueryResultHandlerException) e;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new TupleQueryResultHandlerException(e);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a boolean query result document in a specific boolean query result format to an output stream.
+&nbsp;	 *
+&nbsp;	 * @param value  The value to write.
+&nbsp;	 * @param format The file format of the document to write.
+&nbsp;	 * @param out    An OutputStream to write the document to.
+&nbsp;	 * @throws QueryResultHandlerException           If an I/O or other error occurred while writing the query result
+&nbsp;	 *                                               document to the stream.
+&nbsp;	 * @throws UnsupportedQueryResultFormatException If an unsupported query result file format was specified.
+&nbsp;	 */
+&nbsp;	public static void writeBoolean(boolean value, QueryResultFormat format, OutputStream out)
+&nbsp;			throws QueryResultHandlerException, UnsupportedQueryResultFormatException {
+<b class="nc">&nbsp;		BooleanQueryResultWriter writer = createBooleanWriter(format, out);</b>
+<b class="nc">&nbsp;		writer.startDocument();</b>
+<b class="nc">&nbsp;		writer.startHeader();</b>
+<b class="nc">&nbsp;		writer.handleBoolean(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes a graph query result document in a specific RDF format to an output stream.
+&nbsp;	 *
+&nbsp;	 * @param gqr    The query result to write.
+&nbsp;	 * @param format The file format of the document to write.
+&nbsp;	 * @param out    An OutputStream to write the document to.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while writing the query result document to the
+&nbsp;	 *                                      stream.
+&nbsp;	 * @throws RDFHandlerException          If such an exception is thrown by the used RDF writer.
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws UnsupportedRDFormatException If an unsupported query result file format was specified.
+&nbsp;	 */
+&nbsp;	public static void writeGraph(GraphQueryResult gqr, RDFFormat format, OutputStream out)
+&nbsp;			throws IOException, RDFHandlerException, UnsupportedRDFormatException, QueryEvaluationException {
+<b class="nc">&nbsp;		RDFWriter writer = Rio.createWriter(format, out);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			QueryResults.report(gqr, writer);</b>
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() instanceof IOException) {</b>
+<b class="nc">&nbsp;				throw (IOException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw e;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

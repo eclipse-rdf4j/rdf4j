@@ -1,0 +1,423 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BulkedExternalInnerJoin</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: BulkedExternalInnerJoin (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BulkedExternalInnerJoin</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/60)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">BulkedExternalInnerJoin$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/96)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/101)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.apache.commons.text.StringEscapeUtils;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Håvard Ottestad
+&nbsp; *         &lt;p&gt;
+&nbsp; *         This inner join algorithm assumes the left iterator is unique for tuple[0], eg. no two tuples have the same
+&nbsp; *         value at index 0. The right iterator is allowed to contain duplicates.
+&nbsp; *         &lt;p&gt;
+&nbsp; *         External means that this plan node can join the iterator from a plan node with an external source (Repository
+&nbsp; *         or SailConnection) based on a query or a predicate.
+&nbsp; */
+<b class="nc">&nbsp;public class BulkedExternalInnerJoin extends AbstractBulkJoinPlanNode {</b>
+&nbsp;
+<b class="nc">&nbsp;	private final static Resource[] allContext = {};</b>
+<b class="nc">&nbsp;	private static final Function&lt;BindingSet, ValidationTuple&gt; propertyShapeScopeAllContextMapper = b -&gt; new ValidationTuple(</b>
+<b class="nc">&nbsp;			b.getValue(&quot;a&quot;), b.getValue(&quot;c&quot;), ConstraintComponent.Scope.propertyShape, true, allContext);</b>
+<b class="nc">&nbsp;	private static final Function&lt;BindingSet, ValidationTuple&gt; nodeShapeScopeAllContextMapper = b -&gt; new ValidationTuple(</b>
+<b class="nc">&nbsp;			b.getValue(&quot;a&quot;), b.getValue(&quot;c&quot;), ConstraintComponent.Scope.nodeShape, true, allContext);</b>
+&nbsp;
+&nbsp;	private final SailConnection connection;
+&nbsp;	private final PlanNode leftNode;
+&nbsp;	private final Dataset dataset;
+&nbsp;	private final Resource[] dataGraph;
+<b class="nc">&nbsp;	private TupleExpr parsedQuery = null;</b>
+&nbsp;	private final boolean skipBasedOnPreviousConnection;
+&nbsp;	private final SailConnection previousStateConnection;
+&nbsp;	private final String query;
+<b class="nc">&nbsp;	private boolean printed = false;</b>
+&nbsp;
+&nbsp;	public BulkedExternalInnerJoin(PlanNode leftNode, SailConnection connection, Resource[] dataGraph, String query,
+&nbsp;			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection,
+<b class="nc">&nbsp;			Function&lt;BindingSet, ValidationTuple&gt; mapper) {</b>
+&nbsp;
+<b class="nc">&nbsp;		assert !skipBasedOnPreviousConnection || previousStateConnection != null;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.leftNode = PlanNodeHelper.handleSorting(this, leftNode);</b>
+<b class="nc">&nbsp;		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);</b>
+<b class="nc">&nbsp;		this.connection = connection;</b>
+<b class="nc">&nbsp;		assert this.connection != null;</b>
+<b class="nc">&nbsp;		this.skipBasedOnPreviousConnection = skipBasedOnPreviousConnection;</b>
+<b class="nc">&nbsp;		this.mapper = mapper;</b>
+<b class="nc">&nbsp;		this.previousStateConnection = previousStateConnection;</b>
+<b class="nc">&nbsp;		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);</b>
+<b class="nc">&nbsp;		this.dataGraph = dataGraph;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Function&lt;BindingSet, ValidationTuple&gt; getMapper(String a, String c, ConstraintComponent.Scope scope,
+&nbsp;			Resource[] dataGraph) {
+<b class="nc">&nbsp;		assert a.equals(&quot;a&quot;);</b>
+<b class="nc">&nbsp;		assert c.equals(&quot;c&quot;);</b>
+<b class="nc">&nbsp;		if (scope == ConstraintComponent.Scope.nodeShape &amp;&amp; dataGraph.length == 0) {</b>
+<b class="nc">&nbsp;			return nodeShapeScopeAllContextMapper;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (scope == ConstraintComponent.Scope.propertyShape &amp;&amp; dataGraph.length == 0) {</b>
+<b class="nc">&nbsp;			return propertyShapeScopeAllContextMapper;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (b) -&gt; new ValidationTuple(b.getValue(a), b.getValue(c), scope, true, dataGraph);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator() {
+<b class="nc">&nbsp;		return new LoggingCloseableIteration(this, validationExecutionLogger) {</b>
+&nbsp;
+<b class="nc">&nbsp;			final ArrayDeque&lt;ValidationTuple&gt; left = new ArrayDeque&lt;&gt;(BULK_SIZE);</b>
+&nbsp;
+<b class="nc">&nbsp;			final ArrayDeque&lt;ValidationTuple&gt; right = new ArrayDeque&lt;&gt;(BULK_SIZE);</b>
+&nbsp;
+<b class="nc">&nbsp;			final ArrayDeque&lt;ValidationTuple&gt; joined = new ArrayDeque&lt;&gt;(BULK_SIZE);</b>
+&nbsp;
+<b class="nc">&nbsp;			final CloseableIteration&lt;? extends ValidationTuple, SailException&gt; leftNodeIterator = leftNode.iterator();</b>
+&nbsp;
+&nbsp;			private void calculateNext() {
+&nbsp;
+<b class="nc">&nbsp;				if (!joined.isEmpty()) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				while (joined.isEmpty() &amp;&amp; leftNodeIterator.hasNext()) {</b>
+&nbsp;
+<b class="nc">&nbsp;					while (left.size() &lt; BULK_SIZE &amp;&amp; leftNodeIterator.hasNext()) {</b>
+<b class="nc">&nbsp;						left.addFirst(leftNodeIterator.next());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (parsedQuery == null) {</b>
+<b class="nc">&nbsp;						parsedQuery = parseQuery(query);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					runQuery(left, right, connection, parsedQuery, dataset, dataGraph, skipBasedOnPreviousConnection,</b>
+&nbsp;							previousStateConnection);
+&nbsp;
+<b class="nc">&nbsp;					while (!right.isEmpty()) {</b>
+&nbsp;
+<b class="nc">&nbsp;						ValidationTuple leftPeek = left.peekLast();</b>
+&nbsp;
+<b class="nc">&nbsp;						ValidationTuple rightPeek = right.peekLast();</b>
+&nbsp;
+<b class="nc">&nbsp;						assert leftPeek != null;</b>
+<b class="nc">&nbsp;						assert rightPeek != null;</b>
+&nbsp;
+<b class="nc">&nbsp;						assert leftPeek.getActiveTarget() != null;</b>
+<b class="nc">&nbsp;						assert rightPeek.getActiveTarget() != null;</b>
+&nbsp;
+<b class="nc">&nbsp;						if (rightPeek.sameTargetAs(leftPeek)) {</b>
+&nbsp;							// we have a join !
+<b class="nc">&nbsp;							joined.addLast(ValidationTupleHelper.join(leftPeek, rightPeek));</b>
+<b class="nc">&nbsp;							right.removeLast();</b>
+&nbsp;
+<b class="nc">&nbsp;							ValidationTuple rightPeek2 = right.peekLast();</b>
+&nbsp;
+<b class="nc">&nbsp;							if (rightPeek2 == null || !rightPeek2.sameTargetAs(leftPeek)) {</b>
+&nbsp;								// no more to join from right, pop left so we don&#39;t print it again.
+&nbsp;
+<b class="nc">&nbsp;								left.removeLast();</b>
+&nbsp;							}
+<b class="nc">&nbsp;						} else {</b>
+<b class="nc">&nbsp;							int compare = rightPeek.compareActiveTarget(leftPeek);</b>
+&nbsp;
+<b class="nc">&nbsp;							if (compare &lt; 0) {</b>
+<b class="nc">&nbsp;								if (right.isEmpty()) {</b>
+<b class="nc">&nbsp;									throw new IllegalStateException();</b>
+&nbsp;								}
+&nbsp;
+<b class="nc">&nbsp;								right.removeLast();</b>
+&nbsp;
+&nbsp;							} else {
+<b class="nc">&nbsp;								if (left.isEmpty()) {</b>
+<b class="nc">&nbsp;									throw new IllegalStateException();</b>
+&nbsp;								}
+<b class="nc">&nbsp;								left.removeLast();</b>
+&nbsp;
+&nbsp;							}
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;					left.clear();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void localClose() throws SailException {
+<b class="nc">&nbsp;				leftNodeIterator.close();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected boolean localHasNext() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				return !joined.isEmpty();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected ValidationTuple loggingNext() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				return joined.removeFirst();</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int depth() {
+<b class="nc">&nbsp;		return leftNode.depth() + 1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+<b class="nc">&nbsp;		if (printed) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		printed = true;</b>
+<b class="nc">&nbsp;		stringBuilder.append(getId() + &quot; [label=\&quot;&quot; + StringEscapeUtils.escapeJava(this.toString()) + &quot;\&quot;];&quot;)</b>
+<b class="nc">&nbsp;				.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		stringBuilder.append(leftNode.getId() + &quot; -&gt; &quot; + getId() + &quot; [label=\&quot;left\&quot;]&quot;).append(&quot;\n&quot;);</b>
+&nbsp;
+&nbsp;		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+&nbsp;		// sail
+<b class="nc">&nbsp;		if (connection instanceof MemoryStoreConnection) {</b>
+<b class="nc">&nbsp;			stringBuilder.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + &quot; -&gt; &quot;</b>
+<b class="nc">&nbsp;					+ getId() + &quot; [label=\&quot;right\&quot;]&quot;).append(&quot;\n&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			stringBuilder.append(System.identityHashCode(connection) + &quot; -&gt; &quot; + getId() + &quot; [label=\&quot;right\&quot;]&quot;)</b>
+<b class="nc">&nbsp;					.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (skipBasedOnPreviousConnection) {</b>
+&nbsp;
+<b class="nc">&nbsp;			stringBuilder</b>
+<b class="nc">&nbsp;					.append(System.identityHashCode(previousStateConnection) + &quot; -&gt; &quot; + getId()</b>
+&nbsp;							+ &quot; [label=\&quot;skip if not present\&quot;]&quot;)
+<b class="nc">&nbsp;					.append(&quot;\n&quot;);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		leftNode.getPlanAsGraphvizDot(stringBuilder);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;BulkedExternalInnerJoin{&quot; + &quot;query=&quot; + query.replace(&quot;\n&quot;, &quot;&quot;) + &#39;}&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return System.identityHashCode(this) + &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+<b class="nc">&nbsp;		this.validationExecutionLogger = validationExecutionLogger;</b>
+<b class="nc">&nbsp;		leftNode.receiveLogger(validationExecutionLogger);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!super.equals(o)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		BulkedExternalInnerJoin that = (BulkedExternalInnerJoin) o;</b>
+<b class="nc">&nbsp;		return skipBasedOnPreviousConnection == that.skipBasedOnPreviousConnection</b>
+<b class="nc">&nbsp;				&amp;&amp; Objects.equals(connection, that.connection)</b>
+<b class="nc">&nbsp;				&amp;&amp; leftNode.equals(that.leftNode)</b>
+<b class="nc">&nbsp;				&amp;&amp; Objects.equals(dataset, that.dataset)</b>
+<b class="nc">&nbsp;				&amp;&amp; Objects.equals(previousStateConnection, that.previousStateConnection) &amp;&amp; query.equals(that.query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(super.hashCode(), connection, dataset, leftNode, skipBasedOnPreviousConnection,</b>
+&nbsp;				previousStateConnection, query);
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,198 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > OperationLog</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.operationlog.log</a>
+</div>
+
+<h1>Coverage Summary for Class: OperationLog (org.eclipse.rdf4j.spring.operationlog.log)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">OperationLog</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.operationlog.log;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;import org.eclipse.rdf4j.spring.operationlog.log.slf4j.DebuggingOperationExecutionStatsConsumer;
+&nbsp;import org.springframework.beans.factory.annotation.Autowired;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class OperationLog {
+&nbsp;
+&nbsp;	private OperationExecutionStatsConsumer statsConsumer;
+&nbsp;
+<b class="nc">&nbsp;	public OperationLog(OperationExecutionStatsConsumer statsConsumer) {</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(statsConsumer);</b>
+<b class="nc">&nbsp;		this.statsConsumer = statsConsumer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Autowired(required = false)
+&nbsp;	public void setStatsConsumer(OperationExecutionStatsConsumer statsConsumer) {
+<b class="nc">&nbsp;		this.statsConsumer = statsConsumer;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public OperationLog() {</b>
+<b class="nc">&nbsp;		this.statsConsumer = new DebuggingOperationExecutionStatsConsumer();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void runWithLog(Operation operation, Runnable action) {
+<b class="nc">&nbsp;		runWithLog(makeStats(operation), action);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public &lt;T&gt; T runWithLog(Operation operation, Supplier&lt;T&gt; supplier) {
+<b class="nc">&nbsp;		return runWithLog(makeStats(operation), supplier);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void runWithLog(PseudoOperation operation, Runnable action) {
+<b class="nc">&nbsp;		runWithLog(makeStats(operation), action);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public &lt;T&gt; T runWithLog(PseudoOperation operation, Supplier&lt;T&gt; supplier) {
+<b class="nc">&nbsp;		return runWithLog(makeStats(operation), supplier);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private OperationExecutionStats makeStats(Operation operation) {
+<b class="nc">&nbsp;		Objects.requireNonNull(operation);</b>
+<b class="nc">&nbsp;		return OperationExecutionStats.of(operation);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private OperationExecutionStats makeStats(PseudoOperation operation) {
+<b class="nc">&nbsp;		Objects.requireNonNull(operation);</b>
+<b class="nc">&nbsp;		return OperationExecutionStats.of(operation);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void runWithLog(OperationExecutionStats stats, Runnable action) {
+<b class="nc">&nbsp;		Objects.requireNonNull(action);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			action.run();</b>
+<b class="nc">&nbsp;			stats.operationSuccessful();</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			stats.operationFailed();</b>
+<b class="nc">&nbsp;			throw t;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			statsConsumer.consumeOperationExecutionStats(stats);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T&gt; T runWithLog(OperationExecutionStats stats, Supplier&lt;T&gt; supplier) {
+<b class="nc">&nbsp;		Objects.requireNonNull(supplier);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			T result = supplier.get();</b>
+<b class="nc">&nbsp;			stats.operationSuccessful();</b>
+<b class="nc">&nbsp;			return result;</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			stats.operationFailed();</b>
+<b class="nc">&nbsp;			throw t;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			statsConsumer.consumeOperationExecutionStats(stats);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,848 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementPatternQueryEvaluationStep</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementPatternQueryEvaluationStep (org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementPatternQueryEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    95.5%
+  </span>
+  <span class="absValue">
+    (21/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    71.2%
+  </span>
+  <span class="absValue">
+    (205/288)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83%
+  </span>
+  <span class="absValue">
+    (200/241)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">StatementPatternQueryEvaluationStep$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">StatementPatternQueryEvaluationStep$ConvertStatementToBindingSetIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    85.7%
+  </span>
+  <span class="absValue">
+    (6/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    93.8%
+  </span>
+  <span class="absValue">
+    (15/16)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">StatementPatternQueryEvaluationStep$JoinStatementWithBindingSetIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    85.7%
+  </span>
+  <span class="absValue">
+    (6/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (5/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    94.4%
+  </span>
+  <span class="absValue">
+    (17/18)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    92.1%
+  </span>
+  <span class="absValue">
+    (35/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70.4%
+  </span>
+  <span class="absValue">
+    (214/304)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    84.5%
+  </span>
+  <span class="absValue">
+    (234/277)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.BiConsumer;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Predicate;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.FilterIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SESAME;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;
+&nbsp;/**
+&nbsp; * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
+&nbsp; * possible.
+&nbsp; */
+&nbsp;public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
+&nbsp;
+<b class="fc">&nbsp;	public static final Resource[] DEFAULT_CONTEXT = { null };</b>
+<b class="fc">&nbsp;	public static final Resource[] ALL_CONTEXT = new Resource[0];</b>
+<b class="fc">&nbsp;	private static final Function&lt;Value, Resource[]&gt; RETURN_NULL_VALUE_RESOURCE_ARRAY = (v) -&gt; null;</b>
+&nbsp;
+&nbsp;	private final StatementPattern statementPattern;
+&nbsp;	private final TripleSource tripleSource;
+&nbsp;	private final boolean emptyGraph;
+&nbsp;	private final Function&lt;Value, Resource[]&gt; contextSup;
+&nbsp;	private final BiConsumer&lt;MutableBindingSet, Statement&gt; converter;
+&nbsp;	private final QueryEvaluationContext context;
+&nbsp;
+&nbsp;	private final Predicate&lt;BindingSet&gt; unboundTest;
+&nbsp;
+&nbsp;	private final Function&lt;BindingSet, Value&gt; getContextVar;
+&nbsp;	private final Function&lt;BindingSet, Value&gt; getSubjectVar;
+&nbsp;	private final Function&lt;BindingSet, Value&gt; getPredicateVar;
+&nbsp;	private final Function&lt;BindingSet, Value&gt; getObjectVar;
+&nbsp;
+&nbsp;	// We try to do as much work as possible in the constructor.
+&nbsp;	// With the aim of making the evaluate method as cheap as possible.
+&nbsp;	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
+&nbsp;			TripleSource tripleSource) {
+<b class="fc">&nbsp;		super();</b>
+<b class="fc">&nbsp;		this.statementPattern = statementPattern;</b>
+<b class="fc">&nbsp;		this.context = context;</b>
+<b class="fc">&nbsp;		this.tripleSource = tripleSource;</b>
+<b class="fc">&nbsp;		Set&lt;IRI&gt; graphs = null;</b>
+<b class="fc">&nbsp;		Dataset dataset = context.getDataset();</b>
+<b class="fc">&nbsp;		if (dataset != null) {</b>
+<b class="fc">&nbsp;			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {</b>
+<b class="fc">&nbsp;				graphs = dataset.getDefaultGraphs();</b>
+<b class="pc">&nbsp;				emptyGraph = graphs.isEmpty() &amp;&amp; !dataset.getNamedGraphs().isEmpty();</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				graphs = dataset.getNamedGraphs();</b>
+<b class="pc">&nbsp;				emptyGraph = graphs.isEmpty() &amp;&amp; !dataset.getDefaultGraphs().isEmpty();</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="fc">&nbsp;			emptyGraph = false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);</b>
+&nbsp;
+<b class="fc">&nbsp;		Var subjVar = statementPattern.getSubjectVar();</b>
+<b class="fc">&nbsp;		Var predVar = statementPattern.getPredicateVar();</b>
+<b class="fc">&nbsp;		Var objVar = statementPattern.getObjectVar();</b>
+<b class="fc">&nbsp;		Var conVar = statementPattern.getContextVar();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (subjVar != null) {</b>
+<b class="pc">&nbsp;			if (predVar != null &amp;&amp; predVar.getName().equals(subjVar.getName())) {</b>
+<b class="nc">&nbsp;				predVar = null;</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (objVar != null &amp;&amp; objVar.getName().equals(subjVar.getName())) {</b>
+<b class="fc">&nbsp;				objVar = null;</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (conVar != null &amp;&amp; conVar.getName().equals(subjVar.getName())) {</b>
+<b class="nc">&nbsp;				conVar = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (predVar != null) {</b>
+<b class="pc">&nbsp;			if (objVar != null &amp;&amp; objVar.getName().equals(predVar.getName())) {</b>
+<b class="nc">&nbsp;				objVar = null;</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (conVar != null &amp;&amp; conVar.getName().equals(predVar.getName())) {</b>
+<b class="nc">&nbsp;				conVar = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (objVar != null) {</b>
+<b class="fc">&nbsp;			if (conVar != null &amp;&amp; conVar.getName().equals(objVar.getName())) {</b>
+<b class="fc">&nbsp;				conVar = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		converter = makeConverter(context, subjVar, predVar, objVar, conVar);</b>
+&nbsp;
+<b class="fc">&nbsp;		unboundTest = getUnboundTest(context, subjVar, predVar, objVar, conVar);</b>
+&nbsp;
+<b class="fc">&nbsp;		getContextVar = makeGetVarValue(conVar, context);</b>
+<b class="fc">&nbsp;		getSubjectVar = makeGetVarValue(subjVar, context);</b>
+<b class="fc">&nbsp;		getPredicateVar = makeGetVarValue(predVar, context);</b>
+<b class="fc">&nbsp;		getObjectVar = makeGetVarValue(objVar, context);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Predicate&lt;BindingSet&gt; getUnboundTest(QueryEvaluationContext context, Var s, Var p,
+&nbsp;			Var o, Var c) {
+&nbsp;
+<b class="pc">&nbsp;		if (s != null &amp;&amp; !s.isConstant()) {</b>
+<b class="pc">&nbsp;			if (p != null &amp;&amp; !p.isConstant()) {</b>
+<b class="pc">&nbsp;				if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="fc">&nbsp;					if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="fc">&nbsp;						return UnboundTest.spoc(context, s, p, o, c);</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						return UnboundTest.spo(context, s, p, o);</b>
+&nbsp;					}
+<b class="pc">&nbsp;				} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;					return UnboundTest.spc(context, s, p, c);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return UnboundTest.sp(context, s, p);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			} else if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="fc">&nbsp;				if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="fc">&nbsp;					return UnboundTest.soc(context, s, o, c);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return UnboundTest.so(context, s, o);</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;				return UnboundTest.sc(context, s, c);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return UnboundTest.s(context, s);</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (p != null &amp;&amp; !p.isConstant()) {</b>
+<b class="pc">&nbsp;			if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="pc">&nbsp;				if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;					return UnboundTest.poc(context, p, o, c);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return UnboundTest.po(context, p, o);</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;				return UnboundTest.pc(context, p, c);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return UnboundTest.p(context, p);</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="fc">&nbsp;			if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="fc">&nbsp;				return UnboundTest.oc(context, o, c);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return UnboundTest.o(context, o);</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;			return UnboundTest.c(context, c);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return (b) -&gt; false;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Function&lt;BindingSet, Value&gt; makeGetVarValue(Var var, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		if (var == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+<b class="fc">&nbsp;		} else if (var.hasValue()) {</b>
+<b class="fc">&nbsp;			Value value = var.getValue();</b>
+<b class="fc">&nbsp;			return (b) -&gt; value;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return context.getValue(var.getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings) {
+<b class="fc">&nbsp;		if (emptyGraph) {</b>
+<b class="fc">&nbsp;			return EMPTY_ITERATION;</b>
+<b class="fc">&nbsp;		} else if (bindings.isEmpty()) {</b>
+<b class="fc">&nbsp;			ConvertStatementToBindingSetIterator iteration = getIteration();</b>
+<b class="fc">&nbsp;			if (iteration == null) {</b>
+<b class="fc">&nbsp;				return EMPTY_ITERATION;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return iteration;</b>
+&nbsp;
+<b class="fc">&nbsp;		} else if (unboundTest.test(bindings)) {</b>
+&nbsp;			// the variable must remain unbound for this solution see
+&nbsp;			// https://www.w3.org/TR/sparql11-query/#assignment
+<b class="fc">&nbsp;			return EMPTY_ITERATION;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			JoinStatementWithBindingSetIterator iteration = getIteration(bindings);</b>
+<b class="fc">&nbsp;			if (iteration == null) {</b>
+<b class="fc">&nbsp;				return EMPTY_ITERATION;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return iteration;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private JoinStatementWithBindingSetIterator getIteration(BindingSet bindings) {
+<b class="fc">&nbsp;		final Value contextValue = getContextVar != null ? getContextVar.apply(bindings) : null;</b>
+&nbsp;
+<b class="fc">&nbsp;		Resource[] contexts = contextSup.apply(contextValue);</b>
+<b class="pc">&nbsp;		if (contexts == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check that the subject is a Resource and the predicate can be an IRI
+&nbsp;		// if not we can&#39;t return any value.
+&nbsp;
+<b class="pc">&nbsp;		Value subject = getSubjectVar != null ? getSubjectVar.apply(bindings) : null;</b>
+<b class="fc">&nbsp;		if (subject != null &amp;&amp; !subject.isResource()) {</b>
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		Value predicate = getPredicateVar != null ? getPredicateVar.apply(bindings) : null;</b>
+<b class="pc">&nbsp;		if (predicate != null &amp;&amp; !predicate.isIRI()) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;</b>
+&nbsp;
+<b class="fc">&nbsp;		CloseableIteration&lt;? extends Statement, QueryEvaluationException&gt; iteration = null;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);</b>
+<b class="pc">&nbsp;			if (iteration instanceof EmptyIteration) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);</b>
+&nbsp;
+&nbsp;			// Return an iterator that converts the statements to var bindings
+<b class="fc">&nbsp;			return new JoinStatementWithBindingSetIterator(iteration, converter, bindings, context);</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			if (iteration != null) {</b>
+<b class="nc">&nbsp;				iteration.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (t instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(t);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private ConvertStatementToBindingSetIterator getIteration() {
+&nbsp;
+<b class="fc">&nbsp;		Var contextVar = statementPattern.getContextVar();</b>
+<b class="fc">&nbsp;		Resource[] contexts = contextSup.apply(contextVar != null ? contextVar.getValue() : null);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (contexts == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Value subject = statementPattern.getSubjectVar().getValue();</b>
+<b class="fc">&nbsp;		Value predicate = statementPattern.getPredicateVar().getValue();</b>
+<b class="fc">&nbsp;		Value object = statementPattern.getObjectVar().getValue();</b>
+&nbsp;
+<b class="pc">&nbsp;		if ((subject != null &amp;&amp; !subject.isResource()) || (predicate != null &amp;&amp; !predicate.isIRI())) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		CloseableIteration&lt;? extends Statement, QueryEvaluationException&gt; iteration = null;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);</b>
+<b class="pc">&nbsp;			if (iteration instanceof EmptyIteration) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);</b>
+&nbsp;
+&nbsp;			// Return an iterator that converts the statements to var bindings
+<b class="fc">&nbsp;			return new ConvertStatementToBindingSetIterator(iteration, converter, context);</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			if (iteration != null) {</b>
+<b class="nc">&nbsp;				iteration.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (t instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(t);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private CloseableIteration&lt;? extends Statement, QueryEvaluationException&gt; handleFilter(Resource[] contexts,
+&nbsp;			Resource subject, IRI predicate, Value object,
+&nbsp;			CloseableIteration&lt;? extends Statement, QueryEvaluationException&gt; iteration) {
+&nbsp;
+<b class="fc">&nbsp;		Predicate&lt;Statement&gt; filter = filterContextOrEqualVariables(statementPattern, subject, predicate, object,</b>
+&nbsp;				contexts);
+&nbsp;
+<b class="fc">&nbsp;		if (filter != null) {</b>
+&nbsp;			// Only if there is filter code to execute do we make this filter iteration.
+<b class="fc">&nbsp;			return new FilterIteration&lt;Statement, QueryEvaluationException&gt;(iteration) {</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				protected boolean accept(Statement object) throws QueryEvaluationException {
+<b class="fc">&nbsp;					return filter.test(object);</b>
+&nbsp;				}
+&nbsp;			};
+&nbsp;		} else {
+<b class="fc">&nbsp;			return iteration;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Generate a predicate that tests for Named contexts are matched by retrieving all statements from the store and
+&nbsp;	 * filtering out the statements that do not have a context. Or the same variable might have been used multiple times
+&nbsp;	 * in this StatementPattern, verify value equality in those cases.
+&nbsp;	 */
+&nbsp;	protected static Predicate&lt;Statement&gt; filterContextOrEqualVariables(StatementPattern statementPattern,
+&nbsp;			Value subjValue, Value predValue, Value objValue, Resource[] contexts) {
+<b class="fc">&nbsp;		Predicate&lt;Statement&gt; filter = null;</b>
+<b class="fc">&nbsp;		if (contexts.length == 0 &amp;&amp; statementPattern.getScope() == Scope.NAMED_CONTEXTS) {</b>
+<b class="pc">&nbsp;			filter = (st) -&gt; st.getContext() != null;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return filterSameVariable(statementPattern, subjValue, predValue, objValue, filter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Build one predicate that filters the statements for ?s ?p ?s cases. But only generates code that is actually
+&nbsp;	 * needed else returns null.
+&nbsp;	 */
+&nbsp;	private static Predicate&lt;Statement&gt; filterSameVariable(StatementPattern statementPattern, Value subjValue,
+&nbsp;			Value predValue, Value objValue, Predicate&lt;Statement&gt; filter) {
+&nbsp;
+<b class="fc">&nbsp;		Var subjVar = statementPattern.getSubjectVar();</b>
+<b class="fc">&nbsp;		Var predVar = statementPattern.getPredicateVar();</b>
+<b class="fc">&nbsp;		Var objVar = statementPattern.getObjectVar();</b>
+<b class="fc">&nbsp;		Var conVar = statementPattern.getContextVar();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (subjVar != null &amp;&amp; subjValue == null) {</b>
+<b class="fc">&nbsp;			boolean subEqPredVar = subjVar.equals(predVar);</b>
+<b class="fc">&nbsp;			boolean subEqObjVar = subjVar.equals(objVar);</b>
+<b class="fc">&nbsp;			boolean subEqConVar = subjVar.equals(conVar);</b>
+<b class="pc">&nbsp;			if (subEqPredVar || subEqObjVar || subEqConVar) {</b>
+<b class="fc">&nbsp;				filter = andThen(filter, subjectVariableHasEquals(subEqPredVar, subEqObjVar, subEqConVar));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (predVar != null &amp;&amp; predValue == null) {</b>
+<b class="fc">&nbsp;			boolean predEqObjVar = predVar.equals(objVar);</b>
+<b class="fc">&nbsp;			boolean predEqConVar = predVar.equals(conVar);</b>
+<b class="pc">&nbsp;			if (predEqObjVar || predEqConVar) {</b>
+<b class="nc">&nbsp;				filter = andThen(filter, predicateVariableHasEquals(predEqObjVar, predEqConVar));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (objVar != null &amp;&amp; objValue == null) {</b>
+<b class="fc">&nbsp;			boolean objEqConVar = objVar.equals(conVar);</b>
+<b class="fc">&nbsp;			if (objEqConVar) {</b>
+<b class="fc">&nbsp;				filter = andThen(filter, (st) -&gt; {</b>
+<b class="fc">&nbsp;					Value obj = st.getObject();</b>
+<b class="fc">&nbsp;					Resource context = st.getContext();</b>
+<b class="fc">&nbsp;					return obj.equals(context);</b>
+&nbsp;				});
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return filter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Predicate&lt;Statement&gt; predicateVariableHasEquals(boolean predEqObjVar, boolean predEqConVar) {
+<b class="nc">&nbsp;		Predicate&lt;Statement&gt; eq = null;</b>
+<b class="nc">&nbsp;		if (predEqObjVar) {</b>
+<b class="nc">&nbsp;			eq = (st) -&gt; st.getPredicate().equals(st.getObject());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (predEqConVar) {</b>
+<b class="nc">&nbsp;			eq = andThen(eq, (st) -&gt; st.getPredicate().equals(st.getContext()));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return eq;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Predicate&lt;Statement&gt; subjectVariableHasEquals(boolean subEqPredVar, boolean subEqObjVar,
+&nbsp;			boolean subEqConVar) {
+<b class="fc">&nbsp;		Predicate&lt;Statement&gt; eq = null;</b>
+<b class="pc">&nbsp;		if (subEqPredVar) {</b>
+<b class="nc">&nbsp;			eq = (st) -&gt; st.getSubject().equals(st.getPredicate());</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (subEqObjVar) {</b>
+<b class="fc">&nbsp;			eq = andThen(eq, (st) -&gt; st.getSubject().equals(st.getObject()));</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (subEqConVar) {</b>
+<b class="nc">&nbsp;			eq = andThen(eq, (st) -&gt; st.getSubject().equals(st.getContext()));</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return eq;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the contexts that are valid for this statement pattern or null
+&nbsp;	 */
+&nbsp;	protected static Function&lt;Value, Resource[]&gt; extractContextsFromDatasets(Var contextVar, boolean emptyGraph,
+&nbsp;			Set&lt;IRI&gt; graphs) {
+&nbsp;
+<b class="fc">&nbsp;		if (emptyGraph) {</b>
+<b class="fc">&nbsp;			return RETURN_NULL_VALUE_RESOURCE_ARRAY;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (graphs == null || graphs.isEmpty()) {</b>
+&nbsp;			// store default behaviour
+&nbsp;			return StatementPatternQueryEvaluationStep::contextsGivenContextVal;
+&nbsp;		} else {
+<b class="fc">&nbsp;			Resource[] filled = fillContextsFromDatasSetGraphs(graphs);</b>
+&nbsp;			// if contextVar is null contextValue must always be null;
+<b class="fc">&nbsp;			if (contextVar == null) {</b>
+<b class="fc">&nbsp;				return (contextValue) -&gt; filled;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return (contextValue) -&gt; {</b>
+<b class="fc">&nbsp;					if (contextValue != null) {</b>
+<b class="pc">&nbsp;						if (contextValue.isIRI() &amp;&amp; graphs.contains(((IRI) contextValue))) {</b>
+<b class="fc">&nbsp;							return new Resource[] { (Resource) contextValue };</b>
+&nbsp;						} else {
+&nbsp;							// Statement pattern specifies a context that is not part of
+&nbsp;							// the dataset
+<b class="fc">&nbsp;							return null;</b>
+&nbsp;						}
+&nbsp;					} else {
+<b class="fc">&nbsp;						return filled;</b>
+&nbsp;					}
+&nbsp;				};
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Resource[] contextsGivenContextVal(Value contextValue) {
+<b class="fc">&nbsp;		if (contextValue != null) {</b>
+<b class="pc">&nbsp;			if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {</b>
+<b class="fc">&nbsp;				return DEFAULT_CONTEXT;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return new Resource[] { (Resource) contextValue };</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;		/*
+&nbsp;		 * TODO activate this to have an exclusive (rather than inclusive) interpretation of the default graph in SPARQL
+&nbsp;		 * querying. else if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS ) { contexts = new Resource[] {
+&nbsp;		 * (Resource)null }; }
+&nbsp;		 */
+&nbsp;		else {
+<b class="fc">&nbsp;			return ALL_CONTEXT;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Resource[] fillContextsFromDatasSetGraphs(Set&lt;IRI&gt; graphs) {
+<b class="fc">&nbsp;		Resource[] contexts = new Resource[graphs.size()];</b>
+<b class="fc">&nbsp;		int i = 0;</b>
+<b class="fc">&nbsp;		for (IRI graph : graphs) {</b>
+<b class="fc">&nbsp;			IRI context = null;</b>
+<b class="pc">&nbsp;			if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {</b>
+<b class="fc">&nbsp;				context = graph;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			contexts[i++] = context;</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
+&nbsp;	 * invokedynamic code with lambdas for the actual conversion.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This allows avoiding of significant work during the iteration. Which pays of if the iteration is long, otherwise
+&nbsp;	 * it of course is an unneeded expense.
+&nbsp;	 */
+<b class="fc">&nbsp;	private static final class ConvertStatementToBindingSetIterator</b>
+&nbsp;			implements CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;		private final BiConsumer&lt;MutableBindingSet, Statement&gt; action;
+&nbsp;		private final QueryEvaluationContext context;
+&nbsp;		private final CloseableIteration&lt;? extends Statement, ? extends QueryEvaluationException&gt; iteration;
+<b class="fc">&nbsp;		private boolean closed = false;</b>
+&nbsp;
+&nbsp;		private ConvertStatementToBindingSetIterator(
+&nbsp;				CloseableIteration&lt;? extends Statement, ? extends QueryEvaluationException&gt; iteration,
+<b class="fc">&nbsp;				BiConsumer&lt;MutableBindingSet, Statement&gt; action, QueryEvaluationContext context) {</b>
+<b class="pc">&nbsp;			assert iteration != null;</b>
+<b class="fc">&nbsp;			this.iteration = iteration;</b>
+<b class="fc">&nbsp;			this.action = action;</b>
+<b class="fc">&nbsp;			this.context = context;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private BindingSet convert(Statement st) {
+<b class="fc">&nbsp;			MutableBindingSet made = context.createBindingSet();</b>
+<b class="fc">&nbsp;			action.accept(made, st);</b>
+<b class="fc">&nbsp;			return made;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws QueryEvaluationException {
+<b class="fc">&nbsp;			return iteration.hasNext();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public BindingSet next() throws QueryEvaluationException {
+<b class="fc">&nbsp;			return convert(iteration.next());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;			iteration.remove();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws QueryEvaluationException {
+<b class="fc">&nbsp;			if (!closed) {</b>
+<b class="fc">&nbsp;				closed = true;</b>
+<b class="fc">&nbsp;				iteration.close();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static final class JoinStatementWithBindingSetIterator</b>
+&nbsp;			implements CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;		private final BiConsumer&lt;MutableBindingSet, Statement&gt; action;
+&nbsp;		private final QueryEvaluationContext context;
+&nbsp;		private final BindingSet bindings;
+&nbsp;		private final CloseableIteration&lt;? extends Statement, ? extends QueryEvaluationException&gt; iteration;
+<b class="fc">&nbsp;		private boolean closed = false;</b>
+&nbsp;
+&nbsp;		private JoinStatementWithBindingSetIterator(
+&nbsp;				CloseableIteration&lt;? extends Statement, ? extends QueryEvaluationException&gt; iteration,
+<b class="fc">&nbsp;				BiConsumer&lt;MutableBindingSet, Statement&gt; action, BindingSet bindings, QueryEvaluationContext context) {</b>
+<b class="pc">&nbsp;			assert iteration != null;</b>
+<b class="fc">&nbsp;			this.iteration = iteration;</b>
+<b class="pc">&nbsp;			assert !bindings.isEmpty();</b>
+<b class="fc">&nbsp;			this.action = action;</b>
+<b class="fc">&nbsp;			this.context = context;</b>
+<b class="fc">&nbsp;			this.bindings = bindings;</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		private BindingSet convert(Statement st) {
+<b class="fc">&nbsp;			MutableBindingSet made = context.createBindingSet(bindings);</b>
+<b class="fc">&nbsp;			action.accept(made, st);</b>
+<b class="fc">&nbsp;			return made;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws QueryEvaluationException {
+<b class="fc">&nbsp;			return iteration.hasNext();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public BindingSet next() throws QueryEvaluationException {
+<b class="fc">&nbsp;			return convert(iteration.next());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;			iteration.remove();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws QueryEvaluationException {
+<b class="pc">&nbsp;			if (!closed) {</b>
+<b class="fc">&nbsp;				closed = true;</b>
+<b class="fc">&nbsp;				iteration.close();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * We are going to chain {@link BiConsumer} functions allowing us to avoid a lot of equals etc. code
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
+&nbsp;	 * evaluate(bs).
+&nbsp;	 *
+&nbsp;	 * @return a converter from statement into MutableBindingSet
+&nbsp;	 */
+&nbsp;	private static BiConsumer&lt;MutableBindingSet, Statement&gt; makeConverter(QueryEvaluationContext context, Var s,
+&nbsp;			Var p, Var o, Var c) {
+&nbsp;
+<b class="pc">&nbsp;		if (s != null &amp;&amp; !s.isConstant()) {</b>
+<b class="pc">&nbsp;			if (p != null &amp;&amp; !p.isConstant()) {</b>
+<b class="pc">&nbsp;				if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="fc">&nbsp;					if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="fc">&nbsp;						return StatementConvertor.spoc(context, s, p, o, c);</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						return StatementConvertor.spo(context, s, p, o);</b>
+&nbsp;					}
+<b class="pc">&nbsp;				} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;					return StatementConvertor.spc(context, s, p, c);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return StatementConvertor.sp(context, s, p);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			} else if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="fc">&nbsp;				if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="fc">&nbsp;					return StatementConvertor.soc(context, s, o, c);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return StatementConvertor.so(context, s, o);</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;				return StatementConvertor.sc(context, s, c);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return StatementConvertor.s(context, s);</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (p != null &amp;&amp; !p.isConstant()) {</b>
+<b class="pc">&nbsp;			if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="pc">&nbsp;				if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;					return StatementConvertor.poc(context, p, o, c);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return StatementConvertor.po(context, p, o);</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;				return StatementConvertor.pc(context, p, c);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return StatementConvertor.p(context, p);</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (o != null &amp;&amp; !o.isConstant()) {</b>
+<b class="fc">&nbsp;			if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="fc">&nbsp;				return StatementConvertor.oc(context, o, c);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return StatementConvertor.o(context, o);</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (c != null &amp;&amp; !c.isConstant()) {</b>
+<b class="nc">&nbsp;			return StatementConvertor.c(context, c);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		return (a, b) -&gt; {
+<b class="fc">&nbsp;		};</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Predicate&lt;Statement&gt; andThen(Predicate&lt;Statement&gt; pred, Predicate&lt;Statement&gt; and) {
+<b class="pc">&nbsp;		if (pred == null) {</b>
+<b class="fc">&nbsp;			return and;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return pred.and(and);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,417 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Literal</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model</a>
+</div>
+
+<h1>Coverage Summary for Class: Literal (org.eclipse.rdf4j.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Literal</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (1/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (1/3)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.time.DateTimeException;
+&nbsp;import java.time.Duration;
+&nbsp;import java.time.OffsetDateTime;
+&nbsp;import java.time.temporal.TemporalAccessor;
+&nbsp;import java.time.temporal.TemporalAmount;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;
+&nbsp;/**
+&nbsp; * An RDF-1.1 literal consisting of a label (the lexical value), a datatype, and optionally a language tag.
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * Value accessor methods (for instance, {@link #booleanValue()}) map literal lexical values conforming to the syntax of
+&nbsp; * a supported &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2&quot;&gt;XML Schema 1.1&lt;/a&gt; datatype to a corresponding Java object.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal&quot;&gt;RDF-1.1 Concepts and Abstract Syntax&lt;/a&gt;
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/rdf11-concepts/#xsd-datatypes&quot;&gt;RDF 1.1 Concepts and Abstract Syntax - &amp;sect;5.1
+&nbsp; *      The XML Schema Built-in Datatypes&lt;/a&gt;
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2&quot;&gt;XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes&lt;/a&gt;
+&nbsp; *
+&nbsp; * @implSpec In order to ensure interoperability of concrete classes implementing this interface,
+&nbsp; *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+&nbsp; *           specs.
+&nbsp; */
+&nbsp;public interface Literal extends Value {
+&nbsp;
+&nbsp;	@Override
+&nbsp;	default boolean isLiteral() {
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the label (the lexical value) of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The literal&#39;s label.
+&nbsp;	 */
+&nbsp;	String getLabel();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the language tag for this literal, normalized to lower case.
+&nbsp;	 *
+&nbsp;	 * @return The language tag for this literal, or {@link Optional#empty()} if it doesn&#39;t have one.
+&nbsp;	 */
+&nbsp;	Optional&lt;String&gt; getLanguage();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the datatype for this literal.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If {@link #getLanguage()} returns a non-empty value than this must return
+&nbsp;	 * &lt;a href=&quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#langString&quot;&gt;{@code rdf:langString}&lt;/a&gt;. If no datatype was
+&nbsp;	 * assigned to this literal by the creator, then this method must return
+&nbsp;	 * &lt;a href=&quot;http://www.w3.org/2001/XMLSchema#string&quot;&gt;{@code xsd:string}&lt;/a&gt;.
+&nbsp;	 *
+&nbsp;	 * @return The datatype for this literal.
+&nbsp;	 */
+&nbsp;	IRI getDatatype();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the &lt;var&gt;boolean&lt;/var&gt; value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The &lt;var&gt;boolean&lt;/var&gt; value of the literal.
+&nbsp;	 * @throws IllegalArgumentException If the literal&#39;s label cannot be represented by a &lt;var&gt;boolean&lt;/var&gt; .
+&nbsp;	 */
+&nbsp;	boolean booleanValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the &lt;var&gt;byte&lt;/var&gt; value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The &lt;var&gt;byte&lt;/var&gt; value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal cannot be represented by a &lt;var&gt;byte&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	byte byteValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the &lt;var&gt;short&lt;/var&gt; value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The &lt;var&gt;short&lt;/var&gt; value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal&#39;s label cannot be represented by a &lt;var&gt;short&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	short shortValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the &lt;var&gt;int&lt;/var&gt; value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The &lt;var&gt;int&lt;/var&gt; value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal&#39;s label cannot be represented by a &lt;var&gt;int&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	int intValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the &lt;var&gt;long&lt;/var&gt; value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The &lt;var&gt;long&lt;/var&gt; value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal&#39;s label cannot be represented by to a &lt;var&gt;long&lt;/var&gt; .
+&nbsp;	 */
+&nbsp;	long longValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the integer value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The integer value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal&#39;s label is not a valid integer.
+&nbsp;	 */
+&nbsp;	BigInteger integerValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the decimal value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The decimal value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal&#39;s label is not a valid decimal.
+&nbsp;	 */
+&nbsp;	BigDecimal decimalValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the &lt;var&gt;float&lt;/var&gt; value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The &lt;var&gt;float&lt;/var&gt; value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal&#39;s label cannot be represented by a &lt;var&gt;float&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	float floatValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the &lt;var&gt;double&lt;/var&gt; value of this literal.
+&nbsp;	 *
+&nbsp;	 * @return The &lt;var&gt;double&lt;/var&gt; value of the literal.
+&nbsp;	 * @throws NumberFormatException If the literal&#39;s label cannot be represented by a &lt;var&gt;double&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	double doubleValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the {@link TemporalAccessor temporal accessor} value of this literal.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A temporal accessor representation can be given for literals whose label conforms to the syntax of the following
+&nbsp;	 * &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2&quot;&gt;XML Schema 1.1&lt;/a&gt; date/time datatypes:
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#dateTime&quot;&gt;xsd:dateTime&lt;/a&gt;,&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#time&quot;&gt;xsd:time&lt;/a&gt;,&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#date&quot;&gt;xsd:date&lt;/a&gt;,&lt;/li&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#gYearMonth&quot;&gt;xsd:gYearMonth&lt;/a&gt;,&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#gYear&quot;&gt;xsd:gYear&lt;/a&gt;,&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#gMonthDay&quot;&gt;xsd:gMonthDay&lt;/a&gt;,&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#gDay&quot;&gt;xsd:gDay&lt;/a&gt;,&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;&lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#gMonth&quot;&gt;xsd:gMonth&lt;/a&gt;.&lt;/li&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Temporal accessor representations may be converted to specific {@link java.time} values like
+&nbsp;	 * {@link OffsetDateTime} using target static factory methods, for instance
+&nbsp;	 * {@code OffsetDateTime.from(literal.temporalAccessorValue())}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note however that {@link java.time} doesn&#39;t include dedicated classes for some legal XML Schema date/time values,
+&nbsp;	 * like offset dates (for instance, {@code 2020-11-16+01:00}) and {@code xsd:gDay} (for instance, {@code ---16}).
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @return the temporal accessor value of this literal
+&nbsp;	 *
+&nbsp;	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAccessor} value
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 * @author Alessandro Bollini
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://docs.oracle.com/javase/tutorial/datetime/&quot;&gt;The Java™ Tutorials – Trail: Date Time&lt;/a&gt;
+&nbsp;	 *
+&nbsp;	 * @apiNote the &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#dateTimeStamp&quot;&gt;xsd:dateTimeStamp&lt;/a&gt; datatype
+&nbsp;	 *          (supported by calendar-based {@linkplain #calendarValue() value accessor} and
+&nbsp;	 *          {@linkplain ValueFactory#createLiteral(XMLGregorianCalendar) factory methods}) was specified by
+&nbsp;	 *          &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/&quot;&gt;XML Schema Definition Language (XSD) 1.1 Part 2:
+&nbsp;	 *          Datatypes&lt;/a&gt; and later removed from &lt;a href=&quot;https://www.w3.org/TR/xmlschema-2/&quot;&gt;XML Schema Part 2:
+&nbsp;	 *          Datatypes Second Edition&lt;/a&gt;: it is not included among temporal datatypes automatically assigned by
+&nbsp;	 *          {@link ValueFactory#createLiteral(TemporalAmount)} in order to provide better interoperability with the
+&nbsp;	 *          latter version of the standard.
+&nbsp;	 *
+&nbsp;	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+&nbsp;	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+&nbsp;	 *           expected to override it.
+&nbsp;	 */
+&nbsp;	default TemporalAccessor temporalAccessorValue() throws DateTimeException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the {@link TemporalAmount temporal amount} value of this literal.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A temporal amount representation can be given for literals whose label conforms to the syntax of the
+&nbsp;	 * &lt;a href=&quot;https://www.w3.org/TR/xmlschema-2/&quot;&gt;XML Schema 2&lt;/a&gt;
+&nbsp;	 * &lt;a href=&quot;https://www.w3.org/TR/xmlschema-2/#duration&quot;&gt;xsd:duration&lt;/a&gt; datatype.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The adoption of the &lt;a href=&quot;https://www.w3.org/TR/xmlschema-2/&quot;&gt;XML Schema 2&lt;/a&gt; definition is a known deviation
+&nbsp;	 * from the &lt;a href=&quot;http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal&quot;&gt;RDF 1.1&lt;/a&gt; standard;
+&nbsp;	 * well-formedness rules are relaxed to consider all duration components as optional and freely mixable.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Temporal amount representations may be converted to specific {@link java.time} values like {@link Duration} using
+&nbsp;	 * target static factory methods, for instance {@code Duration.from(literal.temporalAmountValue())}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note however that {@link java.time} doesn&#39;t include dedicated classes for legal XML Schema duration values
+&nbsp;	 * including both date and time components (for instance, {@code P1YT23H}).
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @return the temporal amount value of this literal
+&nbsp;	 *
+&nbsp;	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAmount} value
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 * @author Alessandro Bollini
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://docs.oracle.com/javase/tutorial/datetime/&quot;&gt;The Java™ Tutorials – Trail: Date Time&lt;/a&gt;
+&nbsp;	 *
+&nbsp;	 * @apiNote &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#yearMonthDuration&quot;&gt;xsd:yearMonthDuration&lt;/a&gt; and
+&nbsp;	 *          &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/#dayTimeDuration&quot;&gt;xsd:xsd:dayTimeDuration&lt;/a&gt; datatypes
+&nbsp;	 *          (supported by calendar-based {@linkplain #calendarValue() value accessor} and
+&nbsp;	 *          {@linkplain ValueFactory#createLiteral(XMLGregorianCalendar) factory methods}) were specified by
+&nbsp;	 *          &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/&quot;&gt;XML Schema Definition Language (XSD) 1.1 Part 2:
+&nbsp;	 *          Datatypes&lt;/a&gt; and later removed from &lt;a href=&quot;https://www.w3.org/TR/xmlschema-2/&quot;&gt;XML Schema Part 2:
+&nbsp;	 *          Datatypes Second Edition&lt;/a&gt;: they are not included among temporal datatypes automatically assigned by
+&nbsp;	 *          {@link ValueFactory#createLiteral(TemporalAmount)} in order to provide better interoperability with the
+&nbsp;	 *          latter version of the standard; interoperability with
+&nbsp;	 *          &lt;a href=&quot;https://www.w3.org/TR/sparql11-query/#func-timezone&quot;&gt;SPARQL 1.1 Query Language §17.4.5.8
+&nbsp;	 *          timezone&lt;/a&gt; is not compromised, as the legacy {@code xsd:dayTimeDuration} return datatype is defined as
+&nbsp;	 *          a restriction of the {@code xds:duration} datatype.
+&nbsp;	 *
+&nbsp;	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+&nbsp;	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+&nbsp;	 *           expected to override it.
+&nbsp;	 */
+&nbsp;	default TemporalAmount temporalAmountValue() throws DateTimeException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the {@link XMLGregorianCalendar} value of this literal. A calendar representation can be given for
+&nbsp;	 * literals whose label conforms to the syntax of the following &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/&quot;&gt;XML
+&nbsp;	 * Schema datatypes&lt;/a&gt;: &lt;var&gt;dateTime&lt;/var&gt;, &lt;var&gt;time&lt;/var&gt;, &lt;var&gt;date&lt;/var&gt;, &lt;var&gt;gYearMonth&lt;/var&gt;,
+&nbsp;	 * &lt;var&gt;gMonthDay&lt;/var&gt;, &lt;var&gt;gYear&lt;/var&gt;, &lt;var&gt;gMonth&lt;/var&gt; or &lt;var&gt;gDay&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @return The calendar value of the literal.
+&nbsp;	 * @throws IllegalArgumentException If the literal cannot be represented by a {@link XMLGregorianCalendar}.
+&nbsp;	 */
+&nbsp;	XMLGregorianCalendar calendarValue();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * CoreDatatype is an interface for natively supported datatypes in RDF4J. This includes, among others, the XML
+&nbsp;	 * Schema datatypes and rdf:langString. CoreDatatypes are implemented as enums and more performant and convenient to
+&nbsp;	 * work with than IRI-based datatypes. The constant {@link CoreDatatype#NONE)} is used to represent a datatype that
+&nbsp;	 * is not one of the supported core datatypes.
+&nbsp;	 *
+&nbsp;	 * @return The CoreDatatype or {@link CoreDatatype#NONE)} if the datatype matches none of the core datatypes. This
+&nbsp;	 *         method will not return null.
+&nbsp;	 *
+&nbsp;	 * @implNote This method may not return null. Returning {@link CoreDatatype#NONE)} is only permitted if the datatype
+&nbsp;	 *           does not match any of the core datatypes. A literal with a language tag must return
+&nbsp;	 *           {@link CoreDatatype.RDF#LANGSTRING)}. A literal without a specified datatype must return
+&nbsp;	 *           {@link CoreDatatype.XSD#STRING)}.
+&nbsp;	 */
+&nbsp;	CoreDatatype getCoreDatatype();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares this literal to another object.
+&nbsp;	 *
+&nbsp;	 * @param other the object to compare this literal to
+&nbsp;	 *
+&nbsp;	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel()
+&nbsp;	 *         labels}, {@linkplain #getLanguage() language tags} and {@linkplain #getDatatype() datatypes} are equal
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	boolean equals(Object other);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the hash code of this literal.
+&nbsp;	 *
+&nbsp;	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
+&nbsp;	 *
+&nbsp;	 * @implNote {@linkplain #getLanguage() language} and {@linkplain #getDatatype() datatype} are deliberately not
+&nbsp;	 *           considered in the computation (see issue
+&nbsp;	 *           &lt;a href=&quot;https://github.com/eclipse/rdf4j/issues/665&quot;&gt;#655&lt;/a&gt;)
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	int hashCode();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,555 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > XSD</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: XSD (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">XSD</td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (1/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    96%
+  </span>
+  <span class="absValue">
+    (48/50)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">XSD$Datatype</td>
+<td class="coverageStat">
+  <span class="percent">
+    23.5%
+  </span>
+  <span class="absValue">
+    (4/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    81%
+  </span>
+  <span class="absValue">
+    (64/79)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (5/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    86.8%
+  </span>
+  <span class="absValue">
+    (112/129)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import java.util.EnumMap;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import javax.xml.datatype.Duration;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the standard &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/&quot;&gt;XML Schema 1.1 datatypes&lt;/a&gt;.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/xmlschema11-2/&quot;&gt;XML Schema 1.1 Part 2: Datatypes&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;public class XSD {</b>
+&nbsp;
+&nbsp;	/** The XML Schema namespace (&lt;var&gt;http://www.w3.org/2001/XMLSchema#&lt;/var&gt;). */
+&nbsp;	public final static String NAMESPACE = CoreDatatype.XSD.NAMESPACE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for XML Schema datatypes: &quot;xsd&quot;
+&nbsp;	 */
+&nbsp;	public final static String PREFIX = &quot;xsd&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the XML Schema namespace.
+&nbsp;	 */
+<b class="fc">&nbsp;	public final static Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Primitive datatypes
+&nbsp;	 */
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#duration&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI DURATION = CoreDatatype.XSD.DURATION.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#dateTime&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI DATETIME = CoreDatatype.XSD.DATETIME.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#dateTimeStamp&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI DATETIMESTAMP = CoreDatatype.XSD.DATETIMESTAMP.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#dayTimeDuration&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI DAYTIMEDURATION = CoreDatatype.XSD.DAYTIMEDURATION.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#time&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI TIME = CoreDatatype.XSD.TIME.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#date&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI DATE = CoreDatatype.XSD.DATE.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#gYearMonth&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI GYEARMONTH = CoreDatatype.XSD.GYEARMONTH.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#gYear&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI GYEAR = CoreDatatype.XSD.GYEAR.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#gMonthDay&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI GMONTHDAY = CoreDatatype.XSD.GMONTHDAY.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#gDay&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI GDAY = CoreDatatype.XSD.GDAY.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#gMonth&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI GMONTH = CoreDatatype.XSD.GMONTH.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#string&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI STRING = CoreDatatype.XSD.STRING.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#boolean&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI BOOLEAN = CoreDatatype.XSD.BOOLEAN.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#base64Binary&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI BASE64BINARY = CoreDatatype.XSD.BASE64BINARY.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#hexBinary&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI HEXBINARY = CoreDatatype.XSD.HEXBINARY.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#float&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI FLOAT = CoreDatatype.XSD.FLOAT.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#decimal&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI DECIMAL = CoreDatatype.XSD.DECIMAL.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#double&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI DOUBLE = CoreDatatype.XSD.DOUBLE.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#anyURI&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI ANYURI = CoreDatatype.XSD.ANYURI.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#QName&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI QNAME = CoreDatatype.XSD.QNAME.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#NOTATION&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NOTATION = CoreDatatype.XSD.NOTATION.getIri();</b>
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Derived datatypes
+&nbsp;	 */
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#normalizedString&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NORMALIZEDSTRING = CoreDatatype.XSD.NORMALIZEDSTRING.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#token&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI TOKEN = CoreDatatype.XSD.TOKEN.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#language&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI LANGUAGE = CoreDatatype.XSD.LANGUAGE.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#NMTOKEN&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NMTOKEN = CoreDatatype.XSD.NMTOKEN.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#NMTOKENS&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NMTOKENS = CoreDatatype.XSD.NMTOKENS.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#Name&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NAME = CoreDatatype.XSD.NAME.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#NCName&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NCNAME = CoreDatatype.XSD.NCNAME.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#ID&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI ID = CoreDatatype.XSD.ID.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#IDREF&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI IDREF = CoreDatatype.XSD.IDREF.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#IDREFS&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI IDREFS = CoreDatatype.XSD.IDREFS.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#ENTITY&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI ENTITY = CoreDatatype.XSD.ENTITY.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#ENTITIES&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI ENTITIES = CoreDatatype.XSD.ENTITIES.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#integer&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI INTEGER = CoreDatatype.XSD.INTEGER.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#long&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI LONG = CoreDatatype.XSD.LONG.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#int&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI INT = CoreDatatype.XSD.INT.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#short&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI SHORT = CoreDatatype.XSD.SHORT.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#byte&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI BYTE = CoreDatatype.XSD.BYTE.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#nonPositiveInteger&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NON_POSITIVE_INTEGER = CoreDatatype.XSD.NON_POSITIVE_INTEGER.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#negativeInteger&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NEGATIVE_INTEGER = CoreDatatype.XSD.NEGATIVE_INTEGER.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#nonNegativeInteger&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI NON_NEGATIVE_INTEGER = CoreDatatype.XSD.NON_NEGATIVE_INTEGER.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#positiveInteger&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI POSITIVE_INTEGER = CoreDatatype.XSD.POSITIVE_INTEGER.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#unsignedLong&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI UNSIGNED_LONG = CoreDatatype.XSD.UNSIGNED_LONG.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#unsignedInt&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI UNSIGNED_INT = CoreDatatype.XSD.UNSIGNED_INT.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#unsignedShort&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI UNSIGNED_SHORT = CoreDatatype.XSD.UNSIGNED_SHORT.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#unsignedByte&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI UNSIGNED_BYTE = CoreDatatype.XSD.UNSIGNED_BYTE.getIri();</b>
+&nbsp;
+&nbsp;	/** &lt;var&gt;http://www.w3.org/2001/XMLSchema#yearMonthDuration&lt;/var&gt; */
+<b class="fc">&nbsp;	public final static IRI YEARMONTHDURATION = CoreDatatype.XSD.YEARMONTHDURATION.getIri();</b>
+&nbsp;
+&nbsp;	private static IRI create(String localName) {
+<b class="nc">&nbsp;		return Vocabularies.createIRI(org.eclipse.rdf4j.model.vocabulary.XSD.NAMESPACE, localName);</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	public enum Datatype {</b>
+&nbsp;
+<b class="fc">&nbsp;		DURATION(CoreDatatype.XSD.DURATION.getIri(), true, true, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		DATETIME(CoreDatatype.XSD.DATETIME.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		DATETIMESTAMP(CoreDatatype.XSD.DATETIMESTAMP.getIri(), false, false, false, true, false, false, true),</b>
+<b class="fc">&nbsp;		DAYTIMEDURATION(CoreDatatype.XSD.DAYTIMEDURATION.getIri(), false, true, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		TIME(CoreDatatype.XSD.TIME.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		DATE(CoreDatatype.XSD.DATE.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		GYEARMONTH(CoreDatatype.XSD.GYEARMONTH.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		GYEAR(CoreDatatype.XSD.GYEAR.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		GMONTHDAY(CoreDatatype.XSD.GMONTHDAY.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		GDAY(CoreDatatype.XSD.GDAY.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		GMONTH(CoreDatatype.XSD.GMONTH.getIri(), true, false, false, false, false, false, true),</b>
+<b class="fc">&nbsp;		STRING(CoreDatatype.XSD.STRING.getIri(), true, false, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		BOOLEAN(CoreDatatype.XSD.BOOLEAN.getIri(), true, false, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		BASE64BINARY(CoreDatatype.XSD.BASE64BINARY.getIri(), true, false, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		HEXBINARY(CoreDatatype.XSD.HEXBINARY.getIri(), true, false, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		FLOAT(CoreDatatype.XSD.FLOAT.getIri(), true, false, false, false, false, true, false),</b>
+<b class="fc">&nbsp;		DECIMAL(CoreDatatype.XSD.DECIMAL.getIri(), true, false, false, false, true, false, false),</b>
+<b class="fc">&nbsp;		DOUBLE(CoreDatatype.XSD.DOUBLE.getIri(), true, false, false, false, false, true, false),</b>
+<b class="fc">&nbsp;		ANYURI(CoreDatatype.XSD.ANYURI.getIri(), true, false, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		QNAME(CoreDatatype.XSD.QNAME.getIri(), true, false, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		NOTATION(CoreDatatype.XSD.NOTATION.getIri(), true, false, false, false, false, false, false),</b>
+<b class="fc">&nbsp;		NORMALIZEDSTRING(CoreDatatype.XSD.NORMALIZEDSTRING.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		TOKEN(CoreDatatype.XSD.TOKEN.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		LANGUAGE(CoreDatatype.XSD.LANGUAGE.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		NMTOKEN(CoreDatatype.XSD.NMTOKEN.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		NMTOKENS(CoreDatatype.XSD.NMTOKENS.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		NAME(CoreDatatype.XSD.NAME.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		NCNAME(CoreDatatype.XSD.NCNAME.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		ID(CoreDatatype.XSD.ID.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		IDREF(CoreDatatype.XSD.IDREF.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		IDREFS(CoreDatatype.XSD.IDREFS.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		ENTITY(CoreDatatype.XSD.ENTITY.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		ENTITIES(CoreDatatype.XSD.ENTITIES.getIri(), false, false, false, true, false, false, false),</b>
+<b class="fc">&nbsp;		INTEGER(CoreDatatype.XSD.INTEGER.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		LONG(CoreDatatype.XSD.LONG.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		INT(CoreDatatype.XSD.INT.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		SHORT(CoreDatatype.XSD.SHORT.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		BYTE(CoreDatatype.XSD.BYTE.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		NON_POSITIVE_INTEGER(CoreDatatype.XSD.NON_POSITIVE_INTEGER.getIri(), false, false, true, true, true, false,</b>
+&nbsp;				false),
+<b class="fc">&nbsp;		NEGATIVE_INTEGER(CoreDatatype.XSD.NEGATIVE_INTEGER.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		NON_NEGATIVE_INTEGER(CoreDatatype.XSD.NON_NEGATIVE_INTEGER.getIri(), false, false, true, true, true, false,</b>
+&nbsp;				false),
+<b class="fc">&nbsp;		POSITIVE_INTEGER(CoreDatatype.XSD.POSITIVE_INTEGER.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		UNSIGNED_LONG(CoreDatatype.XSD.UNSIGNED_LONG.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		UNSIGNED_INT(CoreDatatype.XSD.UNSIGNED_INT.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		UNSIGNED_SHORT(CoreDatatype.XSD.UNSIGNED_SHORT.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		UNSIGNED_BYTE(CoreDatatype.XSD.UNSIGNED_BYTE.getIri(), false, false, true, true, true, false, false),</b>
+<b class="fc">&nbsp;		YEARMONTHDURATION(CoreDatatype.XSD.YEARMONTHDURATION.getIri(), false, true, false, true, false, false, false);</b>
+&nbsp;
+&nbsp;		private final IRI iri;
+&nbsp;		private final boolean primitive;
+&nbsp;		private final boolean duration;
+&nbsp;		private final boolean integer;
+&nbsp;		private final boolean derived;
+&nbsp;		private final boolean decimal;
+&nbsp;		private final boolean floatingPoint;
+&nbsp;		private final boolean calendar;
+&nbsp;		private final CoreDatatype.XSD coreDatatype;
+&nbsp;
+&nbsp;		Datatype(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
+<b class="fc">&nbsp;				boolean floatingPoint, boolean calendar) {</b>
+<b class="fc">&nbsp;			this.iri = iri;</b>
+<b class="fc">&nbsp;			this.primitive = primitive;</b>
+<b class="fc">&nbsp;			this.duration = duration;</b>
+<b class="fc">&nbsp;			this.integer = integer;</b>
+<b class="fc">&nbsp;			this.derived = derived;</b>
+<b class="fc">&nbsp;			this.decimal = decimal;</b>
+<b class="fc">&nbsp;			this.floatingPoint = floatingPoint;</b>
+<b class="fc">&nbsp;			this.calendar = calendar;</b>
+<b class="fc">&nbsp;			this.coreDatatype = CoreDatatype.from(iri).asXSDDatatype().orElseThrow();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a primitive XML Schema datatype.
+&nbsp;		 *
+&nbsp;		 * @return true if the datatype is a primitive type
+&nbsp;		 */
+&nbsp;		public boolean isPrimitiveDatatype() {
+<b class="nc">&nbsp;			return primitive;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a derived XML Schema datatype.
+&nbsp;		 *
+&nbsp;		 * @return true if the datatype is a derived type
+&nbsp;		 */
+&nbsp;		public boolean isDerivedDatatype() {
+<b class="nc">&nbsp;			return derived;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a built-in XML Schema datatype.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a primitive or derived XML Schema type
+&nbsp;		 */
+&nbsp;		public boolean isBuiltInDatatype() {
+<b class="nc">&nbsp;			return isPrimitiveDatatype() || isDerivedDatatype();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, xsd:double,
+&nbsp;		 * xsd:decimal or one of the datatypes derived from xsd:decimal.
+&nbsp;		 *
+&nbsp;		 * @return true of it is a decimal or floating point type
+&nbsp;		 */
+&nbsp;		public boolean isNumericDatatype() {
+<b class="nc">&nbsp;			return isDecimalDatatype() || isFloatingPointDatatype();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:decimal or one of the built-in datatypes that is derived
+&nbsp;		 * from xsd:decimal.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a decimal datatype
+&nbsp;		 */
+&nbsp;		public boolean isDecimalDatatype() {
+<b class="nc">&nbsp;			return decimal;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:integer or one of the built-in datatypes that is derived
+&nbsp;		 * from xsd:integer.
+&nbsp;		 *
+&nbsp;		 * @return true if it is an integer type
+&nbsp;		 */
+&nbsp;		public boolean isIntegerDatatype() {
+<b class="nc">&nbsp;			return integer;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:float or xsd:double.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a floating point type
+&nbsp;		 */
+&nbsp;		public boolean isFloatingPointDatatype() {
+<b class="nc">&nbsp;			return floatingPoint;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:dateTime, xsd:date, xsd:time, xsd:gYearMonth,
+&nbsp;		 * xsd:gMonthDay, xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates
+&nbsp;		 * and/or times.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a calendar type
+&nbsp;		 *
+&nbsp;		 * @see XMLGregorianCalendar
+&nbsp;		 */
+&nbsp;		public boolean isCalendarDatatype() {
+<b class="nc">&nbsp;			return calendar;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration.
+&nbsp;		 * These are the datatypes that represents durations.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a duration type
+&nbsp;		 *
+&nbsp;		 * @see Duration
+&nbsp;		 */
+&nbsp;		public boolean isDurationDatatype() {
+<b class="nc">&nbsp;			return duration;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each
+&nbsp;		 * other using operators like &lt;var&gt;&amp;lt;&lt;/var&gt; and &lt;var&gt;&amp;gt;&lt;/var&gt;.
+&nbsp;		 *
+&nbsp;		 * @return true if the datatype is ordered
+&nbsp;		 */
+&nbsp;		public boolean isOrderedDatatype() {
+<b class="nc">&nbsp;			return isNumericDatatype() || isCalendarDatatype();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public IRI getIri() {
+<b class="nc">&nbsp;			return iri;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public CoreDatatype getCoreDatatype() {
+<b class="fc">&nbsp;			return coreDatatype;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		private static final Map&lt;IRI, Optional&lt;Datatype&gt;&gt; reverseLookup = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		private static final Map&lt;CoreDatatype.XSD, Optional&lt;Datatype&gt;&gt; reverseLookupXSDDatatype = new EnumMap&lt;&gt;(</b>
+&nbsp;				CoreDatatype.XSD.class);
+&nbsp;
+&nbsp;		static {
+<b class="fc">&nbsp;			for (Datatype value : Datatype.values()) {</b>
+<b class="fc">&nbsp;				reverseLookup.put(value.iri, Optional.of(value));</b>
+<b class="fc">&nbsp;				reverseLookupXSDDatatype.put(value.coreDatatype, Optional.of(value));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public static Optional&lt;Datatype&gt; from(IRI datatype) {
+<b class="nc">&nbsp;			return reverseLookup.getOrDefault(datatype, Optional.empty());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public static Optional&lt;Datatype&gt; from(CoreDatatype.XSD datatype) {
+<b class="nc">&nbsp;			if (datatype == null)</b>
+<b class="nc">&nbsp;				return Optional.empty();</b>
+<b class="nc">&nbsp;			return reverseLookupXSDDatatype.getOrDefault(datatype, Optional.empty());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

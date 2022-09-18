@@ -1,0 +1,317 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LuceneDocument</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: LuceneDocument (org.eclipse.rdf4j.sail.lucene.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LuceneDocument</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene.impl;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.text.ParseException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.lucene.document.Document;
+&nbsp;import org.apache.lucene.document.Field;
+&nbsp;import org.apache.lucene.document.LatLonBoundingBox;
+&nbsp;import org.apache.lucene.document.LatLonPoint;
+&nbsp;import org.apache.lucene.document.LatLonShape;
+&nbsp;import org.apache.lucene.geo.Line;
+&nbsp;import org.apache.lucene.geo.Polygon;
+&nbsp;import org.apache.lucene.geo.Rectangle;
+&nbsp;import org.apache.lucene.geo.SimpleWKTShapeParser;
+&nbsp;import org.apache.lucene.index.IndexableField;
+&nbsp;import org.apache.lucene.spatial.SpatialStrategy;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchDocument;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchFields;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.base.Function;
+&nbsp;
+&nbsp;public class LuceneDocument implements SearchDocument {
+&nbsp;
+&nbsp;	private final Document doc;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(getClass());</b>
+&nbsp;
+&nbsp;	private static final String POINT_FIELD_PREFIX = &quot;_pt_&quot;;
+&nbsp;	private static final String GEO_FIELD_PREFIX = &quot;_geo_&quot;;
+&nbsp;
+&nbsp;	private final Function&lt;? super String, ? extends SpatialStrategy&gt; geoStrategyMapper;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * To be removed, no longer used.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public LuceneDocument() {
+<b class="nc">&nbsp;		this(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LuceneDocument(Function&lt;? super String, ? extends SpatialStrategy&gt; geoStrategyMapper) {
+<b class="nc">&nbsp;		this(new Document(), geoStrategyMapper);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public LuceneDocument(Document doc, Function&lt;? super String, ? extends SpatialStrategy&gt; geoStrategyMapper) {</b>
+<b class="nc">&nbsp;		this.doc = doc;</b>
+<b class="nc">&nbsp;		this.geoStrategyMapper = geoStrategyMapper;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LuceneDocument(String id, String resourceId, String context,
+&nbsp;			Function&lt;? super String, ? extends SpatialStrategy&gt; geoStrategyMapper) {
+<b class="nc">&nbsp;		this(geoStrategyMapper);</b>
+<b class="nc">&nbsp;		setId(id);</b>
+<b class="nc">&nbsp;		setResource(resourceId);</b>
+<b class="nc">&nbsp;		setContext(context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setId(String id) {
+<b class="nc">&nbsp;		LuceneIndex.addIDField(id, doc);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setContext(String context) {
+<b class="nc">&nbsp;		LuceneIndex.addContextField(context, doc);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setResource(String resourceId) {
+<b class="nc">&nbsp;		LuceneIndex.addResourceField(resourceId, doc);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Document getDocument() {
+<b class="nc">&nbsp;		return doc;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return doc.get(SearchFields.ID_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getResource() {
+<b class="nc">&nbsp;		return doc.get(SearchFields.URI_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getContext() {
+<b class="nc">&nbsp;		return doc.get(SearchFields.CONTEXT_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getPropertyNames() {
+<b class="nc">&nbsp;		List&lt;IndexableField&gt; fields = doc.getFields();</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; names = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (IndexableField field : fields) {</b>
+<b class="nc">&nbsp;			String name = field.name();</b>
+<b class="nc">&nbsp;			if (SearchFields.isPropertyField(name)) {</b>
+<b class="nc">&nbsp;				names.add(name);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return names;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addProperty(String name) {
+&nbsp;		// don&#39;t need to do anything
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stores and indexes a property in a Document. We don&#39;t have to recalculate the concatenated text: just add another
+&nbsp;	 * TEXT field and Lucene will take care of this. Additional advantage: Lucene may be able to handle the invididual
+&nbsp;	 * strings in a way that may affect e.g. phrase and proximity searches (concatenation basically means loss of
+&nbsp;	 * information). NOTE: The TEXT_FIELD_NAME has to be stored, see in LuceneSail
+&nbsp;	 *
+&nbsp;	 * @see LuceneSail
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void addProperty(String name, String text) {
+<b class="nc">&nbsp;		LuceneIndex.addPredicateField(name, text, doc);</b>
+<b class="nc">&nbsp;		LuceneIndex.addTextField(text, doc);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether a field occurs with a specified value in a Document.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public boolean hasProperty(String fieldName, String value) {
+<b class="nc">&nbsp;		String[] fields = doc.getValues(fieldName);</b>
+<b class="nc">&nbsp;		if (fields != null) {</b>
+<b class="nc">&nbsp;			for (String field : fields) {</b>
+<b class="nc">&nbsp;				if (value.equals(field)) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getProperty(String name) {
+<b class="nc">&nbsp;		return Arrays.asList(doc.getValues(name));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void indexShape(Object shape, String field) {
+&nbsp;
+<b class="nc">&nbsp;		if (shape instanceof Object[]) { // case of GEOMETRYCOLLECTION</b>
+<b class="nc">&nbsp;			Object[] geometries = (Object[]) shape;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; i &lt; geometries.length; i++) {</b>
+<b class="nc">&nbsp;				indexShape(geometries[i], field);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			if (shape instanceof Polygon) { // WKT:POLYGON</b>
+<b class="nc">&nbsp;				for (Field f : LatLonShape.createIndexableFields(GEO_FIELD_PREFIX + field, (Polygon) shape)) {</b>
+<b class="nc">&nbsp;					doc.add(f);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (shape instanceof Line) { // WKT:LINESTRING</b>
+<b class="nc">&nbsp;				for (Field f : LatLonShape.createIndexableFields(GEO_FIELD_PREFIX + field, (Line) shape)) {</b>
+<b class="nc">&nbsp;					doc.add(f);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (shape instanceof double[]) { // WKT:POINT</b>
+<b class="nc">&nbsp;				double point[] = (double[]) shape;</b>
+<b class="nc">&nbsp;				doc.add(new LatLonPoint(POINT_FIELD_PREFIX + field, point[1], point[0]));</b>
+<b class="nc">&nbsp;			} else if (shape instanceof Rectangle) { // WKT:ENVELOPE / RECTANGLE</b>
+<b class="nc">&nbsp;				Rectangle box = (Rectangle) shape;</b>
+<b class="nc">&nbsp;				doc.add(new LatLonBoundingBox(GEO_FIELD_PREFIX + field, box.minLat, box.minLon, box.maxLat,</b>
+&nbsp;						box.maxLon));
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Geometry for shape &quot; + shape.toString() + &quot; is not supported&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addGeoProperty(String field, String value) {
+<b class="nc">&nbsp;		LuceneIndex.addStoredOnlyPredicateField(field, value, doc);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			String wkt = value;</b>
+<b class="nc">&nbsp;			Object shape = SimpleWKTShapeParser.parse(wkt);</b>
+<b class="nc">&nbsp;			indexShape(shape, field);</b>
+<b class="nc">&nbsp;		} catch (ParseException e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;error while processing geo property&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;error while parsing wkt geometry&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,246 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (11/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * Generic JSON settings, mostly related to Jackson Features.
+&nbsp; * &lt;p&gt;
+&nbsp; * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class JSONSettings {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if any character is allowed to be backslash escaped.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property
+&nbsp;	 * {@code org.eclipse.rdf4j.rio.json.allow_backslash_escaping_any_character}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_backslash_escaping_any_character&quot;,
+&nbsp;			&quot;Allow backslash escaping any character&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if Java/C++ style comments are allowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_comments}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_COMMENTS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_comments&quot;, &quot;Allow comments&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if non-numeric numbers (INF/-INF/NaN) are allowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_NON_NUMERIC_NUMBERS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_non_numeric_numbers&quot;, &quot;Allow non-numeric numbers&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if numeric leading zeroes are allowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_NUMERIC_LEADING_ZEROS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_numeric_leading_zeros&quot;, &quot;Allow numeric leading zeros&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if single quotes are allowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_single_quotes}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_SINGLE_QUOTES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_single_quotes&quot;, &quot;Allow single quotes&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if unquoted control characters are allowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_UNQUOTED_CONTROL_CHARS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_unquoted_control_chars&quot;, &quot;Allow unquoted control chars&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if unquoted field names are allowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_unquoted_field_names}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_UNQUOTED_FIELD_NAMES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_unquoted_field_names&quot;, &quot;Allow unquoted field names&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if YAML comments (starting with &#39;#&#39;) are allowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_yaml_comments}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_YAML_COMMENTS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_yaml_comments&quot;, &quot;Allow YAML comments&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if trailing commas are allows.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.allow_trailing_comma}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ALLOW_TRAILING_COMMA = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.allow_trailing_comma&quot;, &quot;Allow trailing comma&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if errors should include a reference to the source or not.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.include_source_in_location}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; INCLUDE_SOURCE_IN_LOCATION = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.include_source_in_location&quot;, &quot;Include Source in Location&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for JSON parsers to determine if strict duplicate detection is allowed for JSON Object field
+&nbsp;	 * names.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.json.strict_duplicate_detection}.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; STRICT_DUPLICATE_DETECTION = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.json.strict_duplicate_detection&quot;, &quot;Strict duplicate detection&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private default constructor.
+&nbsp;	 */
+&nbsp;	private JSONSettings() {
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

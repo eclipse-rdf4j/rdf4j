@@ -1,0 +1,512 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NotifyingRepositoryConnectionWrapper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.event.base</a>
+</div>
+
+<h1>Coverage Summary for Class: NotifyingRepositoryConnectionWrapper (org.eclipse.rdf4j.repository.event.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NotifyingRepositoryConnectionWrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/92)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/107)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">NotifyingRepositoryConnectionWrapper$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/96)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/125)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.event.base;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.CopyOnWriteArraySet;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.repository.event.NotifyingRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.event.RepositoryConnectionListener;
+&nbsp;
+&nbsp;/**
+&nbsp; * This broadcaster is used by the RepositoryBroadcaster to wrap the delegate repository connection. Listeners are
+&nbsp; * notified of changes after they have occurred.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class NotifyingRepositoryConnectionWrapper extends RepositoryConnectionWrapper
+&nbsp;		implements NotifyingRepositoryConnection {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private boolean activated = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean reportDeltas = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Set&lt;RepositoryConnectionListener&gt; listeners = new CopyOnWriteArraySet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public NotifyingRepositoryConnectionWrapper(Repository repository, RepositoryConnection connection) {
+<b class="nc">&nbsp;		super(repository, connection);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public NotifyingRepositoryConnectionWrapper(Repository repository, RepositoryConnection connection,
+&nbsp;			boolean reportDeltas) {
+<b class="nc">&nbsp;		this(repository, connection);</b>
+<b class="nc">&nbsp;		setReportDeltas(reportDeltas);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public boolean reportDeltas() {
+<b class="nc">&nbsp;		return reportDeltas;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setReportDeltas(boolean reportDeltas) {
+<b class="nc">&nbsp;		this.reportDeltas = reportDeltas;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registers a &lt;var&gt;RepositoryConnectionListener&lt;/var&gt; that will receive notifications of operations that are
+&nbsp;	 * performed on this connection.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void addRepositoryConnectionListener(RepositoryConnectionListener listener) {
+<b class="nc">&nbsp;		listeners.add(listener);</b>
+<b class="nc">&nbsp;		activated = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a registered &lt;var&gt;RepositoryConnectionListener&lt;/var&gt; from this connection.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void removeRepositoryConnectionListener(RepositoryConnectionListener listener) {
+<b class="nc">&nbsp;		listeners.remove(listener);</b>
+<b class="nc">&nbsp;		activated = !listeners.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean isDelegatingAdd() {
+<b class="nc">&nbsp;		return !activated;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean isDelegatingRemove() {
+<b class="nc">&nbsp;		return !activated;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		boolean reportEvent = activated;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (reportEvent &amp;&amp; reportDeltas()) {</b>
+&nbsp;			// Only report if the statement is not present yet
+<b class="nc">&nbsp;			reportEvent = !getDelegate().hasStatement(subject, predicate, object, false, contexts);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		getDelegate().add(subject, predicate, object, contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (reportEvent) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.add(getDelegate(), subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (activated &amp;&amp; reportDeltas()) {</b>
+<b class="nc">&nbsp;			removeWithoutCommit(null, null, null, contexts);</b>
+<b class="nc">&nbsp;		} else if (activated) {</b>
+<b class="nc">&nbsp;			getDelegate().clear(contexts);</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.clear(getDelegate(), contexts);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			getDelegate().clear(contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().close();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.close(getDelegate());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().commit();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.commit(getDelegate());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeWithoutCommit(Resource subj, IRI pred, Value obj, Resource... ctx) throws RepositoryException {
+<b class="nc">&nbsp;		if (activated &amp;&amp; reportDeltas()) {</b>
+&nbsp;
+&nbsp;			List&lt;Statement&gt; list;
+<b class="nc">&nbsp;			try (Stream&lt;Statement&gt; stream = getDelegate().getStatements(subj, pred, obj, false, ctx).stream()) {</b>
+<b class="nc">&nbsp;				list = stream.collect(Collectors.toList());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			getDelegate().remove(subj, pred, obj, ctx);</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				for (Statement stmt : list) {</b>
+<b class="nc">&nbsp;					Resource s = stmt.getSubject();</b>
+<b class="nc">&nbsp;					IRI p = stmt.getPredicate();</b>
+<b class="nc">&nbsp;					Value o = stmt.getObject();</b>
+<b class="nc">&nbsp;					Resource c = stmt.getContext();</b>
+<b class="nc">&nbsp;					listener.remove(getDelegate(), s, p, o, c);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} else if (activated) {</b>
+<b class="nc">&nbsp;			getDelegate().remove(subj, pred, obj, ctx);</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.remove(getDelegate(), subj, pred, obj, ctx);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			getDelegate().remove(subj, pred, obj, ctx);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeNamespace(String prefix) throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().removeNamespace(prefix);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.removeNamespace(getDelegate(), prefix);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearNamespaces() throws RepositoryException {
+<b class="nc">&nbsp;		if (activated &amp;&amp; reportDeltas()) {</b>
+&nbsp;
+&nbsp;			List&lt;String&gt; prefix;
+<b class="nc">&nbsp;			try (Stream&lt;Namespace&gt; stream = getDelegate().getNamespaces().stream()) {</b>
+<b class="nc">&nbsp;				prefix = stream.map(Namespace::getPrefix).collect(Collectors.toList());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			getDelegate().clearNamespaces();</b>
+<b class="nc">&nbsp;			for (String p : prefix) {</b>
+<b class="nc">&nbsp;				removeNamespace(p);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} else if (activated) {</b>
+<b class="nc">&nbsp;			getDelegate().clearNamespaces();</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.clearNamespaces(getDelegate());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			getDelegate().clearNamespaces();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.begin(getDelegate());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().rollback();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.rollback(getDelegate());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	@Deprecated
+&nbsp;	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
+<b class="nc">&nbsp;		boolean wasAutoCommit = !isActive();</b>
+<b class="nc">&nbsp;		getDelegate().setAutoCommit(autoCommit);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (activated &amp;&amp; wasAutoCommit != autoCommit) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.setAutoCommit(getDelegate(), autoCommit);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (autoCommit) {</b>
+<b class="nc">&nbsp;				for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;					listener.commit(getDelegate());</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(String prefix, String name) throws RepositoryException {
+<b class="nc">&nbsp;		getDelegate().setNamespace(prefix, name);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;				listener.setNamespace(getDelegate(), prefix, name);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(final QueryLanguage ql, final String update, final String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			return new Update() {</b>
+&nbsp;
+<b class="nc">&nbsp;				private final RepositoryConnection conn = getDelegate();</b>
+&nbsp;
+<b class="nc">&nbsp;				private final Update delegate = conn.prepareUpdate(ql, update, baseURI);</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void execute() throws UpdateExecutionException {
+<b class="nc">&nbsp;					delegate.execute();</b>
+<b class="nc">&nbsp;					if (activated) {</b>
+<b class="nc">&nbsp;						for (RepositoryConnectionListener listener : listeners) {</b>
+<b class="nc">&nbsp;							listener.execute(conn, ql, update, baseURI, delegate);</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setBinding(String name, Value value) {
+<b class="nc">&nbsp;					delegate.setBinding(name, value);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void removeBinding(String name) {
+<b class="nc">&nbsp;					delegate.removeBinding(name);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void clearBindings() {
+<b class="nc">&nbsp;					delegate.clearBindings();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public BindingSet getBindings() {
+<b class="nc">&nbsp;					return delegate.getBindings();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setDataset(Dataset dataset) {
+<b class="nc">&nbsp;					delegate.setDataset(dataset);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public Dataset getDataset() {
+<b class="nc">&nbsp;					return delegate.getDataset();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setIncludeInferred(boolean includeInferred) {
+<b class="nc">&nbsp;					delegate.setIncludeInferred(includeInferred);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public boolean getIncludeInferred() {
+<b class="nc">&nbsp;					return delegate.getIncludeInferred();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+<b class="nc">&nbsp;					delegate.setMaxExecutionTime(maxExecutionTimeSeconds);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public int getMaxExecutionTime() {
+<b class="nc">&nbsp;					return delegate.getMaxExecutionTime();</b>
+&nbsp;				}
+&nbsp;			};
+&nbsp;		} else {
+<b class="nc">&nbsp;			return getDelegate().prepareUpdate(ql, update, baseURI);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

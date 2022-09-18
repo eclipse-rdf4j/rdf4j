@@ -1,0 +1,344 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ForwardChainingShapeSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.wrapper.shape</a>
+</div>
+
+<h1>Coverage Summary for Class: ForwardChainingShapeSource (org.eclipse.rdf4j.sail.shacl.wrapper.shape)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ForwardChainingShapeSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/93)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.wrapper.shape;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.iri;
+&nbsp;
+&nbsp;import java.io.BufferedInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SHACL;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;
+<b class="nc">&nbsp;public class ForwardChainingShapeSource implements ShapeSource {</b>
+&nbsp;
+&nbsp;	// SHACL Vocabulary from W3C - https://www.w3.org/ns/shacl.ttl
+<b class="nc">&nbsp;	private final static IRI shaclVocabularyGraph = iri(RDF4J.NAMESPACE, &quot;shaclVocabularyGraph&quot;);</b>
+<b class="nc">&nbsp;	private final static SchemaCachingRDFSInferencer shaclVocabulary = createShaclVocabulary();</b>
+<b class="nc">&nbsp;	private static final Resource[] defaultContext = { RDF4J.SHACL_SHAPE_GRAPH };</b>
+&nbsp;
+&nbsp;	private final RepositoryConnection connection;
+&nbsp;	private final Resource[] context;
+&nbsp;	private final Repository repository;
+&nbsp;
+<b class="nc">&nbsp;	public ForwardChainingShapeSource(RepositoryConnection connection) {</b>
+<b class="nc">&nbsp;		this.context = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		assert connection.isActive();</b>
+&nbsp;
+<b class="nc">&nbsp;		repository = forwardChain(connection);</b>
+<b class="nc">&nbsp;		this.connection = repository.getConnection();</b>
+<b class="nc">&nbsp;		this.connection.begin(IsolationLevels.NONE);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private ForwardChainingShapeSource(Repository repository, RepositoryConnection connection,
+<b class="nc">&nbsp;			Resource[] context) {</b>
+<b class="nc">&nbsp;		this.connection = connection;</b>
+<b class="nc">&nbsp;		this.context = context;</b>
+<b class="nc">&nbsp;		this.repository = repository;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private SailRepository forwardChain(RepositoryConnection shapesRepoConnection) {
+<b class="nc">&nbsp;		SailRepository shapesRepoWithReasoning = new SailRepository(</b>
+<b class="nc">&nbsp;				SchemaCachingRDFSInferencer.fastInstantiateFrom(shaclVocabulary, new MemoryStore(), false));</b>
+<b class="nc">&nbsp;		shapesRepoWithReasoning.init();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (var shapesRepoWithReasoningConnection = shapesRepoWithReasoning.getConnection()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			shapesRepoWithReasoningConnection.begin(IsolationLevels.NONE);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (var statements = shapesRepoConnection.getStatements(null, null, null, false)) {</b>
+<b class="nc">&nbsp;				shapesRepoWithReasoningConnection.add(statements);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			enrichShapes(shapesRepoWithReasoningConnection);</b>
+<b class="nc">&nbsp;			shapesRepoWithReasoningConnection.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return shapesRepoWithReasoning;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static SchemaCachingRDFSInferencer createShaclVocabulary() {
+<b class="nc">&nbsp;		try (InputStream in = getResourceAsStream(&quot;shacl-sparql-inference/shaclVocabulary.ttl&quot;)) {</b>
+<b class="nc">&nbsp;			SchemaCachingRDFSInferencer schemaCachingRDFSInferencer = new SchemaCachingRDFSInferencer(</b>
+&nbsp;					new MemoryStore());
+<b class="nc">&nbsp;			try (var connection = schemaCachingRDFSInferencer.getConnection()) {</b>
+<b class="nc">&nbsp;				connection.begin(IsolationLevels.NONE);</b>
+<b class="nc">&nbsp;				Model model = Rio.parse(in, &quot;&quot;, RDFFormat.TURTLE);</b>
+<b class="nc">&nbsp;				model.forEach(s -&gt; connection.addStatement(s.getSubject(), s.getPredicate(), s.getObject(),</b>
+&nbsp;						shaclVocabularyGraph));
+<b class="nc">&nbsp;				connection.commit();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return schemaCachingRDFSInferencer;</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Resource could not be read: shacl-sparql-inference/shaclVocabulary.ttl&quot;,</b>
+&nbsp;					e);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static InputStream getResourceAsStream(String filename) {
+<b class="nc">&nbsp;		InputStream resourceAsStream = ForwardChainingShapeSource.class.getClassLoader().getResourceAsStream(filename);</b>
+<b class="nc">&nbsp;		if (resourceAsStream == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Resource could not be found: &quot; + filename);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new BufferedInputStream(resourceAsStream);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void enrichShapes(RepositoryConnection shaclSailConnection) {
+&nbsp;
+&nbsp;		// performance optimisation, running the queries below is time-consuming, even if the repo is empty
+<b class="nc">&nbsp;		if (shaclSailConnection.isEmpty()) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// TODO: We need to handle DASH_CONSTANTS for the other shape graphs too!
+&nbsp;
+<b class="nc">&nbsp;		shaclSailConnection.add(DASH_CONSTANTS, RDF4J.SHACL_SHAPE_GRAPH);</b>
+<b class="nc">&nbsp;		implicitTargetClass(shaclSailConnection);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void implicitTargetClass(RepositoryConnection shaclSailConnection) {
+<b class="nc">&nbsp;		try (var stream = shaclSailConnection.getStatements(null, RDF.TYPE, RDFS.CLASS, false).stream()) {</b>
+<b class="nc">&nbsp;			stream</b>
+<b class="nc">&nbsp;					.map(Statement::getSubject)</b>
+<b class="nc">&nbsp;					.filter(s -&gt;</b>
+&nbsp;
+<b class="nc">&nbsp;					shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.NODE_SHAPE, true)</b>
+<b class="nc">&nbsp;							|| shaclSailConnection.hasStatement(s, RDF.TYPE, SHACL.PROPERTY_SHAPE, true)</b>
+&nbsp;					)
+<b class="nc">&nbsp;					.forEach(s -&gt; {</b>
+&nbsp;						// TODO: This only works for the MemoryStore where we store the shape and not for other graphs
+<b class="nc">&nbsp;						shaclSailConnection.add(s, SHACL.TARGET_CLASS, s, RDF4J.SHACL_SHAPE_GRAPH);</b>
+&nbsp;					});
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ForwardChainingShapeSource withContext(Resource[] context) {
+<b class="nc">&nbsp;		return new ForwardChainingShapeSource(repository, connection, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource[] getActiveContexts() {
+<b class="nc">&nbsp;		return context;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Stream&lt;ShapesGraph&gt; getAllShapeContexts() {
+<b class="nc">&nbsp;		if (connection.hasStatement(null, null, null, false, RDF4J.SHACL_SHAPE_GRAPH)) {</b>
+<b class="nc">&nbsp;			return Stream.of(new ShapesGraph(RDF4J.SHACL_SHAPE_GRAPH));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Stream.empty();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private Stream&lt;Resource&gt; getContext(Predicates predicate) {
+<b class="nc">&nbsp;		assert context == null;</b>
+&nbsp;
+<b class="nc">&nbsp;		return connection.getStatements(null, predicate.getIRI(), null, true)</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.map(Statement::getContext)</b>
+<b class="nc">&nbsp;				.distinct();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Stream&lt;Resource&gt; getTargetableShape() {
+<b class="nc">&nbsp;		assert context != null;</b>
+<b class="nc">&nbsp;		return Stream</b>
+<b class="nc">&nbsp;				.of(getSubjects(Predicates.TARGET_NODE),</b>
+<b class="nc">&nbsp;						getSubjects(Predicates.TARGET_CLASS),</b>
+<b class="nc">&nbsp;						getSubjects(Predicates.TARGET_SUBJECTS_OF),</b>
+<b class="nc">&nbsp;						getSubjects(Predicates.TARGET_OBJECTS_OF),</b>
+<b class="nc">&nbsp;						getSubjects(Predicates.TARGET_PROP),</b>
+<b class="nc">&nbsp;						getSubjects(Predicates.RSX_targetShape)</b>
+&nbsp;				)
+<b class="nc">&nbsp;				.reduce(Stream::concat)</b>
+<b class="nc">&nbsp;				.get()</b>
+<b class="nc">&nbsp;				.distinct();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isType(Resource subject, IRI type) {
+<b class="nc">&nbsp;		assert context != null;</b>
+<b class="nc">&nbsp;		return connection.hasStatement(subject, RDF.TYPE, type, true, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Stream&lt;Resource&gt; getSubjects(Predicates predicate) {
+<b class="nc">&nbsp;		assert context != null;</b>
+&nbsp;
+<b class="nc">&nbsp;		return connection.getStatements(null, predicate.getIRI(), null, true, context)</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.map(Statement::getSubject)</b>
+<b class="nc">&nbsp;				.distinct();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public Stream&lt;Value&gt; getObjects(Resource subject, Predicates predicate) {
+<b class="nc">&nbsp;		assert context != null;</b>
+&nbsp;
+<b class="nc">&nbsp;		return connection.getStatements(subject, predicate.getIRI(), null, true, context)</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.map(Statement::getObject)</b>
+<b class="nc">&nbsp;				.distinct();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Stream&lt;Statement&gt; getAllStatements(Resource id) {
+<b class="nc">&nbsp;		assert context != null;</b>
+<b class="nc">&nbsp;		return connection.getStatements(id, null, null, true, context).stream();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value getRdfFirst(Resource subject) {
+<b class="nc">&nbsp;		return ShapeSourceHelper.getFirst(connection, subject, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource getRdfRest(Resource subject) {
+<b class="nc">&nbsp;		return ShapeSourceHelper.getRdfRest(connection, subject, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() {
+<b class="nc">&nbsp;		connection.commit();</b>
+<b class="nc">&nbsp;		connection.close();</b>
+<b class="nc">&nbsp;		repository.shutDown();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

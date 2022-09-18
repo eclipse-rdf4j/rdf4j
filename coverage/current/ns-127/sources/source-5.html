@@ -1,0 +1,487 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailConcurrencyTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.sail</a>
+</div>
+
+<h1>Coverage Summary for Class: SailConcurrencyTest (org.eclipse.rdf4j.testsuite.sail)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailConcurrencyTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/113)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailConcurrencyTest$UploadTransaction</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/141)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.sail;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertNotNull;
+&nbsp;
+&nbsp;import java.util.Random;
+&nbsp;import java.util.concurrent.CountDownLatch;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.AtomicInteger;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.Assert;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.Ignore;
+&nbsp;import org.junit.Test;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Tests concurrent read and write access to a Sail implementation.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public abstract class SailConcurrencyTest {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SailConcurrencyTest.class);</b>
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final int MAX_STATEMENTS = 150_000;
+&nbsp;
+&nbsp;	private static final int MAX_STATEMENT_IDX = 1_000;
+&nbsp;
+&nbsp;	private static final long MAX_TEST_TIME = 30 * 1_000;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private Sail store;
+&nbsp;
+&nbsp;	private ValueFactory vf;
+&nbsp;
+&nbsp;	private boolean m_failed;
+&nbsp;
+&nbsp;	private boolean continueRunning;
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		store = createSail();</b>
+<b class="nc">&nbsp;		store.init();</b>
+<b class="nc">&nbsp;		vf = store.getValueFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract Sail createSail() throws SailException;
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws Exception {
+<b class="nc">&nbsp;		store.shutDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected class UploadTransaction implements Runnable {
+&nbsp;
+&nbsp;		private final IRI context;
+&nbsp;
+&nbsp;		private int txnSize;
+&nbsp;
+&nbsp;		private final CountDownLatch completed;
+&nbsp;
+&nbsp;		private final CountDownLatch otherTxnCommitted;
+&nbsp;
+<b class="nc">&nbsp;		private final AtomicInteger targetSize = new AtomicInteger(MAX_STATEMENTS);</b>
+&nbsp;
+&nbsp;		private final boolean rollback;
+&nbsp;
+&nbsp;		public UploadTransaction(CountDownLatch completed, CountDownLatch otherTxnCommitted, IRI context,
+<b class="nc">&nbsp;				boolean rollback) {</b>
+<b class="nc">&nbsp;			this.completed = completed;</b>
+<b class="nc">&nbsp;			this.otherTxnCommitted = otherTxnCommitted;</b>
+<b class="nc">&nbsp;			this.context = context;</b>
+<b class="nc">&nbsp;			this.rollback = rollback;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void run() {
+&nbsp;			try {
+<b class="nc">&nbsp;				try (SailConnection conn = store.getConnection()) {</b>
+<b class="nc">&nbsp;					conn.begin();</b>
+<b class="nc">&nbsp;					while (txnSize &lt; targetSize.get()) {</b>
+<b class="nc">&nbsp;						IRI subject = vf.createIRI(&quot;urn:instance-&quot; + txnSize);</b>
+<b class="nc">&nbsp;						conn.addStatement(subject, RDFS.LABEL, vf.createLiteral(&quot;li&quot; + txnSize), context);</b>
+<b class="nc">&nbsp;						conn.addStatement(subject, RDFS.COMMENT, vf.createLiteral(&quot;ci&quot; + txnSize), context);</b>
+<b class="nc">&nbsp;						txnSize += 2;</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					logger.info(&quot;Uploaded &quot; + txnSize + &quot; statements&quot;);</b>
+<b class="nc">&nbsp;					if (rollback) {</b>
+<b class="nc">&nbsp;						otherTxnCommitted.await();</b>
+<b class="nc">&nbsp;						logger.info(&quot;Testing rollback of &quot; + txnSize + &quot; statements&quot;);</b>
+<b class="nc">&nbsp;						conn.rollback();</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						conn.commit();</b>
+<b class="nc">&nbsp;						otherTxnCommitted.countDown();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;error while executing transactions&quot;, t);</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				completed.countDown();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void stopAt(int target) {
+<b class="nc">&nbsp;			targetSize.set(target);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public int getSize() {
+<b class="nc">&nbsp;			return txnSize;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that two large concurrent transactions in separate contexts do not cause inconsistencies or errors. This
+&nbsp;	 * test may fail intermittently rather than consistently, given its dependency on multi-threading.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://github.com/eclipse/rdf4j/issues/693&quot;&gt;https://github.com/eclipse/rdf4j/issues/693&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	@Test
+&nbsp;	public void testConcurrentAddLargeTxn() throws Exception {
+<b class="nc">&nbsp;		logger.info(&quot;executing two large concurrent transactions&quot;);</b>
+<b class="nc">&nbsp;		final CountDownLatch runnersDone = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch otherTxnCommitted = new CountDownLatch(1);</b>
+&nbsp;
+<b class="nc">&nbsp;		final IRI context1 = vf.createIRI(&quot;urn:context1&quot;);</b>
+<b class="nc">&nbsp;		final IRI context2 = vf.createIRI(&quot;urn:context2&quot;);</b>
+<b class="nc">&nbsp;		UploadTransaction runner1 = new UploadTransaction(runnersDone, otherTxnCommitted, context1, false);</b>
+<b class="nc">&nbsp;		UploadTransaction runner2 = new UploadTransaction(runnersDone, otherTxnCommitted, context2, false);</b>
+&nbsp;
+<b class="nc">&nbsp;		final long start = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;		new Thread(runner1).start();</b>
+<b class="nc">&nbsp;		new Thread(runner2).start();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!runnersDone.await(MAX_TEST_TIME / 2, TimeUnit.MILLISECONDS)) {</b>
+&nbsp;			// time to wrap up
+<b class="nc">&nbsp;			int targetSize = Math.max(runner1.getSize(), runner2.getSize());</b>
+<b class="nc">&nbsp;			runner1.stopAt(targetSize);</b>
+<b class="nc">&nbsp;			runner2.stopAt(targetSize);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		while (!runnersDone.await(5, TimeUnit.MINUTES)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;Still waiting for transactions to commit&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final long finish = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;		logger.info(&quot;committed both txns in &quot; + (finish - start) / 1000 + &quot;s&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (SailConnection conn = store.getConnection()) {</b>
+<b class="nc">&nbsp;			long size1 = conn.size(context1);</b>
+<b class="nc">&nbsp;			long size2 = conn.size(context2);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;size 1 = {}, size 2 = {}&quot;, size1, size2);</b>
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;upload into context 1 should have been fully committed&quot;, runner1.getSize(), size1);</b>
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;upload into context 2 should have been fully committed&quot;, runner2.getSize(), size2);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that two large concurrent transactions in separate contexts do not cause inconsistencies or errors when
+&nbsp;	 * one of the transactions rolls back at the end.
+&nbsp;	 */
+&nbsp;	@Test
+&nbsp;	public void testConcurrentAddLargeTxnRollback() throws Exception {
+<b class="nc">&nbsp;		logger.info(&quot;executing two large concurrent transactions&quot;);</b>
+<b class="nc">&nbsp;		final CountDownLatch runnersDone = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch otherTxnCommitted = new CountDownLatch(1);</b>
+&nbsp;
+<b class="nc">&nbsp;		final IRI context1 = vf.createIRI(&quot;urn:context1&quot;);</b>
+<b class="nc">&nbsp;		final IRI context2 = vf.createIRI(&quot;urn:context2&quot;);</b>
+&nbsp;
+&nbsp;		// transaction into context 1 will commit
+<b class="nc">&nbsp;		UploadTransaction runner1 = new UploadTransaction(runnersDone, otherTxnCommitted, context1, false);</b>
+&nbsp;
+&nbsp;		// transaction into context 2 will rollback
+<b class="nc">&nbsp;		UploadTransaction runner2 = new UploadTransaction(runnersDone, otherTxnCommitted, context2, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		final long start = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;		new Thread(runner1).start();</b>
+<b class="nc">&nbsp;		new Thread(runner2).start();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!runnersDone.await(MAX_TEST_TIME / 2, TimeUnit.MILLISECONDS)) {</b>
+&nbsp;			// time to wrap up
+<b class="nc">&nbsp;			int targetSize = Math.max(runner1.getSize(), runner2.getSize());</b>
+<b class="nc">&nbsp;			runner1.stopAt(targetSize);</b>
+<b class="nc">&nbsp;			runner2.stopAt(targetSize);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		while (!runnersDone.await(5, TimeUnit.MINUTES)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;Still waiting for transaction to rollback&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final long finish = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;		logger.info(&quot;completed both txns in &quot; + (finish - start) / 1000 + &quot;s&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (SailConnection conn = store.getConnection()) {</b>
+<b class="nc">&nbsp;			long size1 = conn.size(context1);</b>
+<b class="nc">&nbsp;			long size2 = conn.size(context2);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;size 1 = {}, size 2 = {}&quot;, size1, size2);</b>
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;upload into context 1 should have been fully committed&quot;, runner1.getSize(), size1);</b>
+<b class="nc">&nbsp;			Assert.assertEquals(&quot;upload into context 2 should have been rolled back&quot;, 0, size2);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	@Ignore(&quot;This test takes a long time and accomplishes little extra&quot;)
+&nbsp;	public void testGetContextIDs() throws Exception {
+&nbsp;		// Create one thread which writes statements to the repository, on a
+&nbsp;		// number of named graphs.
+<b class="nc">&nbsp;		final Random insertRandomizer = new Random(12345L);</b>
+<b class="nc">&nbsp;		final Random removeRandomizer = new Random(System.currentTimeMillis());</b>
+&nbsp;
+<b class="nc">&nbsp;		Runnable writer = () -&gt; {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				try (SailConnection connection = store.getConnection()) {</b>
+<b class="nc">&nbsp;					while (continueRunning) {</b>
+<b class="nc">&nbsp;						connection.begin();</b>
+<b class="nc">&nbsp;						for (int i = 0; i &lt; 10; i++) {</b>
+<b class="nc">&nbsp;							insertTestStatement(connection, insertRandomizer.nextInt() % MAX_STATEMENT_IDX);</b>
+<b class="nc">&nbsp;							removeTestStatement(connection, removeRandomizer.nextInt() % MAX_STATEMENT_IDX);</b>
+&nbsp;						}
+&nbsp;						// System.out.print(&quot;*&quot;);
+<b class="nc">&nbsp;						connection.commit();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				continueRunning = false;</b>
+<b class="nc">&nbsp;				fail(&quot;Writer failed&quot;, t);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		};
+&nbsp;
+&nbsp;		// Create another which constantly calls getContextIDs() on the
+&nbsp;		// connection.
+<b class="nc">&nbsp;		Runnable reader = () -&gt; {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				try (SailConnection connection = store.getConnection()) {</b>
+<b class="nc">&nbsp;					while (continueRunning) {</b>
+<b class="nc">&nbsp;						try (CloseableIteration&lt;? extends Resource, SailException&gt; contextIter = connection</b>
+<b class="nc">&nbsp;								.getContextIDs()) {</b>
+<b class="nc">&nbsp;							while (contextIter.hasNext()) {</b>
+<b class="nc">&nbsp;								Resource context = contextIter.next();</b>
+<b class="nc">&nbsp;								assertNotNull(context);</b>
+<b class="nc">&nbsp;							}</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				continueRunning = false;</b>
+<b class="nc">&nbsp;				fail(&quot;Reader failed&quot;, t);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		};
+&nbsp;
+<b class="nc">&nbsp;		Thread readerThread1 = new Thread(reader);</b>
+<b class="nc">&nbsp;		Thread readerThread2 = new Thread(reader);</b>
+<b class="nc">&nbsp;		Thread writerThread1 = new Thread(writer);</b>
+<b class="nc">&nbsp;		Thread writerThread2 = new Thread(writer);</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.info(&quot;Running concurrency test...&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		continueRunning = true;</b>
+<b class="nc">&nbsp;		readerThread1.start();</b>
+<b class="nc">&nbsp;		readerThread2.start();</b>
+<b class="nc">&nbsp;		writerThread1.start();</b>
+<b class="nc">&nbsp;		writerThread2.start();</b>
+&nbsp;
+<b class="nc">&nbsp;		readerThread1.join(MAX_TEST_TIME);</b>
+&nbsp;
+<b class="nc">&nbsp;		continueRunning = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		readerThread1.join(1000);</b>
+<b class="nc">&nbsp;		readerThread2.join(1000);</b>
+<b class="nc">&nbsp;		writerThread1.join(1000);</b>
+<b class="nc">&nbsp;		writerThread2.join(1000);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (hasFailed()) {</b>
+<b class="nc">&nbsp;			Assert.fail(&quot;Test Failed&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.info(&quot;Test succeeded&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected synchronized void fail(String message, Throwable t) {
+<b class="nc">&nbsp;		System.err.println(message);</b>
+<b class="nc">&nbsp;		t.printStackTrace();</b>
+<b class="nc">&nbsp;		m_failed = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected synchronized boolean hasFailed() {
+<b class="nc">&nbsp;		return m_failed;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void insertTestStatement(SailConnection connection, int i) throws SailException {
+&nbsp;		// System.out.print(&quot;+&quot;);
+<b class="nc">&nbsp;		connection.addStatement(vf.createIRI(&quot;http://test#s&quot; + i), vf.createIRI(&quot;http://test#p&quot; + i),</b>
+<b class="nc">&nbsp;				vf.createIRI(&quot;http://test#o&quot; + i), vf.createIRI(&quot;http://test#context_&quot; + i));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void removeTestStatement(SailConnection connection, int i) throws SailException {
+&nbsp;		// System.out.print(&quot;-&quot;);
+<b class="nc">&nbsp;		connection.removeStatements(vf.createIRI(&quot;http://test#s&quot; + i), vf.createIRI(&quot;http://test#p&quot; + i),</b>
+<b class="nc">&nbsp;				vf.createIRI(&quot;http://test#o&quot; + i), vf.createIRI(&quot;http://test#context_&quot; + i));</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

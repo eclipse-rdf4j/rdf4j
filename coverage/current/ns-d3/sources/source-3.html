@@ -1,0 +1,348 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ContextStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: ContextStore (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ContextStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/79)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.io.BufferedInputStream;
+&nbsp;import java.io.BufferedOutputStream;
+&nbsp;import java.io.DataInputStream;
+&nbsp;import java.io.DataOutputStream;
+&nbsp;import java.io.EOFException;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileNotFoundException;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Map.Entry;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An in-memory index for context information that uses a file for persistence.
+&nbsp; * &lt;p&gt;
+&nbsp; * The context index file has an 8-byte header consisting of:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * 	byte 1-3         : the magic number marker
+&nbsp; *  byte 4           : the file format version
+&nbsp; *  byte 5-8         : the number of mapped contexts contained in the file, as an int.
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * Each context is encoded in the file as a record, as follows:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; *   byte 1 - 8      : the number of statements in the content, as a long.
+&nbsp; *   byte 9          : boolean flag indicating the type of context identifier (1 = IRI, 0 = blank node)
+&nbsp; *   byte 10 - 11    : the length of the encoded context identifier
+&nbsp; *   byte 12 - A     : the UTF-8 encoded the encoded context identifer
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; *
+&nbsp; */
+&nbsp;class ContextStore implements Iterable&lt;Resource&gt; {
+&nbsp;
+<b class="nc">&nbsp;	static final Logger logger = LoggerFactory.getLogger(ContextStore.class);</b>
+&nbsp;
+&nbsp;	private static final String FILE_NAME = &quot;contexts.dat&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Magic number &quot;Native Context File&quot; to detect whether the file is actually a context file. The first three bytes
+&nbsp;	 * of the file should be equal to this magic number.
+&nbsp;	 */
+<b class="nc">&nbsp;	private static final byte[] MAGIC_NUMBER = new byte[] { &#39;n&#39;, &#39;c&#39;, &#39;f&#39; };</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * File format version, stored as the fourth byte in context files.
+&nbsp;	 */
+&nbsp;	private static final byte FILE_FORMAT_VERSION = 1;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The data file for this {@link ContextStore}.
+&nbsp;	 */
+&nbsp;	private final File file;
+&nbsp;
+&nbsp;	private final Map&lt;Resource, Long&gt; contextInfoMap;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the contents of this {@link ContextStore} are different from what is stored on disk.
+&nbsp;	 */
+&nbsp;	private volatile boolean contentsChanged;
+&nbsp;
+&nbsp;	private final ValueFactory valueFactory;
+&nbsp;
+&nbsp;	private final NativeSailStore store;
+&nbsp;
+<b class="nc">&nbsp;	ContextStore(NativeSailStore store, File dataDir) throws IOException {</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(store);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(dataDir);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.file = new File(dataDir, FILE_NAME);</b>
+<b class="nc">&nbsp;		this.valueFactory = store.getValueFactory();</b>
+<b class="nc">&nbsp;		this.store = store;</b>
+&nbsp;
+<b class="nc">&nbsp;		contextInfoMap = new HashMap&lt;&gt;(16);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			readContextsFromFile();</b>
+<b class="nc">&nbsp;		} catch (FileNotFoundException fe) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;context index has not been created yet: &quot; + fe.getMessage());</b>
+<b class="nc">&nbsp;			initializeContextCache();</b>
+<b class="nc">&nbsp;			writeContextsToFile();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;context index construction complete&quot;);</b>
+<b class="nc">&nbsp;		} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;could not read context index: &quot; + ioe.getMessage(), ioe);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;attempting reconstruction from store (this may take a while)&quot;);</b>
+<b class="nc">&nbsp;			initializeContextCache();</b>
+<b class="nc">&nbsp;			writeContextsToFile();</b>
+<b class="nc">&nbsp;			logger.info(&quot;context index reconstruction complete&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Increase the size of the context. If the context was not yet known, it is created with a size of 1.
+&nbsp;	 *
+&nbsp;	 * @param context the context identifier.
+&nbsp;	 */
+&nbsp;	void increment(Resource context) {
+<b class="nc">&nbsp;		contextInfoMap.merge(context, 1L, (size, one) -&gt; size + one);</b>
+<b class="nc">&nbsp;		contentsChanged = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decrease the size of the context by the given amount. If the size reaches zero, the context is removed.
+&nbsp;	 *
+&nbsp;	 * @param context the context identifier.
+&nbsp;	 * @param amount  the number by which to decrease the size
+&nbsp;	 */
+&nbsp;	void decrementBy(Resource context, long amount) {
+<b class="nc">&nbsp;		contextInfoMap.computeIfPresent(context, (c, size) -&gt; size &lt;= amount ? null : size - amount);</b>
+<b class="nc">&nbsp;		contentsChanged = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;Resource&gt; iterator() {
+<b class="nc">&nbsp;		return contextInfoMap.keySet().iterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void clear() {
+<b class="nc">&nbsp;		if (!contextInfoMap.isEmpty()) {</b>
+<b class="nc">&nbsp;			contextInfoMap.clear();</b>
+<b class="nc">&nbsp;			contentsChanged = true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	void close() {
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	void sync() throws IOException {
+<b class="nc">&nbsp;		if (contentsChanged) {</b>
+&nbsp;			// Flush the changes to disk
+<b class="nc">&nbsp;			writeContextsToFile();</b>
+<b class="nc">&nbsp;			contentsChanged = false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeContextsToFile() throws IOException {
+<b class="nc">&nbsp;		synchronized (file) {</b>
+<b class="nc">&nbsp;			try (DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(file)))) {</b>
+<b class="nc">&nbsp;				out.write(MAGIC_NUMBER);</b>
+<b class="nc">&nbsp;				out.writeByte(FILE_FORMAT_VERSION);</b>
+<b class="nc">&nbsp;				out.writeInt(contextInfoMap.size());</b>
+<b class="nc">&nbsp;				for (Entry&lt;Resource, Long&gt; entry : contextInfoMap.entrySet()) {</b>
+<b class="nc">&nbsp;					out.writeLong(entry.getValue());</b>
+<b class="nc">&nbsp;					out.writeBoolean(entry.getKey() instanceof IRI);</b>
+<b class="nc">&nbsp;					out.writeUTF(entry.getKey().stringValue());</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void initializeContextCache() throws IOException {
+<b class="nc">&nbsp;		logger.debug(&quot;initializing context cache&quot;);</b>
+<b class="nc">&nbsp;		try (CloseableIteration&lt;Resource, SailException&gt; contextIter = store.getContexts()) {</b>
+<b class="nc">&nbsp;			while (contextIter.hasNext()) {</b>
+<b class="nc">&nbsp;				increment(contextIter.next());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void readContextsFromFile() throws IOException {
+<b class="nc">&nbsp;		synchronized (file) {</b>
+<b class="nc">&nbsp;			if (!file.exists()) {</b>
+<b class="nc">&nbsp;				throw new FileNotFoundException(&quot;context index file &quot; + file + &quot; does not exist&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			try (DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)))) {</b>
+<b class="nc">&nbsp;				byte[] magicNumber = IOUtil.readBytes(in, MAGIC_NUMBER.length);</b>
+<b class="nc">&nbsp;				if (!Arrays.equals(magicNumber, MAGIC_NUMBER)) {</b>
+<b class="nc">&nbsp;					throw new IOException(&quot;File doesn&#39;t contain compatible context data&quot;);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				byte version = in.readByte();</b>
+<b class="nc">&nbsp;				if (version &gt; FILE_FORMAT_VERSION) {</b>
+<b class="nc">&nbsp;					throw new IOException(&quot;Unable to read context file; it uses a newer file format&quot;);</b>
+<b class="nc">&nbsp;				} else if (version != FILE_FORMAT_VERSION) {</b>
+<b class="nc">&nbsp;					throw new IOException(&quot;Unable to read context file; invalid file format version: &quot; + version);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				final int size = in.readInt();</b>
+&nbsp;
+&nbsp;				while (true) {
+&nbsp;					try {
+<b class="nc">&nbsp;						long contextSize = in.readLong();</b>
+<b class="nc">&nbsp;						boolean isIRI = in.readBoolean();</b>
+<b class="nc">&nbsp;						String contextId = in.readUTF();</b>
+&nbsp;
+<b class="nc">&nbsp;						Resource context = isIRI ? valueFactory.createIRI(contextId)</b>
+<b class="nc">&nbsp;								: valueFactory.createBNode(contextId);</b>
+<b class="nc">&nbsp;						contextInfoMap.put(context, contextSize);</b>
+<b class="nc">&nbsp;					} catch (EOFException e) {</b>
+<b class="nc">&nbsp;						break;</b>
+<b class="nc">&nbsp;					} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;						throw new IOException(&quot;unable to parse context identifier: &quot;, e);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (contextInfoMap.size() != size) {</b>
+<b class="nc">&nbsp;					throw new IOException(&quot;Unable to read context file; size checksum validation failed&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

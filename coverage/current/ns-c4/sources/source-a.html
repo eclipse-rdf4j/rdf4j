@@ -1,0 +1,947 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SchemaCachingRDFSInferencer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.inferencer.fc</a>
+</div>
+
+<h1>Coverage Summary for Class: SchemaCachingRDFSInferencer (org.eclipse.rdf4j.sail.inferencer.fc)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SchemaCachingRDFSInferencer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/146)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/326)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.inferencer.fc;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.locks.ReentrantLock;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.time.StopWatch;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSail;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;p&gt;
+&nbsp; * The SchemaCachingRDFSInferencer is an RDFS reasoner that caches all schema (TBox) statements and calculates an
+&nbsp; * inference map to quickly determine inferred statements. The reasoner can also be instantiated with a predefined
+&nbsp; * schema for improved performance.
+&nbsp; * &lt;/p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * This reasoner is not a rule based reasoner and will be up to 80x faster than the
+&nbsp; * {@link ForwardChainingRDFSInferencer}, as well as being more complete.
+&nbsp; * &lt;/p&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * The sail puts no limitations on isolation level for read transactions, however all write/delete/update transactions
+&nbsp; * are serializable with exclusive locks. This limits write/delete/update transactions to one transaction at a time.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Håvard Mikkelsen Ottestad
+&nbsp; */
+<b class="nc">&nbsp;public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SchemaCachingRDFSInferencer.class);</b>
+<b class="nc">&nbsp;	private static final Resource[] DEFAULT_CONTEXT = { null };</b>
+&nbsp;
+&nbsp;	// An optional predifinedSchema that the user has provided
+&nbsp;	Repository predefinedSchema;
+&nbsp;
+&nbsp;	// exclusive lock for modifying the schema cache.
+<b class="nc">&nbsp;	private final ReentrantLock exclusiveWriteLock = new ReentrantLock(true);</b>
+&nbsp;
+&nbsp;	// If false, the inferencer will skip some RDFS rules.
+<b class="nc">&nbsp;	boolean useAllRdfsRules = true;</b>
+&nbsp;
+&nbsp;	// the SPIN sail will add inferred statements that it wants to be used for further inference.
+&nbsp;	volatile protected boolean useInferredToCreateSchema;
+&nbsp;
+&nbsp;	// Schema cache
+<b class="nc">&nbsp;	private Collection&lt;Resource&gt; properties = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Collection&lt;Resource&gt; types = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Collection&lt;Statement&gt; subClassOfStatements = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Collection&lt;Statement&gt; subPropertyOfStatements = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Collection&lt;Statement&gt; rangeStatements = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Collection&lt;Statement&gt; domainStatements = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	// Forward chained schema cache as lookup tables
+<b class="nc">&nbsp;	private Map&lt;Resource, Set&lt;Resource&gt;&gt; calculatedTypes = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Map&lt;Resource, Set&lt;Resource&gt;&gt; calculatedProperties = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Map&lt;Resource, Set&lt;Resource&gt;&gt; calculatedRange = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Map&lt;Resource, Set&lt;Resource&gt;&gt; calculatedDomain = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	// The inferencer has been instantiated from another inferencer and shares it&#39;s schema with that one
+&nbsp;	private boolean sharedSchema;
+&nbsp;
+&nbsp;	// Inferred statements can either be added to the default context
+&nbsp;	// or to the context that the original inserted statement has
+<b class="nc">&nbsp;	private boolean addInferredStatementsToDefaultContext = false;</b>
+&nbsp;	private volatile boolean unmodifiable;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Instantiate a new SchemaCachingRDFSInferencer
+&nbsp;	 */
+&nbsp;	public SchemaCachingRDFSInferencer() {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		predefinedSchema = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Instantiate a SchemaCachingRDFSInferencer.
+&nbsp;	 *
+&nbsp;	 * @param data Base sail for storing data.
+&nbsp;	 */
+&nbsp;	public SchemaCachingRDFSInferencer(NotifyingSail data) {
+<b class="nc">&nbsp;		super(data);</b>
+<b class="nc">&nbsp;		predefinedSchema = null;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Instantiate a SchemaCachingRDFSInferencer with a predefined schema. The schema will be used for inference, all
+&nbsp;	 * other schema statements added will be ignored and no schema statements can be removed. Using a predefined schema
+&nbsp;	 * significantly improves performance.
+&nbsp;	 *
+&nbsp;	 * @param data             Base sail for storing data.
+&nbsp;	 * @param predefinedSchema Repository containing the schema.
+&nbsp;	 */
+&nbsp;	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository predefinedSchema) {
+<b class="nc">&nbsp;		super(data);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.predefinedSchema = predefinedSchema;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Instantiate a SchemaCachingRDFSInferencer.
+&nbsp;	 *
+&nbsp;	 * @param data            Base sail for storing data.
+&nbsp;	 * @param useAllRdfsRules Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+&nbsp;	 */
+&nbsp;	public SchemaCachingRDFSInferencer(NotifyingSail data, boolean useAllRdfsRules) {
+<b class="nc">&nbsp;		super(data);</b>
+<b class="nc">&nbsp;		predefinedSchema = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.useAllRdfsRules = useAllRdfsRules;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Instantiate a SchemaCachingRDFSInferencer with a predefined schema. The schema will be used for inference, all
+&nbsp;	 * other schema statements added will be ignored and no schema statements can be removed. Using a predefined schema
+&nbsp;	 * significantly improves performance.
+&nbsp;	 *
+&nbsp;	 * @param data             Base sail for storing data.
+&nbsp;	 * @param predefinedSchema Repository containing the schema.
+&nbsp;	 * @param useAllRdfsRules  Usel all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+&nbsp;	 */
+&nbsp;	public SchemaCachingRDFSInferencer(NotifyingSail data, Repository predefinedSchema,
+&nbsp;			boolean useAllRdfsRules) {
+<b class="nc">&nbsp;		super(data);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.predefinedSchema = predefinedSchema;</b>
+<b class="nc">&nbsp;		this.useAllRdfsRules = useAllRdfsRules;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	void clearInferenceTables() {
+<b class="nc">&nbsp;		logger.debug(&quot;Clear inference tables&quot;);</b>
+<b class="nc">&nbsp;		acquireExclusiveWriteLock();</b>
+<b class="nc">&nbsp;		properties.clear();</b>
+<b class="nc">&nbsp;		types.clear();</b>
+<b class="nc">&nbsp;		subClassOfStatements.clear();</b>
+<b class="nc">&nbsp;		subPropertyOfStatements.clear();</b>
+<b class="nc">&nbsp;		rangeStatements.clear();</b>
+<b class="nc">&nbsp;		domainStatements.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;		calculatedTypes.clear();</b>
+<b class="nc">&nbsp;		calculatedProperties.clear();</b>
+<b class="nc">&nbsp;		calculatedRange.clear();</b>
+<b class="nc">&nbsp;		calculatedDomain.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to obtain an exclusive write lock on this store. This method will block until either the lock is obtained
+&nbsp;	 * or an interrupt signal is received.
+&nbsp;	 *
+&nbsp;	 * @throws SailException if the thread is interrupted while waiting to obtain the lock.
+&nbsp;	 */
+&nbsp;	void acquireExclusiveWriteLock() {
+<b class="nc">&nbsp;		if (exclusiveWriteLock.isHeldByCurrentThread()) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			exclusiveWriteLock.lockInterruptibly();</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Releases the exclusive write lock.
+&nbsp;	 */
+&nbsp;	void releaseExclusiveWriteLock() {
+<b class="nc">&nbsp;		while (exclusiveWriteLock.isHeldByCurrentThread()) {</b>
+<b class="nc">&nbsp;			exclusiveWriteLock.unlock();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init()
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		super.init();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (sharedSchema) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (final SchemaCachingRDFSInferencerConnection conn = getConnection()) {</b>
+<b class="nc">&nbsp;			conn.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;			conn.addAxiomStatements();</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;Statement&gt; tboxStatments = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (predefinedSchema != null) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Initializing with a predefined schema.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;				try (RepositoryConnection schemaConnection = predefinedSchema.getConnection()) {</b>
+<b class="nc">&nbsp;					schemaConnection.begin();</b>
+<b class="nc">&nbsp;					try (Stream&lt;Statement&gt; stream = schemaConnection.getStatements(null, null, null).stream()) {</b>
+<b class="nc">&nbsp;						tboxStatments = stream</b>
+<b class="nc">&nbsp;								.peek(conn::processForSchemaCache)</b>
+<b class="nc">&nbsp;								.collect(Collectors.toList());</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					schemaConnection.commit();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			calculateInferenceMaps(conn, true);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (predefinedSchema != null) {</b>
+<b class="nc">&nbsp;				tboxStatments.forEach(statement -&gt; conn.addStatement(statement.getSubject(),</b>
+<b class="nc">&nbsp;						statement.getPredicate(), statement.getObject(), statement.getContext()));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			conn.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SchemaCachingRDFSInferencerConnection getConnection()
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		InferencerConnection e = (InferencerConnection) super.getConnection();</b>
+<b class="nc">&nbsp;		return new SchemaCachingRDFSInferencerConnection(this, e);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;		return getBaseSail().getValueFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Instantiate a new SchemaCachingRDFSInferencer from an existing one. Fast instantiation extracts the schema lookup
+&nbsp;	 * tables generated by the existing sail and uses them to populate the lookup tables of a new reasoner. Schema
+&nbsp;	 * triples can not be queried in the SchemaCachingRDFSInferencer returned by this method.
+&nbsp;	 *
+&nbsp;	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
+&nbsp;	 * @param store                 Base sail for storing data.
+&nbsp;	 * @return inferencer
+&nbsp;	 */
+&nbsp;	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
+&nbsp;			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store) {
+<b class="nc">&nbsp;		return fastInstantiateFrom(sailToInstantiateFrom, store, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Instantiate a new SchemaCachingRDFSInferencer from an existing one. Fast instantiation extracts the schema lookup
+&nbsp;	 * tables generated by the existing sail and uses them to populate the lookup tables of a new reasoner. Schema
+&nbsp;	 * triples can not be queried in the SchemaCachingRDFSInferencer returned by this method.
+&nbsp;	 *
+&nbsp;	 * @param sailToInstantiateFrom The SchemaCachingRDFSInferencer to extract the lookup tables from.
+&nbsp;	 * @param store                 Base sail for storing data.
+&nbsp;	 * @param useAllRdfsRules       Use all RDFS rules. If set to false rule rdf4a and rdfs4b will be ignore
+&nbsp;	 * @return inferencer
+&nbsp;	 */
+&nbsp;	static public SchemaCachingRDFSInferencer fastInstantiateFrom(
+&nbsp;			SchemaCachingRDFSInferencer sailToInstantiateFrom, NotifyingSail store,
+&nbsp;			boolean useAllRdfsRules) {
+&nbsp;
+<b class="nc">&nbsp;		sailToInstantiateFrom.getConnection().close();</b>
+<b class="nc">&nbsp;		sailToInstantiateFrom.makeUnmodifiable();</b>
+&nbsp;
+<b class="nc">&nbsp;		SchemaCachingRDFSInferencer ret = new SchemaCachingRDFSInferencer(store,</b>
+&nbsp;				sailToInstantiateFrom.predefinedSchema, useAllRdfsRules);
+&nbsp;
+<b class="nc">&nbsp;		ret.sharedSchema = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		sailToInstantiateFrom.calculatedTypes.forEach((key, value) -&gt; value.forEach(v -&gt; {</b>
+<b class="nc">&nbsp;			if (!ret.calculatedTypes.containsKey(key)) {</b>
+<b class="nc">&nbsp;				ret.calculatedTypes.put(key, new HashSet&lt;&gt;(Set.of(v)));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				ret.calculatedTypes.get(key).add(v);</b>
+&nbsp;			}
+&nbsp;		}));
+&nbsp;
+<b class="nc">&nbsp;		sailToInstantiateFrom.calculatedProperties.forEach((key, value) -&gt; value.forEach(v -&gt; {</b>
+<b class="nc">&nbsp;			if (!ret.calculatedProperties.containsKey(key)) {</b>
+<b class="nc">&nbsp;				ret.calculatedProperties.put(key, new HashSet&lt;&gt;(Set.of(v)));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				ret.calculatedProperties.get(key).add(v);</b>
+&nbsp;			}
+&nbsp;		}));
+&nbsp;
+<b class="nc">&nbsp;		sailToInstantiateFrom.calculatedRange.forEach((key, value) -&gt; value.forEach(v -&gt; {</b>
+<b class="nc">&nbsp;			if (!ret.calculatedRange.containsKey(key)) {</b>
+<b class="nc">&nbsp;				ret.calculatedRange.put(key, new HashSet&lt;&gt;(Set.of(v)));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				ret.calculatedRange.get(key).add(v);</b>
+&nbsp;			}
+&nbsp;		}));
+&nbsp;
+<b class="nc">&nbsp;		sailToInstantiateFrom.calculatedDomain.forEach((key, value) -&gt; value.forEach(v -&gt; {</b>
+<b class="nc">&nbsp;			if (!ret.calculatedDomain.containsKey(key)) {</b>
+<b class="nc">&nbsp;				ret.calculatedDomain.put(key, new HashSet&lt;&gt;(Set.of(v)));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				ret.calculatedDomain.get(key).add(v);</b>
+&nbsp;			}
+&nbsp;		}));
+&nbsp;
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void makeUnmodifiable() {
+&nbsp;
+<b class="nc">&nbsp;		if (unmodifiable) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		synchronized (this) {</b>
+<b class="nc">&nbsp;			if (!unmodifiable) {</b>
+&nbsp;
+<b class="nc">&nbsp;				unmodifiable = true;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (properties.isEmpty()) {</b>
+<b class="nc">&nbsp;					properties = Collections.emptySet();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					properties = Set.copyOf(properties);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (types.isEmpty()) {</b>
+<b class="nc">&nbsp;					types = Collections.emptySet();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					types = Set.copyOf(types);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (subClassOfStatements.isEmpty()) {</b>
+<b class="nc">&nbsp;					subClassOfStatements = Collections.emptySet();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					subClassOfStatements = Set.copyOf(subClassOfStatements);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (subPropertyOfStatements.isEmpty()) {</b>
+<b class="nc">&nbsp;					subPropertyOfStatements = Collections.emptySet();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					subPropertyOfStatements = Set.copyOf(subPropertyOfStatements);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (rangeStatements.isEmpty()) {</b>
+<b class="nc">&nbsp;					rangeStatements = Collections.emptySet();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					rangeStatements = Set.copyOf(rangeStatements);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (domainStatements.isEmpty()) {</b>
+<b class="nc">&nbsp;					domainStatements = Collections.emptySet();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					domainStatements = Set.copyOf(domainStatements);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				calculatedTypes.replaceAll((k, v) -&gt; Set.copyOf(v));</b>
+<b class="nc">&nbsp;				calculatedProperties.replaceAll((k, v) -&gt; Set.copyOf(v));</b>
+<b class="nc">&nbsp;				calculatedRange.replaceAll((k, v) -&gt; Set.copyOf(v));</b>
+<b class="nc">&nbsp;				calculatedDomain.replaceAll((k, v) -&gt; Set.copyOf(v));</b>
+&nbsp;
+<b class="nc">&nbsp;				if (calculatedTypes.isEmpty()) {</b>
+<b class="nc">&nbsp;					calculatedTypes = Collections.emptyMap();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					calculatedTypes = Map.copyOf(calculatedTypes);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (calculatedProperties.isEmpty()) {</b>
+<b class="nc">&nbsp;					calculatedProperties = Collections.emptyMap();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					calculatedProperties = Map.copyOf(calculatedProperties);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (calculatedRange.isEmpty()) {</b>
+<b class="nc">&nbsp;					calculatedRange = Collections.emptyMap();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					calculatedRange = Map.copyOf(calculatedRange);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (calculatedDomain.isEmpty()) {</b>
+<b class="nc">&nbsp;					calculatedDomain = Collections.emptyMap();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					calculatedDomain = Map.copyOf(calculatedDomain);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	void calculateInferenceMaps(SchemaCachingRDFSInferencerConnection conn, boolean addInferred) {
+<b class="nc">&nbsp;		logger.debug(&quot;Calculate inference maps.&quot;);</b>
+<b class="nc">&nbsp;		calculateSubClassOf(subClassOfStatements);</b>
+<b class="nc">&nbsp;		properties.forEach(predicate -&gt; {</b>
+<b class="nc">&nbsp;			if (addInferred) {</b>
+<b class="nc">&nbsp;				conn.addInferredStatementInternal(predicate, RDF.TYPE, RDF.PROPERTY, DEFAULT_CONTEXT);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			calculatedProperties.put(predicate, ConcurrentHashMap.newKeySet());</b>
+&nbsp;		});
+<b class="nc">&nbsp;		calculateSubPropertyOf(subPropertyOfStatements);</b>
+&nbsp;
+<b class="nc">&nbsp;		calculateDomainAndRange(rangeStatements, calculatedRange);</b>
+<b class="nc">&nbsp;		calculateDomainAndRange(domainStatements, calculatedDomain);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (addInferred) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Add inferred rdfs:subClassOf statements&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			calculatedTypes.forEach((subClass, superClasses) -&gt; {</b>
+<b class="nc">&nbsp;				superClasses.forEach(superClass -&gt; {</b>
+<b class="nc">&nbsp;					conn.addInferredStatementInternal(subClass, RDFS.SUBCLASSOF, superClass, DEFAULT_CONTEXT);</b>
+&nbsp;				});
+&nbsp;			});
+&nbsp;		}
+<b class="nc">&nbsp;		if (addInferred) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Add inferred rdfs:subPropertyOf statements&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			calculatedProperties.forEach((sub, sups) -&gt; {</b>
+<b class="nc">&nbsp;				sups.forEach(sup -&gt; {</b>
+<b class="nc">&nbsp;					conn.addInferredStatementInternal(sub, RDFS.SUBPROPERTYOF, sup, DEFAULT_CONTEXT);</b>
+&nbsp;				});
+&nbsp;			});
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	void addSubClassOfStatement(Statement st) {
+<b class="nc">&nbsp;		if (!st.getObject().isResource()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Object of rdfs:subClassOf should be a resource! &quot; + st);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		subClassOfStatements.add(st);</b>
+<b class="nc">&nbsp;		types.add(st.getSubject());</b>
+<b class="nc">&nbsp;		types.add((Resource) st.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void addSubPropertyOfStatement(Statement st) {
+<b class="nc">&nbsp;		if (!st.getObject().isResource()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Object of rdfs:subPropertyOf should be a resource! &quot; + st);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		subPropertyOfStatements.add(st);</b>
+<b class="nc">&nbsp;		properties.add(st.getSubject());</b>
+<b class="nc">&nbsp;		properties.add((Resource) st.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void addRangeStatement(Statement st) {
+<b class="nc">&nbsp;		if (!st.getObject().isResource()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Object of rdfs:range should be a resource! &quot; + st);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		rangeStatements.add(st);</b>
+<b class="nc">&nbsp;		properties.add(st.getSubject());</b>
+<b class="nc">&nbsp;		types.add((Resource) st.getObject());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	void addDomainStatement(Statement st) {
+<b class="nc">&nbsp;		if (!st.getObject().isResource()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Object of rdfs:domain should be a resource! &quot; + st);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		domainStatements.add(st);</b>
+<b class="nc">&nbsp;		properties.add(st.getSubject());</b>
+<b class="nc">&nbsp;		types.add((Resource) st.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean hasType(Resource r) {
+<b class="nc">&nbsp;		return types.contains(r);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void addType(Resource r) {
+<b class="nc">&nbsp;		types.add(r);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean hasProperty(Resource property) {
+<b class="nc">&nbsp;		return properties.contains(property);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void addProperty(Resource property) {
+<b class="nc">&nbsp;		properties.add(property);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Set&lt;Resource&gt; resolveTypes(Resource value) {
+<b class="nc">&nbsp;		return calculatedTypes.getOrDefault(value, Collections.emptySet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Set&lt;Resource&gt; resolveProperties(Resource predicate) {
+<b class="nc">&nbsp;		return calculatedProperties.getOrDefault(predicate, Collections.emptySet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Set&lt;Resource&gt; resolveRangeTypes(IRI predicate) {
+<b class="nc">&nbsp;		return calculatedRange.getOrDefault(predicate, Collections.emptySet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Set&lt;Resource&gt; resolveDomainTypes(IRI predicate) {
+<b class="nc">&nbsp;		return calculatedDomain.getOrDefault(predicate, Collections.emptySet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void calculateSubClassOf(Collection&lt;Statement&gt; subClassOfStatements) {
+<b class="nc">&nbsp;		logger.debug(&quot;Calculate rdfs:subClassOf inference map.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		StopWatch stopWatch = null;</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			stopWatch = StopWatch.createStarted();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;Fill initial maps&quot;);</b>
+<b class="nc">&nbsp;		types.forEach(type -&gt; {</b>
+<b class="nc">&nbsp;			if (!calculatedTypes.containsKey(type)) {</b>
+<b class="nc">&nbsp;				Set&lt;Resource&gt; values = ConcurrentHashMap.newKeySet();</b>
+<b class="nc">&nbsp;				values.add(RDFS.RESOURCE);</b>
+<b class="nc">&nbsp;				values.add(type);</b>
+<b class="nc">&nbsp;				calculatedTypes.put(type, values);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				calculatedTypes.get(type).add(type);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		subClassOfStatements.forEach(s -&gt; {</b>
+<b class="nc">&nbsp;			if (!s.getObject().isResource()) {</b>
+<b class="nc">&nbsp;				throw new SailException(&quot;Object of rdfs:subClassOf should be a resource! &quot; + s);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Resource subClass = s.getSubject();</b>
+<b class="nc">&nbsp;			Resource superClass = (Resource) s.getObject();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!calculatedTypes.containsKey(subClass)) {</b>
+&nbsp;
+<b class="nc">&nbsp;				Set&lt;Resource&gt; values = ConcurrentHashMap.newKeySet();</b>
+<b class="nc">&nbsp;				values.add(RDFS.RESOURCE);</b>
+<b class="nc">&nbsp;				values.add(subClass);</b>
+<b class="nc">&nbsp;				values.add(superClass);</b>
+<b class="nc">&nbsp;				calculatedTypes.put(subClass, values);</b>
+&nbsp;
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				calculatedTypes.get(subClass).add(superClass);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		});
+&nbsp;
+&nbsp;		// Fixed point approach to finding all sub-classes.
+&nbsp;		// prevSize is the size of the previous application of the function
+&nbsp;		// newSize is the size of the current application of the function
+&nbsp;		// Fixed point is reached when they are the same.
+&nbsp;		// Eg. Two consecutive applications return the same number of subclasses
+<b class="nc">&nbsp;		logger.debug(&quot;Run until fixed point&quot;);</b>
+<b class="nc">&nbsp;		long prevSize = 0;</b>
+<b class="nc">&nbsp;		long newSize = -1;</b>
+<b class="nc">&nbsp;		while (prevSize != newSize) {</b>
+&nbsp;
+<b class="nc">&nbsp;			prevSize = newSize;</b>
+&nbsp;
+<b class="nc">&nbsp;			newSize = getStream(calculatedTypes)</b>
+<b class="nc">&nbsp;					.map(Map.Entry::getValue)</b>
+<b class="nc">&nbsp;					.mapToInt(value -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;						List&lt;Set&lt;Resource&gt;&gt; forwardChainedSets = new ArrayList&lt;&gt;(value.size());</b>
+&nbsp;
+<b class="nc">&nbsp;						for (Resource resource : value) {</b>
+<b class="nc">&nbsp;							if (resource != RDFS.RESOURCE) {</b>
+<b class="nc">&nbsp;								forwardChainedSets.add(resolveTypes(resource));</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+&nbsp;
+<b class="nc">&nbsp;						addAll(value, forwardChainedSets);</b>
+&nbsp;
+<b class="nc">&nbsp;						return value.size();</b>
+&nbsp;					})
+<b class="nc">&nbsp;					.sum();</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;Fixed point iteration new size {}&quot;, newSize);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			assert stopWatch != null;</b>
+<b class="nc">&nbsp;			stopWatch.stop();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Took: &quot; + stopWatch);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Stream&lt;Map.Entry&lt;Resource, Set&lt;Resource&gt;&gt;&gt; getStream(
+&nbsp;			Map&lt;Resource, Set&lt;Resource&gt;&gt; map) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;Map.Entry&lt;Resource, Set&lt;Resource&gt;&gt;&gt; entries = map.entrySet();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (entries.size() &gt; 100) {</b>
+<b class="nc">&nbsp;			return entries.parallelStream().peek(ent -&gt; {</b>
+<b class="nc">&nbsp;				assert ent.getValue() instanceof ConcurrentHashMap.KeySetView;</b>
+&nbsp;			});
+&nbsp;		} else {
+<b class="nc">&nbsp;			return entries.stream();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void calculateSubPropertyOf(Collection&lt;Statement&gt; subPropertyOfStatemenets) {
+<b class="nc">&nbsp;		logger.debug(&quot;Calculate rdfs:subPropertyOf inference map.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		StopWatch stopWatch = null;</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			stopWatch = StopWatch.createStarted();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		subPropertyOfStatemenets.forEach(s -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!s.getObject().isResource()) {</b>
+<b class="nc">&nbsp;				throw new SailException(&quot;Object of rdfs:subPropertyOf should be a resource! &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Resource subProperty = s.getSubject();</b>
+<b class="nc">&nbsp;			Resource superProperty = (Resource) s.getObject();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!calculatedProperties.containsKey(subProperty)) {</b>
+<b class="nc">&nbsp;				calculatedProperties.put(subProperty, ConcurrentHashMap.newKeySet());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!calculatedProperties.containsKey(superProperty)) {</b>
+<b class="nc">&nbsp;				calculatedProperties.put(superProperty, ConcurrentHashMap.newKeySet());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			calculatedProperties.get(subProperty).add(superProperty);</b>
+&nbsp;
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		calculatedProperties.forEach((k, v) -&gt; v.add(k));</b>
+&nbsp;
+&nbsp;		// Fixed point approach to finding all sub-properties.
+&nbsp;		// prevSize is the size of the previous application of the function
+&nbsp;		// newSize is the size of the current application of the function
+&nbsp;		// Fixed point is reached when they are the same.
+<b class="nc">&nbsp;		logger.debug(&quot;Run until fixed point&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		long prevSize = 0;</b>
+<b class="nc">&nbsp;		long newSize = -1;</b>
+<b class="nc">&nbsp;		while (prevSize != newSize) {</b>
+&nbsp;
+<b class="nc">&nbsp;			prevSize = newSize;</b>
+&nbsp;
+<b class="nc">&nbsp;			newSize = getStream(calculatedProperties)</b>
+<b class="nc">&nbsp;					.map(Map.Entry::getValue)</b>
+<b class="nc">&nbsp;					.mapToInt(value -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;						List&lt;Set&lt;Resource&gt;&gt; forwardChainedSets = new ArrayList&lt;&gt;(value.size());</b>
+&nbsp;
+<b class="nc">&nbsp;						for (Resource resource : value) {</b>
+<b class="nc">&nbsp;							forwardChainedSets.add(resolveProperties(resource));</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;
+<b class="nc">&nbsp;						addAll(value, forwardChainedSets);</b>
+&nbsp;
+<b class="nc">&nbsp;						return value.size();</b>
+&nbsp;					})
+<b class="nc">&nbsp;					.sum();</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;Fixed point iteration new size {}&quot;, newSize);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			assert stopWatch != null;</b>
+<b class="nc">&nbsp;			stopWatch.stop();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Took: &quot; + stopWatch);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void addAll(Set&lt;Resource&gt; res, List&lt;Set&lt;Resource&gt;&gt; from) {
+<b class="nc">&nbsp;		if (from.size() == 1) {</b>
+<b class="nc">&nbsp;			var forwardChained = from.get(0);</b>
+<b class="nc">&nbsp;			if (forwardChained.size() != res.size()) {</b>
+<b class="nc">&nbsp;				res.addAll(forwardChained);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			for (var forwardChainedSet : from) {</b>
+<b class="nc">&nbsp;				res.addAll(forwardChainedSet);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void calculateDomainAndRange(Collection&lt;Statement&gt; rangeOrDomainStatements,
+&nbsp;			Map&lt;Resource, Set&lt;Resource&gt;&gt; calculatedRangeOrDomain) {
+&nbsp;
+<b class="nc">&nbsp;		StopWatch stopWatch = null;</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			stopWatch = StopWatch.createStarted();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;Calculate rdfs:domain and rdfs:range inference map.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		rangeOrDomainStatements.forEach(s -&gt; {</b>
+<b class="nc">&nbsp;			if (!s.getObject().isResource()) {</b>
+<b class="nc">&nbsp;				throw new SailException(&quot;Object of rdfs:range or rdfs:domain should be a resource! &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Resource predicate = s.getSubject();</b>
+<b class="nc">&nbsp;			Resource object = (Resource) s.getObject();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!calculatedProperties.containsKey(predicate)) {</b>
+<b class="nc">&nbsp;				calculatedProperties.put(predicate, ConcurrentHashMap.newKeySet());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!calculatedRangeOrDomain.containsKey(predicate)) {</b>
+<b class="nc">&nbsp;				calculatedRangeOrDomain.put(predicate, ConcurrentHashMap.newKeySet());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			calculatedRangeOrDomain.get(predicate).add(object);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!calculatedTypes.containsKey(object)) {</b>
+<b class="nc">&nbsp;				calculatedTypes.put(object, ConcurrentHashMap.newKeySet());</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		calculatedProperties.keySet()</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.filter(key -&gt; !calculatedRangeOrDomain.containsKey(key))</b>
+<b class="nc">&nbsp;				.forEach(key -&gt; calculatedRangeOrDomain.put(key, ConcurrentHashMap.newKeySet()));</b>
+&nbsp;
+&nbsp;		// Fixed point approach to finding all ranges or domains.
+&nbsp;		// prevSize is the size of the previous application of the function
+&nbsp;		// newSize is the size of the current application of the function
+&nbsp;		// Fixed point is reached when they are the same.
+<b class="nc">&nbsp;		logger.debug(&quot;Run until fixed point&quot;);</b>
+<b class="nc">&nbsp;		long prevSize = 0;</b>
+<b class="nc">&nbsp;		final long[] newSize = { -1 };</b>
+<b class="nc">&nbsp;		while (prevSize != newSize[0]) {</b>
+&nbsp;
+<b class="nc">&nbsp;			prevSize = newSize[0];</b>
+&nbsp;
+<b class="nc">&nbsp;			newSize[0] = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			calculatedRangeOrDomain.forEach((key, value) -&gt; {</b>
+<b class="nc">&nbsp;				List&lt;Resource&gt; resolvedBySubProperty = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;				resolveProperties(key).forEach(newPredicate -&gt; {</b>
+<b class="nc">&nbsp;					Set&lt;Resource&gt; iris = calculatedRangeOrDomain.get(newPredicate);</b>
+<b class="nc">&nbsp;					if (iris != null) {</b>
+<b class="nc">&nbsp;						resolvedBySubProperty.addAll(iris);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				});
+&nbsp;
+<b class="nc">&nbsp;				List&lt;Resource&gt; resolvedBySubClass = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;				value.addAll(resolvedBySubProperty);</b>
+&nbsp;
+<b class="nc">&nbsp;				value.stream().map(this::resolveTypes).forEach(resolvedBySubClass::addAll);</b>
+&nbsp;
+<b class="nc">&nbsp;				value.addAll(resolvedBySubClass);</b>
+&nbsp;
+<b class="nc">&nbsp;				newSize[0] += value.size();</b>
+&nbsp;			});
+<b class="nc">&nbsp;			logger.debug(&quot;Fixed point iteration new size {}&quot;, newSize[0]);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			assert stopWatch != null;</b>
+<b class="nc">&nbsp;			stopWatch.stop();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Took: &quot; + stopWatch);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IsolationLevel getDefaultIsolationLevel() {
+<b class="nc">&nbsp;		IsolationLevel level = super.getDefaultIsolationLevel();</b>
+<b class="nc">&nbsp;		if (level.isCompatibleWith(IsolationLevels.READ_COMMITTED)) {</b>
+<b class="nc">&nbsp;			return level;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			List&lt;IsolationLevel&gt; supported = this.getSupportedIsolationLevels();</b>
+<b class="nc">&nbsp;			return IsolationLevels.getCompatibleIsolationLevel(IsolationLevels.READ_COMMITTED, supported);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Inferred statements can either be added to the default context or to the context that the original inserted
+&nbsp;	 * statement has.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 **/
+&nbsp;
+&nbsp;	public boolean isAddInferredStatementsToDefaultContext() {
+<b class="nc">&nbsp;		return addInferredStatementsToDefaultContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Inferred statements can either be added to the default context or to the context that the original inserted
+&nbsp;	 * statement has. setAddInferredStatementsToDefaultContext(true) will add all inferred statements to the default
+&nbsp;	 * context.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Which context a tbox statement is added to is undefined.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Before 3.0 default value for addInferredStatementsToDefaultContext was true. From 3.0 the default value is false.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param addInferredStatementsToDefaultContext
+&nbsp;	 */
+&nbsp;	public void setAddInferredStatementsToDefaultContext(boolean addInferredStatementsToDefaultContext) {
+<b class="nc">&nbsp;		this.addInferredStatementsToDefaultContext = addInferredStatementsToDefaultContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean usesPredefinedSchema() {
+<b class="nc">&nbsp;		return predefinedSchema != null || sharedSchema;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

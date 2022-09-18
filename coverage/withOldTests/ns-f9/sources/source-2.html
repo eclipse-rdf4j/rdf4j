@@ -1,0 +1,438 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RelationMapBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.dao.support</a>
+</div>
+
+<h1>Coverage Summary for Class: RelationMapBuilder (org.eclipse.rdf4j.spring.dao.support)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RelationMapBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/118)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.dao.support;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+&nbsp;import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRI;
+&nbsp;import static org.eclipse.rdf4j.spring.util.QueryResultUtils.getIRIOptional;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Projectable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.BindingsBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class RelationMapBuilder {
+<b class="nc">&nbsp;	public static final Variable _relSubject = SparqlBuilder.var(&quot;rel_subject&quot;);</b>
+<b class="nc">&nbsp;	public static final Variable _relObject = SparqlBuilder.var(&quot;rel_object&quot;);</b>
+<b class="nc">&nbsp;	private static final Variable _relKey = SparqlBuilder.var(&quot;rel_key&quot;);</b>
+<b class="nc">&nbsp;	private static final Variable _relValue = SparqlBuilder.var(&quot;rel_value&quot;);</b>
+<b class="nc">&nbsp;	private static final IRI NOTHING = SimpleValueFactory.getInstance()</b>
+<b class="nc">&nbsp;			.createIRI(&quot;urn:java:relationDaoSupport:Nothing&quot;);</b>
+&nbsp;	private final RdfPredicate predicate;
+<b class="nc">&nbsp;	private GraphPattern[] constraints = new GraphPattern[0];</b>
+&nbsp;	private final RDF4JTemplate rdf4JTemplate;
+<b class="nc">&nbsp;	private boolean isRelationOptional = false;</b>
+<b class="nc">&nbsp;	private boolean isSubjectKeyed = true;</b>
+<b class="nc">&nbsp;	private final BindingsBuilder bindingsBuilder = new BindingsBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;	public RelationMapBuilder(RDF4JTemplate rdf4JTemplate, RdfPredicate predicate) {</b>
+<b class="nc">&nbsp;		this.rdf4JTemplate = rdf4JTemplate;</b>
+<b class="nc">&nbsp;		this.predicate = predicate;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public RelationMapBuilder(RDF4JTemplate rdf4JTemplate, IRI predicate) {</b>
+<b class="nc">&nbsp;		this.rdf4JTemplate = rdf4JTemplate;</b>
+<b class="nc">&nbsp;		this.predicate = iri(predicate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constrains the result iff the {@link GraphPattern} contains the variables {@link RelationMapBuilder#_relSubject}
+&nbsp;	 * and/or {@link RelationMapBuilder#_relObject}, which are the variables in the triple with the {@link RdfPredicate}
+&nbsp;	 * specified in the constructor.
+&nbsp;	 */
+&nbsp;	public RelationMapBuilder constraints(GraphPattern... constraints) {
+<b class="nc">&nbsp;		this.constraints = constraints;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that the existence of the triple is not required, allowing to use the constraints to select certain
+&nbsp;	 * subjects and to answer the mapping to an empty Set in the {@link RelationMapBuilder#buildOneToMany()} case and
+&nbsp;	 * {@link RelationMapBuilder#NOTHING} in the {@link RelationMapBuilder#buildOneToOne()} case.
+&nbsp;	 *
+&nbsp;	 * @return the builder
+&nbsp;	 */
+&nbsp;	public RelationMapBuilder relationIsOptional() {
+<b class="nc">&nbsp;		this.isRelationOptional = true;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that the builder should use the triple&#39;s object for the key in the resulting {@link Map} instead of the
+&nbsp;	 * subject (the default).
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public RelationMapBuilder useRelationObjectAsKey() {
+<b class="nc">&nbsp;		this.isSubjectKeyed = false;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Builds a One-to-One Map using the configuration of this builder. Throws an Exception if more than one values are
+&nbsp;	 * found for a given key. If {@link #isRelationOptional} is &lt;code&gt;true
+&nbsp;	 * &lt;/code&gt; and no triple is found for the key, {@link #NOTHING} is set as the value.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public Map&lt;IRI, IRI&gt; buildOneToOne() {
+<b class="nc">&nbsp;		return makeTupleQueryBuilder()</b>
+<b class="nc">&nbsp;				.evaluateAndConvert()</b>
+<b class="nc">&nbsp;				.toMap(b -&gt; getIRI(b, _relKey), this::getRelationValueOrNothing);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Builds a One-to-Many Map using the configuration of this builder.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public Map&lt;IRI, Set&lt;IRI&gt;&gt; buildOneToMany() {
+<b class="nc">&nbsp;		return makeTupleQueryBuilder()</b>
+<b class="nc">&nbsp;				.evaluateAndConvert()</b>
+<b class="nc">&nbsp;				.mapAndCollect(</b>
+<b class="nc">&nbsp;						Function.identity(),</b>
+<b class="nc">&nbsp;						Collectors.toMap(</b>
+<b class="nc">&nbsp;								b -&gt; getIRI(b, _relKey),</b>
+<b class="nc">&nbsp;								b -&gt; getIRIOptional(b, _relValue)</b>
+<b class="nc">&nbsp;										.map(Set::of)</b>
+<b class="nc">&nbsp;										.orElseGet(Set::of),</b>
+&nbsp;								RelationMapBuilder::mergeSets));
+&nbsp;	}
+&nbsp;
+&nbsp;	private static &lt;T&gt; Set&lt;T&gt; mergeSets(Set&lt;T&gt; left, Set&lt;T&gt; right) {
+<b class="nc">&nbsp;		Set&lt;T&gt; merged = new HashSet&lt;&gt;(left);</b>
+<b class="nc">&nbsp;		merged.addAll(right);</b>
+<b class="nc">&nbsp;		return merged;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI getRelationValue(BindingSet b) {
+<b class="nc">&nbsp;		if (isRelationOptional) {</b>
+<b class="nc">&nbsp;			return getIRIOptional(b, _relValue).orElse(NOTHING);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return getIRI(b, _relValue);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI getRelationValueOrNothing(BindingSet b) {
+<b class="nc">&nbsp;		if (isRelationOptional) {</b>
+<b class="nc">&nbsp;			return getIRIOptional(b, _relValue).orElse(NOTHING);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return getIRI(b, _relValue);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleQueryEvaluationBuilder makeTupleQueryBuilder() {
+<b class="nc">&nbsp;		return rdf4JTemplate</b>
+<b class="nc">&nbsp;				.tupleQuery(</b>
+<b class="nc">&nbsp;						Queries.SELECT(getProjection())</b>
+<b class="nc">&nbsp;								.where(getWhereClause())</b>
+<b class="nc">&nbsp;								.distinct()</b>
+<b class="nc">&nbsp;								.getQueryString())</b>
+<b class="nc">&nbsp;				.withBindings(bindingsBuilder.build());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Projectable[] getProjection() {
+<b class="nc">&nbsp;		if (this.isSubjectKeyed) {</b>
+<b class="nc">&nbsp;			return new Projectable[] {</b>
+<b class="nc">&nbsp;					SparqlBuilder.as(_relSubject, _relKey), SparqlBuilder.as(_relObject, _relValue)</b>
+&nbsp;			};
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new Projectable[] {</b>
+<b class="nc">&nbsp;					SparqlBuilder.as(_relSubject, _relValue), SparqlBuilder.as(_relObject, _relKey)</b>
+&nbsp;			};
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private GraphPattern[] getWhereClause() {
+<b class="nc">&nbsp;		TriplePattern tp = _relSubject.has(predicate, _relObject);</b>
+<b class="nc">&nbsp;		if (this.isRelationOptional) {</b>
+<b class="nc">&nbsp;			GraphPattern[] ret = new GraphPattern[constraints.length + 1];</b>
+<b class="nc">&nbsp;			ret[0] = tp.optional();</b>
+<b class="nc">&nbsp;			System.arraycopy(constraints, 0, ret, 1, constraints.length);</b>
+<b class="nc">&nbsp;			return ret;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new GraphPattern[] { tp.and(constraints) };</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(Variable key, Value value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(String key, Value value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(Variable key, Value value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(String key, Value value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(Variable key, IRI value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(String key, IRI value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(Variable key, IRI value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(Variable key, String value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(String key, IRI value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(Variable key, String value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(String key, String value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(String key, String value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(Variable key, Integer value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(String key, Integer value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(Variable key, Integer value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(String key, Integer value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(Variable key, Boolean value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(String key, Boolean value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(Variable key, Boolean value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(String key, Boolean value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(Variable key, Float value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(String key, Float value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(Variable key, Float value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(String key, Float value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(Variable key, Double value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBinding(String key, Double value) {
+<b class="nc">&nbsp;		bindingsBuilder.add(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(Variable var, Double value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(var, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RelationMapBuilder withBindingMaybe(String key, Double value) {
+<b class="nc">&nbsp;		bindingsBuilder.addMaybe(key, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

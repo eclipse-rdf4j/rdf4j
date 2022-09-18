@@ -1,0 +1,432 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractLuceneSailGeoSPARQLTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.testsuite.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractLuceneSailGeoSPARQLTest (org.eclipse.testsuite.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractLuceneSailGeoSPARQLTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/64)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/150)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.testsuite.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;import static org.junit.Assert.assertNotNull;
+&nbsp;import static org.junit.Assert.assertTrue;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEO;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEOF;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.Test;
+&nbsp;
+<b class="nc">&nbsp;public abstract class AbstractLuceneSailGeoSPARQLTest {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_1 = vf.createIRI(&quot;urn:subject1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_2 = vf.createIRI(&quot;urn:subject2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_3 = vf.createIRI(&quot;urn:subject3&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_4 = vf.createIRI(&quot;urn:subject4&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_5 = vf.createIRI(&quot;urn:subject5&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_1 = vf.createIRI(&quot;urn:context1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_2 = vf.createIRI(&quot;urn:context2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_3 = vf.createIRI(&quot;urn:context3&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final Literal EIFFEL_TOWER = vf.createLiteral(&quot;POINT (2.2945 48.8582)&quot;, GEO.WKT_LITERAL);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final Literal ARC_TRIOMPHE = vf.createLiteral(&quot;POINT (2.2950 48.8738)&quot;, GEO.WKT_LITERAL);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final Literal NOTRE_DAME = vf.createLiteral(&quot;POINT (2.3465 48.8547)&quot;, GEO.WKT_LITERAL);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final Literal POLY1 = vf.createLiteral(</b>
+&nbsp;			&quot;POLYGON ((2.3294 48.8726, 2.2719 48.8643, 2.3370 48.8398, 2.3294 48.8726))&quot;, GEO.WKT_LITERAL);
+&nbsp;
+<b class="nc">&nbsp;	public static final Literal POLY2 = vf.createLiteral(</b>
+&nbsp;			&quot;POLYGON ((2.3509 48.8429, 2.3785 48.8385, 2.3576 48.8487, 2.3509 48.8429))&quot;, GEO.WKT_LITERAL);
+&nbsp;
+<b class="nc">&nbsp;	public static final Literal TEST_POINT = vf.createLiteral(&quot;POINT (2.2871 48.8630)&quot;, GEO.WKT_LITERAL);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final Literal TEST_POLY = vf</b>
+<b class="nc">&nbsp;			.createLiteral(&quot;POLYGON ((2.315 48.855, 2.360 48.835, 2.370 48.850, 2.315 48.855))&quot;, GEO.WKT_LITERAL);</b>
+&nbsp;
+&nbsp;	private static final double ERROR = 2.0;
+&nbsp;
+&nbsp;	protected LuceneSail sail;
+&nbsp;
+&nbsp;	protected Repository repository;
+&nbsp;
+&nbsp;	protected abstract void configure(LuceneSail sail) throws IOException;
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+&nbsp;		// setup a LuceneSail
+<b class="nc">&nbsp;		MemoryStore memoryStore = new MemoryStore();</b>
+&nbsp;		// enable lock tracking
+<b class="nc">&nbsp;		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(true);</b>
+<b class="nc">&nbsp;		sail = new LuceneSail();</b>
+<b class="nc">&nbsp;		configure(sail);</b>
+<b class="nc">&nbsp;		sail.setBaseSail(memoryStore);</b>
+&nbsp;
+&nbsp;		// create a Repository wrapping the LuceneSail
+<b class="nc">&nbsp;		repository = new SailRepository(sail);</b>
+&nbsp;
+&nbsp;		// add some statements to it
+<b class="nc">&nbsp;		loadPoints();</b>
+<b class="nc">&nbsp;		loadPolygons();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void loadPoints() {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, GEO.AS_WKT, EIFFEL_TOWER, CONTEXT_1);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_2, GEO.AS_WKT, ARC_TRIOMPHE);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, GEO.AS_WKT, NOTRE_DAME, CONTEXT_2);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void loadPolygons() {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_4, GEO.AS_WKT, POLY1);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_5, GEO.AS_WKT, POLY2, CONTEXT_3);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws IOException, RepositoryException {
+<b class="nc">&nbsp;		if (repository != null) {</b>
+<b class="nc">&nbsp;			repository.shutDown();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testTriplesStored() throws Exception {
+&nbsp;		// are the triples stored in the underlying sail?
+<b class="nc">&nbsp;		checkPoints();</b>
+<b class="nc">&nbsp;		checkPolygons();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void checkPoints() throws RepositoryException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_1, GEO.AS_WKT, EIFFEL_TOWER, false, CONTEXT_1));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_2, GEO.AS_WKT, ARC_TRIOMPHE, false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, GEO.AS_WKT, NOTRE_DAME, false, CONTEXT_2));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void checkPolygons() throws RepositoryException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_4, GEO.AS_WKT, POLY1, false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_5, GEO.AS_WKT, POLY2, false, CONTEXT_3));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDistanceQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			String queryStr = &quot;prefix geo:  &lt;&quot; + GEO.NAMESPACE + &quot;&gt;&quot; + &quot;prefix geof: &lt;&quot; + GEOF.NAMESPACE + &quot;&gt;&quot;</b>
+&nbsp;					+ &quot;select ?toUri ?to where { ?toUri geo:asWKT ?to. filter(geof:distance(?from, ?to, ?units) &lt; ?range) }&quot;;
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;from&quot;, TEST_POINT);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;units&quot;, GEOF.UOM_METRE);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;range&quot;, sail.getValueFactory().createLiteral(1500.0));</b>
+&nbsp;
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				Map&lt;IRI, Literal&gt; expected = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				expected.put(SUBJECT_1, EIFFEL_TOWER);</b>
+<b class="nc">&nbsp;				expected.put(SUBJECT_2, ARC_TRIOMPHE);</b>
+&nbsp;
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindings = result.next();</b>
+<b class="nc">&nbsp;					IRI subj = (IRI) bindings.getValue(&quot;toUri&quot;);</b>
+&nbsp;					// check ordering
+<b class="nc">&nbsp;					IRI expectedUri = expected.keySet().iterator().next();</b>
+<b class="nc">&nbsp;					assertEquals(expectedUri, subj);</b>
+&nbsp;
+<b class="nc">&nbsp;					Literal location = expected.remove(subj);</b>
+<b class="nc">&nbsp;					assertNotNull(location);</b>
+<b class="nc">&nbsp;					assertEquals(location, bindings.getValue(&quot;to&quot;));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				assertTrue(expected.isEmpty());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testComplexDistanceQuery()
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			String queryStr = &quot;prefix geo:  &lt;&quot; + GEO.NAMESPACE + &quot;&gt;&quot; + &quot;prefix geof: &lt;&quot; + GEOF.NAMESPACE + &quot;&gt;&quot;</b>
+&nbsp;					+ &quot;select ?toUri ?dist ?g where { graph ?g {?toUri geo:asWKT ?to.}&quot;
+&nbsp;					+ &quot; bind(geof:distance(?from, ?to, ?units) as ?dist)&quot; + &quot; filter(?dist &lt; ?range)&quot; + &quot; }&quot;;
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;from&quot;, TEST_POINT);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;units&quot;, GEOF.UOM_METRE);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;range&quot;, sail.getValueFactory().createLiteral(1500.0));</b>
+&nbsp;
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				Map&lt;IRI, Literal&gt; expected = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				expected.put(SUBJECT_1, sail.getValueFactory().createLiteral(760.0));</b>
+&nbsp;
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindings = result.next();</b>
+<b class="nc">&nbsp;					IRI subj = (IRI) bindings.getValue(&quot;toUri&quot;);</b>
+&nbsp;					// check ordering
+<b class="nc">&nbsp;					IRI expectedUri = expected.keySet().iterator().next();</b>
+<b class="nc">&nbsp;					assertEquals(expectedUri, subj);</b>
+&nbsp;
+<b class="nc">&nbsp;					Literal dist = expected.remove(subj);</b>
+<b class="nc">&nbsp;					assertNotNull(dist);</b>
+<b class="nc">&nbsp;					assertEquals(dist.doubleValue(), ((Literal) bindings.getValue(&quot;dist&quot;)).doubleValue(), ERROR);</b>
+&nbsp;
+<b class="nc">&nbsp;					assertNotNull(bindings.getValue(&quot;g&quot;));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				assertTrue(expected.isEmpty());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testComplexDistanceQueryMathExpr()
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			String queryStr = &quot;prefix geo:  &lt;&quot; + GEO.NAMESPACE + &quot;&gt;&quot; + &quot;prefix geof: &lt;&quot; + GEOF.NAMESPACE + &quot;&gt;&quot;</b>
+&nbsp;					+ &quot;select ?toUri ?dist ?g where { graph ?g {?toUri geo:asWKT ?to.}&quot;
+&nbsp;					+ &quot; bind((geof:distance(?from, ?to, ?units) / 1000) as ?dist)&quot; + &quot; filter(?dist &lt; ?range)&quot; + &quot; }&quot;;
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;from&quot;, TEST_POINT);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;units&quot;, GEOF.UOM_METRE);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;range&quot;, sail.getValueFactory().createLiteral(1.5));</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;BindingSet&gt; result = QueryResults.asList(query.evaluate());</b>
+&nbsp;
+&nbsp;			// check the results
+<b class="nc">&nbsp;			Map&lt;IRI, Literal&gt; expected = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			expected.put(SUBJECT_1, sail.getValueFactory().createLiteral(760.0 / 1000.0));</b>
+&nbsp;
+<b class="nc">&nbsp;			for (BindingSet bindings : result) {</b>
+<b class="nc">&nbsp;				System.out.println(bindings);</b>
+<b class="nc">&nbsp;				IRI subj = (IRI) bindings.getValue(&quot;toUri&quot;);</b>
+&nbsp;				// check ordering
+<b class="nc">&nbsp;				IRI expectedUri = expected.keySet().iterator().next();</b>
+<b class="nc">&nbsp;				assertEquals(expectedUri, subj);</b>
+&nbsp;
+<b class="nc">&nbsp;				Literal dist = expected.remove(subj);</b>
+<b class="nc">&nbsp;				assertNotNull(dist);</b>
+<b class="nc">&nbsp;				assertEquals(dist.doubleValue(), ((Literal) bindings.getValue(&quot;dist&quot;)).doubleValue(), ERROR);</b>
+&nbsp;
+<b class="nc">&nbsp;				assertNotNull(bindings.getValue(&quot;g&quot;));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			assertTrue(expected.isEmpty());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public void testIntersectionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			String queryStr = &quot;prefix geo:  &lt;&quot; + GEO.NAMESPACE + &quot;&gt;&quot; + &quot;prefix geof: &lt;&quot; + GEOF.NAMESPACE + &quot;&gt;&quot;</b>
+&nbsp;					+ &quot;select ?matchUri ?match where { ?matchUri geo:asWKT ?match. filter(geof:sfIntersects(?pattern, ?match)) }&quot;;
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;pattern&quot;, TEST_POLY);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				Map&lt;IRI, Literal&gt; expected = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				expected.put(SUBJECT_4, POLY1);</b>
+<b class="nc">&nbsp;				expected.put(SUBJECT_5, POLY2);</b>
+&nbsp;
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindings = result.next();</b>
+<b class="nc">&nbsp;					IRI subj = (IRI) bindings.getValue(&quot;matchUri&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					Literal location = expected.remove(subj);</b>
+<b class="nc">&nbsp;					assertNotNull(location);</b>
+<b class="nc">&nbsp;					assertEquals(location, bindings.getValue(&quot;match&quot;));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				assertTrue(expected.isEmpty());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void testComplexIntersectionQuery()
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			String queryStr = &quot;prefix geo:  &lt;&quot; + GEO.NAMESPACE + &quot;&gt;&quot; + &quot;prefix geof: &lt;&quot; + GEOF.NAMESPACE + &quot;&gt;&quot;</b>
+&nbsp;					+ &quot;select ?matchUri ?intersects ?g where { graph ?g {?matchUri geo:asWKT ?match.}&quot;
+&nbsp;					+ &quot; bind(geof:sfIntersects(?pattern, ?match) as ?intersects)&quot; + &quot; filter(?intersects)&quot; + &quot; }&quot;;
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;pattern&quot;, TEST_POLY);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				Map&lt;IRI, Literal&gt; expected = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				expected.put(SUBJECT_5, sail.getValueFactory().createLiteral(true));</b>
+&nbsp;
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindings = result.next();</b>
+<b class="nc">&nbsp;					IRI subj = (IRI) bindings.getValue(&quot;matchUri&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					Literal location = expected.remove(subj);</b>
+<b class="nc">&nbsp;					assertNotNull(&quot;Expected subject: &quot; + subj, location);</b>
+<b class="nc">&nbsp;					assertEquals(location.booleanValue(), ((Literal) bindings.getValue(&quot;intersects&quot;)).booleanValue());</b>
+&nbsp;
+<b class="nc">&nbsp;					assertNotNull(bindings.getValue(&quot;g&quot;));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				assertTrue(expected.isEmpty());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

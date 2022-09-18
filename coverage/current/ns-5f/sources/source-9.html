@@ -1,0 +1,157 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TripleSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: TripleSource (org.eclipse.rdf4j.query.algebra.evaluation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TripleSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A triple source that can be queried for (the existence of) certain triples in certain contexts. This interface
+&nbsp; * defines the methods that are needed by the Sail Query Model to be able to evaluate itself.
+&nbsp; */
+&nbsp;public interface TripleSource {
+&nbsp;
+<b class="nc">&nbsp;	EmptyIteration&lt;? extends Statement, QueryEvaluationException&gt; EMPTY_ITERATION = new EmptyIteration&lt;&gt;();</b>
+<b class="nc">&nbsp;	EmptyIteration&lt;? extends Triple, QueryEvaluationException&gt; EMPTY_TRIPLE_ITERATION = new EmptyIteration&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to
+&nbsp;	 * indicate wildcards. Optionally a (set of) context(s) may be specified in which case the result will be restricted
+&nbsp;	 * to statements matching one or more of the specified contexts.
+&nbsp;	 *
+&nbsp;	 * @param subj     A Resource specifying the subject, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred     A URI specifying the predicate, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj      A Value specifying the object, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param contexts The context(s) to get the statements from. Note that this parameter is a vararg and as such is
+&nbsp;	 *                 optional. If no contexts are supplied the method operates on the entire repository.
+&nbsp;	 * @return An iterator over the relevant statements.
+&nbsp;	 * @throws QueryEvaluationException If the triple source failed to get the statements.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;? extends Statement, QueryEvaluationException&gt; getStatements(Resource subj, IRI pred,
+&nbsp;			Value obj, Resource... contexts) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a ValueFactory object that can be used to create URI-, blank node- and literal objects.
+&nbsp;	 *
+&nbsp;	 * @return a ValueFactory object for this TripleSource.
+&nbsp;	 */
+&nbsp;	ValueFactory getValueFactory();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

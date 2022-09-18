@@ -1,0 +1,239 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TransformationServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.base</a>
+</div>
+
+<h1>Coverage Summary for Class: TransformationServlet (org.eclipse.rdf4j.workbench.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TransformationServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.base;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.CookieHandler;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public abstract class TransformationServlet extends AbstractRepositoryServlet {</b>
+&nbsp;
+&nbsp;	protected static final ParserConfig NON_VERIFYING_PARSER_CONFIG;
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		NON_VERIFYING_PARSER_CONFIG = new ParserConfig();</b>
+<b class="nc">&nbsp;		NON_VERIFYING_PARSER_CONFIG.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);</b>
+<b class="nc">&nbsp;		NON_VERIFYING_PARSER_CONFIG.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, false);</b>
+<b class="nc">&nbsp;		NON_VERIFYING_PARSER_CONFIG.set(BasicParserSettings.VERIFY_RELATIVE_URIS, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static final String CONTEXT = &quot;context&quot;;
+&nbsp;
+&nbsp;	protected static final String INFO = &quot;info&quot;;
+&nbsp;
+&nbsp;	private static final String TRANSFORMATIONS = &quot;transformations&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger LOGGER = LoggerFactory.getLogger(TransformationServlet.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;String, String&gt; defaults = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	protected CookieHandler cookies;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init(final ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		super.init(config);</b>
+<b class="nc">&nbsp;		cookies = new CookieHandler(config, this);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (config != null) {</b>
+<b class="nc">&nbsp;			if (config.getInitParameter(TRANSFORMATIONS) == null) {</b>
+<b class="nc">&nbsp;				throw new MissingInitParameterException(TRANSFORMATIONS);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			final Enumeration&lt;?&gt; names = config.getInitParameterNames();</b>
+<b class="nc">&nbsp;			while (names.hasMoreElements()) {</b>
+<b class="nc">&nbsp;				final String name = (String) names.nextElement();</b>
+<b class="nc">&nbsp;				if (name.startsWith(&quot;default-&quot;)) {</b>
+<b class="nc">&nbsp;					defaults.put(name.substring(&quot;default-&quot;.length()), config.getInitParameter(name));</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public String[] getCookieNames() {
+<b class="nc">&nbsp;		return new String[0];</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void service(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws ServletException, IOException {
+<b class="nc">&nbsp;		if (req.getCharacterEncoding() == null) {</b>
+<b class="nc">&nbsp;			req.setCharacterEncoding(StandardCharsets.UTF_8.name());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		resp.setCharacterEncoding(StandardCharsets.UTF_8.name());</b>
+<b class="nc">&nbsp;		resp.setDateHeader(&quot;Expires&quot;, new Date().getTime() - 10000L);</b>
+<b class="nc">&nbsp;		resp.setHeader(&quot;Cache-Control&quot;, &quot;no-cache, no-store&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		final String contextPath = req.getContextPath();</b>
+<b class="nc">&nbsp;		final String path = config.getInitParameter(TRANSFORMATIONS);</b>
+<b class="nc">&nbsp;		final String xslPath = contextPath + path;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			final WorkbenchRequest wreq = new WorkbenchRequest(repository, req, defaults);</b>
+&nbsp;
+<b class="nc">&nbsp;			cookies.updateCookies(wreq, resp);</b>
+<b class="nc">&nbsp;			if (&quot;POST&quot;.equals(req.getMethod())) {</b>
+<b class="nc">&nbsp;				doPost(wreq, resp, xslPath);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				service(wreq, resp, xslPath);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RuntimeException | ServletException | IOException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new ServletException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void doPost(final WorkbenchRequest wreq, final HttpServletResponse resp, final String xslPath)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		service(wreq, resp, xslPath);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		service(getTupleResultBuilder(req, resp, resp.getOutputStream()), xslPath);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void service(final TupleResultBuilder writer, final String xslPath) throws Exception {
+<b class="nc">&nbsp;		LOGGER.info(&quot;Call made to empty superclass implementation of service(PrintWriter,String) for path: {}&quot;,</b>
+&nbsp;				xslPath);
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

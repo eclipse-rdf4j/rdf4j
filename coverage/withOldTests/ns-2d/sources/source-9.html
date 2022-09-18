@@ -1,0 +1,195 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Example09Filter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.examples.model</a>
+</div>
+
+<h1>Coverage Summary for Class: Example09Filter (org.eclipse.rdf4j.examples.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Example09Filter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.examples.model;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.iri;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;
+&nbsp;/**
+&nbsp; * RDF Tutorial example 09: Reading a Turtle syntax file to create a Model
+&nbsp; *
+&nbsp; * In this example, we show how you can use the Rio Parser/writer toolkit to read files
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class Example09Filter {</b>
+&nbsp;
+&nbsp;	public static void main(String[] args) throws IOException {
+&nbsp;
+<b class="nc">&nbsp;		String filename = &quot;example-data-artists.ttl&quot;;</b>
+&nbsp;
+&nbsp;		// read the file &#39;example-data-artists.ttl&#39; as an InputStream.
+<b class="nc">&nbsp;		InputStream input = Example09Filter.class.getResourceAsStream(&quot;/&quot; + filename);</b>
+&nbsp;
+&nbsp;		// Rio also accepts a java.io.Reader as input for the parser.
+<b class="nc">&nbsp;		Model model = Rio.parse(input, &quot;&quot;, RDFFormat.TURTLE);</b>
+&nbsp;
+&nbsp;		// We want to find all information about the artist `ex:VanGogh`.
+<b class="nc">&nbsp;		IRI vanGogh = iri(&quot;http://example.org/VanGogh&quot;);</b>
+&nbsp;
+&nbsp;		// By filtering on a specific subject we zoom in on the data that is about that subject.
+&nbsp;		// The filter method takes a subject, predicate, object (and optionally a named graph/context)
+&nbsp;		// argument. The more arguments we set to a value, the more specific the filter becomes.
+<b class="nc">&nbsp;		Model aboutVanGogh = model.filter(vanGogh, null, null);</b>
+&nbsp;
+&nbsp;		// Iterate over the statements that are about Van Gogh
+<b class="nc">&nbsp;		for (Statement st : aboutVanGogh) {</b>
+&nbsp;			// the subject will always be `ex:VanGogh`, an IRI, so we can safely cast it
+<b class="nc">&nbsp;			IRI subject = (IRI) st.getSubject();</b>
+&nbsp;			// the property predicate can be anything, but it&#39;s always an IRI
+<b class="nc">&nbsp;			IRI predicate = st.getPredicate();</b>
+&nbsp;
+&nbsp;			// the property value could be an IRI, a BNode, a Literal, or an RDF-star Triple. In RDF4J, Value is
+&nbsp;			// is the supertype of all possible kinds of RDF values.
+<b class="nc">&nbsp;			Value object = st.getObject();</b>
+&nbsp;
+&nbsp;			// let&#39;s print out the statement in a nice way. We ignore the namespaces and only print the
+&nbsp;			// local name of each IRI
+<b class="nc">&nbsp;			System.out.print(subject.getLocalName() + &quot; &quot; + predicate.getLocalName() + &quot; &quot;);</b>
+<b class="nc">&nbsp;			if (object.isLiteral()) {</b>
+&nbsp;				// it&#39;s a literal value. Let&#39;s print it out nicely, in quotes, and without any ugly
+&nbsp;				// datatype stuff
+<b class="nc">&nbsp;				System.out.println(&quot;\&quot;&quot; + ((Literal) object).getLabel() + &quot;\&quot;&quot;);</b>
+<b class="nc">&nbsp;			} else if (object.isIRI()) {</b>
+&nbsp;				// it&#39;s an IRI. Just print out the local part (without the namespace)
+<b class="nc">&nbsp;				System.out.println(((IRI) object).getLocalName());</b>
+&nbsp;			} else {
+&nbsp;				// it&#39;s a blank node or an RDF-star Triple. Just print it out as-is.
+<b class="nc">&nbsp;				System.out.println(object);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

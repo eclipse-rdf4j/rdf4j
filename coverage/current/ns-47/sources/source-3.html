@@ -1,0 +1,438 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TransactionWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.protocol.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: TransactionWriter (org.eclipse.rdf4j.http.protocol.transaction)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TransactionWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/92)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/150)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.protocol.transaction;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;
+&nbsp;import javax.xml.bind.DatatypeConverter;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.xml.XMLUtil;
+&nbsp;import org.eclipse.rdf4j.common.xml.XMLWriter;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.ClearNamespacesOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.ClearOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.RemoveNamespaceOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.RemoveStatementsOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.SPARQLUpdateOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.SetNamespaceOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.StatementOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Serializes of an RDF transaction.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Leo Sauermann
+&nbsp; */
+<b class="nc">&nbsp;public class TransactionWriter {</b>
+&nbsp;
+<b class="nc">&nbsp;	public TransactionWriter() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * serialize the passed list of operations to the passed writer.
+&nbsp;	 *
+&nbsp;	 * @param txn the operations
+&nbsp;	 * @param out the output stream to write to
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws IllegalArgumentException when one of the parameters is null
+&nbsp;	 */
+&nbsp;	public void serialize(Iterable&lt;? extends TransactionOperation&gt; txn, OutputStream out) throws IOException {
+<b class="nc">&nbsp;		assert txn != null : &quot;operation list must not be null&quot;;</b>
+<b class="nc">&nbsp;		assert out != null : &quot;output stream must not be null&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		XMLWriter xmlWriter = new XMLWriter(out);</b>
+<b class="nc">&nbsp;		xmlWriter.setPrettyPrint(true);</b>
+&nbsp;
+<b class="nc">&nbsp;		xmlWriter.startDocument();</b>
+<b class="nc">&nbsp;		xmlWriter.startTag(TransactionXMLConstants.TRANSACTION_TAG);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (TransactionOperation op : txn) {</b>
+<b class="nc">&nbsp;			serialize(op, xmlWriter);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		xmlWriter.endTag(TransactionXMLConstants.TRANSACTION_TAG);</b>
+<b class="nc">&nbsp;		xmlWriter.endDocument();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Serializes the supplied operation.
+&nbsp;	 *
+&nbsp;	 * @param op        The operation to serialize
+&nbsp;	 * @param xmlWriter
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void serialize(TransactionOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (op instanceof AddStatementOperation) {</b>
+<b class="nc">&nbsp;			serialize((AddStatementOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (op instanceof RemoveStatementsOperation) {</b>
+<b class="nc">&nbsp;			serialize((RemoveStatementsOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (op instanceof ClearOperation) {</b>
+<b class="nc">&nbsp;			serialize((ClearOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (op instanceof SetNamespaceOperation) {</b>
+<b class="nc">&nbsp;			serialize((SetNamespaceOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (op instanceof RemoveNamespaceOperation) {</b>
+<b class="nc">&nbsp;			serialize((RemoveNamespaceOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (op instanceof ClearNamespacesOperation) {</b>
+<b class="nc">&nbsp;			serialize((ClearNamespacesOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (op instanceof SPARQLUpdateOperation) {</b>
+<b class="nc">&nbsp;			serialize((SPARQLUpdateOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (op == null) {</b>
+&nbsp;			// ignore(?)
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown operation type: &quot; + op.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(AddStatementOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		xmlWriter.startTag(TransactionXMLConstants.ADD_STATEMENT_TAG);</b>
+<b class="nc">&nbsp;		serialize((StatementOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		xmlWriter.endTag(TransactionXMLConstants.ADD_STATEMENT_TAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(SPARQLUpdateOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		String baseURI = op.getBaseURI();</b>
+<b class="nc">&nbsp;		if (baseURI != null) {</b>
+<b class="nc">&nbsp;			xmlWriter.setAttribute(TransactionXMLConstants.BASE_URI_ATT, baseURI);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		xmlWriter.setAttribute(TransactionXMLConstants.INCLUDE_INFERRED_ATT, op.isIncludeInferred());</b>
+<b class="nc">&nbsp;		xmlWriter.startTag(TransactionXMLConstants.SPARQL_UPDATE_TAG);</b>
+&nbsp;
+&nbsp;		// serialize update string
+<b class="nc">&nbsp;		String updateString = op.getUpdateString();</b>
+<b class="nc">&nbsp;		xmlWriter.textElement(TransactionXMLConstants.UPDATE_STRING_TAG, updateString);</b>
+&nbsp;
+&nbsp;		// serialize dataset definition (if any)
+<b class="nc">&nbsp;		Dataset dataset = op.getDataset();</b>
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			xmlWriter.startTag(TransactionXMLConstants.DATASET_TAG);</b>
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.startTag(TransactionXMLConstants.DEFAULT_GRAPHS_TAG);</b>
+<b class="nc">&nbsp;			for (IRI defaultGraph : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;				xmlWriter.textElement(TransactionXMLConstants.GRAPH_TAG, defaultGraph.stringValue());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			xmlWriter.endTag(TransactionXMLConstants.DEFAULT_GRAPHS_TAG);</b>
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.startTag(TransactionXMLConstants.NAMED_GRAPHS_TAG);</b>
+<b class="nc">&nbsp;			for (IRI namedGraph : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				xmlWriter.textElement(TransactionXMLConstants.GRAPH_TAG, namedGraph.stringValue());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			xmlWriter.endTag(TransactionXMLConstants.NAMED_GRAPHS_TAG);</b>
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.startTag(TransactionXMLConstants.DEFAULT_REMOVE_GRAPHS_TAG);</b>
+<b class="nc">&nbsp;			for (IRI defaultRemoveGraph : dataset.getDefaultRemoveGraphs()) {</b>
+<b class="nc">&nbsp;				xmlWriter.textElement(TransactionXMLConstants.GRAPH_TAG, defaultRemoveGraph.stringValue());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			xmlWriter.endTag(TransactionXMLConstants.DEFAULT_REMOVE_GRAPHS_TAG);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (dataset.getDefaultInsertGraph() != null) {</b>
+<b class="nc">&nbsp;				xmlWriter.textElement(TransactionXMLConstants.DEFAULT_INSERT_GRAPH,</b>
+<b class="nc">&nbsp;						dataset.getDefaultInsertGraph().stringValue());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			xmlWriter.endTag(TransactionXMLConstants.DATASET_TAG);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (op.getBindings() != null &amp;&amp; op.getBindings().length &gt; 0) {</b>
+<b class="nc">&nbsp;			xmlWriter.startTag(TransactionXMLConstants.BINDINGS);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Binding binding : op.getBindings()) {</b>
+<b class="nc">&nbsp;				if (binding.getName() != null &amp;&amp; binding.getValue() != null</b>
+<b class="nc">&nbsp;						&amp;&amp; binding.getValue().stringValue() != null) {</b>
+<b class="nc">&nbsp;					if (binding.getValue() instanceof IRI) {</b>
+<b class="nc">&nbsp;						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());</b>
+<b class="nc">&nbsp;						xmlWriter.textElement(TransactionXMLConstants.BINDING_URI, binding.getValue().stringValue());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (binding.getValue() instanceof BNode) {</b>
+<b class="nc">&nbsp;						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());</b>
+<b class="nc">&nbsp;						xmlWriter.textElement(TransactionXMLConstants.BINDING_BNODE, binding.getValue().stringValue());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (binding.getValue() instanceof Literal) {</b>
+<b class="nc">&nbsp;						xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, binding.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;						Literal literal = (Literal) binding.getValue();</b>
+<b class="nc">&nbsp;						if (Literals.isLanguageLiteral(literal)) {</b>
+<b class="nc">&nbsp;							xmlWriter.setAttribute(TransactionXMLConstants.LANGUAGE_ATT, literal.getLanguage().get());</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							xmlWriter.setAttribute(TransactionXMLConstants.DATA_TYPE_ATT,</b>
+<b class="nc">&nbsp;									literal.getDatatype().stringValue());</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						xmlWriter.textElement(TransactionXMLConstants.BINDING_LITERAL,</b>
+<b class="nc">&nbsp;								binding.getValue().stringValue());</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.endTag(TransactionXMLConstants.BINDINGS);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		xmlWriter.endTag(TransactionXMLConstants.SPARQL_UPDATE_TAG);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(RemoveStatementsOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		xmlWriter.startTag(TransactionXMLConstants.REMOVE_STATEMENTS_TAG);</b>
+<b class="nc">&nbsp;		serialize((StatementOperation) op, xmlWriter);</b>
+<b class="nc">&nbsp;		xmlWriter.endTag(TransactionXMLConstants.REMOVE_STATEMENTS_TAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(StatementOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		serialize(op.getSubject(), xmlWriter);</b>
+<b class="nc">&nbsp;		serialize(op.getPredicate(), xmlWriter);</b>
+<b class="nc">&nbsp;		serialize(op.getObject(), xmlWriter);</b>
+<b class="nc">&nbsp;		serialize(op.getContexts(), xmlWriter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(ClearOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		xmlWriter.startTag(TransactionXMLConstants.CLEAR_TAG);</b>
+<b class="nc">&nbsp;		serialize(op.getContexts(), xmlWriter);</b>
+<b class="nc">&nbsp;		xmlWriter.endTag(TransactionXMLConstants.CLEAR_TAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(SetNamespaceOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		xmlWriter.setAttribute(TransactionXMLConstants.PREFIX_ATT, op.getPrefix());</b>
+<b class="nc">&nbsp;		xmlWriter.setAttribute(TransactionXMLConstants.NAME_ATT, op.getName());</b>
+<b class="nc">&nbsp;		xmlWriter.emptyElement(TransactionXMLConstants.SET_NAMESPACE_TAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(RemoveNamespaceOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		xmlWriter.setAttribute(TransactionXMLConstants.PREFIX_ATT, op.getPrefix());</b>
+<b class="nc">&nbsp;		xmlWriter.emptyElement(TransactionXMLConstants.REMOVE_NAMESPACE_TAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(ClearNamespacesOperation op, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		xmlWriter.emptyElement(TransactionXMLConstants.CLEAR_NAMESPACES_TAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(Resource[] contexts, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (contexts.length &gt; 0) {</b>
+<b class="nc">&nbsp;			xmlWriter.startTag(TransactionXMLConstants.CONTEXTS_TAG);</b>
+<b class="nc">&nbsp;			for (Resource context : contexts) {</b>
+<b class="nc">&nbsp;				serialize(context, xmlWriter);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			xmlWriter.endTag(TransactionXMLConstants.CONTEXTS_TAG);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			xmlWriter.emptyElement(TransactionXMLConstants.CONTEXTS_TAG);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(Value value, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (value instanceof Resource) {</b>
+<b class="nc">&nbsp;			serialize((Resource) value, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			serialize((Literal) value, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (value == null) {</b>
+<b class="nc">&nbsp;			serializeNull(xmlWriter);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown value type: &quot; + value.getClass().toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(Resource resource, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (resource instanceof IRI) {</b>
+<b class="nc">&nbsp;			serialize((IRI) resource, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (resource instanceof BNode) {</b>
+<b class="nc">&nbsp;			serialize((BNode) resource, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (resource instanceof Triple) {</b>
+<b class="nc">&nbsp;			serialize((Triple) resource, xmlWriter);</b>
+<b class="nc">&nbsp;		} else if (resource == null) {</b>
+<b class="nc">&nbsp;			serializeNull(xmlWriter);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown resource type: &quot; + resource.getClass().toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(IRI uri, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (uri != null) {</b>
+<b class="nc">&nbsp;			xmlWriter.textElement(TransactionXMLConstants.URI_TAG, uri.toString());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			serializeNull(xmlWriter);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(BNode bnode, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (bnode != null) {</b>
+<b class="nc">&nbsp;			xmlWriter.textElement(TransactionXMLConstants.BNODE_TAG, bnode.getID());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			serializeNull(xmlWriter);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(Literal literal, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (literal != null) {</b>
+<b class="nc">&nbsp;			if (Literals.isLanguageLiteral(literal)) {</b>
+<b class="nc">&nbsp;				xmlWriter.setAttribute(TransactionXMLConstants.LANG_ATT, literal.getLanguage().get());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				xmlWriter.setAttribute(TransactionXMLConstants.DATATYPE_ATT, literal.getDatatype().toString());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			String label = literal.getLabel();</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean valid = true;</b>
+<b class="nc">&nbsp;			int i = 0;</b>
+<b class="nc">&nbsp;			while (valid &amp;&amp; i &lt; label.length()) {</b>
+<b class="nc">&nbsp;				char c = label.charAt(i++);</b>
+<b class="nc">&nbsp;				valid = XMLUtil.isValidCharacterDataChar(c);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!valid) {</b>
+<b class="nc">&nbsp;				xmlWriter.setAttribute(TransactionXMLConstants.ENCODING_ATT, &quot;base64&quot;);</b>
+<b class="nc">&nbsp;				label = DatatypeConverter.printBase64Binary(label.getBytes(StandardCharsets.UTF_8));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			xmlWriter.textElement(TransactionXMLConstants.LITERAL_TAG, label);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			serializeNull(xmlWriter);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serializeNull(XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		xmlWriter.emptyElement(TransactionXMLConstants.NULL_TAG);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void serialize(Triple triple, XMLWriter xmlWriter) throws IOException {
+<b class="nc">&nbsp;		if (triple != null) {</b>
+<b class="nc">&nbsp;			Value convertBase64 = RDFStarUtil.toRDFEncodedValue(triple);</b>
+<b class="nc">&nbsp;			xmlWriter.textElement(TransactionXMLConstants.TRIPLE_TAG, convertBase64.stringValue());</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			serializeNull(xmlWriter);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,1134 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FederationEvalStrategy</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: FederationEvalStrategy (org.eclipse.rdf4j.federated.evaluation)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FederationEvalStrategy</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/166)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/304)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">FederationEvalStrategy$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FederationEvalStrategy$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/166)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/312)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.Executor;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+&nbsp;import org.eclipse.rdf4j.federated.FedX;
+&nbsp;import org.eclipse.rdf4j.federated.FedXConfig;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.EmptyResult;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXService;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NJoin;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NUnion;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementSource;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.cache.CacheUtils;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelServiceExecutor;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.FederatedDescribeIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerJoin;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerLeftJoin;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.SynchronousBoundJoin;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.SynchronousJoin;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ParallelGetStatementsTask;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedAlgebraUnionTask;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ParallelPreparedUnionTask;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ParallelUnionOperatorTask;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+&nbsp;import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.DefaultFedXCostModel;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.ExclusiveTupleExprOptimizer;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.FilterOptimizer;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.GenericInfoOptimizer;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.LimitOptimizer;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.ServiceOptimizer;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.SourceSelection;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.StatementGroupAndJoinOptimizer;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.UnionOptimizer;
+&nbsp;import org.eclipse.rdf4j.federated.structures.FedXDataset;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryType;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for the Evaluation strategies.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; * @see SailFederationEvalStrategy
+&nbsp; * @see SparqlFederationEvalStrategy
+&nbsp; *
+&nbsp; */
+&nbsp;public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FederationEvalStrategy.class);</b>
+&nbsp;
+&nbsp;	protected Executor executor;
+&nbsp;	protected SourceSelectionCache cache;
+&nbsp;
+&nbsp;	protected FederationContext federationContext;
+&nbsp;
+&nbsp;	public FederationEvalStrategy(FederationContext federationContext) {
+<b class="nc">&nbsp;		super(new org.eclipse.rdf4j.query.algebra.evaluation.TripleSource() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public CloseableIteration&lt;? extends Statement, QueryEvaluationException&gt; getStatements(
+&nbsp;					Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;					throws QueryEvaluationException {
+<b class="nc">&nbsp;				throw new FedXRuntimeException(</b>
+&nbsp;						&quot;Federation Strategy does not support org.openrdf.query.algebra.evaluation.TripleSource#getStatements.&quot;
+&nbsp;								+
+&nbsp;								&quot; If you encounter this exception, please report it.&quot;);
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;				return SimpleValueFactory.getInstance();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}, federationContext.getFederatedServiceResolver());</b>
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+<b class="nc">&nbsp;		this.executor = federationContext.getManager().getExecutor();</b>
+<b class="nc">&nbsp;		this.cache = federationContext.getSourceSelectionCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+&nbsp;			BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		if (!(evaluationStatistics instanceof FederationEvaluationStatistics)) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(</b>
+<b class="nc">&nbsp;					&quot;Expected FederationEvaluationStatistics, was &quot; + evaluationStatistics.getClass());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		FederationEvaluationStatistics stats = (FederationEvaluationStatistics) evaluationStatistics;</b>
+<b class="nc">&nbsp;		QueryInfo queryInfo = stats.getQueryInfo();</b>
+<b class="nc">&nbsp;		Dataset dataset = stats.getDataset();</b>
+&nbsp;
+<b class="nc">&nbsp;		FederationContext federationContext = queryInfo.getFederationContext();</b>
+&nbsp;		List&lt;Endpoint&gt; members;
+<b class="nc">&nbsp;		if (dataset instanceof FedXDataset) {</b>
+&nbsp;			// run the query against a selected set of endpoints
+<b class="nc">&nbsp;			FedXDataset ds = (FedXDataset) dataset;</b>
+<b class="nc">&nbsp;			members = federationContext.getEndpointManager().getEndpoints(ds.getEndpoints());</b>
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// evaluate against entire federation
+<b class="nc">&nbsp;			FedX fed = federationContext.getFederation();</b>
+<b class="nc">&nbsp;			members = fed.getMembers();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Clone the tuple expression to allow for more aggressive optimizations
+<b class="nc">&nbsp;		TupleExpr clone = expr.clone();</b>
+&nbsp;		TupleExpr query;
+<b class="nc">&nbsp;		if (clone instanceof QueryRoot) {</b>
+<b class="nc">&nbsp;			query = clone;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			query = new QueryRoot(clone);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		GenericInfoOptimizer info = new GenericInfoOptimizer(queryInfo);</b>
+&nbsp;
+&nbsp;		// collect information and perform generic optimizations
+<b class="nc">&nbsp;		info.optimize(query);</b>
+&nbsp;
+&nbsp;		// if the federation has a single member only, evaluate the entire query there
+<b class="nc">&nbsp;		if (members.size() == 1 &amp;&amp; queryInfo.getQuery() != null &amp;&amp; propagateServices(info.getServices())</b>
+<b class="nc">&nbsp;				&amp;&amp; queryInfo.getQueryType() != QueryType.UPDATE) {</b>
+<b class="nc">&nbsp;			return new SingleSourceQuery(expr, members.get(0), queryInfo);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (log.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;			log.trace(&quot;Query before Optimization: &quot; + query);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/* original RDF4J optimizers */
+<b class="nc">&nbsp;		new ConstantOptimizer(this).optimize(query, dataset, bindings); // maybe remove this optimizer later</b>
+&nbsp;
+<b class="nc">&nbsp;		new DisjunctiveConstraintOptimizer().optimize(query, dataset, bindings);</b>
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * TODO add some generic optimizers: - FILTER ?s=1 &amp;&amp; ?s=2 =&gt; EmptyResult - Remove variables that are not
+&nbsp;		 * occurring in query stmts from filters
+&nbsp;		 */
+&nbsp;
+&nbsp;		/* custom optimizers, execute only when needed */
+&nbsp;
+&nbsp;		// if the query has a single relevant source (and if it is not a SERVICE query), evaluate at this source only
+&nbsp;		// Note: UPDATE queries are always handled in the federation engine to adhere to the configured
+&nbsp;		// write strategy. Also DESCRIBE queries are handled in the federation
+<b class="nc">&nbsp;		Set&lt;Endpoint&gt; relevantSources = performSourceSelection(members, cache, queryInfo, info);</b>
+<b class="nc">&nbsp;		if (relevantSources.size() == 1 &amp;&amp; propagateServices(info.getServices())</b>
+<b class="nc">&nbsp;				&amp;&amp; queryInfo.getQueryType() != QueryType.UPDATE &amp;&amp; queryInfo.getQueryType() != QueryType.DESCRIBE) {</b>
+<b class="nc">&nbsp;			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (info.hasService()) {</b>
+<b class="nc">&nbsp;			new ServiceOptimizer(queryInfo).optimize(query);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// optimize unions, if available
+<b class="nc">&nbsp;		if (info.hasUnion()) {</b>
+<b class="nc">&nbsp;			new UnionOptimizer(queryInfo).optimize(query);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		optimizeExclusiveExpressions(query, queryInfo, info);</b>
+&nbsp;
+&nbsp;		// optimize statement groups and join order
+<b class="nc">&nbsp;		optimizeJoinOrder(query, queryInfo, info);</b>
+&nbsp;
+&nbsp;		// potentially push limits (if applicable)
+<b class="nc">&nbsp;		if (info.hasLimit()) {</b>
+<b class="nc">&nbsp;			new LimitOptimizer().optimize(query);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// optimize Filters, if available
+&nbsp;		// Note: this is done after the join order is determined to ease filter pushing
+<b class="nc">&nbsp;		if (info.hasFilter()) {</b>
+<b class="nc">&nbsp;			new FilterOptimizer().optimize(query);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (log.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;			log.trace(&quot;Query after Optimization: &quot; + query);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return query;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Perform source selection for all statements of the query. As a result of this method all statement nodes are
+&nbsp;	 * annotated with their relevant sources.
+&nbsp;	 *
+&nbsp;	 * @param members
+&nbsp;	 * @param cache
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @param info
+&nbsp;	 * @return the set of relevant endpoints for the entire query
+&nbsp;	 */
+&nbsp;	protected Set&lt;Endpoint&gt; performSourceSelection(List&lt;Endpoint&gt; members, SourceSelectionCache cache,
+&nbsp;			QueryInfo queryInfo,
+&nbsp;			GenericInfoOptimizer info) {
+&nbsp;
+&nbsp;		// Source Selection: all nodes are annotated with their source
+<b class="nc">&nbsp;		SourceSelection sourceSelection = new SourceSelection(members, cache, queryInfo);</b>
+<b class="nc">&nbsp;		sourceSelection.doSourceSelection(info.getStatements());</b>
+&nbsp;
+<b class="nc">&nbsp;		return sourceSelection.getRelevantSources();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void optimizeJoinOrder(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
+&nbsp;		// optimize statement groups and join order
+<b class="nc">&nbsp;		new StatementGroupAndJoinOptimizer(queryInfo, DefaultFedXCostModel.INSTANCE).optimize(query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Whether to propagate a {@link SingleSourceQuery} containing SERVICE clauses. By default, the query is always
+&nbsp;	 * evaluated within the FedX engine if it contains a SERVICE clause.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Customized implementation may propagate a {@link SingleSourceQuery} including the SERVICE clause (e.g. for
+&nbsp;	 * Wikidata the Label service can only be accessed in the wikidata endpoint.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param serviceNodes
+&nbsp;	 * @return if &lt;code&gt;true&lt;/code&gt;, a {@link SingleSourceQuery} containing SERVICE clauses is propagated as-is
+&nbsp;	 */
+&nbsp;	protected boolean propagateServices(List&lt;Service&gt; serviceNodes) {
+<b class="nc">&nbsp;		boolean hasServices = serviceNodes != null &amp;&amp; !serviceNodes.isEmpty();</b>
+<b class="nc">&nbsp;		if (hasServices) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Optimize {@link ExclusiveTupleExpr}, e.g. restructure the exclusive parts of the query AST.
+&nbsp;	 *
+&nbsp;	 * @param query
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @param info
+&nbsp;	 */
+&nbsp;	protected void optimizeExclusiveExpressions(TupleExpr query, QueryInfo queryInfo, GenericInfoOptimizer info) {
+&nbsp;		// identify exclusive expressions
+<b class="nc">&nbsp;		new ExclusiveTupleExprOptimizer().optimize(query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(
+&nbsp;			TupleExpr expr, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof StatementTupleExpr) {</b>
+<b class="nc">&nbsp;			return ((StatementTupleExpr) expr).evaluate(bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof NJoin) {</b>
+<b class="nc">&nbsp;			return evaluateNJoin((NJoin) expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof NUnion) {</b>
+<b class="nc">&nbsp;			return evaluateNaryUnion((NUnion) expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;			return ((ExclusiveGroup) expr).evaluate(bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof ExclusiveTupleExpr) {</b>
+<b class="nc">&nbsp;			return evaluateExclusiveTupleExpr((ExclusiveTupleExpr) expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof FedXLeftJoin) {</b>
+<b class="nc">&nbsp;			return evaluateLeftJoin((FedXLeftJoin) expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof SingleSourceQuery) {</b>
+<b class="nc">&nbsp;			return evaluateSingleSourceQuery((SingleSourceQuery) expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof FedXService) {</b>
+<b class="nc">&nbsp;			return evaluateService((FedXService) expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof EmptyResult) {</b>
+<b class="nc">&nbsp;			return new EmptyIteration&lt;&gt;();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return super.evaluate(expr, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryEvaluationStep precompile(
+&nbsp;			TupleExpr expr, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (expr instanceof Join) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (expr instanceof StatementTupleExpr) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof NJoin) {</b>
+<b class="nc">&nbsp;			return prepareNJoin((NJoin) expr, context);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof NUnion) {</b>
+<b class="nc">&nbsp;			return prepareNaryUnion((NUnion) expr, context);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof ExclusiveTupleExpr) {</b>
+<b class="nc">&nbsp;			return prepareExclusiveTupleExpr((ExclusiveTupleExpr) expr, context);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof FedXLeftJoin) {</b>
+<b class="nc">&nbsp;			return prepareLeftJoin((FedXLeftJoin) expr, context);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof SingleSourceQuery) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof FedXService) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof EmptyResult) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return super.precompile(expr, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the statements matching the provided subject, predicate and object value from the federation members.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * For a bound statement, i.e. a statement with no free variables, the statement itself is returned if some member
+&nbsp;	 * has this statement, an empty iteration otherwise.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * If the statement has free variables, i.e. one of the provided arguments in &lt;code&gt;null&lt;/code&gt;, the union of
+&nbsp;	 * results from relevant statement sources is constructed.
+&nbsp;	 *
+&nbsp;	 * @param subj
+&nbsp;	 * @param pred
+&nbsp;	 * @param obj
+&nbsp;	 * @param contexts
+&nbsp;	 * @return the statement iteration
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public CloseableIteration&lt;Statement, QueryEvaluationException&gt; getStatements(QueryInfo queryInfo, Resource subj,
+&nbsp;			IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Endpoint&gt; members = federationContext.getFederation().getMembers();</b>
+&nbsp;
+&nbsp;		// a bound query: if at least one fed member provides results
+&nbsp;		// return the statement, otherwise empty result
+<b class="nc">&nbsp;		if (subj != null &amp;&amp; pred != null &amp;&amp; obj != null) {</b>
+<b class="nc">&nbsp;			if (CacheUtils.checkCacheUpdateCache(cache, members, subj, pred, obj, queryInfo, contexts)) {</b>
+<b class="nc">&nbsp;				return new SingletonIteration&lt;&gt;(</b>
+<b class="nc">&nbsp;						FedXUtil.valueFactory().createStatement(subj, pred, obj));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return new EmptyIteration&lt;&gt;();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// form the union of results from relevant endpoints
+<b class="nc">&nbsp;		List&lt;StatementSource&gt; sources = CacheUtils.checkCacheForStatementSourcesUpdateCache(cache, members, subj, pred,</b>
+&nbsp;				obj, queryInfo, contexts);
+&nbsp;
+<b class="nc">&nbsp;		if (sources.isEmpty()) {</b>
+<b class="nc">&nbsp;			return new EmptyIteration&lt;&gt;();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (sources.size() == 1) {</b>
+<b class="nc">&nbsp;			Endpoint e = federationContext.getEndpointManager().getEndpoint(sources.get(0).getEndpointID());</b>
+<b class="nc">&nbsp;			return e.getTripleSource().getStatements(subj, pred, obj, queryInfo, contexts);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// TODO why not collect in parallel?
+<b class="nc">&nbsp;		WorkerUnionBase&lt;Statement&gt; union = new SynchronousWorkerUnion&lt;&gt;(queryInfo);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (StatementSource source : sources) {</b>
+<b class="nc">&nbsp;			Endpoint e = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());</b>
+<b class="nc">&nbsp;			ParallelGetStatementsTask task = new ParallelGetStatementsTask(union, e, subj, pred, obj, queryInfo,</b>
+&nbsp;					contexts);
+<b class="nc">&nbsp;			union.addTask(task);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// run the union in a separate thread
+<b class="nc">&nbsp;		executor.execute(union);</b>
+&nbsp;
+&nbsp;		// TODO distinct iteration ?
+&nbsp;
+<b class="nc">&nbsp;		return union;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateService(FedXService service,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		ParallelServiceExecutor pe = new ParallelServiceExecutor(service, this, bindings, federationContext);</b>
+<b class="nc">&nbsp;		pe.run(); // non-blocking (blocking happens in the iterator)</b>
+<b class="nc">&nbsp;		return pe;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateSingleSourceQuery(SingleSourceQuery query,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Endpoint source = query.getSource();</b>
+<b class="nc">&nbsp;			return source.getTripleSource()</b>
+<b class="nc">&nbsp;					.getStatements(query.getQueryString(), bindings, query.getQueryInfo().getQueryType(),</b>
+<b class="nc">&nbsp;							query.getQueryInfo());</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateNJoin(NJoin join, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return precompile(join).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepareNJoin(NJoin join, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		QueryEvaluationStep resultProvider = precompile(join.getArg(0), context);</b>
+&nbsp;
+<b class="nc">&nbsp;		ControlledWorkerScheduler&lt;BindingSet&gt; joinScheduler = federationContext.getManager().getJoinScheduler();</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			boolean completed = false;</b>
+<b class="nc">&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; result = resultProvider.evaluate(bindings);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				for (int i = 1, n = join.getNumberOfArguments(); i &lt; n; i++) {</b>
+&nbsp;
+<b class="nc">&nbsp;					result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,</b>
+<b class="nc">&nbsp;							join.getQueryInfo());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				completed = true;</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				if (!completed) {</b>
+<b class="nc">&nbsp;					result.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a {@link FedXLeftJoin} (i.e. an OPTIONAL clause)
+&nbsp;	 *
+&nbsp;	 * @param leftJoin
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the resulting iteration
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @see StrictEvaluationStrategy#evaluate(org.eclipse.rdf4j.query.algebra.LeftJoin, BindingSet)
+&nbsp;	 */
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateLeftJoin(FedXLeftJoin leftJoin,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return precompile(leftJoin).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepareLeftJoin(FedXLeftJoin leftJoin, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;		/*
+&nbsp;		 * NOTE: this implementation is taken from StrictEvaluationStrategy.evaluate(LeftJoin, BindingSet)
+&nbsp;		 *
+&nbsp;		 * However, we have to take care for some concurrency scheduling to guarantee the order in which subqueries are
+&nbsp;		 * executed.
+&nbsp;		 */
+&nbsp;
+<b class="nc">&nbsp;		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {</b>
+<b class="nc">&nbsp;			return new QueryEvaluationStep() {</b>
+<b class="nc">&nbsp;				final QueryEvaluationStep leftES = precompile(leftJoin.getLeftArg(), context);</b>
+<b class="nc">&nbsp;				final QueryEvaluationStep rightES = precompile(leftJoin.getRightArg(), context);</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings) {
+<b class="nc">&nbsp;					String[] hashJoinAttributeNames = HashJoinIteration.hashJoinAttributeNames(leftJoin);</b>
+<b class="nc">&nbsp;					return new HashJoinIteration(leftES, rightES, bindings, true, hashJoinAttributeNames, context);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			};
+&nbsp;		} else {
+&nbsp;			// Check whether optional join is &quot;well designed&quot; as defined in section
+&nbsp;			// 4.2 of &quot;Semantics and Complexity of SPARQL&quot;, 2006, Jorge Pérez et al.
+<b class="nc">&nbsp;			VarNameCollector optionalVarCollector = new VarNameCollector();</b>
+<b class="nc">&nbsp;			leftJoin.getRightArg().visit(optionalVarCollector);</b>
+<b class="nc">&nbsp;			if (leftJoin.hasCondition()) {</b>
+<b class="nc">&nbsp;				leftJoin.getCondition().visit(optionalVarCollector);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;String&gt; leftBindingNames = leftJoin.getLeftArg().getBindingNames();</b>
+<b class="nc">&nbsp;			Set&lt;String&gt; problemVars = retainAll(optionalVarCollector.getVarNames(), leftBindingNames);</b>
+&nbsp;
+<b class="nc">&nbsp;			QueryEvaluationStep leftPrepared = precompile(leftJoin.getLeftArg(), context);</b>
+&nbsp;			// left join is &quot;well designed&quot;
+<b class="nc">&nbsp;			ControlledWorkerScheduler&lt;BindingSet&gt; scheduler = federationContext.getManager().getLeftJoinScheduler();</b>
+<b class="nc">&nbsp;			return bindings -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;				if (problemVars.containsAll(bindings.getBindingNames())) {</b>
+<b class="nc">&nbsp;					var leftIter = leftPrepared.evaluate(bindings);</b>
+<b class="nc">&nbsp;					ControlledWorkerLeftJoin join = new ControlledWorkerLeftJoin(scheduler, FederationEvalStrategy.this,</b>
+<b class="nc">&nbsp;							leftIter, leftJoin, bindings, leftJoin.getQueryInfo());</b>
+<b class="nc">&nbsp;					executor.execute(join);</b>
+<b class="nc">&nbsp;					return join;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					Set&lt;String&gt; problemVarsClone = new HashSet&lt;&gt;(problemVars);</b>
+<b class="nc">&nbsp;					problemVarsClone.retainAll(bindings.getBindingNames());</b>
+<b class="nc">&nbsp;					return new BadlyDesignedLeftJoinIterator(FederationEvalStrategy.this, leftJoin, bindings,</b>
+&nbsp;							problemVarsClone, context);
+&nbsp;				}
+&nbsp;			};
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Set&lt;String&gt; retainAll(Set&lt;String&gt; problemVars, Set&lt;String&gt; leftBindingNames) {
+<b class="nc">&nbsp;		if (!leftBindingNames.isEmpty() &amp;&amp; !problemVars.isEmpty()) {</b>
+<b class="nc">&nbsp;			if (leftBindingNames.size() &gt; problemVars.size()) {</b>
+<b class="nc">&nbsp;				for (String problemVar : problemVars) {</b>
+<b class="nc">&nbsp;					if (leftBindingNames.contains(problemVar)) {</b>
+<b class="nc">&nbsp;						HashSet&lt;String&gt; ret = new HashSet&lt;&gt;(problemVars);</b>
+<b class="nc">&nbsp;						ret.removeAll(leftBindingNames);</b>
+<b class="nc">&nbsp;						return ret;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				for (String leftBindingName : leftBindingNames) {</b>
+<b class="nc">&nbsp;					if (problemVars.contains(leftBindingName)) {</b>
+<b class="nc">&nbsp;						HashSet&lt;String&gt; ret = new HashSet&lt;&gt;(problemVars);</b>
+<b class="nc">&nbsp;						ret.removeAll(leftBindingNames);</b>
+<b class="nc">&nbsp;						return ret;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return problemVars;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateNaryUnion(NUnion union, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(union).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public QueryEvaluationStep prepareNaryUnion(NUnion union, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		ControlledWorkerScheduler&lt;BindingSet&gt; unionScheduler = federationContext.getManager().getUnionScheduler();</b>
+<b class="nc">&nbsp;		ControlledWorkerUnion&lt;BindingSet&gt; unionRunnable = new ControlledWorkerUnion&lt;&gt;(unionScheduler,</b>
+<b class="nc">&nbsp;				union.getQueryInfo());</b>
+&nbsp;
+<b class="nc">&nbsp;		int numberOfArguments = union.getNumberOfArguments();</b>
+<b class="nc">&nbsp;		QueryEvaluationStep[] args = new QueryEvaluationStep[numberOfArguments];</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; numberOfArguments; i++) {</b>
+<b class="nc">&nbsp;			args[i] = precompile(union.getArg(i), context);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; numberOfArguments; i++) {</b>
+<b class="nc">&nbsp;				unionRunnable.addTask(new ParallelUnionOperatorTask(unionRunnable, args[i], bindings));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			executor.execute(unionRunnable);</b>
+&nbsp;
+<b class="nc">&nbsp;			return unionRunnable;</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Execute the join in a separate thread using some join executor.
+&nbsp;	 *
+&nbsp;	 * Join executors are for instance: - {@link SynchronousJoin} - {@link SynchronousBoundJoin} -
+&nbsp;	 * {@link ControlledWorkerJoin} - {@link ControlledWorkerBoundJoin}
+&nbsp;	 *
+&nbsp;	 * For endpoint federation use controlled worker bound join, for local federation use controlled worker join. The
+&nbsp;	 * other operators are there for completeness.
+&nbsp;	 *
+&nbsp;	 * Use {@link FederationEvalStrategy#executor} to execute the join (it is a runnable).
+&nbsp;	 *
+&nbsp;	 * @param joinScheduler
+&nbsp;	 * @param leftIter
+&nbsp;	 * @param rightArg
+&nbsp;	 * @param joinVariables
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the result
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	protected abstract CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; executeJoin(
+&nbsp;			ControlledWorkerScheduler&lt;BindingSet&gt; joinScheduler,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; leftIter, TupleExpr rightArg,
+&nbsp;			Set&lt;String&gt; joinVariables, BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	public abstract CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateExclusiveGroup(
+&nbsp;			ExclusiveGroup group, BindingSet bindings)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate an {@link ExclusiveTupleExpr}. The default implementation converts the given expression to a SELECT
+&nbsp;	 * query string and evaluates it at the source.
+&nbsp;	 *
+&nbsp;	 * @param expr
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the result
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateExclusiveTupleExpr(
+&nbsp;			ExclusiveTupleExpr expr,
+&nbsp;			BindingSet bindings) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return precompile(expr).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepareExclusiveTupleExpr(
+&nbsp;			ExclusiveTupleExpr expr,
+&nbsp;			QueryEvaluationContext context)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof StatementTupleExpr) {</b>
+<b class="nc">&nbsp;			return bindings -&gt; ((StatementTupleExpr) expr).evaluate(bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(expr instanceof ExclusiveTupleExprRenderer)) {</b>
+<b class="nc">&nbsp;			return super.precompile(expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Endpoint ownedEndpoint = federationContext</b>
+<b class="nc">&nbsp;				.getEndpointManager()</b>
+<b class="nc">&nbsp;				.getEndpoint(expr.getOwner().getEndpointID());</b>
+<b class="nc">&nbsp;		TripleSource t = ownedEndpoint.getTripleSource();</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			AtomicBoolean isEvaluated = new AtomicBoolean(false);</b>
+<b class="nc">&nbsp;			FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				String preparedQuery = QueryStringUtil.selectQueryString((ExclusiveTupleExprRenderer) expr,</b>
+<b class="nc">&nbsp;						bindings, filterValueExpr, isEvaluated, expr.getQueryInfo().getDataset());</b>
+<b class="nc">&nbsp;				return t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterValueExpr),</b>
+<b class="nc">&nbsp;						expr.getQueryInfo());</b>
+<b class="nc">&nbsp;			} catch (IllegalQueryException e) {</b>
+&nbsp;				/* no projection vars, e.g. local vars only, can occur in joins */
+<b class="nc">&nbsp;				if (t.hasStatements(expr, bindings)) {</b>
+<b class="nc">&nbsp;					return new SingleBindingSetIteration(bindings);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return new EmptyIteration&lt;&gt;();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a bound join at the relevant endpoint, i.e. i.e. for a group of bindings retrieve results for the bound
+&nbsp;	 * statement from the relevant endpoints
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the result iteration
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public abstract CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateBoundJoinStatementPattern(
+&nbsp;			StatementTupleExpr stmt, final List&lt;BindingSet&gt; bindings) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Perform a grouped check at the relevant endpoints, i.e. for a group of bindings keep only those for which at
+&nbsp;	 * least one endpoint provides a result to the bound statement.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the result iteration
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public abstract CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateGroupedCheck(
+&nbsp;			CheckStatementPattern stmt, final List&lt;BindingSet&gt; bindings) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a SERVICE using vectored evaluation, taking the provided bindings as input.
+&nbsp;	 *
+&nbsp;	 * See {@link ControlledWorkerBoundJoin} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
+&nbsp;	 *
+&nbsp;	 * @param service
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the result iteration
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateService(FedXService service,
+&nbsp;			final List&lt;BindingSet&gt; bindings) throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		Var serviceRef = service.getService().getServiceRef();</b>
+&nbsp;		String serviceUri;
+<b class="nc">&nbsp;		if (serviceRef.hasValue()) {</b>
+<b class="nc">&nbsp;			serviceUri = serviceRef.getValue().stringValue();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new ServiceJoinIterator(new CollectionIteration&lt;&gt;(bindings),</b>
+<b class="nc">&nbsp;					service.getService(), EmptyBindingSet.getInstance(), this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// use vectored evaluation
+<b class="nc">&nbsp;		FederatedService fs = getService(serviceUri);</b>
+<b class="nc">&nbsp;		if (fs instanceof RepositoryFederatedService) {</b>
+&nbsp;			// set the bound join block size to 0 =&gt; leave block size up to FedX engine
+<b class="nc">&nbsp;			((RepositoryFederatedService) fs).setBoundJoinBlockSize(0);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return fs.evaluate(service.getService(), new CollectionIteration&lt;&gt;(bindings),</b>
+<b class="nc">&nbsp;				service.getService().getBaseURI());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Value evaluate(ValueExpr expr, BindingSet bindings)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof FilterExpr) {</b>
+<b class="nc">&nbsp;			return evaluate((FilterExpr) expr, bindings);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (expr instanceof ConjunctiveFilterExpr) {</b>
+<b class="nc">&nbsp;			return evaluate((ConjunctiveFilterExpr) expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return super.evaluate(expr, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryValueEvaluationStep precompile(ValueExpr expr, QueryEvaluationContext context)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof FilterExpr) {</b>
+<b class="nc">&nbsp;			return prepare((FilterExpr) expr, context);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (expr instanceof ConjunctiveFilterExpr) {</b>
+<b class="nc">&nbsp;			return prepare((ConjunctiveFilterExpr) expr, context);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return super.precompile(expr, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value evaluate(FilterExpr node, BindingSet bindings)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		Value v = evaluate(node.getExpression(), bindings);</b>
+<b class="nc">&nbsp;		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(v));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(FilterExpr node, QueryEvaluationContext context)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		QueryValueEvaluationStep expr = precompile(node.getExpression(), context);</b>
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			Value v = expr.evaluate(bindings);</b>
+<b class="nc">&nbsp;			return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(v));</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value evaluate(ConjunctiveFilterExpr node, BindingSet bindings)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return prepare(node, new QueryEvaluationContext.Minimal(dataset)).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(ConjunctiveFilterExpr node, QueryEvaluationContext context)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;QueryValueEvaluationStep&gt; collect = node.getExpressions()</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.map((e) -&gt; precompile(e, context))</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;		return bindings -&gt; {</b>
+<b class="nc">&nbsp;			ValueExprEvaluationException error = null;</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				for (QueryValueEvaluationStep ves : collect) {</b>
+<b class="nc">&nbsp;					Value v = ves.evaluate(bindings);</b>
+<b class="nc">&nbsp;					if (QueryEvaluationUtil.getEffectiveBooleanValue(v) == false) {</b>
+<b class="nc">&nbsp;						return BooleanLiteral.FALSE;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (ValueExprEvaluationException e) {</b>
+<b class="nc">&nbsp;				error = e;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (error != null)</b>
+<b class="nc">&nbsp;				throw error;</b>
+<b class="nc">&nbsp;			return BooleanLiteral.TRUE;</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(DescribeOperator operator,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (!(operator instanceof FederatedDescribeOperator)) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(</b>
+<b class="nc">&nbsp;					&quot;Expected a FedXDescribeOperator Node. Found &quot; + operator.getClass() + &quot; instead.&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = evaluate(operator.getArg(), bindings);</b>
+&nbsp;		// Note: we need to evaluate the DESCRIBE over the entire federation
+<b class="nc">&nbsp;		return new FederatedDescribeIteration(iter, this, operator.getBindingNames(), bindings,</b>
+<b class="nc">&nbsp;				((FederatedDescribeOperator) operator).getQueryInfo());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateAtStatementSources(Object preparedQuery,
+&nbsp;			List&lt;StatementSource&gt; statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (preparedQuery instanceof String) {</b>
+<b class="nc">&nbsp;			return evaluateAtStatementSources((String) preparedQuery, statementSources, queryInfo);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (preparedQuery instanceof TupleExpr) {</b>
+<b class="nc">&nbsp;			return evaluateAtStatementSources((TupleExpr) preparedQuery, statementSources, queryInfo);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new RuntimeException(</b>
+<b class="nc">&nbsp;				&quot;Unsupported type for prepared query: &quot; + preparedQuery.getClass().getCanonicalName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateAtStatementSources(String preparedQuery,
+&nbsp;			List&lt;StatementSource&gt; statementSources, QueryInfo queryInfo) throws QueryEvaluationException {
+&nbsp;
+&nbsp;		try {
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; result;
+&nbsp;
+<b class="nc">&nbsp;			if (statementSources.size() == 1) {</b>
+<b class="nc">&nbsp;				Endpoint ownedEndpoint = federationContext.getEndpointManager()</b>
+<b class="nc">&nbsp;						.getEndpoint(statementSources.get(0).getEndpointID());</b>
+<b class="nc">&nbsp;				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();</b>
+<b class="nc">&nbsp;				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), (FilterValueExpr) null,</b>
+&nbsp;						queryInfo);
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				WorkerUnionBase&lt;BindingSet&gt; union = federationContext.getManager().createWorkerUnion(queryInfo);</b>
+&nbsp;
+<b class="nc">&nbsp;				for (StatementSource source : statementSources) {</b>
+<b class="nc">&nbsp;					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());</b>
+<b class="nc">&nbsp;					union.addTask(new ParallelPreparedUnionTask(union, preparedQuery, ownedEndpoint,</b>
+<b class="nc">&nbsp;							EmptyBindingSet.getInstance(), null, queryInfo));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				union.run();</b>
+<b class="nc">&nbsp;				result = union;</b>
+&nbsp;
+&nbsp;				// TODO we should add some DISTINCT here to have SET semantics
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluateAtStatementSources(
+&nbsp;			TupleExpr preparedQuery, List&lt;StatementSource&gt; statementSources, QueryInfo queryInfo)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+&nbsp;		try {
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; result;
+&nbsp;
+<b class="nc">&nbsp;			if (statementSources.size() == 1) {</b>
+<b class="nc">&nbsp;				Endpoint ownedEndpoint = federationContext.getEndpointManager()</b>
+<b class="nc">&nbsp;						.getEndpoint(statementSources.get(0).getEndpointID());</b>
+<b class="nc">&nbsp;				org.eclipse.rdf4j.federated.evaluation.TripleSource t = ownedEndpoint.getTripleSource();</b>
+<b class="nc">&nbsp;				result = t.getStatements(preparedQuery, EmptyBindingSet.getInstance(), null, queryInfo);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				WorkerUnionBase&lt;BindingSet&gt; union = federationContext.getManager().createWorkerUnion(queryInfo);</b>
+&nbsp;
+<b class="nc">&nbsp;				for (StatementSource source : statementSources) {</b>
+<b class="nc">&nbsp;					Endpoint ownedEndpoint = federationContext.getEndpointManager().getEndpoint(source.getEndpointID());</b>
+<b class="nc">&nbsp;					union.addTask(new ParallelPreparedAlgebraUnionTask(union, preparedQuery, ownedEndpoint,</b>
+<b class="nc">&nbsp;							EmptyBindingSet.getInstance(), null, queryInfo));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				union.run();</b>
+<b class="nc">&nbsp;				result = union;</b>
+&nbsp;
+&nbsp;				// TODO we should add some DISTINCT here to have SET semantics
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,586 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AppVersion</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.app</a>
+</div>
+
+<h1>Coverage Summary for Class: AppVersion (org.eclipse.rdf4j.common.app)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AppVersion</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/110)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/131)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.app;
+&nbsp;
+&nbsp;import java.util.Locale;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;/**
+&nbsp; * A product version in Aduna&#39;s version format (i.e. major.minor-modifier). Where major stands for the major version
+&nbsp; * number of the release, minor is the minor version number, and modifier is a modifier for the release, e.g. beta1 or
+&nbsp; * RC1. Combined, this results in versions like 2.0 and 4.1-beta1.
+&nbsp; */
+&nbsp;public class AppVersion implements Comparable&lt;AppVersion&gt; {
+&nbsp;
+<b class="nc">&nbsp;	private static final Pattern VERSION_REGEX = Pattern</b>
+<b class="nc">&nbsp;			.compile(&quot;^\\s*(\\d+)(?:\\.(\\d+)(?:\\.(\\d+))?)?(M[^\\-\\+]*)?(?:-([^\\+]+))?(?:\\+(.+))?\\s*$&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version&#39;s major version number.
+&nbsp;	 */
+&nbsp;	private int major;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version&#39;s minor version number.
+&nbsp;	 */
+&nbsp;	private int minor;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version&#39;s patch version number, if any.
+&nbsp;	 */
+&nbsp;	private int patch;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version&#39;s milestone number, if any.
+&nbsp;	 */
+&nbsp;	private int milestone;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version&#39;s modifier, if any.
+&nbsp;	 */
+&nbsp;	private String modifier;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version&#39;s build, if any.
+&nbsp;	 */
+&nbsp;	private final String build;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct an uninitialized AppVersion.
+&nbsp;	 */
+&nbsp;	public AppVersion() {
+<b class="nc">&nbsp;		this(-1, -1, -1, -1, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;major.minor&lt;/var&gt; version number, e.g.&lt;var&gt;1.0&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param major major number
+&nbsp;	 * @param minor minor number
+&nbsp;	 */
+&nbsp;	public AppVersion(int major, int minor) {
+<b class="nc">&nbsp;		this(major, minor, -1, -1, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;major.minor.patch&lt;/var&gt; version number, e.g.&lt;var&gt;1.0.1&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param major major number
+&nbsp;	 * @param minor minor number
+&nbsp;	 * @param patch patch number
+&nbsp;	 */
+&nbsp;	public AppVersion(int major, int minor, int patch) {
+<b class="nc">&nbsp;		this(major, minor, patch, -1, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;major.minor-modifier&lt;/var&gt; version number, e.g.&lt;var&gt;1.0-beta1&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param major    major number
+&nbsp;	 * @param minor    minor number
+&nbsp;	 * @param modifier additional string
+&nbsp;	 */
+&nbsp;	public AppVersion(int major, int minor, String modifier) {
+<b class="nc">&nbsp;		this(major, minor, -1, -1, modifier);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;major.minor.patch-modifier&lt;/var&gt; version number, e.g.&lt;var&gt;1.0.1-SNAPSHOT&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param major    major number
+&nbsp;	 * @param minor    minor number
+&nbsp;	 * @param patch    patch number
+&nbsp;	 * @param modifier additional string
+&nbsp;	 */
+&nbsp;	public AppVersion(int major, int minor, int patch, String modifier) {
+<b class="nc">&nbsp;		this(major, minor, patch, -1, modifier);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;major.minor.patchMmilestone-modifier&lt;/var&gt; version number, e.g.&lt;var&gt;1.0.1M1-SNAPSHOT&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param major     major number
+&nbsp;	 * @param minor     minor number
+&nbsp;	 * @param patch     patch number
+&nbsp;	 * @param milestone milestone number
+&nbsp;	 * @param modifier  additional string
+&nbsp;	 */
+&nbsp;	public AppVersion(int major, int minor, int patch, int milestone, String modifier) {
+<b class="nc">&nbsp;		this(major, minor, patch, milestone, modifier, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new version number
+&nbsp;	 *
+&nbsp;	 * @param major     major number
+&nbsp;	 * @param minor     minor number
+&nbsp;	 * @param patch     patch number
+&nbsp;	 * @param milestone milestone number
+&nbsp;	 * @param modifier  additional string
+&nbsp;	 * @param build     build string
+&nbsp;	 */
+<b class="nc">&nbsp;	public AppVersion(int major, int minor, int patch, int milestone, String modifier, String build) {</b>
+<b class="nc">&nbsp;		this.major = major;</b>
+<b class="nc">&nbsp;		this.minor = minor;</b>
+<b class="nc">&nbsp;		this.patch = patch;</b>
+<b class="nc">&nbsp;		this.milestone = milestone;</b>
+<b class="nc">&nbsp;		this.modifier = modifier;</b>
+<b class="nc">&nbsp;		this.build = build;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the version&#39;s major version number.
+&nbsp;	 *
+&nbsp;	 * @return major number
+&nbsp;	 */
+&nbsp;	public int getMajor() {
+<b class="nc">&nbsp;		return major;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set major number
+&nbsp;	 *
+&nbsp;	 * @param major major number
+&nbsp;	 */
+&nbsp;	public void setMajor(int major) {
+<b class="nc">&nbsp;		this.major = major;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the version&#39;s minor version number.
+&nbsp;	 *
+&nbsp;	 * @return minor number
+&nbsp;	 */
+&nbsp;	public int getMinor() {
+<b class="nc">&nbsp;		return minor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set minor number
+&nbsp;	 *
+&nbsp;	 * @param minor minor number
+&nbsp;	 */
+&nbsp;	public void setMinor(int minor) {
+<b class="nc">&nbsp;		this.minor = minor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the version&#39;s micro version / patch level number.
+&nbsp;	 *
+&nbsp;	 * @return patch level number
+&nbsp;	 */
+&nbsp;	public int getPatch() {
+<b class="nc">&nbsp;		return patch;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the version&#39;s micro version / patch level number.
+&nbsp;	 *
+&nbsp;	 * @param micro patch level number
+&nbsp;	 */
+&nbsp;	public void setPatch(int micro) {
+<b class="nc">&nbsp;		this.patch = micro;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the milestone number
+&nbsp;	 *
+&nbsp;	 * @param milestone milestone number
+&nbsp;	 */
+&nbsp;	public void setMilestone(int milestone) {
+<b class="nc">&nbsp;		this.milestone = milestone;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the milestone number
+&nbsp;	 *
+&nbsp;	 * @return milestone number
+&nbsp;	 */
+&nbsp;	public int getMilestone() {
+<b class="nc">&nbsp;		return milestone;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the version&#39;s release modifier part.
+&nbsp;	 *
+&nbsp;	 * @return modifier string
+&nbsp;	 */
+&nbsp;	public String getModifier() {
+<b class="nc">&nbsp;		return modifier;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the version&#39;s release modifier part.
+&nbsp;	 *
+&nbsp;	 * @param modifier modifier string
+&nbsp;	 */
+&nbsp;	public void setModifier(String modifier) {
+<b class="nc">&nbsp;		this.modifier = modifier;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if two versions are exactly equal, modifier is case insensitive.
+&nbsp;	 *
+&nbsp;	 * @param other second object
+&nbsp;	 * @return true if equal
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="nc">&nbsp;		boolean isEqual = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (other instanceof AppVersion) {</b>
+<b class="nc">&nbsp;			AppVersion o = (AppVersion) other;</b>
+&nbsp;
+<b class="nc">&nbsp;			isEqual = major == o.major &amp;&amp; minor == o.minor &amp;&amp; patch == o.patch &amp;&amp; milestone == o.milestone;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isEqual) {</b>
+<b class="nc">&nbsp;				isEqual = modifier == o.modifier || modifier != null &amp;&amp; modifier.equalsIgnoreCase(o.modifier);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return isEqual;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		int hash = 31 * (31 * major + minor);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (patch &gt; 0) {</b>
+<b class="nc">&nbsp;			hash += patch;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (milestone &gt; 0) {</b>
+<b class="nc">&nbsp;			hash += milestone;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (modifier != null) {</b>
+<b class="nc">&nbsp;			hash ^= modifier.toLowerCase(Locale.ENGLISH).hashCode();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return hash;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if this version is older than the specified version, according to the result of
+&nbsp;	 * {@link #compareTo(AppVersion)}.
+&nbsp;	 *
+&nbsp;	 * @param other other version
+&nbsp;	 * @return true if this version is older than other
+&nbsp;	 */
+&nbsp;	public boolean olderThan(AppVersion other) {
+<b class="nc">&nbsp;		return this.compareTo(other) &lt; 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if this version is newer than the specified version, according to the result of
+&nbsp;	 * {@link #compareTo(AppVersion)}.
+&nbsp;	 *
+&nbsp;	 * @param other other version
+&nbsp;	 * @return true if this version is newer than other
+&nbsp;	 */
+&nbsp;	public boolean newerThan(AppVersion other) {
+<b class="nc">&nbsp;		return this.compareTo(other) &gt; 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two version numbers according to their major, minor, patch and milestone version numbers, ordering from
+&nbsp;	 * oldest to newest version. If all version numbers are equal, then their modifiers are compared lexicographically
+&nbsp;	 * (based on the Unicode value of each character), ignoring case. Versions without a modifier or milestone are
+&nbsp;	 * considered to be the &quot;final&quot; versions and come after other versions with a modifier or milestone.
+&nbsp;	 *
+&nbsp;	 * @param other
+&nbsp;	 * @return &lt;var&gt;0&lt;/var&gt; if both versions are equal, a negative number if this version is older than
+&nbsp;	 *         &lt;var&gt;other&lt;/var&gt;, or a positive number otherwise.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public int compareTo(AppVersion other) {
+<b class="nc">&nbsp;		int result = major - other.major;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (result == 0) {</b>
+<b class="nc">&nbsp;			result = minor - other.minor;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (result == 0) {</b>
+<b class="nc">&nbsp;			result = patch - other.patch;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (result == 0 &amp;&amp; (milestone &gt; -1 || other.milestone &gt; -1)) {</b>
+<b class="nc">&nbsp;			if (milestone &gt; -1) {</b>
+<b class="nc">&nbsp;				if (other.milestone == -1) {</b>
+<b class="nc">&nbsp;					result = -1;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					result = milestone - other.milestone;</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (other.milestone &gt; -1) {</b>
+<b class="nc">&nbsp;					result = 1;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (result == 0 &amp;&amp; !Objects.equals(modifier, other.modifier)) {</b>
+<b class="nc">&nbsp;			if (modifier == null) {</b>
+<b class="nc">&nbsp;				result = 1;</b>
+<b class="nc">&nbsp;			} else if (other.modifier == null) {</b>
+<b class="nc">&nbsp;				result = -1;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				result = modifier.compareToIgnoreCase(other.modifier);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a version string into a Version object.
+&nbsp;	 *
+&nbsp;	 * @param versionString A version string, e.g. 1.0.1 or 1.0-beta1.
+&nbsp;	 * @return The parsed Version.
+&nbsp;	 * @exception NumberFormatException If versionString could not be parsed to a version.
+&nbsp;	 */
+&nbsp;	public static AppVersion parse(String versionString) {
+<b class="nc">&nbsp;		if (versionString.equals(&quot;dev&quot;)) {</b>
+<b class="nc">&nbsp;			return new AppVersion(-1, -1, &quot;dev&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Matcher m = VERSION_REGEX.matcher(versionString);</b>
+<b class="nc">&nbsp;		if (!m.find()) {</b>
+<b class="nc">&nbsp;			throw new NumberFormatException(&quot;Illegal version string: &quot; + versionString);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		int minorSeparator = m.start(2) - 1;</b>
+<b class="nc">&nbsp;		int patchSeparator = m.start(3) - 1;</b>
+<b class="nc">&nbsp;		int milestoneSeparator = m.start(4);</b>
+<b class="nc">&nbsp;		int modifierSeparator = m.start(5) - 1;</b>
+<b class="nc">&nbsp;		int buildSeparator = m.start(6) - 1;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (minorSeparator == -1) {</b>
+<b class="nc">&nbsp;			throw new NumberFormatException(&quot;Illegal version string: &quot; + versionString);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final boolean hasPatch = patchSeparator &gt; -1;</b>
+<b class="nc">&nbsp;		final boolean hasMilestone = milestoneSeparator &gt; -1;</b>
+<b class="nc">&nbsp;		final boolean hasModifier = modifierSeparator &gt; -1;</b>
+<b class="nc">&nbsp;		final boolean hasBuild = buildSeparator &gt; -1;</b>
+&nbsp;
+<b class="nc">&nbsp;		String major = versionString.substring(0, minorSeparator);</b>
+&nbsp;		String minor;
+<b class="nc">&nbsp;		String patch = null;</b>
+<b class="nc">&nbsp;		String milestone = null;</b>
+<b class="nc">&nbsp;		String modifier = null;</b>
+<b class="nc">&nbsp;		String build = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (hasBuild) {</b>
+<b class="nc">&nbsp;			build = versionString.substring(buildSeparator + 1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hasModifier) {</b>
+<b class="nc">&nbsp;			if (hasBuild) {</b>
+<b class="nc">&nbsp;				modifier = versionString.substring(modifierSeparator + 1, buildSeparator);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				modifier = versionString.substring(modifierSeparator + 1);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hasMilestone) {</b>
+<b class="nc">&nbsp;			if (hasModifier) {</b>
+<b class="nc">&nbsp;				milestone = versionString.substring(milestoneSeparator + 1, modifierSeparator);</b>
+<b class="nc">&nbsp;			} else if (hasBuild) {</b>
+<b class="nc">&nbsp;				milestone = versionString.substring(milestoneSeparator + 1, buildSeparator);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				milestone = versionString.substring(milestoneSeparator + 1);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// determine patch and minor versions
+<b class="nc">&nbsp;		if (hasPatch) {</b>
+<b class="nc">&nbsp;			if (hasMilestone) {</b>
+<b class="nc">&nbsp;				patch = versionString.substring(patchSeparator + 1, milestoneSeparator);</b>
+<b class="nc">&nbsp;			} else if (hasModifier) {</b>
+<b class="nc">&nbsp;				patch = versionString.substring(patchSeparator + 1, modifierSeparator);</b>
+<b class="nc">&nbsp;			} else if (hasBuild) {</b>
+<b class="nc">&nbsp;				patch = versionString.substring(patchSeparator + 1, buildSeparator);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				patch = versionString.substring(patchSeparator + 1);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			minor = versionString.substring(minorSeparator + 1, patchSeparator);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (hasMilestone) {</b>
+<b class="nc">&nbsp;				minor = versionString.substring(minorSeparator + 1, milestoneSeparator);</b>
+<b class="nc">&nbsp;			} else if (hasModifier) {</b>
+<b class="nc">&nbsp;				minor = versionString.substring(minorSeparator + 1, modifierSeparator);</b>
+<b class="nc">&nbsp;			} else if (hasBuild) {</b>
+<b class="nc">&nbsp;				minor = versionString.substring(minorSeparator + 1, buildSeparator);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				minor = versionString.substring(minorSeparator + 1);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int majorInt = Integer.parseInt(major);</b>
+<b class="nc">&nbsp;		int minorInt = Integer.parseInt(minor);</b>
+<b class="nc">&nbsp;		int patchInt = patch == null ? -1 : Integer.parseInt(patch);</b>
+<b class="nc">&nbsp;		int milestoneInt = milestone == null ? -1 : Integer.parseInt(milestone);</b>
+<b class="nc">&nbsp;		return new AppVersion(majorInt, minorInt, patchInt, milestoneInt, modifier, build);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the string represention of this version.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(16);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (major &gt;= 0) {</b>
+<b class="nc">&nbsp;			sb.append(major).append(&#39;.&#39;).append(minor);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (patch &gt;= 0) {</b>
+<b class="nc">&nbsp;			sb.append(&#39;.&#39;).append(patch);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (milestone &gt;= 0) {</b>
+<b class="nc">&nbsp;			sb.append(&#39;M&#39;).append(milestone);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (modifier != null) {</b>
+<b class="nc">&nbsp;			if (sb.length() &gt; 0) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;-&#39;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			sb.append(modifier);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (build != null) {</b>
+<b class="nc">&nbsp;			if (sb.length() &gt; 0) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;+&#39;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			sb.append(build);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,342 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HDTDictionarySectionPFC</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.hdt</a>
+</div>
+
+<h1>Coverage Summary for Class: HDTDictionarySectionPFC (org.eclipse.rdf4j.rio.hdt)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HDTDictionarySectionPFC</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/55)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">HDTDictionarySectionPFC$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/57)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.hdt;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.zip.CheckedInputStream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+&nbsp;
+&nbsp;/**
+&nbsp; * HDT DictionarySection Plain Front Coding.
+&nbsp; *
+&nbsp; * This part starts with a byte indicating the type of the dictionary section, followed by the VByte-encoded number of
+&nbsp; * strings, the VByte-encoded buffer size and the VByte-encoded buffer length.
+&nbsp; *
+&nbsp; * Then the 8-bit CRC.
+&nbsp; *
+&nbsp; * Followed by an array and one or more buffers, and the 32-bit CRC calculated over the index and the buffers.
+&nbsp; *
+&nbsp; * Structure:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * +------+--------------+--------------+-------+------+-------+--------+...+-------+
+&nbsp; * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 |
+&nbsp; * +------+--------------+--------------+-------+------+-------+--------+...+-------+
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * Each buffer starts with a full string, followed by a maximum of &lt;code&gt;stringsBlock&lt;/code&gt; - 1 pair of a VByte-encoded
+&nbsp; * number of characters this string has in common with the _previous_ string, and the (different) suffix.
+&nbsp; *
+&nbsp; * E.g. &lt;code&gt;abcdef 2 gh 3 ij&lt;/code&gt; will result in &lt;code&gt;abcde, abgh, abgij&lt;/code&gt;.
+&nbsp; *
+&nbsp; * Buffer structure:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * +--------+--------+--------+...+--------+--------+
+&nbsp; * | string | common | suffix |...| common | suffix |
+&nbsp; * +--------+--------+--------+...+--------+--------+
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;class HDTDictionarySectionPFC extends HDTDictionarySection {
+&nbsp;	private byte[] buffer;
+&nbsp;
+&nbsp;	private int totalStrings;
+&nbsp;	private int stringsBlock;
+&nbsp;	private HDTArray blockStarts;
+&nbsp;
+&nbsp;	// keep most recently used blocks in memory as decoded values
+<b class="nc">&nbsp;	private final LinkedHashMap&lt;Integer, ArrayList&lt;byte[]&gt;&gt; cache = new LinkedHashMap&lt;&gt;(100, 1, true) {</b>
+&nbsp;		@Override
+&nbsp;		protected boolean removeEldestEntry(Map.Entry eldest) {
+<b class="nc">&nbsp;			return size() &gt; 99;</b>
+&nbsp;		}
+&nbsp;	};
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param name
+&nbsp;	 * @param pos
+&nbsp;	 */
+&nbsp;	protected HDTDictionarySectionPFC(String name, long pos) {
+<b class="nc">&nbsp;		super(name, pos);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected int size() {
+<b class="nc">&nbsp;		return totalStrings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected byte[] get(int i) throws IOException {
+&nbsp;		// HDT index start counting from 1
+<b class="nc">&nbsp;		int idx = i - 1;</b>
+&nbsp;
+&nbsp;		// get the block this string belongs to, and maintain the cache of recently used blocks
+<b class="nc">&nbsp;		int block = idx / stringsBlock;</b>
+&nbsp;
+<b class="nc">&nbsp;		ArrayList&lt;byte[]&gt; strings = cache.get(block);</b>
+<b class="nc">&nbsp;		if (strings == null) {</b>
+<b class="nc">&nbsp;			int blockStart = blockStarts.get(block);</b>
+<b class="nc">&nbsp;			strings = decodeBlock(block, blockStart);</b>
+<b class="nc">&nbsp;			cache.put(block, strings);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return strings.get(idx - (block * stringsBlock));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void parse(InputStream is) throws IOException {
+<b class="nc">&nbsp;		CRC8 crc8 = new CRC8();</b>
+<b class="nc">&nbsp;		crc8.update((byte) HDTDictionarySection.Type.FRONT.getValue());</b>
+&nbsp;
+&nbsp;		int buflen;
+&nbsp;
+&nbsp;		// don&#39;t close CheckedInputStream, as it will close the underlying inputstream
+<b class="nc">&nbsp;		try (UncloseableInputStream uis = new UncloseableInputStream(is);</b>
+<b class="nc">&nbsp;				CheckedInputStream cis = new CheckedInputStream(uis, crc8)) {</b>
+&nbsp;
+<b class="nc">&nbsp;			long val = VByte.decode(cis);</b>
+<b class="nc">&nbsp;			if (totalStrings &gt; Integer.MAX_VALUE) {</b>
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(getDebugPartStr() + &quot; max number of strings exceeded: &quot; + val);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			totalStrings = (int) val;</b>
+&nbsp;
+<b class="nc">&nbsp;			val = VByte.decode(cis);</b>
+<b class="nc">&nbsp;			if (val &gt; Integer.MAX_VALUE) {</b>
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(getDebugPartStr() + &quot; max buffer length exceeded: &quot; + val);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			buflen = (int) val;</b>
+&nbsp;
+<b class="nc">&nbsp;			val = VByte.decode(cis);</b>
+<b class="nc">&nbsp;			if (val &gt; Integer.MAX_VALUE) {</b>
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(</b>
+<b class="nc">&nbsp;						getDebugPartStr() + &quot;max number of strings per exceeded: &quot; + val);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			stringsBlock = (int) val;</b>
+&nbsp;
+<b class="nc">&nbsp;			checkCRC(cis, is, 1);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// keep track of starting positions of the blocks
+<b class="nc">&nbsp;		blockStarts = HDTArrayFactory.parse(is);</b>
+<b class="nc">&nbsp;		blockStarts.parse(is);</b>
+&nbsp;
+&nbsp;		// don&#39;t close CheckedInputStream, as it will close the underlying inputstream
+<b class="nc">&nbsp;		try (UncloseableInputStream uis = new UncloseableInputStream(is);</b>
+<b class="nc">&nbsp;				CheckedInputStream cis = new CheckedInputStream(uis, new CRC32())) {</b>
+&nbsp;
+<b class="nc">&nbsp;			buffer = new byte[buflen];</b>
+<b class="nc">&nbsp;			cis.read(buffer);</b>
+<b class="nc">&nbsp;			checkCRC(cis, is, 4);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse a single block
+&nbsp;	 *
+&nbsp;	 * @param block block number
+&nbsp;	 * @param start starting position
+&nbsp;	 * @return list of decoded byte strings
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private ArrayList&lt;byte[]&gt; decodeBlock(int block, int start) throws IOException {
+<b class="nc">&nbsp;		ArrayList&lt;byte[]&gt; arr = new ArrayList&lt;&gt;(stringsBlock);</b>
+&nbsp;
+&nbsp;		// initial string
+<b class="nc">&nbsp;		int idx = start;</b>
+<b class="nc">&nbsp;		int end = HDTPart.countToNull(buffer, idx);</b>
+<b class="nc">&nbsp;		byte[] str = Arrays.copyOfRange(buffer, idx, end);</b>
+<b class="nc">&nbsp;		arr.add(str);</b>
+<b class="nc">&nbsp;		idx = end + 1;</b>
+&nbsp;
+&nbsp;		// read the remaining strings, with a maximum of stringsBlock
+<b class="nc">&nbsp;		int remaining = totalStrings - (block * stringsBlock);</b>
+<b class="nc">&nbsp;		for (int j = 1; j &lt; stringsBlock &amp;&amp; j &lt; remaining; j++) {</b>
+<b class="nc">&nbsp;			int common = (int) VByte.decodeFrom(buffer, idx);</b>
+<b class="nc">&nbsp;			idx += VByte.encodedLength(common);</b>
+<b class="nc">&nbsp;			end = HDTPart.countToNull(buffer, idx);</b>
+<b class="nc">&nbsp;			byte[] suffix = Arrays.copyOfRange(buffer, idx, end);</b>
+&nbsp;
+&nbsp;			// copy the common part and add the suffix
+<b class="nc">&nbsp;			str = Arrays.copyOf(str, common + suffix.length);</b>
+<b class="nc">&nbsp;			System.arraycopy(suffix, 0, str, common, suffix.length);</b>
+<b class="nc">&nbsp;			arr.add(str);</b>
+&nbsp;
+<b class="nc">&nbsp;			idx = end + 1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return arr;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,337 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BindingsBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.dao.support.bindingsBuilder</a>
+</div>
+
+<h1>Coverage Summary for Class: BindingsBuilder (org.eclipse.rdf4j.spring.dao.support.bindingsBuilder)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BindingsBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/64)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.dao.support.bindingsBuilder;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class BindingsBuilder implements MutableBindings {
+&nbsp;	private final Map&lt;String, Value&gt; bindings;
+&nbsp;
+<b class="nc">&nbsp;	public BindingsBuilder() {</b>
+<b class="nc">&nbsp;		this.bindings = new HashMap&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public BindingsBuilder(Map&lt;String, Value&gt; bindings) {</b>
+<b class="nc">&nbsp;		this.bindings = bindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;String, Value&gt; build() {
+<b class="nc">&nbsp;		return this.bindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(Variable key, Value value) {
+<b class="nc">&nbsp;		return add(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(String key, Value value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return addMaybe(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(Variable key, Value value) {
+<b class="nc">&nbsp;		return addMaybe(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(String key, Value value) {
+<b class="nc">&nbsp;		checkKeyNotPresent(key);</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			bindings.put(key, value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(Variable key, IRI value) {
+<b class="nc">&nbsp;		return add(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(String key, IRI value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return addMaybe(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(Variable key, IRI value) {
+<b class="nc">&nbsp;		return addMaybe(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(Variable key, String value) {
+<b class="nc">&nbsp;		return addMaybe(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(String key, IRI value) {
+<b class="nc">&nbsp;		checkKeyNotPresent(key);</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			bindings.put(key, value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(Variable key, String value) {
+<b class="nc">&nbsp;		return add(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(String key, String value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return addMaybe(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public BindingsBuilder addMaybe(String key, String value) {
+<b class="nc">&nbsp;		checkKeyNotPresent(key);</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			bindings.put(key, SimpleValueFactory.getInstance().createLiteral(value));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(Variable key, Integer value) {
+<b class="nc">&nbsp;		return add(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(String key, Integer value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return addMaybe(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(Variable key, Integer value) {
+<b class="nc">&nbsp;		return addMaybe(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(String key, Integer value) {
+<b class="nc">&nbsp;		checkKeyNotPresent(key);</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			bindings.put(key, SimpleValueFactory.getInstance().createLiteral(value));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(Variable key, Boolean value) {
+<b class="nc">&nbsp;		return add(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(String key, Boolean value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return addMaybe(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(Variable key, Boolean value) {
+<b class="nc">&nbsp;		return addMaybe(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(String key, Boolean value) {
+<b class="nc">&nbsp;		checkKeyNotPresent(key);</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			bindings.put(key, SimpleValueFactory.getInstance().createLiteral(value));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(Variable key, Float value) {
+<b class="nc">&nbsp;		return add(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(String key, Float value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return addMaybe(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(Variable key, Float value) {
+<b class="nc">&nbsp;		return addMaybe(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(String key, Float value) {
+<b class="nc">&nbsp;		checkKeyNotPresent(key);</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			bindings.put(key, SimpleValueFactory.getInstance().createLiteral(value));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(Variable key, Double value) {
+<b class="nc">&nbsp;		return add(key.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder add(String key, Double value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(value);</b>
+<b class="nc">&nbsp;		return addMaybe(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(Variable var, Double value) {
+<b class="nc">&nbsp;		return addMaybe(var.getVarName(), value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingsBuilder addMaybe(String key, Double value) {
+<b class="nc">&nbsp;		checkKeyNotPresent(key);</b>
+<b class="nc">&nbsp;		if (bindings != null) {</b>
+<b class="nc">&nbsp;			bindings.put(key, SimpleValueFactory.getInstance().createLiteral(value));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void checkKeyNotPresent(String key) {
+<b class="nc">&nbsp;		if (bindings.containsKey(key)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+<b class="nc">&nbsp;					String.format(&quot;Binding for key &#39;%s&#39; already registered&quot;, key));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

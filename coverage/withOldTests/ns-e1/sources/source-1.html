@@ -1,0 +1,187 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CloseablePeakableIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.wrapper.data</a>
+</div>
+
+<h1>Coverage Summary for Class: CloseablePeakableIteration (org.eclipse.rdf4j.sail.shacl.wrapper.data)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CloseablePeakableIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.wrapper.data;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;
+&nbsp;/**
+&nbsp; *
+&nbsp; *
+&nbsp; * @apiNote since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+&nbsp; *          warning from one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class CloseablePeakableIteration&lt;E, X extends Exception&gt; implements CloseableIteration&lt;E, X&gt; {
+&nbsp;
+&nbsp;	CloseableIteration&lt;E, X&gt; parent;
+&nbsp;
+&nbsp;	E peek;
+&nbsp;
+<b class="nc">&nbsp;	public CloseablePeakableIteration(CloseableIteration&lt;E, X&gt; parent) {</b>
+<b class="nc">&nbsp;		this.parent = parent;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws X {
+<b class="nc">&nbsp;		parent.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() throws X {
+<b class="nc">&nbsp;		if (peek != null) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return parent.hasNext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public E next() throws X {
+&nbsp;		E next;
+<b class="nc">&nbsp;		if (peek != null) {</b>
+<b class="nc">&nbsp;			next = peek;</b>
+<b class="nc">&nbsp;			peek = null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			next = parent.next();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return next;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() throws X {
+<b class="nc">&nbsp;		parent.remove();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public E peek() throws X {
+<b class="nc">&nbsp;		if (peek == null) {</b>
+<b class="nc">&nbsp;			peek = parent.next();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return peek;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

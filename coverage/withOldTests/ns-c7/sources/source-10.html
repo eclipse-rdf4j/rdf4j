@@ -1,0 +1,469 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TxnManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lmdb</a>
+</div>
+
+<h1>Coverage Summary for Class: TxnManager (org.eclipse.rdf4j.sail.lmdb)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TxnManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/55)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TxnManager$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TxnManager$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TxnManager$Mode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TxnManager$Txn</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/99)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lmdb;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+&nbsp;import static org.lwjgl.system.MemoryStack.stackPush;
+&nbsp;import static org.lwjgl.system.MemoryUtil.NULL;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_renew;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.IdentityHashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.concurrent.locks.StampedLock;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
+&nbsp;import org.lwjgl.PointerBuffer;
+&nbsp;import org.lwjgl.system.MemoryStack;
+&nbsp;
+&nbsp;/**
+&nbsp; * Manager for LMDB transactions.
+&nbsp; */
+&nbsp;class TxnManager {
+&nbsp;
+&nbsp;	private final Mode mode;
+<b class="nc">&nbsp;	private final IdentityHashMap&lt;Txn, Boolean&gt; active = new IdentityHashMap&lt;&gt;();</b>
+&nbsp;	private final long[] pool;
+<b class="nc">&nbsp;	private final StampedLock lock = new StampedLock();</b>
+&nbsp;	private final long env;
+<b class="nc">&nbsp;	private volatile int poolIndex = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	TxnManager(long env, Mode mode) {</b>
+<b class="nc">&nbsp;		this.env = env;</b>
+<b class="nc">&nbsp;		this.mode = mode;</b>
+<b class="nc">&nbsp;		this.pool = mode == Mode.RESET ? new long[128] : null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private long startReadTxn() throws IOException {
+&nbsp;		long readTxn;
+<b class="nc">&nbsp;		try (MemoryStack stack = stackPush()) {</b>
+<b class="nc">&nbsp;			PointerBuffer pp = stack.mallocPointer(1);</b>
+<b class="nc">&nbsp;			E(mdb_txn_begin(env, NULL, MDB_RDONLY, pp));</b>
+<b class="nc">&nbsp;			readTxn = pp.get(0);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return readTxn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Wraps an existing transaction into a txn reference object.
+&nbsp;	 *
+&nbsp;	 * @param txn the existing read or write transactions
+&nbsp;	 * @return the txn reference object
+&nbsp;	 */
+&nbsp;	Txn createTxn(long txn) {
+<b class="nc">&nbsp;		return new Txn(txn) {</b>
+&nbsp;			@Override
+&nbsp;			public void close() {
+&nbsp;				// do nothing
+<b class="nc">&nbsp;			}</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new read-only transaction reference.
+&nbsp;	 *
+&nbsp;	 * @return the new transaction reference
+&nbsp;	 * @throws IOException if the transaction cannot be started for some reason
+&nbsp;	 */
+&nbsp;	Txn createReadTxn() throws IOException {
+<b class="nc">&nbsp;		Txn txnRef = new Txn(createReadTxnInternal());</b>
+<b class="nc">&nbsp;		synchronized (active) {</b>
+<b class="nc">&nbsp;			active.put(txnRef, Boolean.TRUE);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return txnRef;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	long createReadTxnInternal() throws IOException {
+<b class="nc">&nbsp;		long txn = 0;</b>
+<b class="nc">&nbsp;		if (mode == Mode.RESET) {</b>
+<b class="nc">&nbsp;			synchronized (pool) {</b>
+<b class="nc">&nbsp;				if (poolIndex &gt;= 0) {</b>
+<b class="nc">&nbsp;					txn = pool[poolIndex--];</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (txn == 0) {</b>
+<b class="nc">&nbsp;				txn = startReadTxn();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				mdb_txn_renew(txn);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			txn = startReadTxn();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return txn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	&lt;T&gt; T doWith(Transaction&lt;T&gt; transaction) throws IOException {
+<b class="nc">&nbsp;		long stamp = lock.readLock();</b>
+&nbsp;		T ret;
+<b class="nc">&nbsp;		try (MemoryStack stack = stackPush()) {</b>
+<b class="nc">&nbsp;			try (Txn txn = createReadTxn()) {</b>
+<b class="nc">&nbsp;				ret = transaction.exec(stack, txn.get());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} finally {</b>
+<b class="nc">&nbsp;			lock.unlockRead(stamp);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This lock is used to globally block all transactions by using a {@link StampedLock#writeLock()}. This is required
+&nbsp;	 * to block transactions while automatic resizing the memory map.
+&nbsp;	 *
+&nbsp;	 * @return lock for managed transactions
+&nbsp;	 */
+&nbsp;	StampedLock lock() {
+<b class="nc">&nbsp;		return lock;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void activate() throws IOException {
+<b class="nc">&nbsp;		synchronized (active) {</b>
+<b class="nc">&nbsp;			for (Txn txn : active.keySet()) {</b>
+<b class="nc">&nbsp;				txn.setActive(true);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void deactivate() throws IOException {
+<b class="nc">&nbsp;		synchronized (active) {</b>
+<b class="nc">&nbsp;			for (Txn txn : active.keySet()) {</b>
+<b class="nc">&nbsp;				txn.setActive(false);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void reset() throws IOException {
+<b class="nc">&nbsp;		synchronized (active) {</b>
+<b class="nc">&nbsp;			for (Txn txn : active.keySet()) {</b>
+<b class="nc">&nbsp;				txn.reset();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	enum Mode {</b>
+<b class="nc">&nbsp;		RESET,</b>
+<b class="nc">&nbsp;		ABORT,</b>
+<b class="nc">&nbsp;		NONE</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	class Txn implements Closeable, AutoCloseable {
+&nbsp;
+&nbsp;		private long txn;
+&nbsp;		private List&lt;Long&gt; staleTxns;
+&nbsp;		private long version;
+&nbsp;
+<b class="nc">&nbsp;		Txn(long txn) {</b>
+<b class="nc">&nbsp;			this.txn = txn;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		long get() {
+<b class="nc">&nbsp;			return txn;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * A {@link StampedLock#readLock()} should be acquired while working with the transaction. This is required to
+&nbsp;		 * block transactions while automatic resizing the memory map.
+&nbsp;		 *
+&nbsp;		 * @return lock for managed transactions
+&nbsp;		 */
+&nbsp;		StampedLock lock() {
+<b class="nc">&nbsp;			return lock;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void free(long txn) {
+<b class="nc">&nbsp;			switch (mode) {</b>
+&nbsp;			case RESET:
+<b class="nc">&nbsp;				synchronized (pool) {</b>
+<b class="nc">&nbsp;					if (poolIndex &lt; pool.length - 1) {</b>
+<b class="nc">&nbsp;						mdb_txn_reset(txn);</b>
+<b class="nc">&nbsp;						pool[++poolIndex] = txn;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						mdb_txn_abort(txn);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case ABORT:
+<b class="nc">&nbsp;				mdb_txn_abort(txn);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case NONE:
+&nbsp;				break;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() {
+<b class="nc">&nbsp;			synchronized (active) {</b>
+<b class="nc">&nbsp;				active.remove(this);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			free(txn);</b>
+<b class="nc">&nbsp;			if (staleTxns != null) {</b>
+<b class="nc">&nbsp;				for (long staleTxn : staleTxns) {</b>
+<b class="nc">&nbsp;					free(staleTxn);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Marks current transaction as stale as it points to &quot;old&quot; data.
+&nbsp;		 */
+&nbsp;		void reset() throws IOException {
+<b class="nc">&nbsp;			if (staleTxns == null) {</b>
+<b class="nc">&nbsp;				staleTxns = new ArrayList&lt;&gt;(5);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			staleTxns.add(txn);</b>
+<b class="nc">&nbsp;			txn = createReadTxnInternal();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Triggers active state of current and stale transactions.
+&nbsp;		 */
+&nbsp;		void setActive(boolean active) throws IOException {
+<b class="nc">&nbsp;			if (active) {</b>
+<b class="nc">&nbsp;				E(mdb_txn_renew(txn));</b>
+<b class="nc">&nbsp;				version++;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				mdb_txn_reset(txn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (staleTxns != null) {</b>
+<b class="nc">&nbsp;				for (Long staleTxn : staleTxns) {</b>
+<b class="nc">&nbsp;					if (active) {</b>
+<b class="nc">&nbsp;						E(mdb_txn_renew(staleTxn));</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						mdb_txn_reset(staleTxn);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		long version() {
+<b class="nc">&nbsp;			return version;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

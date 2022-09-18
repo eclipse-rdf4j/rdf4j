@@ -1,0 +1,190 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EvaluationStrategyFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: EvaluationStrategyFactory (org.eclipse.rdf4j.query.algebra.evaluation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EvaluationStrategyFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;
+&nbsp;/**
+&nbsp; * Factory for {@link EvaluationStrategy}s.
+&nbsp; */
+&nbsp;public interface EvaluationStrategyFactory {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the number of query solutions the {@link EvaluationStrategy} will keep in main memory before it attempts to
+&nbsp;	 * sync to a temporary disk cache. If set to 0, no disk caching will occur. EvaluationStrategies that provide no
+&nbsp;	 * disk caching functionality are free to ignore this parameter.
+&nbsp;	 *
+&nbsp;	 * @param threshold the number of query solutions that the EvaluationStrategy can cache in main memory before
+&nbsp;	 *                  attempting disk sync.
+&nbsp;	 */
+&nbsp;	void setQuerySolutionCacheThreshold(long threshold);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the number of query solutions the {@link EvaluationStrategy} will keep in main memory before it attempts to
+&nbsp;	 * sync to a temporary disk cache. If set to 0, no disk caching will occur. EvaluationStrategies that provide no
+&nbsp;	 * disk caching functionality are free to ignore this parameter.
+&nbsp;	 */
+&nbsp;	long getQuerySolutionCacheThreshold();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a {@link QueryOptimizerPipeline} to be used for query execution planning by the {@link EvaluationStrategy}.
+&nbsp;	 *
+&nbsp;	 * @param pipeline a {@link QueryOptimizerPipeline}
+&nbsp;	 */
+&nbsp;	void setOptimizerPipeline(QueryOptimizerPipeline pipeline);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the {@link QueryOptimizerPipeline} that this factory will inject into the {@link EvaluationStrategy}, if any.
+&nbsp;	 * If no {@link QueryOptimizerPipeline} is defined, the {@link EvaluationStrategy} itself determines the pipeline.
+&nbsp;	 *
+&nbsp;	 * @return a {@link QueryOptimizerPipeline}, or {@link Optional#empty()} if no pipeline is set on this factory.
+&nbsp;	 */
+&nbsp;	Optional&lt;QueryOptimizerPipeline&gt; getOptimizerPipeline();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the {@link EvaluationStrategy} to use to evaluate queries for the given {@link Dataset} and
+&nbsp;	 * {@link TripleSource}.
+&nbsp;	 *
+&nbsp;	 * @param dataset              the DataSet to evaluate queries against.
+&nbsp;	 * @param tripleSource         the TripleSource to evaluate queries against.
+&nbsp;	 * @param evaluationStatistics the store evaluation statistics to use for query optimization.
+&nbsp;	 * @return an EvaluationStrategy.
+&nbsp;	 */
+&nbsp;	EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+&nbsp;			EvaluationStatistics evaluationStatistics);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the status of the result size tracking for the query plan. Useful to determine which parts of a query
+&nbsp;	 * plan generated the most data.
+&nbsp;	 *
+&nbsp;	 * @return true if result size tracking is enabled.
+&nbsp;	 */
+&nbsp;	default boolean isTrackResultSize() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enable or disable results size tracking for the query plan. Useful to determine which parts of a query plan
+&nbsp;	 * generated the most data.
+&nbsp;	 *
+&nbsp;	 * @param trackResultSize true to enable tracking.
+&nbsp;	 */
+&nbsp;	default void setTrackResultSize(boolean trackResultSize) {
+&nbsp;		// no-op for backwards compatibility
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

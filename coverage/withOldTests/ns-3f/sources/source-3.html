@@ -1,0 +1,769 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryAlgebraUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.util</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryAlgebraUtil (org.eclipse.rdf4j.federated.util)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryAlgebraUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/86)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/197)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryAlgebraUtil$InsertBindingsVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/90)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/205)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.util;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXService;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.NTuple;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.VariableExpr;
+&nbsp;import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.collect.Sets;
+&nbsp;
+&nbsp;/**
+&nbsp; * Various static functions for query handling and parsing (alegbra expression).
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+<b class="nc">&nbsp;public class QueryAlgebraUtil {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(QueryAlgebraUtil.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * returns true iff there is at least one free variable, i.e. there is no binding for any variable
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @return whether there is at least one free variable
+&nbsp;	 */
+&nbsp;	public static boolean hasFreeVars(StatementPattern stmt, BindingSet bindings) {
+<b class="nc">&nbsp;		for (Var var : stmt.getVarList()) {</b>
+<b class="nc">&nbsp;			if (!var.hasValue() &amp;&amp; !bindings.hasBinding(var.getName())) {</b>
+<b class="nc">&nbsp;				return true; // there is at least one free var</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the {@link Value} of the variable which is either taken from the variable itself (bound) or from the
+&nbsp;	 * bindingsset (unbound).
+&nbsp;	 *
+&nbsp;	 * @param var
+&nbsp;	 * @param bindings the bindings, must not be null, use {@link EmptyBindingSet} instead
+&nbsp;	 *
+&nbsp;	 * @return the value or null
+&nbsp;	 */
+&nbsp;	public static Value getVarValue(Var var, BindingSet bindings) {
+<b class="nc">&nbsp;		if (var == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="nc">&nbsp;		} else if (var.hasValue()) {</b>
+<b class="nc">&nbsp;			return var.getValue();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return bindings.getValue(var.getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert the given {@link ArbitraryLengthPath} to a fresh {@link TupleExpr} where all provided bindings are bound.
+&nbsp;	 *
+&nbsp;	 * @param node
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the fresh and bound expression
+&nbsp;	 */
+&nbsp;	public static TupleExpr toTupleExpr(ArbitraryLengthPath node, Set&lt;String&gt; varNames, BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr clone = node.clone();</b>
+<b class="nc">&nbsp;		InsertBindingsVisitor bindingsInserter = new InsertBindingsVisitor(bindings);</b>
+<b class="nc">&nbsp;		bindingsInserter.meetOther(clone);</b>
+<b class="nc">&nbsp;		varNames.addAll(bindingsInserter.freeVars);</b>
+<b class="nc">&nbsp;		return clone;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static StatementPattern toStatementPattern(Statement stmt) {
+<b class="nc">&nbsp;		return toStatementPattern(stmt.getSubject(), stmt.getPredicate(), stmt.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static StatementPattern toStatementPattern(Resource subj, IRI pred, Value obj) {
+<b class="nc">&nbsp;		Var s = subj == null ? new Var(&quot;s&quot;) : new Var(&quot;const_s&quot;, subj);</b>
+<b class="nc">&nbsp;		Var p = pred == null ? new Var(&quot;p&quot;) : new Var(&quot;const_p&quot;, pred);</b>
+<b class="nc">&nbsp;		Var o = obj == null ? new Var(&quot;o&quot;) : new Var(&quot;const_o&quot;, obj);</b>
+&nbsp;		// TODO context
+&nbsp;
+<b class="nc">&nbsp;		return new StatementPattern(s, p, o);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Statement toStatement(StatementPattern stmt) {
+<b class="nc">&nbsp;		return toStatement(stmt, EmptyBindingSet.getInstance());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Statement toStatement(StatementPattern stmt, BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		Value subj = getVarValue(stmt.getSubjectVar(), bindings);</b>
+<b class="nc">&nbsp;		Value pred = getVarValue(stmt.getPredicateVar(), bindings);</b>
+<b class="nc">&nbsp;		Value obj = getVarValue(stmt.getObjectVar(), bindings);</b>
+&nbsp;		// TODO context
+&nbsp;
+<b class="nc">&nbsp;		return FedXUtil.valueFactory().createStatement((Resource) subj, (IRI) pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided statement.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @param filterExpr
+&nbsp;	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
+&nbsp;	 *                   beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query
+&nbsp;	 * @throws IllegalQueryException
+&nbsp;	 */
+&nbsp;	public static TupleExpr selectQuery(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
+&nbsp;			AtomicBoolean evaluated) throws IllegalQueryException {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		TupleExpr expr = constructStatement(stmt, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (varNames.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalQueryException(&quot;SELECT query needs at least one projection!&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				expr = new Filter(expr, FilterUtils.toFilter(filterExpr));</b>
+<b class="nc">&nbsp;				evaluated.set(true);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				log.debug(&quot;Filter could not be evaluated remotely: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;				log.trace(&quot;Details: &quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ProjectionElemList projList = new ProjectionElemList();</b>
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			projList.addElement(new ProjectionElem(var));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		Projection proj = new Projection(expr, projList);</b>
+&nbsp;
+<b class="nc">&nbsp;		return proj;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided {@link ExclusiveGroup}. Note that bindings and filterExpr are applied
+&nbsp;	 * whenever possible.
+&nbsp;	 *
+&nbsp;	 * @param group      the expression for the query
+&nbsp;	 * @param bindings   the bindings to be applied
+&nbsp;	 * @param filterExpr a filter expression or null
+&nbsp;	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
+&nbsp;	 *                   beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query
+&nbsp;	 */
+&nbsp;	public static TupleExpr selectQuery(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
+&nbsp;			AtomicBoolean evaluated) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		List&lt;ExclusiveTupleExpr&gt; stmts = group.getExclusiveExpressions();</b>
+&nbsp;
+&nbsp;		Join join;
+&nbsp;
+<b class="nc">&nbsp;		if (stmts.size() == 2) {</b>
+<b class="nc">&nbsp;			join = new Join(constructJoinArg(stmts.get(0), varNames, bindings),</b>
+<b class="nc">&nbsp;					constructJoinArg(stmts.get(1), varNames, bindings));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			join = new Join();</b>
+<b class="nc">&nbsp;			join.setLeftArg(constructJoinArg(stmts.get(0), varNames, bindings));</b>
+<b class="nc">&nbsp;			Join tmp = join;</b>
+&nbsp;			int idx;
+<b class="nc">&nbsp;			for (idx = 1; idx &lt; stmts.size() - 1; idx++) {</b>
+<b class="nc">&nbsp;				Join _u = new Join();</b>
+<b class="nc">&nbsp;				_u.setLeftArg(constructJoinArg(stmts.get(idx), varNames, bindings));</b>
+<b class="nc">&nbsp;				tmp.setRightArg(_u);</b>
+<b class="nc">&nbsp;				tmp = _u;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			tmp.setRightArg(constructJoinArg(stmts.get(idx), varNames, bindings));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr expr = join;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				expr = new Filter(expr, FilterUtils.toFilter(filterExpr));</b>
+<b class="nc">&nbsp;				evaluated.set(true);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				log.debug(&quot;Filter could not be evaluated remotely: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;				log.trace(&quot;Details:&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ProjectionElemList projList = new ProjectionElemList();</b>
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			projList.addElement(new ProjectionElem(var));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		Projection proj = new Projection(expr, projList);</b>
+&nbsp;
+<b class="nc">&nbsp;		return proj;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query expression for a bound union.
+&nbsp;	 *
+&nbsp;	 * Pattern:
+&nbsp;	 *
+&nbsp;	 * SELECT ?v_1 ?v_2 ?v_N WHERE { { ?v_1 p o } UNION { ?v_2 p o } UNION ... }
+&nbsp;	 *
+&nbsp;	 * Note that the filterExpr is not evaluated at the moment.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param unionBindings
+&nbsp;	 * @param filterExpr
+&nbsp;	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
+&nbsp;	 *                      in beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query
+&nbsp;	 */
+&nbsp;	public static TupleExpr selectQueryBoundUnion(StatementPattern stmt, List&lt;BindingSet&gt; unionBindings,
+&nbsp;			FilterValueExpr filterExpr, Boolean evaluated) {
+&nbsp;
+&nbsp;		// TODO add FILTER expressions
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Union union = new Union();</b>
+<b class="nc">&nbsp;		union.setLeftArg(constructStatementId(stmt, Integer.toString(0), varNames, unionBindings.get(0)));</b>
+<b class="nc">&nbsp;		Union tmp = union;</b>
+&nbsp;		int idx;
+<b class="nc">&nbsp;		for (idx = 1; idx &lt; unionBindings.size() - 1; idx++) {</b>
+<b class="nc">&nbsp;			Union _u = new Union();</b>
+<b class="nc">&nbsp;			_u.setLeftArg(constructStatementId(stmt, Integer.toString(idx), varNames, unionBindings.get(idx)));</b>
+<b class="nc">&nbsp;			tmp.setRightArg(_u);</b>
+<b class="nc">&nbsp;			tmp = _u;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		tmp.setRightArg(constructStatementId(stmt, Integer.toString(idx), varNames, unionBindings.get(idx)));</b>
+&nbsp;
+<b class="nc">&nbsp;		ProjectionElemList projList = new ProjectionElemList();</b>
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			projList.addElement(new ProjectionElem(var));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		Projection proj = new Projection(union, projList);</b>
+&nbsp;
+<b class="nc">&nbsp;		return proj;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for a grouped bound check.
+&nbsp;	 *
+&nbsp;	 * Pattern:
+&nbsp;	 *
+&nbsp;	 * SELECT DISTINCT ?o_1 .. ?o_N WHERE { { s1 p1 ?o_1 FILTER ?o_1=o1 } UNION ... UNION { sN pN ?o_N FILTER ?o_N=oN }}
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param unionBindings
+&nbsp;	 * @return the SELECT query
+&nbsp;	 */
+&nbsp;	public static TupleExpr selectQueryStringBoundCheck(StatementPattern stmt, List&lt;BindingSet&gt; unionBindings) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Union union = new Union();</b>
+<b class="nc">&nbsp;		union.setLeftArg(constructStatementCheckId(stmt, 0, varNames, unionBindings.get(0)));</b>
+<b class="nc">&nbsp;		Union tmp = union;</b>
+&nbsp;		int idx;
+<b class="nc">&nbsp;		for (idx = 1; idx &lt; unionBindings.size() - 1; idx++) {</b>
+<b class="nc">&nbsp;			Union _u = new Union();</b>
+<b class="nc">&nbsp;			_u.setLeftArg(constructStatementCheckId(stmt, idx, varNames, unionBindings.get(idx)));</b>
+<b class="nc">&nbsp;			tmp.setRightArg(_u);</b>
+<b class="nc">&nbsp;			tmp = _u;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		tmp.setRightArg(constructStatementCheckId(stmt, idx, varNames, unionBindings.get(idx)));</b>
+&nbsp;
+<b class="nc">&nbsp;		ProjectionElemList projList = new ProjectionElemList();</b>
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			projList.addElement(new ProjectionElem(var));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		Projection proj = new Projection(union, projList);</b>
+&nbsp;
+<b class="nc">&nbsp;		return proj;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static Union constructInnerUnion(StatementPattern stmt, int outerID, Set&lt;String&gt; varNames,
+&nbsp;			List&lt;BindingSet&gt; bindings) {
+&nbsp;
+<b class="nc">&nbsp;		Union union = new Union();</b>
+<b class="nc">&nbsp;		union.setLeftArg(constructStatementId(stmt, outerID + &quot;_0&quot;, varNames, bindings.get(0)));</b>
+<b class="nc">&nbsp;		Union tmp = union;</b>
+&nbsp;		int idx;
+<b class="nc">&nbsp;		for (idx = 1; idx &lt; bindings.size() - 1; idx++) {</b>
+<b class="nc">&nbsp;			Union _u = new Union();</b>
+<b class="nc">&nbsp;			_u.setLeftArg(constructStatementId(stmt, outerID + &quot;_&quot; + idx, varNames, bindings.get(idx)));</b>
+<b class="nc">&nbsp;			tmp.setRightArg(_u);</b>
+<b class="nc">&nbsp;			tmp = _u;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		tmp.setRightArg(constructStatementId(stmt, outerID + &quot;_&quot; + idx, varNames, bindings.get(idx)));</b>
+&nbsp;
+<b class="nc">&nbsp;		return union;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a TupleExpr from the {@link ExclusiveTupleExpr} that can be used as an argument to a {@link Join}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method can only be used for {@link ExclusiveTupleExpr} that additionally provide
+&nbsp;	 * {@link ExclusiveTupleExprRenderer} capabilities. An exception to this is if the given expression is a
+&nbsp;	 * {@link StatementPattern}, e.g. an {@link ExclusiveStatement}
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param exclusiveExpr
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the fresh {@link TupleExpr} with bindings inserted
+&nbsp;	 */
+&nbsp;	private static TupleExpr constructJoinArg(ExclusiveTupleExpr exclusiveExpr, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		if (exclusiveExpr instanceof StatementPattern) {</b>
+<b class="nc">&nbsp;			return constructStatement((StatementPattern) exclusiveExpr, varNames, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(exclusiveExpr instanceof ExclusiveTupleExprRenderer)) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Cannot render tupl expr of type &quot; + exclusiveExpr.getClass());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return ((ExclusiveTupleExprRenderer) exclusiveExpr).toQueryAlgebra(varNames, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct the statement string, i.e. &quot;s p o . &quot; with bindings inserted wherever possible. Note that the free
+&nbsp;	 * variables are added to the varNames set for further evaluation.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the {@link StatementPattern}
+&nbsp;	 */
+&nbsp;	protected static StatementPattern constructStatement(StatementPattern stmt, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		Var subj = appendVar(stmt.getSubjectVar(), varNames, bindings);</b>
+<b class="nc">&nbsp;		Var pred = appendVar(stmt.getPredicateVar(), varNames, bindings);</b>
+<b class="nc">&nbsp;		Var obj = appendVar(stmt.getObjectVar(), varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new StatementPattern(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct the statement string, i.e. &quot;s p o . &quot; with bindings inserted wherever possible. Variables are renamed
+&nbsp;	 * to &quot;var_&quot;+varId to identify query results in bound queries. Note that the free variables are also added to the
+&nbsp;	 * varNames set for further evaluation.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the {@link StatementPattern}
+&nbsp;	 */
+&nbsp;	protected static StatementPattern constructStatementId(StatementPattern stmt, String varID, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		Var subj = appendVarId(stmt.getSubjectVar(), varID, varNames, bindings);</b>
+<b class="nc">&nbsp;		Var pred = appendVarId(stmt.getPredicateVar(), varID, varNames, bindings);</b>
+<b class="nc">&nbsp;		Var obj = appendVarId(stmt.getObjectVar(), varID, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new StatementPattern(subj, pred, obj);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct the statement string, i.e. &quot;s p ?o_varID FILTER ?o_N=o &quot;. This kind of statement pattern is necessary
+&nbsp;	 * to later on identify available results.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param varID
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the expression
+&nbsp;	 */
+&nbsp;	protected static TupleExpr constructStatementCheckId(StatementPattern stmt, int varID, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		String _varID = Integer.toString(varID);</b>
+<b class="nc">&nbsp;		Var subj = appendVarId(stmt.getSubjectVar(), _varID, varNames, bindings);</b>
+<b class="nc">&nbsp;		Var pred = appendVarId(stmt.getPredicateVar(), _varID, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		Var obj = new Var(&quot;o_&quot; + _varID);</b>
+<b class="nc">&nbsp;		varNames.add(&quot;o_&quot; + _varID);</b>
+&nbsp;
+&nbsp;		Value objValue;
+<b class="nc">&nbsp;		if (stmt.getObjectVar().hasValue()) {</b>
+<b class="nc">&nbsp;			objValue = stmt.getObjectVar().getValue();</b>
+<b class="nc">&nbsp;		} else if (bindings.hasBinding(stmt.getObjectVar().getName())) {</b>
+<b class="nc">&nbsp;			objValue = bindings.getBinding(stmt.getObjectVar().getName()).getValue();</b>
+&nbsp;		} else {
+&nbsp;			// just to make sure that we see an error, will be deleted soon
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Unexpected.&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Compare cmp = new Compare(obj, new ValueConstant(objValue));</b>
+<b class="nc">&nbsp;		cmp.setOperator(CompareOp.EQ);</b>
+<b class="nc">&nbsp;		Filter filter = new Filter(new StatementPattern(subj, pred, obj), cmp);</b>
+&nbsp;
+<b class="nc">&nbsp;		return filter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clone the specified variable and attach bindings.
+&nbsp;	 *
+&nbsp;	 * @param var
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the variable
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	protected static Var appendVar(Var var, Set&lt;String&gt; varNames, BindingSet bindings) {
+<b class="nc">&nbsp;		Var res = var.clone();</b>
+<b class="nc">&nbsp;		if (!var.hasValue()) {</b>
+<b class="nc">&nbsp;			if (bindings.hasBinding(var.getName())) {</b>
+<b class="nc">&nbsp;				res.setValue(bindings.getValue(var.getName()));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				varNames.add(var.getName());</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clone the specified variable and attach bindings, moreover change name of variable by appending &quot;_varId&quot; to it.
+&nbsp;	 *
+&nbsp;	 * @param var
+&nbsp;	 * @param varID
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the variable
+&nbsp;	 */
+&nbsp;	protected static Var appendVarId(Var var, String varID, Set&lt;String&gt; varNames, BindingSet bindings) {
+<b class="nc">&nbsp;		Var res = var.clone();</b>
+<b class="nc">&nbsp;		if (!var.hasValue()) {</b>
+<b class="nc">&nbsp;			if (bindings.hasBinding(var.getName())) {</b>
+<b class="nc">&nbsp;				res.setValue(bindings.getValue(var.getName()));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				String newName = var.getName() + &quot;_&quot; + varID;</b>
+<b class="nc">&nbsp;				varNames.add(newName);</b>
+<b class="nc">&nbsp;				res.setName(newName);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A helper class to insert bindings in the {@link Var} nodes of the given {@link TupleExpr}.
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private static class InsertBindingsVisitor extends AbstractQueryModelVisitor&lt;QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;		private final BindingSet bindings;
+&nbsp;
+<b class="nc">&nbsp;		private final Set&lt;String&gt; freeVars = Sets.newHashSet();</b>
+&nbsp;
+&nbsp;		private InsertBindingsVisitor(BindingSet bindings) {
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.bindings = bindings;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var node) throws QueryEvaluationException {
+<b class="nc">&nbsp;			if (node.hasValue()) {</b>
+<b class="nc">&nbsp;				if (bindings.hasBinding(node.getName())) {</b>
+<b class="nc">&nbsp;					node.setValue(bindings.getValue(node.getName()));</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				freeVars.add(node.getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			super.meet(node);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the collection of free variables in the given {@link TupleExpr}.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr the expression
+&nbsp;	 * @return the free variables
+&nbsp;	 * @see VariableExpr
+&nbsp;	 */
+&nbsp;	public static Collection&lt;String&gt; getFreeVars(TupleExpr tupleExpr) {
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof FedXTupleExpr) {</b>
+<b class="nc">&nbsp;			return ((FedXTupleExpr) tupleExpr).getFreeVars();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof VariableExpr) {</b>
+<b class="nc">&nbsp;			return ((VariableExpr) tupleExpr).getFreeVars();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// determine the number of free variables in a UNION or Join
+<b class="nc">&nbsp;		if (tupleExpr instanceof NTuple) {</b>
+<b class="nc">&nbsp;			HashSet&lt;String&gt; freeVars = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			NTuple ntuple = (NTuple) tupleExpr;</b>
+<b class="nc">&nbsp;			for (TupleExpr t : ntuple.getArgs()) {</b>
+<b class="nc">&nbsp;				freeVars.addAll(getFreeVars(t));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return freeVars;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof FedXService) {</b>
+<b class="nc">&nbsp;			return ((FedXService) tupleExpr).getFreeVars();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof Service) {</b>
+<b class="nc">&nbsp;			return ((Service) tupleExpr).getServiceVars();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// can happen in SERVICE nodes, if they cannot be optimized
+<b class="nc">&nbsp;		if (tupleExpr instanceof StatementPattern) {</b>
+<b class="nc">&nbsp;			List&lt;String&gt; freeVars = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementPattern st = (StatementPattern) tupleExpr;</b>
+<b class="nc">&nbsp;			if (st.getSubjectVar().getValue() == null) {</b>
+<b class="nc">&nbsp;				freeVars.add(st.getSubjectVar().getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (st.getPredicateVar().getValue() == null) {</b>
+<b class="nc">&nbsp;				freeVars.add(st.getPredicateVar().getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (st.getObjectVar().getValue() == null) {</b>
+<b class="nc">&nbsp;				freeVars.add(st.getObjectVar().getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return freeVars;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof Projection) {</b>
+<b class="nc">&nbsp;			Projection p = (Projection) tupleExpr;</b>
+<b class="nc">&nbsp;			return new ArrayList&lt;&gt;(p.getBindingNames());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof BindingSetAssignment) {</b>
+<b class="nc">&nbsp;			return new ArrayList&lt;&gt;();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof Extension) {</b>
+&nbsp;			// for a BIND extension in our cost model we use the binding names
+<b class="nc">&nbsp;			return new ArrayList&lt;&gt;(tupleExpr.getBindingNames());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof ArbitraryLengthPath) {</b>
+<b class="nc">&nbsp;			return getFreeVars(((ArbitraryLengthPath) tupleExpr).getPathExpression());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleExpr instanceof LeftJoin) {</b>
+<b class="nc">&nbsp;			LeftJoin l = (LeftJoin) tupleExpr;</b>
+<b class="nc">&nbsp;			HashSet&lt;String&gt; freeVars = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			freeVars.addAll(getFreeVars(l.getLeftArg()));</b>
+<b class="nc">&nbsp;			freeVars.addAll(getFreeVars(l.getRightArg()));</b>
+<b class="nc">&nbsp;			return freeVars;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		log.debug(&quot;Type &quot; + tupleExpr.getClass().getSimpleName()</b>
+&nbsp;				+ &quot; not supported for computing free vars. If you run into this, please report a bug.&quot;);
+<b class="nc">&nbsp;		return new ArrayList&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

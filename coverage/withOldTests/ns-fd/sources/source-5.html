@@ -1,0 +1,420 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TupleQueryResultConverter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.dao.support.operation</a>
+</div>
+
+<h1>Coverage Summary for Class: TupleQueryResultConverter (org.eclipse.rdf4j.spring.dao.support.operation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TupleQueryResultConverter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.dao.support.operation;
+&nbsp;
+&nbsp;import static java.util.stream.Collectors.mapping;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.spring.dao.exception.mapper.ExceptionMapper.mapException;
+&nbsp;import static org.eclipse.rdf4j.spring.dao.support.operation.OperationUtils.require;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.stream.Collector;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.BindingSetMapper;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.MappingPostProcessor;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.TupleQueryResultMapper;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class TupleQueryResultConverter {
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;	private TupleQueryResult tupleQueryResult;
+&nbsp;
+<b class="nc">&nbsp;	public TupleQueryResultConverter(TupleQueryResult result) {</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(result);</b>
+<b class="nc">&nbsp;		this.tupleQueryResult = result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Passes the {@link TupleQueryResult} to the consumer and closes the result afterwards.
+&nbsp;	 */
+&nbsp;	public void consumeResult(Consumer&lt;TupleQueryResult&gt; consumer) {
+&nbsp;		try {
+<b class="nc">&nbsp;			consumer.accept(tupleQueryResult);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Caught execption while processing TupleQueryResult&quot;, e);</b>
+<b class="nc">&nbsp;			throw mapException(&quot;Error processing TupleQueryResult&quot;, e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			tupleQueryResult.close();</b>
+<b class="nc">&nbsp;			tupleQueryResult = null;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Applies the function to the {@link TupleQueryResult} and closes the result afterwards.
+&nbsp;	 */
+&nbsp;	public &lt;T&gt; T applyToResult(Function&lt;TupleQueryResult, T&gt; function) {
+&nbsp;		try {
+<b class="nc">&nbsp;			return function.apply(tupleQueryResult);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Caught execption while processing TupleQueryResult&quot;, e);</b>
+<b class="nc">&nbsp;			throw mapException(&quot;Error processing TupleQueryResult&quot;, e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			tupleQueryResult.close();</b>
+<b class="nc">&nbsp;			tupleQueryResult = null;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains a stream of {@link BindingSet}s. The result is completely consumed and closed when the stream is
+&nbsp;	 * returned.
+&nbsp;	 */
+&nbsp;	public Stream&lt;BindingSet&gt; toStream() {
+<b class="nc">&nbsp;		return applyToResult(r -&gt; getBindingStream(r).collect(Collectors.toList()).stream());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T&gt; Stream&lt;T&gt; toStreamInternal(Function&lt;BindingSet, T&gt; mapper) {
+<b class="nc">&nbsp;		return applyToResult(</b>
+<b class="nc">&nbsp;				result -&gt; getBindingStream(result)</b>
+<b class="nc">&nbsp;						.map(mapper)</b>
+<b class="nc">&nbsp;						.filter(Objects::nonNull)</b>
+<b class="nc">&nbsp;						.collect(Collectors.toList())</b>
+<b class="nc">&nbsp;						.stream());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains a {@link Stream} of mapped query results. The result is completely consumed and closed when the stream is
+&nbsp;	 * returned. Any null values are filterd from the resulting stream.
+&nbsp;	 */
+&nbsp;	public &lt;T&gt; Stream&lt;T&gt; toStream(BindingSetMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return toStreamInternal(mapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains a {@link Stream} of mapped query results, using the postprocessor to map it again. Any null values are
+&nbsp;	 * filtered from the resulting stream.
+&nbsp;	 */
+&nbsp;	public &lt;T, O&gt; Stream&lt;O&gt; toStream(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, MappingPostProcessor&lt;T, O&gt; postProcessor) {
+<b class="nc">&nbsp;		return toStreamInternal(andThenOrElseNull(mapper, postProcessor));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the whole {@link TupleQueryResult} to one object, which may be null. */
+&nbsp;	public &lt;T&gt; T toSingletonMaybeOfWholeResult(TupleQueryResultMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return applyToResult(mapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the whole {@link TupleQueryResult} to one {@link Optional}. */
+&nbsp;	public &lt;T&gt; Optional&lt;T&gt; toSingletonOptionalOfWholeResult(TupleQueryResultMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return Optional.ofNullable(toSingletonMaybeOfWholeResult(mapper));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the whole {@link TupleQueryResult} to an object, throwing an exception if the mapper returns
+&nbsp;	 * &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 *
+&nbsp;	 * @throws org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException
+&nbsp;	 */
+&nbsp;	public &lt;T&gt; T toSingletonOfWholeResult(TupleQueryResultMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return require(toSingletonOptionalOfWholeResult(mapper));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the first {@link BindingSet} in the result if one exists, throwing an exception if there are more. Returns
+&nbsp;	 * null if there are no results or if there is one result that is mapped to null by the specified mapper.
+&nbsp;	 *
+&nbsp;	 * @throws org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException
+&nbsp;	 */
+&nbsp;	public &lt;T&gt; T toSingletonMaybe(BindingSetMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return mapAndCollect(mapper, OperationUtils.toSingletonMaybe());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the first {@link BindingSet} in the result, throwing an exception if there are more than one. Returns an
+&nbsp;	 * Optional, which is empty if there are no results or if there is one result that is mapped to null by the
+&nbsp;	 * specified mapper.
+&nbsp;	 */
+&nbsp;	public &lt;T&gt; Optional&lt;T&gt; toSingletonOptional(BindingSetMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return Optional.ofNullable(toSingletonMaybe(mapper));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the first {@link BindingSet} in the result, throwing an exception if there are no results or more than one.
+&nbsp;	 *
+&nbsp;	 * @throws org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException
+&nbsp;	 */
+&nbsp;	public &lt;T&gt; T toSingleton(BindingSetMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return require(toSingletonOptional(mapper));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the first {@link BindingSet} in the result if one exists, throwing an exception if there are more.
+&nbsp;	 *
+&nbsp;	 * @throws org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException
+&nbsp;	 */
+&nbsp;	public &lt;T, O&gt; O toSingletonMaybe(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, MappingPostProcessor&lt;T, O&gt; postProcessor) {
+<b class="nc">&nbsp;		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), OperationUtils.toSingletonMaybe());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public &lt;T, O&gt; Optional&lt;O&gt; toSingletonOptional(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, MappingPostProcessor&lt;T, O&gt; postProcessor) {
+<b class="nc">&nbsp;		return Optional.ofNullable(toSingletonMaybe(mapper, postProcessor));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the first {@link BindingSet} in the result, throwing an exception if there are no results or more than one.
+&nbsp;	 *
+&nbsp;	 * @throws org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException
+&nbsp;	 */
+&nbsp;	public &lt;T, O&gt; O toSingleton(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, MappingPostProcessor&lt;T, O&gt; postProcessor) {
+<b class="nc">&nbsp;		return require(toSingletonOptional(mapper, postProcessor));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public &lt;T, A, R&gt; R mapAndCollect(Function&lt;BindingSet, T&gt; mapper, Collector&lt;T, A, R&gt; collector) {
+<b class="nc">&nbsp;		return applyToResult(</b>
+<b class="nc">&nbsp;				result -&gt; getBindingStream(result)</b>
+<b class="nc">&nbsp;						.map(mapper)</b>
+<b class="nc">&nbsp;						.filter(Objects::nonNull)</b>
+<b class="nc">&nbsp;						.collect(collector));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link List}. */
+&nbsp;	public &lt;T&gt; List&lt;T&gt; toList(BindingSetMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return mapAndCollect(mapper, Collectors.toList());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link List}. */
+&nbsp;	public &lt;T, O&gt; List&lt;O&gt; toList(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, MappingPostProcessor&lt;T, O&gt; postProcessor) {
+<b class="nc">&nbsp;		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), Collectors.toList());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link Set}. */
+&nbsp;	public &lt;T&gt; Set&lt;T&gt; toSet(BindingSetMapper&lt;T&gt; mapper) {
+<b class="nc">&nbsp;		return mapAndCollect(mapper, Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link Set}. */
+&nbsp;	public &lt;T, O&gt; Set&lt;O&gt; toSet(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, MappingPostProcessor&lt;T, O&gt; postProcessor) {
+<b class="nc">&nbsp;		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the query result to a {@link Map}, throwing an Exception if there are multiple values for one key.
+&nbsp;	 */
+&nbsp;	public &lt;K, V&gt; Map&lt;K, V&gt; toMap(
+&nbsp;			Function&lt;BindingSet, K&gt; keyMapper, Function&lt;BindingSet, V&gt; valueMapper) {
+<b class="nc">&nbsp;		return mapAndCollect(Function.identity(), Collectors.toMap(keyMapper, valueMapper));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link Map} of {@link Set}s. */
+&nbsp;	public &lt;K, V&gt; Map&lt;K, Set&lt;V&gt;&gt; toMapOfSet(
+&nbsp;			Function&lt;BindingSet, K&gt; keyMapper, Function&lt;BindingSet, V&gt; valueMapper) {
+<b class="nc">&nbsp;		return mapAndCollect(</b>
+<b class="nc">&nbsp;				Function.identity(),</b>
+<b class="nc">&nbsp;				Collectors.groupingBy(</b>
+<b class="nc">&nbsp;						keyMapper, Collectors.mapping(valueMapper, Collectors.toSet())));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link Map} of {@link List}s. */
+&nbsp;	public &lt;K, V&gt; Map&lt;K, List&lt;V&gt;&gt; toMapOfList(
+&nbsp;			Function&lt;BindingSet, K&gt; keyMapper, Function&lt;BindingSet, V&gt; valueMapper) {
+<b class="nc">&nbsp;		return mapAndCollect(</b>
+<b class="nc">&nbsp;				Function.identity(),</b>
+<b class="nc">&nbsp;				Collectors.groupingBy(</b>
+<b class="nc">&nbsp;						keyMapper, Collectors.mapping(valueMapper, Collectors.toList())));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the query result to a {@link Map}, throwing an Exception if there are multiple values for one key.
+&nbsp;	 */
+&nbsp;	public &lt;T, K, V&gt; Map&lt;K, V&gt; toMap(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, Function&lt;T, K&gt; keyMapper, Function&lt;T, V&gt; valueMapper) {
+<b class="nc">&nbsp;		return mapAndCollect(mapper, Collectors.toMap(keyMapper, valueMapper));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the query result to a {@link Map}, throwing an Exception if there are multiple values for one key.
+&nbsp;	 */
+&nbsp;	public &lt;K, V&gt; Map&lt;K, V&gt; toMap(Function&lt;BindingSet, Map.Entry&lt;K, V&gt;&gt; entryMapper) {
+<b class="nc">&nbsp;		return mapAndCollect(</b>
+<b class="nc">&nbsp;				Function.identity(),</b>
+<b class="nc">&nbsp;				Collectors.toMap(</b>
+<b class="nc">&nbsp;						bs -&gt; entryMapper.apply(bs).getKey(),</b>
+<b class="nc">&nbsp;						bs -&gt; entryMapper.apply(bs).getValue()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link Map} of {@link Set}s. */
+&nbsp;	public &lt;T, K, V&gt; Map&lt;K, Set&lt;V&gt;&gt; toMapOfSet(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, Function&lt;T, K&gt; keyMapper, Function&lt;T, V&gt; valueMapper) {
+<b class="nc">&nbsp;		return mapAndCollect(</b>
+<b class="nc">&nbsp;				mapper, Collectors.groupingBy(keyMapper, mapping(valueMapper, Collectors.toSet())));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Maps the query result to a {@link Map} of {@link List}s. */
+&nbsp;	public &lt;T, K, V&gt; Map&lt;K, List&lt;V&gt;&gt; toMapOfList(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, Function&lt;T, K&gt; keyMapper, Function&lt;T, V&gt; valueMapper) {
+<b class="nc">&nbsp;		return mapAndCollect(</b>
+&nbsp;				mapper,
+<b class="nc">&nbsp;				Collectors.groupingBy(keyMapper, mapping(valueMapper, Collectors.toList())));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If the result has only one empty binding set, this method returns an empty stream, otherwise the stream of
+&nbsp;	 * BindingSets
+&nbsp;	 */
+&nbsp;	public Stream&lt;BindingSet&gt; getBindingStream(TupleQueryResult result) {
+<b class="nc">&nbsp;		if (!result.hasNext()) {</b>
+<b class="nc">&nbsp;			return Stream.empty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		BindingSet first = result.next();</b>
+<b class="nc">&nbsp;		if (!result.hasNext() &amp;&amp; first.size() == 0) {</b>
+<b class="nc">&nbsp;			return Stream.empty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Stream.concat(Stream.of(first), result.stream());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Executes &lt;code&gt;mapper.andThen(postProcessor)&lt;/code&gt; unless the result of &lt;code&gt;mapper&lt;/code&gt; is null, in which
+&nbsp;	 * case the result is &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 */
+&nbsp;	private &lt;T, O&gt; Function&lt;BindingSet, O&gt; andThenOrElseNull(
+&nbsp;			BindingSetMapper&lt;T&gt; mapper, MappingPostProcessor&lt;T, O&gt; postProcessor) {
+<b class="nc">&nbsp;		return bindingSet -&gt; Optional.ofNullable(mapper.apply(bindingSet))</b>
+<b class="nc">&nbsp;				.map(postProcessor)</b>
+<b class="nc">&nbsp;				.orElse(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

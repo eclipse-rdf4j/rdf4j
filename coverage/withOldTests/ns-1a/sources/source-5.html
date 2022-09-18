@@ -1,0 +1,171 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Platform</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.platform</a>
+</div>
+
+<h1>Coverage Summary for Class: Platform (org.eclipse.rdf4j.common.platform)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">Platform</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.platform;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;
+&nbsp;/**
+&nbsp; * The Platform interface defines methods that are expected to differ slightly between operating systems, e.g. methods
+&nbsp; * for opening local files, storing application data, etc.
+&nbsp; */
+&nbsp;public interface Platform {
+&nbsp;
+&nbsp;	String APPDATA_BASEDIR_PROPERTY = &quot;org.eclipse.rdf4j.appdata.basedir&quot;;
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	String OLD_DATADIR_PROPERTY = &quot;info.aduna.platform.appdata.basedir&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a descriptive name for this platform.
+&nbsp;	 *
+&nbsp;	 * @return name of the platform
+&nbsp;	 */
+&nbsp;	String getName();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the operating system dependent application data directory.
+&nbsp;	 *
+&nbsp;	 * @return application directory
+&nbsp;	 */
+&nbsp;	File getOSApplicationDataDir();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the operating system dependent application data directory. This will be a sub-directory of the directory
+&nbsp;	 * returned by the no-argument version of this method.
+&nbsp;	 *
+&nbsp;	 * @param applicationName name of the application
+&nbsp;	 * @return application directory
+&nbsp;	 */
+&nbsp;	File getOSApplicationDataDir(String applicationName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the directory for the current user.
+&nbsp;	 *
+&nbsp;	 * @return the current user home directory
+&nbsp;	 */
+&nbsp;	File getUserHome();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the directory in which Aduna applications can store their application-dependent data, returns
+&nbsp;	 * &#39;getOSApplicationDataDir&#39; unless the system property &quot;aduna.platform.applicationdata.dir&quot; has been set.
+&nbsp;	 *
+&nbsp;	 * @return the Aduna-specific application data directory
+&nbsp;	 */
+&nbsp;	File getApplicationDataDir();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the directory in which a specific application can store all its application-dependent data. This will be
+&nbsp;	 * a sub-directory of the directory returned by the no-argument version of this method. Note: the directory might
+&nbsp;	 * not exist yet.
+&nbsp;	 *
+&nbsp;	 * @see #getApplicationDataDir()
+&nbsp;	 * @param applicationName the name of the application for which to determine the directory
+&nbsp;	 * @return an application-specific data directory
+&nbsp;	 */
+&nbsp;	File getApplicationDataDir(String applicationName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the directory relative to getApplicationDataDir() for the specified application.
+&nbsp;	 *
+&nbsp;	 * @param applicationName the name of the application
+&nbsp;	 * @return the directory relative to getApplicationDataDir() for the specified application
+&nbsp;	 */
+&nbsp;	String getRelativeApplicationDataDir(String applicationName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if case is preserved
+&nbsp;	 *
+&nbsp;	 * @return boolean
+&nbsp;	 */
+&nbsp;	boolean dataDirPreserveCase();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if whitespace is replaced
+&nbsp;	 *
+&nbsp;	 * @return boolean
+&nbsp;	 */
+&nbsp;	boolean dataDirReplaceWhitespace();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if colon is replaced
+&nbsp;	 *
+&nbsp;	 * @return boolean
+&nbsp;	 */
+&nbsp;	boolean dataDirReplaceColon();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

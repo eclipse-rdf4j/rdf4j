@@ -1,0 +1,123 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExclusiveTupleExprRenderer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: ExclusiveTupleExprRenderer (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">ExclusiveTupleExprRenderer</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;
+&nbsp;/**
+&nbsp; * A specialization of {@link ExclusiveTupleExpr} which provides definitions how the expressions can be rendered to a
+&nbsp; * sub-query.
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * This is required for the evaluation of sub queries.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public interface ExclusiveTupleExprRenderer extends ExclusiveTupleExpr {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a SPARQL string representation of this expression that can be inserted into a SELECT query.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Implementations are required to create a valid query string for this expression where the given bindings are
+&nbsp;	 * inserted.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param varNames the set of resulting (unbound) variables from this expression
+&nbsp;	 * @param bindings the optional input bindings
+&nbsp;	 * @return the query string part
+&nbsp;	 */
+&nbsp;	String toQueryString(Set&lt;String&gt; varNames, BindingSet bindings);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a SPARQL algebra representation of this expression that can be inserted into a SELECT {@link TupleExpr}
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Implementations are required to create a new equivalent expression or clone, where any provided input bindings
+&nbsp;	 * are inserted. The free variable names after insertion need to be added to the provided set.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param varNames the set of resulting (unbound) variables from this expression
+&nbsp;	 * @param bindings the input bindings that need to be inserted
+&nbsp;	 * @return the algebra expression
+&nbsp;	 */
+&nbsp;	TupleExpr toQueryAlgebra(Set&lt;String&gt; varNames, BindingSet bindings);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,397 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXStatementPattern</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXStatementPattern (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXStatementPattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/66)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">FedXStatementPattern$UpperLimitNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/71)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class providing all common functionality for FedX StatementPatterns
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see StatementSourcePattern
+&nbsp; * @see ExclusiveStatement
+&nbsp; *
+&nbsp; */
+&nbsp;public abstract class FedXStatementPattern extends StatementPattern
+&nbsp;		implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr {
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FedXStatementPattern.class);</b>
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 6588020780262348806L;
+&nbsp;
+<b class="nc">&nbsp;	protected final List&lt;StatementSource&gt; statementSources = new ArrayList&lt;&gt;();</b>
+&nbsp;	protected final String id;
+&nbsp;	protected final QueryInfo queryInfo;
+<b class="nc">&nbsp;	protected final List&lt;String&gt; freeVars = new ArrayList&lt;&gt;(3);</b>
+<b class="nc">&nbsp;	protected FilterValueExpr filterExpr = null;</b>
+<b class="nc">&nbsp;	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as</b>
+&nbsp;	// additional bindings
+<b class="nc">&nbsp;	protected long upperLimit = -1; // if set to a positive number, this upper limit is applied to any subquery</b>
+&nbsp;
+&nbsp;	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
+<b class="nc">&nbsp;		super(node.getScope(), node.getSubjectVar().clone(), node.getPredicateVar().clone(),</b>
+<b class="nc">&nbsp;				node.getObjectVar().clone(), node.getContextVar() != null ? node.getContextVar().clone() : null);</b>
+<b class="nc">&nbsp;		this.id = NodeFactory.getNextId();</b>
+<b class="nc">&nbsp;		this.queryInfo = queryInfo;</b>
+<b class="nc">&nbsp;		initFreeVars();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		super.visitChildren(visitor);</b>
+<b class="nc">&nbsp;		for (StatementSource s : sort(statementSources)) {</b>
+<b class="nc">&nbsp;			s.visit(visitor);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (boundFilters != null) {</b>
+<b class="nc">&nbsp;			BoundFiltersNode.visit(visitor, boundFilters);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (upperLimit &gt; 0) {</b>
+<b class="nc">&nbsp;			new UpperLimitNode(upperLimit).visit(visitor);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr != null) {</b>
+<b class="nc">&nbsp;			filterExpr.visit(visitor);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		visitor.meetOther(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void initFreeVars() {
+<b class="nc">&nbsp;		if (getSubjectVar().getValue() == null) {</b>
+<b class="nc">&nbsp;			freeVars.add(getSubjectVar().getName());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getPredicateVar().getValue() == null) {</b>
+<b class="nc">&nbsp;			freeVars.add(getPredicateVar().getName());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getObjectVar().getValue() == null) {</b>
+<b class="nc">&nbsp;			freeVars.add(getObjectVar().getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int getFreeVarCount() {
+<b class="nc">&nbsp;		return freeVars.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getFreeVars() {
+<b class="nc">&nbsp;		return freeVars;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryInfo getQueryInfo() {
+<b class="nc">&nbsp;		return this.queryInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasFreeVarsFor(BindingSet bindings) {
+<b class="nc">&nbsp;		for (String var : freeVars) {</b>
+<b class="nc">&nbsp;			if (!bindings.hasBinding(var)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;StatementSource&gt; getStatementSources() {
+<b class="nc">&nbsp;		return statementSources;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getSourceCount() {
+<b class="nc">&nbsp;		return statementSources.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FilterValueExpr getFilterExpr() {
+<b class="nc">&nbsp;		return filterExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet getBoundFilters() {
+<b class="nc">&nbsp;		return this.boundFilters;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasFilter() {
+<b class="nc">&nbsp;		return filterExpr != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addFilterExpr(FilterExpr expr) {
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr == null) {</b>
+<b class="nc">&nbsp;			filterExpr = expr;</b>
+<b class="nc">&nbsp;		} else if (filterExpr instanceof ConjunctiveFilterExpr) {</b>
+<b class="nc">&nbsp;			((ConjunctiveFilterExpr) filterExpr).addExpression(expr);</b>
+<b class="nc">&nbsp;		} else if (filterExpr instanceof FilterExpr) {</b>
+<b class="nc">&nbsp;			filterExpr = new ConjunctiveFilterExpr((FilterExpr) filterExpr, expr);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Unexpected type: &quot; + filterExpr.getClass().getCanonicalName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addBoundFilter(String varName, Value value) {
+&nbsp;
+<b class="nc">&nbsp;		if (!freeVars.contains(varName)) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;Invalid call to addBoundFilter: variable &quot; + varName + &quot; is not known as a free variable&quot;);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// lazy initialization of bound filters
+<b class="nc">&nbsp;		if (boundFilters == null) {</b>
+<b class="nc">&nbsp;			boundFilters = new QueryBindingSet();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// visit Var nodes and set value for matching var names
+<b class="nc">&nbsp;		if (getSubjectVar().getName().equals(varName)) {</b>
+<b class="nc">&nbsp;			getSubjectVar().setValue(value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getPredicateVar().getName().equals(varName)) {</b>
+<b class="nc">&nbsp;			getPredicateVar().setValue(value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getObjectVar().getName().equals(varName)) {</b>
+<b class="nc">&nbsp;			getObjectVar().setValue(value);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boundFilters.addBinding(varName, value);</b>
+&nbsp;
+<b class="nc">&nbsp;		freeVars.remove(varName);</b>
+&nbsp;
+&nbsp;		// XXX recheck owned source if it still can deliver results, otherwise prune it
+&nbsp;		// optimization: keep result locally for this query
+&nbsp;		// if no free vars AND hasResults =&gt; replace by TrueNode to avoid additional remote requests
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the upper limit for this statement expression (i.e. applied in the evaluation to individual subqueries of
+&nbsp;	 * this expr)
+&nbsp;	 *
+&nbsp;	 * @param upperLimit the upper limit, a negative number means unlimited
+&nbsp;	 */
+&nbsp;	public void setUpperLimit(long upperLimit) {
+<b class="nc">&nbsp;		this.upperLimit = upperLimit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the upper limit or a negative number (meaning no LIMIT)
+&nbsp;	 */
+&nbsp;	public long getUpperLimit() {
+<b class="nc">&nbsp;		return this.upperLimit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private List&lt;StatementSource&gt; sort(List&lt;StatementSource&gt; stmtSources) {
+<b class="nc">&nbsp;		List&lt;StatementSource&gt; res = new ArrayList&lt;&gt;(stmtSources);</b>
+<b class="nc">&nbsp;		res.sort(Comparator.comparing((StatementSource o) -&gt; o.id));</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static class UpperLimitNode extends AbstractQueryModelNode {
+&nbsp;
+&nbsp;		private static final long serialVersionUID = -1331709574582152474L;
+&nbsp;
+&nbsp;		private final long upperLimit;
+&nbsp;
+&nbsp;		public UpperLimitNode(long upperLimit) {
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.upperLimit = upperLimit;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String getSignature() {
+<b class="nc">&nbsp;			return &quot;Upper Limit: &quot; + upperLimit;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="nc">&nbsp;			visitor.meetOther(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X {
+&nbsp;			// no-op
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

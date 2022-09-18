@@ -1,0 +1,649 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SD</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: SD (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SD</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/39)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Namespace Sparql-service-description. Prefix: {@code &lt;http://www.w3.org/ns/sparql-service-description#&gt;}
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-service-description/&quot;&gt;SPARQL 1.1 Service Description&lt;/a&gt;
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class SD {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#}
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/ns/sparql-service-description#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@code sd}
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;sd&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the SPARQL Service Description namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Aggregate
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#Aggregate}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:Aggregate represents an aggregate that may be used in a SPARQL aggregate query (for instance in
+&nbsp;	 * a HAVING clause or SELECT expression) besides the standard list of supported aggregates COUNT, SUM, MIN, MAX,
+&nbsp;	 * AVG, GROUP_CONCAT, and SAMPLE.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#Aggregate&quot;&gt;Aggregate&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI AGGREGATE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * available graph descriptions
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#availableGraphs}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a description of the graphs which are allowed in the construction of a
+&nbsp;	 * dataset either via the SPARQL Protocol, with FROM/FROM NAMED clauses in a query, or with USING/USING NAMED in an
+&nbsp;	 * update request, if the service limits the scope of dataset construction.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#availableGraphs&quot;&gt;availableGraphs&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI AVAILBLE_GRAPHS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Basic Federated Query
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#BasicFederatedQuery}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:BasicFederatedQuery, when used as the object of the sd:feature property, indicates that the SPARQL service
+&nbsp;	 * supports basic federated query using the SERVICE keyword as defined by SPARQL 1.1 Federation Extensions.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#BasicFederatedQuery&quot;&gt;BasicFederatedQuery &lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI BASIC_FEDERATED_QUERY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Dataset
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#Dataset}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:Dataset represents a RDF Dataset comprised of a default graph and zero or more named graphs.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#Dataset&quot;&gt;Dataset&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI DATASET;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * default dataset description
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#defaultDataset}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a description of the default dataset available when no explicit dataset is
+&nbsp;	 * specified in the query, update request or via protocol parameters.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#defaultDataset&quot;&gt;defaultDataset&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI DEFAULT_DATASET;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * default entailment regime
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#defaultEntailmentRegime}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service with a resource representing an entailment regime used for basic graph pattern
+&nbsp;	 * matching. This property is intended for use when a single entailment regime by default applies to all graphs in
+&nbsp;	 * the default dataset of the service. In situations where a different entailment regime applies to a specific graph
+&nbsp;	 * in the dataset, the sd:entailmentRegime property should be used to indicate this fact in the description of that
+&nbsp;	 * graph.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#defaultEntailmentRegime&quot;&gt;
+&nbsp;	 *      defaultEntailmentRegime&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI DEFAULT_ENTAILMENT_REGIME;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * default graph
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#defaultGraph}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Dataset to the description of its default graph.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#defaultGraph&quot;&gt;defaultGraph&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI DEFAULT_GRAPH;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * default supported entailment profile
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#defaultSupportedEntailmentProfile}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service with a resource representing a supported profile of the default entailment
+&nbsp;	 * regime (as declared by sd:defaultEntailmentRegime).
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#defaultSupportedEntailmentProfile&quot;&gt;
+&nbsp;	 *      defaultSupportedEntailmentProfile&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI DEFAULT_SUPPORTED_ENTAILMENT_PROFILE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Dereferences URIs
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#DereferencesURIs}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:DereferencesURIs, when used as the object of the sd:feature property, indicates that a SPARQL service will
+&nbsp;	 * dereference URIs used in FROM/FROM NAMED and USING/USING NAMED clauses and use the resulting RDF in the dataset
+&nbsp;	 * during query evaluation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#DereferencesURIs&quot;&gt;DereferencesURIs&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI DEREFERENCES_URIS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Empty Graphs
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#EmptyGraphs}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:EmptyGraphs, when used as the object of the sd:feature property, indicates that the underlying graph store
+&nbsp;	 * supports empty graphs. A graph store that supports empty graphs MUST NOT remove graphs that are left empty after
+&nbsp;	 * triples are removed from them.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#EmptyGraphs&quot;&gt;EmptyGraphs&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI EMPTY_GRAPHS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * endpoint
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#endpoint}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The SPARQL endpoint of an sd:Service that implements the SPARQL Protocol service. The object of the sd:endpoint
+&nbsp;	 * property is an IRI.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#endpoint&quot;&gt;endpoint&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI ENDPOINT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Entailment Profile
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#EntailmentProfile}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:EntailmentProfile represents a profile of an entailment regime. An entailment profile MAY
+&nbsp;	 * impose restrictions on what constitutes valid RDF with respect to entailment.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#EntailmentProfile&quot;&gt;EntailmentProfile&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI ENTAILMENT_PROFILE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Entailment Regime
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#EntailmentRegime}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:EntailmentRegime represents an entailment regime used in basic graph pattern matching (as
+&nbsp;	 * described by SPARQL 1.1 Query Language).
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#EntailmentRegime&quot;&gt;EntailmentRegime&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI ENTAILMENT_REGIME_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * entailment regime
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#entailmentRegime}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates a named graph description with a resource representing an entailment regime used for basic graph pattern
+&nbsp;	 * matching over that graph.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#entailmentRegime&quot;&gt;entailmentRegime&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI ENTAILMENT_REGIME_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * extension aggregate
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#extensionAggregate}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to an aggregate that may be used in a SPARQL aggregate query (for instance in a
+&nbsp;	 * HAVING clause or SELECT expression) besides the standard list of supported aggregates COUNT, SUM, MIN, MAX, AVG,
+&nbsp;	 * GROUP_CONCAT, and SAMPLE
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#extensionAggregate&quot;&gt;extensionAggregate &lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI EXTENSION_AGGREGATE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * extension function
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#extensionFunction}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a function that may be used in a SPARQL SELECT expression or a FILTER,
+&nbsp;	 * HAVING, GROUP BY, ORDER BY, or BIND clause.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#extensionFunction&quot;&gt;extensionFunction&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI EXTENSION_FUNCTION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Feature
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#Feature}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:Feature represents a feature of a SPARQL service. Specific types of features include functions,
+&nbsp;	 * aggregates, languages, and entailment regimes and profiles. This document defines five instances of sd:Feature:
+&nbsp;	 * sd:DereferencesURIs, sd:UnionDefaultGraph, sd:RequiresDataset, sd:EmptyGraphs, and sd:BasicFederatedQuery.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#Feature&quot;&gt;Feature&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI FEATURE_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * feature
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#feature}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service with a resource representing a supported feature.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#feature&quot;&gt;feature&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI FEATURE_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Function
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#Function}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:Function represents a function that may be used in a SPARQL SELECT expression or a FILTER,
+&nbsp;	 * HAVING, GROUP BY, ORDER BY, or BIND clause.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#Function&quot;&gt;Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI FUNCTION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * graph
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#graph}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates a named graph to its graph description.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#graph&quot;&gt;graph&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI GRAPH_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Graph
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#Graph}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:Graph represents the description of an RDF graph.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#Graph&quot;&gt;Graph&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI GRAPH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Graph Collection
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#GraphCollection}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:GraphCollection represents a collection of zero or more named graph descriptions. Each named
+&nbsp;	 * graph description belonging to an sd:GraphCollection MUST be linked with the sd:namedGraph predicate.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#GraphCollection&quot;&gt;GraphCollection&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI GRAPH_COLLECTION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * input format
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#inputFormat}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a format that is supported for parsing RDF input; for example, via a SPARQL
+&nbsp;	 * 1.1 Update LOAD statement, or when URIs are dereferenced in FROM/FROM NAMED/USING/USING NAMED clauses.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#inputFormat&quot;&gt;inputFormat&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI INPUT_FORMAT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Language
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#Language}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:Language represents one of the SPARQL languages, including specific configurations providing
+&nbsp;	 * particular features or extensions. This document defines three instances of sd:Language: sd:SPARQL10Query,
+&nbsp;	 * sd:SPARQL11Query, and sd:SPARQL11Update.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#Language&quot;&gt;Language&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI LANGUAGE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * language extension
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#languageExtension}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a resource representing an implemented extension to the SPARQL Query or
+&nbsp;	 * Update language.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#languageExtension&quot;&gt;languageExtension&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI LANGUAGE_EXTENSION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * name
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#name}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates a named graph to the name by which it may be referenced in a FROM/FROM NAMED clause. The object of the
+&nbsp;	 * sd:name property is an IRI.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#name&quot;&gt;name&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NAME;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * named graph
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#namedGraph}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:GraphCollection (or its subclass sd:Dataset) to the description of one of its named
+&nbsp;	 * graphs. The description of such a named graph MUST include the sd:name property and MAY include the sd:graph
+&nbsp;	 * property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#namedGraph&quot;&gt;namedGraph&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NAMED_GRAPH_PROPERTY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Named Graph
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#NamedGraph}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:NamedGraph represents a named graph having a name (via sd:name) and an optional graph
+&nbsp;	 * description (via sd:graph).
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#NamedGraph&quot;&gt;NamedGraph&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NAMED_GRAPH_CLASS;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * property feature
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#propertyFeature}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a resource representing an implemented feature that extends the SPARQL Query
+&nbsp;	 * or Update language and that is accessed by using the named property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#propertyFeature&quot;&gt;propertyFeature&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI PROPERTY_FEATURE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Requires Dataset
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#RequiresDataset}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:RequiresDataset, when used as the object of the sd:feature property, indicates that the SPARQL service
+&nbsp;	 * requires an explicit dataset declaration (based on either FROM/FROM NAMED clauses in a query, USING/USING NAMED
+&nbsp;	 * clauses in an update, or the appropriate SPARQL Protocol parameters).
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#RequiresDataset&quot;&gt;RequiresDataset&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI REQUIRES_DATASET;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * result format
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#resultFormat}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a format that is supported for serializing query results.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#resultFormat&quot;&gt;resultFormat&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI RESULT_FORMAT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Service
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#Service}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An instance of sd:Service represents a SPARQL service made available via the SPARQL Protocol.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#Service&quot;&gt;Service&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SERVICE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL 1.0 Query
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#SPARQL10Query}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:SPARQL10Query is an sd:Language representing the SPARQL 1.0 Query language.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#SPARQL10Query&quot;&gt;SPARQL10Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SPARQL_10_QUERY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL 1.1 Query
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#SPARQL11Query}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:SPARQL11Query is an sd:Language representing the SPARQL 1.1 Query language.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#SPARQL11Query&quot;&gt;SPARQL11Query&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SPARQL_11_QUERY;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SPARQL 1.1 Update
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#SPARQL11Update}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:SPARQLUpdate is an sd:Language representing the SPARQL 1.1 Update language.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#SPARQL11Update&quot;&gt;SPARQL11Update&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SPARQL_11_UPDATE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * supported entailment profile
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#supportedEntailmentProfile}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates a named graph description with a resource representing a supported profile of the entailment regime (as
+&nbsp;	 * declared by sd:entailmentRegime) used for basic graph pattern matching over that graph.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#supportedEntailmentProfile&quot;&gt;
+&nbsp;	 *      supportedEntailmentProfile&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SUPPORTED_ENTAILMENT_PROFILE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * supported language
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#supportedLanguage}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Relates an instance of sd:Service to a SPARQL language (e.g. Query and Update) that it implements.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#supportedLanguage&quot;&gt;supportedLanguage&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SUPPORTED_LANGUAGE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Union Default Graph
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * {@code http://www.w3.org/ns/sparql-service-description#UnionDefaultGraph}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * sd:UnionDefaultGraph, when used as the object of the sd:feature property, indicates that the default graph of the
+&nbsp;	 * dataset used during query and update evaluation (when an explicit dataset is not specified) is comprised of the
+&nbsp;	 * union of all the named graphs in that dataset.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/sparql-service-description#UnionDefaultGraph&quot;&gt;UnionDefaultGraph&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI UNION_DEFAULT_GRAPH;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		AGGREGATE = Vocabularies.createIRI(SD.NAMESPACE, &quot;Aggregate&quot;);</b>
+<b class="nc">&nbsp;		AVAILBLE_GRAPHS = Vocabularies.createIRI(SD.NAMESPACE, &quot;availableGraphs&quot;);</b>
+<b class="nc">&nbsp;		BASIC_FEDERATED_QUERY = Vocabularies.createIRI(SD.NAMESPACE, &quot;BasicFederatedQuery&quot;);</b>
+<b class="nc">&nbsp;		DATASET = Vocabularies.createIRI(SD.NAMESPACE, &quot;Dataset&quot;);</b>
+<b class="nc">&nbsp;		DEFAULT_DATASET = Vocabularies.createIRI(SD.NAMESPACE, &quot;defaultDataset&quot;);</b>
+<b class="nc">&nbsp;		DEFAULT_ENTAILMENT_REGIME = Vocabularies.createIRI(SD.NAMESPACE, &quot;defaultEntailmentRegime&quot;);</b>
+<b class="nc">&nbsp;		DEFAULT_GRAPH = Vocabularies.createIRI(SD.NAMESPACE, &quot;defaultGraph&quot;);</b>
+<b class="nc">&nbsp;		DEFAULT_SUPPORTED_ENTAILMENT_PROFILE = Vocabularies.createIRI(SD.NAMESPACE,</b>
+&nbsp;				&quot;defaultSupportedEntailmentProfile&quot;);
+<b class="nc">&nbsp;		DEREFERENCES_URIS = Vocabularies.createIRI(SD.NAMESPACE, &quot;DereferencesURIs&quot;);</b>
+<b class="nc">&nbsp;		EMPTY_GRAPHS = Vocabularies.createIRI(SD.NAMESPACE, &quot;EmptyGraphs&quot;);</b>
+<b class="nc">&nbsp;		ENDPOINT = Vocabularies.createIRI(SD.NAMESPACE, &quot;endpoint&quot;);</b>
+<b class="nc">&nbsp;		ENTAILMENT_PROFILE = Vocabularies.createIRI(SD.NAMESPACE, &quot;EntailmentProfile&quot;);</b>
+<b class="nc">&nbsp;		ENTAILMENT_REGIME_CLASS = Vocabularies.createIRI(SD.NAMESPACE, &quot;EntailmentRegime&quot;);</b>
+<b class="nc">&nbsp;		ENTAILMENT_REGIME_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, &quot;entailmentRegime&quot;);</b>
+<b class="nc">&nbsp;		EXTENSION_AGGREGATE = Vocabularies.createIRI(SD.NAMESPACE, &quot;extensionAggregate&quot;);</b>
+<b class="nc">&nbsp;		EXTENSION_FUNCTION = Vocabularies.createIRI(SD.NAMESPACE, &quot;extensionFunction&quot;);</b>
+<b class="nc">&nbsp;		FEATURE_CLASS = Vocabularies.createIRI(SD.NAMESPACE, &quot;Feature&quot;);</b>
+<b class="nc">&nbsp;		FEATURE_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, &quot;feature&quot;);</b>
+<b class="nc">&nbsp;		FUNCTION = Vocabularies.createIRI(SD.NAMESPACE, &quot;Function&quot;);</b>
+<b class="nc">&nbsp;		GRAPH_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, &quot;graph&quot;);</b>
+<b class="nc">&nbsp;		GRAPH_CLASS = Vocabularies.createIRI(SD.NAMESPACE, &quot;Graph&quot;);</b>
+<b class="nc">&nbsp;		GRAPH_COLLECTION = Vocabularies.createIRI(SD.NAMESPACE, &quot;GraphCollection&quot;);</b>
+<b class="nc">&nbsp;		INPUT_FORMAT = Vocabularies.createIRI(SD.NAMESPACE, &quot;inputFormat&quot;);</b>
+<b class="nc">&nbsp;		LANGUAGE = Vocabularies.createIRI(SD.NAMESPACE, &quot;Language&quot;);</b>
+<b class="nc">&nbsp;		LANGUAGE_EXTENSION = Vocabularies.createIRI(SD.NAMESPACE, &quot;languageExtension&quot;);</b>
+<b class="nc">&nbsp;		NAME = Vocabularies.createIRI(SD.NAMESPACE, &quot;name&quot;);</b>
+<b class="nc">&nbsp;		NAMED_GRAPH_PROPERTY = Vocabularies.createIRI(SD.NAMESPACE, &quot;namedGraph&quot;);</b>
+<b class="nc">&nbsp;		NAMED_GRAPH_CLASS = Vocabularies.createIRI(SD.NAMESPACE, &quot;NamedGraph&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY_FEATURE = Vocabularies.createIRI(SD.NAMESPACE, &quot;propertyFeature&quot;);</b>
+<b class="nc">&nbsp;		REQUIRES_DATASET = Vocabularies.createIRI(SD.NAMESPACE, &quot;RequiresDataset&quot;);</b>
+<b class="nc">&nbsp;		RESULT_FORMAT = Vocabularies.createIRI(SD.NAMESPACE, &quot;resultFormat&quot;);</b>
+<b class="nc">&nbsp;		SERVICE = Vocabularies.createIRI(SD.NAMESPACE, &quot;Service&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_10_QUERY = Vocabularies.createIRI(SD.NAMESPACE, &quot;SPARQL10Query&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_11_QUERY = Vocabularies.createIRI(SD.NAMESPACE, &quot;SPARQL11Query&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_11_UPDATE = Vocabularies.createIRI(SD.NAMESPACE, &quot;SPARQL11Update&quot;);</b>
+<b class="nc">&nbsp;		SUPPORTED_ENTAILMENT_PROFILE = Vocabularies.createIRI(SD.NAMESPACE, &quot;supportedEntailmentProfile&quot;);</b>
+<b class="nc">&nbsp;		SUPPORTED_LANGUAGE = Vocabularies.createIRI(SD.NAMESPACE, &quot;supportedLanguage&quot;);</b>
+<b class="nc">&nbsp;		UNION_DEFAULT_GRAPH = Vocabularies.createIRI(SD.NAMESPACE, &quot;UnionDefaultGraph&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private SD() {
+&nbsp;		// static access only
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

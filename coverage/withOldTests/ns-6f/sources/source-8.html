@@ -1,0 +1,391 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DescribeIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: DescribeIteration (org.eclipse.rdf4j.query.algebra.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DescribeIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90.7%
+  </span>
+  <span class="absValue">
+    (49/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    93.6%
+  </span>
+  <span class="absValue">
+    (73/78)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">DescribeIteration$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">DescribeIteration$Mode</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (7/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90.7%
+  </span>
+  <span class="absValue">
+    (49/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    93.9%
+  </span>
+  <span class="absValue">
+    (77/82)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Queue;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;
+&nbsp;/**
+&nbsp; * Iteration that implements a simplified version of Symmetric Concise Bounded Description (omitting reified
+&nbsp; * statements).
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/Submission/CBD/#alternatives&quot;&gt;Concise Bounded Description - alternatives&lt;/a&gt;
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class DescribeIteration extends LookAheadIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	protected final static String VARNAME_SUBJECT = &quot;subject&quot;;
+&nbsp;
+&nbsp;	protected final static String VARNAME_PREDICATE = &quot;predicate&quot;;
+&nbsp;
+&nbsp;	protected final static String VARNAME_OBJECT = &quot;object&quot;;
+&nbsp;
+&nbsp;	private final List&lt;String&gt; describeExprNames;
+&nbsp;
+&nbsp;	private final EvaluationStrategy strategy;
+&nbsp;
+&nbsp;	private Value startValue;
+&nbsp;
+<b class="fc">&nbsp;	private final Queue&lt;BNode&gt; nodeQueue = new ArrayDeque&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;	private final Set&lt;BNode&gt; processedNodes = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; currentDescribeExprIter;
+&nbsp;
+<b class="fc">&nbsp;	private enum Mode {</b>
+<b class="fc">&nbsp;		OUTGOING_LINKS,</b>
+<b class="fc">&nbsp;		INCOMING_LINKS</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private Mode currentMode = Mode.OUTGOING_LINKS;</b>
+&nbsp;
+&nbsp;	private final Iteration&lt;BindingSet, QueryEvaluationException&gt; sourceIter;
+&nbsp;
+&nbsp;	public DescribeIteration(Iteration&lt;BindingSet, QueryEvaluationException&gt; sourceIter, EvaluationStrategy strategy,
+<b class="fc">&nbsp;			Set&lt;String&gt; describeExprNames, BindingSet parentBindings) {</b>
+<b class="fc">&nbsp;		this.strategy = strategy;</b>
+<b class="fc">&nbsp;		this.sourceIter = sourceIter;</b>
+<b class="fc">&nbsp;		this.describeExprNames = new ArrayList&lt;&gt;(describeExprNames);</b>
+<b class="fc">&nbsp;		this.parentBindings = parentBindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private BindingSet currentBindings;
+&nbsp;
+&nbsp;	private int describeExprsIndex;
+&nbsp;
+&nbsp;	protected BindingSet parentBindings;
+&nbsp;
+&nbsp;	private void resetCurrentDescribeExprIter() throws QueryEvaluationException {
+<b class="fc">&nbsp;		while (currentDescribeExprIter == null) {</b>
+<b class="fc">&nbsp;			if (currentBindings == null &amp;&amp; startValue == null) {</b>
+<b class="fc">&nbsp;				if (sourceIter.hasNext()) {</b>
+<b class="fc">&nbsp;					currentBindings = sourceIter.next();</b>
+&nbsp;				} else {
+&nbsp;					// no more bindings, therefore no more results to return.
+&nbsp;					return;
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (startValue == null) {</b>
+<b class="fc">&nbsp;				String nextValueExpr = describeExprNames.get(describeExprsIndex++);</b>
+<b class="pc">&nbsp;				if (nextValueExpr != null) {</b>
+<b class="fc">&nbsp;					startValue = currentBindings.getValue(nextValueExpr);</b>
+<b class="fc">&nbsp;					if (describeExprsIndex == describeExprNames.size()) {</b>
+&nbsp;						// reached the end of the list of valueExprs, reset to
+&nbsp;						// read next value from source iterator if any.
+<b class="fc">&nbsp;						currentBindings = null;</b>
+<b class="fc">&nbsp;						describeExprsIndex = 0;</b>
+&nbsp;					}
+<b class="fc">&nbsp;					currentMode = Mode.OUTGOING_LINKS;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			switch (currentMode) {</b>
+&nbsp;			case OUTGOING_LINKS:
+<b class="fc">&nbsp;				currentDescribeExprIter = createNextIteration(startValue, null);</b>
+<b class="pc">&nbsp;				if (!currentDescribeExprIter.hasNext()) {</b>
+&nbsp;					// start value has no outgoing links.
+<b class="nc">&nbsp;					currentDescribeExprIter.close();</b>
+<b class="nc">&nbsp;					currentDescribeExprIter = null;</b>
+<b class="nc">&nbsp;					currentMode = Mode.INCOMING_LINKS;</b>
+&nbsp;				}
+&nbsp;				break;
+&nbsp;			case INCOMING_LINKS:
+<b class="fc">&nbsp;				currentDescribeExprIter = createNextIteration(null, startValue);</b>
+<b class="fc">&nbsp;				if (!currentDescribeExprIter.hasNext()) {</b>
+&nbsp;					// no incoming links for this start value.
+<b class="fc">&nbsp;					currentDescribeExprIter.close();</b>
+<b class="fc">&nbsp;					currentDescribeExprIter = null;</b>
+<b class="fc">&nbsp;					startValue = null;</b>
+<b class="fc">&nbsp;					currentMode = Mode.OUTGOING_LINKS;</b>
+&nbsp;				}
+<b class="fc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;		} // end while
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet getNextElement() throws QueryEvaluationException {
+<b class="fc">&nbsp;		resetCurrentDescribeExprIter();</b>
+<b class="fc">&nbsp;		if (currentDescribeExprIter == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		while (!currentDescribeExprIter.hasNext() &amp;&amp; !nodeQueue.isEmpty()) {</b>
+&nbsp;			// process next node in queue
+<b class="fc">&nbsp;			BNode nextNode = nodeQueue.poll();</b>
+<b class="fc">&nbsp;			currentDescribeExprIter.close();</b>
+<b class="pc">&nbsp;			switch (currentMode) {</b>
+&nbsp;			case OUTGOING_LINKS:
+<b class="fc">&nbsp;				currentDescribeExprIter = createNextIteration(nextNode, null);</b>
+<b class="fc">&nbsp;				break;</b>
+&nbsp;			case INCOMING_LINKS:
+<b class="fc">&nbsp;				currentDescribeExprIter = createNextIteration(null, nextNode);</b>
+&nbsp;				break;
+&nbsp;
+&nbsp;			}
+<b class="fc">&nbsp;			processedNodes.add(nextNode);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (nodeQueue.isEmpty() &amp;&amp; !currentDescribeExprIter.hasNext()) {</b>
+&nbsp;				// we have hit a blank node that has no further expansion. reset to
+&nbsp;				// initialize next in value expression queue.
+<b class="fc">&nbsp;				currentDescribeExprIter.close();</b>
+<b class="fc">&nbsp;				currentDescribeExprIter = null;</b>
+&nbsp;
+<b class="fc">&nbsp;				if (currentMode == Mode.OUTGOING_LINKS) {</b>
+<b class="fc">&nbsp;					currentMode = Mode.INCOMING_LINKS;</b>
+&nbsp;				} else {
+&nbsp;					// done with this valueExpr, reset to initialize next in value
+&nbsp;					// expression queue.
+<b class="fc">&nbsp;					currentMode = Mode.OUTGOING_LINKS;</b>
+<b class="fc">&nbsp;					startValue = null;</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				resetCurrentDescribeExprIter();</b>
+<b class="fc">&nbsp;				if (currentDescribeExprIter == null) {</b>
+<b class="fc">&nbsp;					return null;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="pc">&nbsp;		if (currentDescribeExprIter.hasNext()) {</b>
+<b class="fc">&nbsp;			BindingSet bs = currentDescribeExprIter.next();</b>
+&nbsp;
+<b class="fc">&nbsp;			String varname = currentMode == Mode.OUTGOING_LINKS ? VARNAME_OBJECT : VARNAME_SUBJECT;</b>
+&nbsp;
+<b class="fc">&nbsp;			Value v = bs.getValue(varname);</b>
+<b class="fc">&nbsp;			if (v instanceof BNode) {</b>
+<b class="fc">&nbsp;				if (!processedNodes.contains(v)) { // duplicate/cycle detection</b>
+<b class="fc">&nbsp;					nodeQueue.add((BNode) v);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (!currentDescribeExprIter.hasNext() &amp;&amp; nodeQueue.isEmpty()) {</b>
+<b class="fc">&nbsp;				currentDescribeExprIter.close();</b>
+<b class="fc">&nbsp;				currentDescribeExprIter = null;</b>
+&nbsp;
+<b class="fc">&nbsp;				if (currentMode == Mode.OUTGOING_LINKS) {</b>
+<b class="fc">&nbsp;					currentMode = Mode.INCOMING_LINKS;</b>
+&nbsp;				} else {
+&nbsp;					// done with this valueExpr, reset to initialize next in value
+&nbsp;					// expression queue.
+<b class="fc">&nbsp;					currentMode = Mode.OUTGOING_LINKS;</b>
+<b class="fc">&nbsp;					startValue = null;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return bs;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; createNextIteration(Value subject, Value object)
+&nbsp;			throws QueryEvaluationException {
+<b class="pc">&nbsp;		if (subject == null &amp;&amp; object == null) {</b>
+<b class="nc">&nbsp;			return new EmptyIteration&lt;&gt;();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Var subjVar = new Var(VARNAME_SUBJECT, subject);</b>
+<b class="fc">&nbsp;		Var predVar = new Var(VARNAME_PREDICATE);</b>
+<b class="fc">&nbsp;		Var objVar = new Var(VARNAME_OBJECT, object);</b>
+&nbsp;
+<b class="fc">&nbsp;		StatementPattern pattern = new StatementPattern(subjVar, predVar, objVar);</b>
+<b class="fc">&nbsp;		return strategy.evaluate(pattern, parentBindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

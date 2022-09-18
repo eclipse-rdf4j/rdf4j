@@ -1,0 +1,402 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFStarSupportTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFStarSupportTest (org.eclipse.rdf4j.testsuite.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFStarSupportTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/88)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.repository;
+&nbsp;
+&nbsp;import static org.assertj.core.api.Assertions.assertThat;
+&nbsp;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.util.List;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Values;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FOAF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.junit.jupiter.api.AfterEach;
+&nbsp;import org.junit.jupiter.api.Assertions;
+&nbsp;import org.junit.jupiter.api.BeforeEach;
+&nbsp;import org.junit.jupiter.api.Test;
+&nbsp;import org.junit.jupiter.api.Timeout;
+&nbsp;
+&nbsp;/**
+&nbsp; * Test cases for RDF-star support in the Repository.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;@Timeout(value = 10, unit = TimeUnit.MINUTES)
+<b class="nc">&nbsp;public abstract class RDFStarSupportTest {</b>
+&nbsp;
+&nbsp;	private Repository testRepository;
+&nbsp;
+&nbsp;	protected RepositoryConnection testCon;
+&nbsp;
+&nbsp;	private ValueFactory vf;
+&nbsp;
+&nbsp;	private BNode bob;
+&nbsp;	private BNode alice;
+&nbsp;	private BNode alexander;
+&nbsp;	private Literal nameAlice;
+&nbsp;	private Literal nameBob;
+&nbsp;	private Literal mboxAlice;
+&nbsp;	private Literal mboxBob;
+&nbsp;	private IRI context1;
+&nbsp;	private IRI context2;
+&nbsp;
+&nbsp;	@BeforeEach
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		testRepository = createRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon = testRepository.getConnection();</b>
+<b class="nc">&nbsp;		testCon.clear();</b>
+<b class="nc">&nbsp;		testCon.clearNamespaces();</b>
+&nbsp;
+<b class="nc">&nbsp;		vf = testRepository.getValueFactory();</b>
+&nbsp;
+&nbsp;		// Initialize values
+<b class="nc">&nbsp;		bob = vf.createBNode();</b>
+<b class="nc">&nbsp;		alice = vf.createBNode();</b>
+<b class="nc">&nbsp;		alexander = vf.createBNode();</b>
+&nbsp;
+<b class="nc">&nbsp;		nameAlice = vf.createLiteral(&quot;Alice&quot;);</b>
+<b class="nc">&nbsp;		nameBob = vf.createLiteral(&quot;Bob&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		mboxAlice = vf.createLiteral(&quot;alice@example.org&quot;);</b>
+<b class="nc">&nbsp;		mboxBob = vf.createLiteral(&quot;bob@example.org&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		context1 = vf.createIRI(&quot;urn:x-local:graph1&quot;);</b>
+<b class="nc">&nbsp;		context2 = vf.createIRI(&quot;urn:x-local:graph2&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterEach
+&nbsp;	public void tearDown() throws Exception {
+&nbsp;		try {
+<b class="nc">&nbsp;			testCon.close();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			testRepository.shutDown();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddRDFStarSubject() {
+<b class="nc">&nbsp;		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertThat(testCon.hasStatement(rdfStarTriple, RDF.TYPE, RDF.ALT, false)).isTrue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddRDFStarObject() {
+<b class="nc">&nbsp;		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.add(RDF.ALT, RDF.TYPE, rdfStarTriple);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertThat(testCon.hasStatement(RDF.ALT, RDF.TYPE, rdfStarTriple, false)).isTrue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddRDFStarContext() {
+<b class="nc">&nbsp;		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			testCon.add(RDF.ALT, RDF.TYPE, RDF.ALT, rdfStarTriple);</b>
+<b class="nc">&nbsp;			Assertions.fail(&quot;RDF-star triple value should not be allowed by store as context identifier&quot;);</b>
+<b class="nc">&nbsp;		} catch (UnsupportedOperationException e) {</b>
+&nbsp;			// fall through, expected behavior
+<b class="nc">&nbsp;			testCon.rollback();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSparqlStar() {
+<b class="nc">&nbsp;		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);</b>
+&nbsp;
+<b class="nc">&nbsp;		String query = &quot;PREFIX foaf: &lt;&quot; + FOAF.NAMESPACE + &quot;&gt;\n&quot; +</b>
+&nbsp;				&quot;SELECT DISTINCT * WHERE { &lt;&lt;?s foaf:name ?o&gt;&gt; ?b ?c. }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; result = QueryResults.asList(testCon.prepareTupleQuery(query).evaluate());</b>
+<b class="nc">&nbsp;		assertThat(result).hasSize(1);</b>
+&nbsp;
+<b class="nc">&nbsp;		BindingSet bs = result.get(0);</b>
+<b class="nc">&nbsp;		assertThat(bs.getValue(&quot;s&quot;)).isEqualTo(bob);</b>
+<b class="nc">&nbsp;		assertThat(bs.getValue(&quot;o&quot;)).isEqualTo(nameBob);</b>
+<b class="nc">&nbsp;		assertThat(bs.getValue(&quot;b&quot;)).isEqualTo(RDF.TYPE);</b>
+<b class="nc">&nbsp;		assertThat(bs.getValue(&quot;c&quot;)).isEqualTo(RDF.ALT);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSparqlStarUpdate() {
+<b class="nc">&nbsp;		Triple rdfStarTriple = vf.createTriple(bob, FOAF.NAME, nameBob);</b>
+<b class="nc">&nbsp;		testCon.add(rdfStarTriple, RDF.TYPE, RDF.ALT);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;PREFIX foaf: &lt;&quot; + FOAF.NAMESPACE + &quot;&gt;\n&quot; +</b>
+&nbsp;				&quot;INSERT { ?s foaf:age 23 } WHERE { &lt;&lt;?s foaf:name ?o&gt;&gt; ?b ?c .}&quot;;
+&nbsp;
+<b class="nc">&nbsp;		testCon.prepareUpdate(update).execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		Assertions.assertTrue(testCon.hasStatement(bob, FOAF.AGE, vf.createLiteral(BigInteger.valueOf(23)), false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRdfStarAddAndRetrieveSparql() {
+&nbsp;
+<b class="nc">&nbsp;		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+&nbsp;
+<b class="nc">&nbsp;		Literal literal = vf.createLiteral(&quot;I am a triple ;-D&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		testCon.add(insertedTriple, RDF.TYPE, literal);</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleQuery query = testCon.prepareTupleQuery(</b>
+&nbsp;				&quot;SELECT * WHERE { &lt;&lt; &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#subject&gt; &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate&gt; &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#object&gt; &gt;&gt; ?a ?b}&quot;);
+&nbsp;
+<b class="nc">&nbsp;		Assertions.assertTrue(testCon.prepareBooleanQuery(&quot;ASK { ?t a &#39;I am a triple ;-D&#39;}&quot;).evaluate());</b>
+<b class="nc">&nbsp;		Assertions.assertEquals(1, getCount(query));</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRdfStarAddAndRetrieveSparqlSeparateTransaction() {
+&nbsp;
+<b class="nc">&nbsp;		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		Literal literal = vf.createLiteral(&quot;I am a triple ;-D&quot;);</b>
+<b class="nc">&nbsp;		testCon.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.add(insertedTriple, RDF.TYPE, literal);</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+<b class="nc">&nbsp;		testCon.begin();</b>
+<b class="nc">&nbsp;		Assertions.assertTrue(testCon.prepareBooleanQuery(&quot;ASK { ?t a &#39;I am a triple ;-D&#39;}&quot;).evaluate());</b>
+<b class="nc">&nbsp;		TupleQuery tupleQuery = testCon.prepareTupleQuery(</b>
+&nbsp;				&quot;SELECT * WHERE { &lt;&lt; &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#subject&gt; &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate&gt; &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#object&gt; &gt;&gt; ?a ?b}&quot;);
+<b class="nc">&nbsp;		Assertions.assertEquals(1, getCount(tupleQuery));</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static long getCount(TupleQuery tupleQuery) {
+<b class="nc">&nbsp;		try (TupleQueryResult evaluate = tupleQuery.evaluate()) {</b>
+<b class="nc">&nbsp;			return evaluate.stream().count();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRdfStarAddAndRetrieve() {
+&nbsp;
+<b class="nc">&nbsp;		Triple insertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		Triple copyOfInsertedTriple = vf.createTriple(RDF.SUBJECT, RDF.PREDICATE, RDF.OBJECT);</b>
+<b class="nc">&nbsp;		Literal literal = vf.createLiteral(&quot;I am a triple ;-D&quot;);</b>
+<b class="nc">&nbsp;		testCon.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;		testCon.add(insertedTriple, RDF.TYPE, literal);</b>
+&nbsp;
+<b class="nc">&nbsp;		Assertions.assertEquals(1, testCon.getStatements(null, RDF.TYPE, literal, false).stream().count());</b>
+<b class="nc">&nbsp;		Assertions.assertEquals(1, testCon.getStatements(copyOfInsertedTriple, null, null, false).stream().count());</b>
+<b class="nc">&nbsp;		testCon.commit();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMemoryStore_RDFstar() {
+<b class="nc">&nbsp;		String queryString = &quot;PREFIX rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt;\n&quot;</b>
+&nbsp;				+ &quot;PREFIX rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;\n&quot;
+&nbsp;				+ &quot;PREFIX person: &lt;http://example.com/person/&gt;\n&quot;
+&nbsp;				+ &quot;PREFIX org: &lt;http://example.com/org/&gt;\n&quot;
+&nbsp;				+ &quot;PREFIX foaf: &lt;http://xmlns.com/foaf/0.1/&gt;\n&quot;
+&nbsp;				+ &quot;PREFIX xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt;\n&quot;
+&nbsp;				+ &quot;CONSTRUCT {\n&quot;
+&nbsp;				+ &quot;  ?s ?p ?o.\n&quot;
+&nbsp;				+ &quot;  &lt;&lt; ?s ?p ?o &gt;&gt; &lt;http://example.com/certainty&gt; ?cert.\n&quot;
+&nbsp;				+ &quot;  &lt;&lt; ?s ?p ?o &gt;&gt; &lt;http://example.com/certaintyDeviation&gt; ?certDiv.\n&quot;
+&nbsp;				+ &quot;  &lt;&lt; person:alice foaf:knows person:bob &gt;&gt; &lt;http://example.com/observedBy&gt; person:mike.\n&quot;
+&nbsp;				+ &quot;}\n&quot;
+&nbsp;				+ &quot;WHERE {\n&quot;
+&nbsp;				+ &quot;  {\n&quot;
+&nbsp;				+ &quot;    SELECT ?s ?p ?o ?cert ?certDiv WHERE {\n&quot;
+&nbsp;				+ &quot;      VALUES (?s ?p ?o ?cert ?certDiv) {\n&quot;
+&nbsp;				+ &quot;        (person:alice foaf:knows person:bob \&quot;1.0\&quot;^^xsd:decimal 0 )\n&quot;
+&nbsp;				+ &quot;        (person:alice foaf:knows person:carol \&quot;0.3\&quot;^^xsd:decimal \&quot;0.1\&quot;^^xsd:decimal)\n&quot;
+&nbsp;				+ &quot;        (person:carol foaf:knows person:mike \&quot;0.7\&quot;^^xsd:decimal \&quot;0.2\&quot;^^xsd:decimal)\n&quot;
+&nbsp;				+ &quot;        (person:mike foaf:knows person:carol \&quot;0.1\&quot;^^xsd:decimal UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:bob foaf:knows person:carol \&quot;0.8\&quot;^^xsd:decimal UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:alice foaf:knows person:mike \&quot;0.6\&quot;^^xsd:decimal \&quot;0.1\&quot;^^xsd:decimal)\n&quot;
+&nbsp;				+ &quot;        (person:alice foaf:member org:W3C UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:mike foaf:member org:W3C UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:alice rdf:type foaf:Person UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:carol rdf:type foaf:Person UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:mike rdf:type foaf:Person UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:bob rdf:type foaf:Person UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (org:W3C rdf:type foaf:Organization UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:alice rdfs:label \&quot;Alice\&quot; UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:alice foaf:birthday \&quot;1990-01-01\&quot; UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:bob rdfs:label \&quot;Bob\&quot; UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:carol rdfs:label \&quot;Carol\&quot; UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;        (person:mike rdfs:label \&quot;Mike\&quot; UNDEF UNDEF)\n&quot;
+&nbsp;				+ &quot;      }\n&quot;
+&nbsp;				+ &quot;    }\n&quot;
+&nbsp;				+ &quot;  }\n&quot;
+&nbsp;				+ &quot;}&quot;;
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con = testRepository.getConnection()) {</b>
+<b class="nc">&nbsp;			GraphQuery graphQuery = con.prepareGraphQuery(queryString);</b>
+<b class="nc">&nbsp;			try (GraphQueryResult result = graphQuery.evaluate()) {</b>
+<b class="nc">&nbsp;				List&lt;Statement&gt; statements = QueryResults.asList(result);</b>
+<b class="nc">&nbsp;				Assertions.assertEquals(29, statements.size());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSparqlStarInObjectPosition() {
+<b class="nc">&nbsp;		testCon.add(Values.bnode(), FOAF.KNOWS, Values.triple(Values.bnode(), FOAF.NAME, Values.literal(&quot;John Doe&quot;)));</b>
+<b class="nc">&nbsp;		TupleQuery tupleQuery = testCon.prepareTupleQuery(</b>
+&nbsp;				&quot;PREFIX foaf: &lt;&quot; + FOAF.NAMESPACE + &quot;&gt;\n&quot; +
+&nbsp;						&quot;SELECT * WHERE { ?a ?b &lt;&lt;?s foaf:name ?o&gt;&gt;. }&quot;);
+<b class="nc">&nbsp;		try (TupleQueryResult evaluate = tupleQuery.evaluate()) {</b>
+<b class="nc">&nbsp;			List&lt;BindingSet&gt; collect = evaluate.stream().collect(Collectors.toList());</b>
+<b class="nc">&nbsp;			Assertions.assertEquals(1, collect.size());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract Repository createRepository();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

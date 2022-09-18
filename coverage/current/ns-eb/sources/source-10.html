@@ -1,0 +1,167 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryElementCollection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.core</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryElementCollection (org.eclipse.rdf4j.sparqlbuilder.core)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryElementCollection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.core;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;/**
+&nbsp; * A logical collection of query elements. Provides common functionality for elements which are collections of other
+&nbsp; * elements, especially in printing. Would have loved to have avoided making this public.
+&nbsp; *
+&nbsp; * @param &lt;T&gt; the type of {@link QueryElement}s in the collection
+&nbsp; */
+&nbsp;public abstract class QueryElementCollection&lt;T extends QueryElement&gt; implements QueryElement {
+<b class="nc">&nbsp;	protected Collection&lt;T&gt; elements = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;	private String delimiter = &quot;\n&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;	protected QueryElementCollection() {</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	protected QueryElementCollection(String delimiter) {</b>
+<b class="nc">&nbsp;		this.delimiter = delimiter;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	protected QueryElementCollection(String delimiter, Collection&lt;T&gt; elements) {</b>
+<b class="nc">&nbsp;		this.delimiter = delimiter;</b>
+<b class="nc">&nbsp;		this.elements = elements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return if this collection is empty
+&nbsp;	 */
+&nbsp;	public boolean isEmpty() {
+<b class="nc">&nbsp;		return elements.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	protected void addElements(T... queryElements) {
+<b class="nc">&nbsp;		Collections.addAll(elements, queryElements);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	protected &lt;O&gt; void addElements(Function&lt;? super O, ? extends T&gt; mapper, O... os) {
+<b class="nc">&nbsp;		Arrays.stream(os).map(mapper).forEach(elements::add);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		return elements.stream().map(QueryElement::getQueryString).collect(Collectors.joining(delimiter));</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

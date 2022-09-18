@@ -1,0 +1,408 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLParser (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (5/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    60.7%
+  </span>
+  <span class="absValue">
+    (34/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67%
+  </span>
+  <span class="absValue">
+    (77/115)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import java.io.BufferedReader;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.StringReader;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Namespaces;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.IncompatibleOperationException;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DeleteData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.InsertData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParser;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstructQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertData;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPrefixDecl;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelectQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdate;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateContainer;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateSequence;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.TokenMgrError;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;
+&nbsp;@SuppressWarnings(&quot;deprecation&quot;)
+&nbsp;public class SPARQLParser implements QueryParser {
+&nbsp;	private final Map&lt;String, String&gt; customPrefixes;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new SPARQLParser.
+&nbsp;	 *
+&nbsp;	 * @param customPrefixes the default namespaces to apply to this parser. null for no prefixes
+&nbsp;	 */
+<b class="fc">&nbsp;	public SPARQLParser(Set&lt;Namespace&gt; customPrefixes) {</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(customPrefixes, &quot;customPrefixes can&#39;t be null!&quot;);</b>
+<b class="pc">&nbsp;		if (customPrefixes.isEmpty()) {</b>
+<b class="fc">&nbsp;			this.customPrefixes = Collections.emptyMap();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.customPrefixes = Namespaces.asMap(customPrefixes);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new SPARQLParser without any default prefixes.
+&nbsp;	 */
+&nbsp;	public SPARQLParser() {
+<b class="fc">&nbsp;		this(Collections.emptySet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ParsedUpdate parseUpdate(String updateStr, String baseURI) throws MalformedQueryException {
+&nbsp;		try {
+&nbsp;
+<b class="fc">&nbsp;			ParsedUpdate update = new ParsedUpdate(updateStr);</b>
+&nbsp;
+<b class="fc">&nbsp;			SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();</b>
+&nbsp;
+<b class="fc">&nbsp;			ASTUpdateSequence updateSequence = SyntaxTreeBuilder.parseUpdateSequence(updateStr);</b>
+&nbsp;
+<b class="fc">&nbsp;			List&lt;ASTUpdateContainer&gt; updateOperations = updateSequence.getUpdateContainers();</b>
+&nbsp;
+<b class="fc">&nbsp;			List&lt;ASTPrefixDecl&gt; sharedPrefixDeclarations = null;</b>
+&nbsp;
+<b class="fc">&nbsp;			Node node = updateSequence.jjtGetChild(0);</b>
+&nbsp;
+<b class="fc">&nbsp;			Set&lt;String&gt; globalUsedBNodeIds = new HashSet&lt;&gt;();</b>
+<b class="fc">&nbsp;			for (int i = 0; i &lt; updateOperations.size(); i++) {</b>
+&nbsp;
+<b class="fc">&nbsp;				ASTUpdateContainer uc = updateOperations.get(i);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (uc.jjtGetNumChildren() == 0 &amp;&amp; i &gt; 0 &amp;&amp; i &lt; updateOperations.size() - 1) {</b>
+&nbsp;					// empty update in the middle of the sequence
+<b class="nc">&nbsp;					throw new MalformedQueryException(&quot;empty update in sequence not allowed&quot;);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				StringEscapesProcessor.process(uc);</b>
+<b class="fc">&nbsp;				BaseDeclProcessor.process(uc, baseURI);</b>
+<b class="fc">&nbsp;				WildcardProjectionProcessor.process(uc);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (uc.getBaseDecl() != null) {</b>
+<b class="nc">&nbsp;					baseURI = uc.getBaseDecl().getIRI();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// do a special dance to handle prefix declarations in sequences: if
+&nbsp;				// the current
+&nbsp;				// operation has its own prefix declarations, use those. Otherwise,
+&nbsp;				// try and use
+&nbsp;				// prefix declarations from a previous operation in this sequence.
+<b class="fc">&nbsp;				List&lt;ASTPrefixDecl&gt; prefixDeclList = uc.getPrefixDeclList();</b>
+<b class="pc">&nbsp;				if (prefixDeclList == null || prefixDeclList.isEmpty()) {</b>
+<b class="fc">&nbsp;					if (sharedPrefixDeclarations != null) {</b>
+<b class="fc">&nbsp;						for (ASTPrefixDecl prefixDecl : sharedPrefixDeclarations) {</b>
+<b class="fc">&nbsp;							uc.jjtAppendChild(prefixDecl);</b>
+<b class="fc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="fc">&nbsp;					sharedPrefixDeclarations = prefixDeclList;</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				PrefixDeclProcessor.process(uc, customPrefixes);</b>
+<b class="fc">&nbsp;				Set&lt;String&gt; usedBNodeIds = BlankNodeVarProcessor.process(uc);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (uc.getUpdate() instanceof ASTInsertData || uc.getUpdate() instanceof ASTInsertData) {</b>
+<b class="pc">&nbsp;					if (Collections.disjoint(usedBNodeIds, globalUsedBNodeIds)) {</b>
+<b class="fc">&nbsp;						globalUsedBNodeIds.addAll(usedBNodeIds);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						throw new MalformedQueryException(</b>
+&nbsp;								&quot;blank node identifier may not be shared across INSERT/DELETE DATA operations&quot;);
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				UpdateExprBuilder updateExprBuilder = new UpdateExprBuilder(SimpleValueFactory.getInstance());</b>
+&nbsp;
+<b class="fc">&nbsp;				ASTUpdate updateNode = uc.getUpdate();</b>
+<b class="pc">&nbsp;				if (updateNode != null) {</b>
+<b class="fc">&nbsp;					UpdateExpr updateExpr = (UpdateExpr) updateNode.jjtAccept(updateExprBuilder, null);</b>
+&nbsp;
+&nbsp;					// add individual update expression to ParsedUpdate sequence
+&nbsp;					// container
+&nbsp;
+<b class="fc">&nbsp;					String datablock = &quot;&quot;;</b>
+<b class="fc">&nbsp;					if (updateExpr instanceof InsertData) {</b>
+<b class="fc">&nbsp;						InsertData insertDataExpr = (InsertData) updateExpr;</b>
+<b class="fc">&nbsp;						parser.getParserConfig().set(BasicParserSettings.SKOLEMIZE_ORIGIN, null);</b>
+<b class="fc">&nbsp;						parser.setLineNumberOffset(insertDataExpr.getLineNumberOffset());</b>
+<b class="fc">&nbsp;						datablock = insertDataExpr.getDataBlock();</b>
+<b class="fc">&nbsp;					} else if (updateExpr instanceof DeleteData) {</b>
+<b class="fc">&nbsp;						DeleteData deleteDataExpr = (DeleteData) updateExpr;</b>
+<b class="fc">&nbsp;						parser.setLineNumberOffset(deleteDataExpr.getLineNumberOffset());</b>
+<b class="fc">&nbsp;						parser.setAllowBlankNodes(false);</b>
+<b class="fc">&nbsp;						datablock = deleteDataExpr.getDataBlock();</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					if (!datablock.equals(&quot;&quot;)) {</b>
+<b class="fc">&nbsp;						parser.parse(new StringReader(datablock), &quot;&quot;);</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					update.addUpdateExpr(updateExpr);</b>
+&nbsp;
+&nbsp;					// associate updateExpr with the correct dataset (if any)
+<b class="fc">&nbsp;					Dataset dataset = DatasetDeclProcessor.process(uc);</b>
+<b class="fc">&nbsp;					update.map(updateExpr, dataset);</b>
+&nbsp;				}
+&nbsp;			} // end for
+&nbsp;
+<b class="fc">&nbsp;			return update;</b>
+<b class="nc">&nbsp;		} catch (RDFParseException | ParseException | TokenMgrError | VisitorException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new MalformedQueryException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ParsedQuery parseQuery(String queryStr, String baseURI) throws MalformedQueryException {
+&nbsp;		try {
+<b class="fc">&nbsp;			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(queryStr);</b>
+<b class="fc">&nbsp;			StringEscapesProcessor.process(qc);</b>
+<b class="fc">&nbsp;			BaseDeclProcessor.process(qc, baseURI);</b>
+<b class="fc">&nbsp;			Map&lt;String, String&gt; prefixes = PrefixDeclProcessor.process(qc, customPrefixes);</b>
+<b class="fc">&nbsp;			WildcardProjectionProcessor.process(qc);</b>
+<b class="fc">&nbsp;			BlankNodeVarProcessor.process(qc);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (qc.containsQuery()) {</b>
+&nbsp;
+&nbsp;				// handle query operation
+&nbsp;
+<b class="fc">&nbsp;				TupleExpr tupleExpr = buildQueryModel(qc);</b>
+&nbsp;
+&nbsp;				// Ensure we always return a rooted query.
+<b class="pc">&nbsp;				if (!(tupleExpr instanceof QueryRoot)) {</b>
+<b class="fc">&nbsp;					tupleExpr = new QueryRoot(tupleExpr);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				ParsedQuery query;
+&nbsp;
+<b class="fc">&nbsp;				ASTQuery queryNode = qc.getQuery();</b>
+<b class="fc">&nbsp;				if (queryNode instanceof ASTSelectQuery) {</b>
+<b class="fc">&nbsp;					query = new ParsedTupleQuery(queryStr, tupleExpr);</b>
+<b class="fc">&nbsp;				} else if (queryNode instanceof ASTConstructQuery) {</b>
+<b class="fc">&nbsp;					query = new ParsedGraphQuery(queryStr, tupleExpr, prefixes);</b>
+<b class="fc">&nbsp;				} else if (queryNode instanceof ASTAskQuery) {</b>
+<b class="fc">&nbsp;					query = new ParsedBooleanQuery(queryStr, tupleExpr);</b>
+<b class="pc">&nbsp;				} else if (queryNode instanceof ASTDescribeQuery) {</b>
+<b class="fc">&nbsp;					query = new ParsedDescribeQuery(queryStr, tupleExpr, prefixes);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new RuntimeException(&quot;Unexpected query type: &quot; + queryNode.getClass());</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Handle dataset declaration
+<b class="fc">&nbsp;				Dataset dataset = DatasetDeclProcessor.process(qc);</b>
+<b class="fc">&nbsp;				if (dataset != null) {</b>
+<b class="fc">&nbsp;					query.setDataset(dataset);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				return query;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IncompatibleOperationException(&quot;supplied string is not a query operation&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (ParseException | TokenMgrError e) {</b>
+<b class="nc">&nbsp;			throw new MalformedQueryException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr buildQueryModel(Node qc) throws MalformedQueryException {
+<b class="fc">&nbsp;		TupleExprBuilder tupleExprBuilder = new TupleExprBuilder(SimpleValueFactory.getInstance());</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			return (TupleExpr) qc.jjtAccept(tupleExprBuilder, null);</b>
+<b class="nc">&nbsp;		} catch (VisitorException e) {</b>
+<b class="nc">&nbsp;			throw new MalformedQueryException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void main(String[] args) throws java.io.IOException {
+<b class="nc">&nbsp;		System.out.println(&quot;Your SPARQL query:&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		BufferedReader in = new BufferedReader(new InputStreamReader(System.in));</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder buf = new StringBuilder();</b>
+&nbsp;		String line;
+&nbsp;
+<b class="nc">&nbsp;		int emptyLineCount = 0;</b>
+<b class="nc">&nbsp;		while ((line = in.readLine()) != null) {</b>
+<b class="nc">&nbsp;			if (line.length() &gt; 0) {</b>
+<b class="nc">&nbsp;				emptyLineCount = 0;</b>
+<b class="nc">&nbsp;				buf.append(&#39; &#39;).append(line).append(&#39;\n&#39;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				emptyLineCount++;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (emptyLineCount == 2) {</b>
+<b class="nc">&nbsp;				emptyLineCount = 0;</b>
+<b class="nc">&nbsp;				String queryStr = buf.toString().trim();</b>
+<b class="nc">&nbsp;				if (queryStr.length() &gt; 0) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						long start = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;						ParsedOperation parsedQuery = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryStr,</b>
+&nbsp;								null);
+<b class="nc">&nbsp;						long finish = System.currentTimeMillis();</b>
+&nbsp;
+<b class="nc">&nbsp;						System.out.println(&quot;Parsed query: &quot;);</b>
+<b class="nc">&nbsp;						System.out.println(parsedQuery.toString());</b>
+<b class="nc">&nbsp;						System.out.println();</b>
+<b class="nc">&nbsp;						System.out.println(&quot;parsed in &quot; + (finish - start) + &quot; ms.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					} catch (Exception e) {</b>
+<b class="nc">&nbsp;						System.err.println(e.getMessage());</b>
+<b class="nc">&nbsp;						e.printStackTrace();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;				buf.setLength(0);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

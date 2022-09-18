@@ -1,0 +1,232 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GeoUnits</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene.util</a>
+</div>
+
+<h1>Coverage Summary for Class: GeoUnits (org.eclipse.rdf4j.sail.lucene.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GeoUnits</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/60)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene.util;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEOF;
+&nbsp;import org.locationtech.spatial4j.distance.DistanceUtils;
+&nbsp;
+&nbsp;public final class GeoUnits {
+&nbsp;
+&nbsp;	private GeoUnits() {
+&nbsp;	}
+&nbsp;
+&nbsp;	public static final double toMiles(double distance, IRI units) {
+&nbsp;		final double miles;
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			miles = DistanceUtils.KM_TO_MILES * distance / 1000.0;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			miles = DistanceUtils.degrees2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_MI);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			miles = DistanceUtils.radians2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_MI);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			miles = distance * Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_MI;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported units: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return miles;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static final double fromMiles(double miles, IRI units) {
+&nbsp;		double dist;
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = DistanceUtils.MILES_TO_KM * miles * 1000.0;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = DistanceUtils.dist2Degrees(miles, DistanceUtils.EARTH_MEAN_RADIUS_MI);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = DistanceUtils.dist2Radians(miles, DistanceUtils.EARTH_MEAN_RADIUS_MI);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = miles / (Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_MI);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported units: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return dist;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static final double toKilometres(double distance, IRI units) {
+&nbsp;		final double kms;
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			kms = distance / 1000.0;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			kms = DistanceUtils.degrees2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			kms = DistanceUtils.radians2Dist(distance, DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			kms = distance * Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported units: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return kms;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static final double fromKilometres(double kms, IRI units) {
+&nbsp;		double dist;
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = kms * 1000.0;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = DistanceUtils.dist2Degrees(kms, DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = DistanceUtils.dist2Radians(kms, DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = kms / (Math.PI * DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported units: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return dist;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static final double toDegrees(double distance, IRI units) {
+&nbsp;		final double degs;
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = DistanceUtils.dist2Degrees(distance / 1000.0, DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = distance;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = DistanceUtils.RADIANS_TO_DEGREES * distance;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = distance * 180.0;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported units: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return degs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static final double fromDegrees(double degs, IRI units) {
+&nbsp;		double dist;
+<b class="nc">&nbsp;		if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = DistanceUtils.degrees2Dist(degs, DistanceUtils.EARTH_MEAN_RADIUS_KM) * 1000.0;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = degs;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = DistanceUtils.DEGREES_TO_RADIANS * degs;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			dist = degs / 180.0;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported units: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return dist;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,204 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Path</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.paths</a>
+</div>
+
+<h1>Coverage Summary for Class: Path (org.eclipse.rdf4j.sail.shacl.ast.paths)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Path</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.paths;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.Identifiable;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ShaclUnsupportedException;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.Targetable;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+&nbsp;
+&nbsp;public abstract class Path implements Identifiable, Exportable, Targetable {
+&nbsp;
+&nbsp;	Resource id;
+&nbsp;
+<b class="nc">&nbsp;	public Path(Resource id) {</b>
+<b class="nc">&nbsp;		this.id = id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource getId() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static public Path buildPath(ShapeSource shapeSource, Resource id) {
+<b class="nc">&nbsp;		if (id == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (id.isBNode()) {</b>
+<b class="nc">&nbsp;			List&lt;Statement&gt; collect = shapeSource.getAllStatements(id)</b>
+<b class="nc">&nbsp;					.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Statement statement : collect) {</b>
+<b class="nc">&nbsp;				IRI pathType = statement.getPredicate();</b>
+&nbsp;
+<b class="nc">&nbsp;				switch (pathType.toString()) {</b>
+&nbsp;				case &quot;http://www.w3.org/ns/shacl#inversePath&quot;:
+<b class="nc">&nbsp;					return new InversePath(id, (Resource) statement.getObject(), shapeSource);</b>
+&nbsp;				case &quot;http://www.w3.org/ns/shacl#alternativePath&quot;:
+<b class="nc">&nbsp;					return new AlternativePath(id, (Resource) statement.getObject(), shapeSource);</b>
+&nbsp;				case &quot;http://www.w3.org/ns/shacl#zeroOrMorePath&quot;:
+<b class="nc">&nbsp;					return new ZeroOrMorePath(id, (Resource) statement.getObject(), shapeSource);</b>
+&nbsp;				case &quot;http://www.w3.org/ns/shacl#oneOrMorePath&quot;:
+<b class="nc">&nbsp;					return new OneOrMorePath(id, (Resource) statement.getObject(), shapeSource);</b>
+&nbsp;				case &quot;http://www.w3.org/ns/shacl#zeroOrOnePath&quot;:
+<b class="nc">&nbsp;					return new ZeroOrOnePath(id, (Resource) statement.getObject(), shapeSource);</b>
+&nbsp;				case &quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#first&quot;:
+<b class="nc">&nbsp;					return new SequencePath(id, shapeSource);</b>
+&nbsp;				default:
+&nbsp;					break;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			throw new ShaclUnsupportedException();</b>
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new SimplePath((IRI) id);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public abstract PlanNode getAdded(ConnectionsGroup connectionsGroup,
+&nbsp;			Resource[] dataGraph, PlanNodeWrapper planNodeWrapper);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if feature is currently supported by the ShaclSail
+&nbsp;	 */
+&nbsp;	public abstract boolean isSupported();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,280 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StringUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.text</a>
+</div>
+
+<h1>Coverage Summary for Class: StringUtil (org.eclipse.rdf4j.common.text)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StringUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/47)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.text;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Locale;
+&nbsp;
+<b class="nc">&nbsp;public class StringUtil {</b>
+<b class="nc">&nbsp;	private static final char[] IRI_DONT_ESCAPE = new char[] { &#39;_&#39;, &#39;~&#39;, &#39;.&#39;, &#39;-&#39;, &#39;!&#39;, &#39;$&#39;, &#39;&amp;&#39;, &#39;\&#39;&#39;, &#39;(&#39;,</b>
+&nbsp;			&#39;)&#39;, &#39;*&#39;, &#39;+&#39;, &#39;,&#39;, &#39;;&#39;, &#39;=&#39;, &#39;:&#39;, &#39;/&#39;, &#39;?&#39;, &#39;#&#39;, &#39;@&#39;, &#39;%&#39;, &#39;[&#39;, &#39;]&#39; };
+&nbsp;
+&nbsp;	static {
+&nbsp;		// sorting array to allow simple binary search for char lookup.
+<b class="nc">&nbsp;		Arrays.sort(IRI_DONT_ESCAPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Substitute String &quot;old&quot; by String &quot;new&quot; in String &quot;text&quot; everywhere. This is a static util function that I could
+&nbsp;	 * not place anywhere more appropriate. The name of this function is from the good-old awk time.
+&nbsp;	 *
+&nbsp;	 * @param olds The String to be substituted.
+&nbsp;	 * @param news The String is the new content.
+&nbsp;	 * @param text The String in which the substitution is done.
+&nbsp;	 * @return The result String containing the substitutions; if no substitutions were made, the result is &#39;text&#39;.
+&nbsp;	 *
+&nbsp;	 * @deprecated use {@link String#replace(CharSequence, CharSequence) instead}.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static String gsub(String olds, String news, String text) {
+<b class="nc">&nbsp;		if (olds == null || olds.length() == 0) {</b>
+&nbsp;			// Nothing to substitute.
+<b class="nc">&nbsp;			return text;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (text == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Search for any occurences of &#39;olds&#39;.
+<b class="nc">&nbsp;		int oldsIndex = text.indexOf(olds);</b>
+<b class="nc">&nbsp;		if (oldsIndex == -1) {</b>
+&nbsp;			// Nothing to substitute.
+<b class="nc">&nbsp;			return text;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// We&#39;re going to do some substitutions.
+<b class="nc">&nbsp;		StringBuilder buf = new StringBuilder(text.length());</b>
+<b class="nc">&nbsp;		int prevIndex = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		while (oldsIndex &gt;= 0) {</b>
+&nbsp;			// First, add the text between the previous and the current
+&nbsp;			// occurence.
+<b class="nc">&nbsp;			buf.append(text.substring(prevIndex, oldsIndex));</b>
+&nbsp;
+&nbsp;			// Then add the substition pattern
+<b class="nc">&nbsp;			buf.append(news);</b>
+&nbsp;
+&nbsp;			// Remember the index for the next loop.
+<b class="nc">&nbsp;			prevIndex = oldsIndex + olds.length();</b>
+&nbsp;
+&nbsp;			// Search for the next occurence.
+<b class="nc">&nbsp;			oldsIndex = text.indexOf(olds, prevIndex);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Add the part after the last occurence.
+<b class="nc">&nbsp;		buf.append(text.substring(prevIndex));</b>
+&nbsp;
+<b class="nc">&nbsp;		return buf.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String hex(int c) {
+<b class="nc">&nbsp;		return Integer.toHexString(c).toUpperCase(Locale.US);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Escapes a string to a (mostly) conforming IRI value and append it to the appendable.
+&nbsp;	 *
+&nbsp;	 * Non-ASCII (valid) values can optionally be numerically encoded by setting escapeUnicode to true. Most characters
+&nbsp;	 * that are invalid in an IRI - like a white space or control character - are percent-encoded.
+&nbsp;	 *
+&nbsp;	 * This is slightly faster than {@link org.eclipse.rdf4j.common.net.ParsedIRI#create(String)} for valid IRI (without
+&nbsp;	 * percents) and much faster for IRI with invalid (percent-encoded) characters, though it is less accurate.
+&nbsp;	 *
+&nbsp;	 * @param str
+&nbsp;	 * @param appendable
+&nbsp;	 * @param escapeUnicode escape non-ASCII values numerically
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void simpleEscapeIRI(String str, Appendable appendable, boolean escapeUnicode) throws IOException {
+<b class="nc">&nbsp;		int strlen = str.length();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; strlen; i++) {</b>
+<b class="nc">&nbsp;			char c = str.charAt(i);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (ASCIIUtil.isLetterOrNumber(c)) {</b>
+<b class="nc">&nbsp;				appendable.append(c);</b>
+<b class="nc">&nbsp;			} else if (c &lt; 0xA0) {</b>
+<b class="nc">&nbsp;				if (Arrays.binarySearch(IRI_DONT_ESCAPE, c) &gt; -1) {</b>
+<b class="nc">&nbsp;					appendable.append(c);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					appendable.append(&#39;%&#39;).append(hex(c));</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (escapeUnicode) {</b>
+<b class="nc">&nbsp;					if (c &lt;= 0xFF) {</b>
+<b class="nc">&nbsp;						appendable.append(&quot;\\u00&quot;).append(hex(c));</b>
+<b class="nc">&nbsp;					} else if (c &lt;= 0x0FFF) {</b>
+<b class="nc">&nbsp;						appendable.append(&quot;\\u0&quot;).append(hex(c));</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						if (Character.isSurrogate(c) &amp;&amp; (i &lt; strlen - 1)) {</b>
+&nbsp;							// U+10000 - U+10FFFF
+<b class="nc">&nbsp;							int code = str.codePointAt(i);</b>
+<b class="nc">&nbsp;							i++;</b>
+<b class="nc">&nbsp;							appendable.append(&quot;\\U000&quot;).append(hex(code));</b>
+<b class="nc">&nbsp;						} else {</b>
+<b class="nc">&nbsp;							appendable.append(&quot;\\u&quot;).append(hex(c));</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				} else {
+<b class="nc">&nbsp;					appendable.append(c);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the specified character &lt;var&gt;n&lt;/var&gt; times to the supplied StringBuilder.
+&nbsp;	 *
+&nbsp;	 * @param c  The character to append.
+&nbsp;	 * @param n  The number of times the character should be appended.
+&nbsp;	 * @param sb The StringBuilder to append the character(s) to.
+&nbsp;	 */
+&nbsp;	public static void appendN(char c, int n, StringBuilder sb) {
+<b class="nc">&nbsp;		for (int i = n; i &gt; 0; i--) {</b>
+<b class="nc">&nbsp;			sb.append(c);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the double quote from the start and end of the supplied string if it starts and ends with this character.
+&nbsp;	 * This method does not create a new string if &lt;var&gt;text&lt;/var&gt; doesn&#39;t start and end with double quotes, the
+&nbsp;	 * &lt;var&gt;text&lt;/var&gt; object itself is returned in that case.
+&nbsp;	 *
+&nbsp;	 * @param text The string to remove the double quotes from.
+&nbsp;	 * @return The trimmed string, or a reference to &lt;var&gt;text&lt;/var&gt; if it did not start and end with double quotes.
+&nbsp;	 */
+&nbsp;	public static String trimDoubleQuotes(String text) {
+<b class="nc">&nbsp;		int textLength = text.length();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (textLength &gt;= 2 &amp;&amp; text.charAt(0) == &#39;&quot;&#39; &amp;&amp; text.charAt(textLength - 1) == &#39;&quot;&#39;) {</b>
+<b class="nc">&nbsp;			return text.substring(1, textLength - 1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return text;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

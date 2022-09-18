@@ -1,0 +1,358 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ReusableTupleQueryResult</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.resultcache</a>
+</div>
+
+<h1>Coverage Summary for Class: ReusableTupleQueryResult (org.eclipse.rdf4j.spring.resultcache)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ReusableTupleQueryResult</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ReusableTupleQueryResult$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.resultcache;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.spring.resultcache.ThrowableRecorder.recordingThrowable;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Spliterator;
+&nbsp;import java.util.Spliterators;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.spring.support.query.DelegatingIterator;
+&nbsp;
+&nbsp;/**
+&nbsp; * Wrapper for a TupleQueryResult, allowing the result to be replayed. The wrapper copies the result data, consuming the
+&nbsp; * original result fully on &lt;code&gt;close()&lt;/code&gt;.
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * Example:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * TupleQueryResult result = tupleQuery.execute();
+&nbsp; * ReuseableTupleQueryResult reusable = new ReuseableTupleQueryResult(result);
+&nbsp; * while (reusable.hasNext()) {
+&nbsp; * 	reuseable.next();
+&nbsp; * }
+&nbsp; * reuseable.close();
+&nbsp; * TupleQueryResult cached = reuseable.recreateTupleQueryResult();
+&nbsp; * while (cached.hasNext()) {
+&nbsp; * 	cached.next();
+&nbsp; * }
+&nbsp; * cached.close();
+&nbsp; *
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableRecorder {
+&nbsp;	private TupleQueryResult originalResult;
+&nbsp;	private final List&lt;BindingSet&gt; bindingSets;
+<b class="nc">&nbsp;	private final AtomicBoolean recording = new AtomicBoolean(true);</b>
+<b class="nc">&nbsp;	private final AtomicBoolean exceptionDuringRecording = new AtomicBoolean(false);</b>
+&nbsp;	private final BindingSet queryBindings;
+&nbsp;	private List&lt;String&gt; bindingNames;
+&nbsp;
+<b class="nc">&nbsp;	public ReusableTupleQueryResult(TupleQueryResult result, BindingSet queryBindings) {</b>
+<b class="nc">&nbsp;		this.originalResult = result;</b>
+<b class="nc">&nbsp;		this.queryBindings = queryBindings;</b>
+<b class="nc">&nbsp;		this.bindingSets = new LinkedList&lt;&gt;();</b>
+<b class="nc">&nbsp;		this.recording.set(true);</b>
+<b class="nc">&nbsp;		this.exceptionDuringRecording.set(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean queryBindingsAreIdentical(BindingSet candidate) {
+<b class="nc">&nbsp;		return queryBindings.equals(candidate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean canReuse() {
+<b class="nc">&nbsp;		return (!recording.get()) &amp;&amp; originalResult == null &amp;&amp; (!exceptionDuringRecording.get());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CachedTupleQueryResult recreateTupleQueryResult() {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Cannot reuse yet: still recording&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new CachedTupleQueryResult(this.bindingSets, this.bindingNames);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void recordThrowable(Throwable t) {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			this.exceptionDuringRecording.set(true);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getBindingNames() throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			return recordingThrowable(</b>
+<b class="nc">&nbsp;					originalResult::getBindingNames,</b>
+&nbsp;					this);
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;BindingSet&gt; iterator() {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			return recordingThrowable(</b>
+<b class="nc">&nbsp;					() -&gt; new DelegatingIterator&lt;BindingSet&gt;(originalResult.iterator()) {</b>
+&nbsp;						@Override
+&nbsp;						public BindingSet next() {
+<b class="nc">&nbsp;							BindingSet n = super.next();</b>
+<b class="nc">&nbsp;							bindingSets.add(n);</b>
+<b class="nc">&nbsp;							return n;</b>
+&nbsp;						}
+&nbsp;					},
+&nbsp;					this);
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			recordingThrowable(</b>
+&nbsp;					() -&gt; {
+&nbsp;						// consume fully if there are more results
+<b class="nc">&nbsp;						while (hasNext()) {</b>
+<b class="nc">&nbsp;							next();</b>
+&nbsp;						}
+&nbsp;						try {
+<b class="nc">&nbsp;							this.bindingNames = originalResult.getBindingNames();</b>
+<b class="nc">&nbsp;							originalResult.close();</b>
+&nbsp;						} finally {
+<b class="nc">&nbsp;							originalResult = null;</b>
+<b class="nc">&nbsp;							this.recording.set(false);</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					},
+&nbsp;					this);
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Cannot close: not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			return recordingThrowable(() -&gt; originalResult.hasNext(), this);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet next() throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			BindingSet n = recordingThrowable(() -&gt; originalResult.next(), this);</b>
+<b class="nc">&nbsp;			bindingSets.add(n);</b>
+<b class="nc">&nbsp;			return n;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Remove is not supported&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Stream&lt;BindingSet&gt; stream() {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			return recordingThrowable(</b>
+<b class="nc">&nbsp;					() -&gt; originalResult.stream()</b>
+<b class="nc">&nbsp;							.map(</b>
+&nbsp;									bindings -&gt; {
+<b class="nc">&nbsp;										bindingSets.add(bindings);</b>
+<b class="nc">&nbsp;										return bindings;</b>
+&nbsp;									}),
+&nbsp;					this);
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void forEach(Consumer&lt;? super BindingSet&gt; action) {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			recordingThrowable(</b>
+<b class="nc">&nbsp;					() -&gt; originalResult.forEach(</b>
+&nbsp;							bindings -&gt; {
+<b class="nc">&nbsp;								bindingSets.add(bindings);</b>
+<b class="nc">&nbsp;								action.accept(bindings);</b>
+&nbsp;							}),
+&nbsp;					this);
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Spliterator&lt;BindingSet&gt; spliterator() {
+<b class="nc">&nbsp;		if (recording.get()) {</b>
+<b class="nc">&nbsp;			return Spliterators.spliteratorUnknownSize(iterator(), Spliterator.ORDERED);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Not open&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,316 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Util</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console</a>
+</div>
+
+<h1>Coverage Summary for Class: Util (org.eclipse.rdf4j.console)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Util</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/65)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console;
+&nbsp;
+&nbsp;import java.net.URI;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.nio.file.InvalidPathException;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.nio.file.Paths;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Helper class
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class Util {</b>
+&nbsp;	/**
+&nbsp;	 * Get context IRI from string representation
+&nbsp;	 *
+&nbsp;	 * @param repository repository
+&nbsp;	 * @param ctxID      context as string
+&nbsp;	 * @return context IRI
+&nbsp;	 */
+&nbsp;	public static Resource getContext(Repository repository, String ctxID) {
+<b class="nc">&nbsp;		if (ctxID.equalsIgnoreCase(&quot;null&quot;)) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (ctxID.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;			return repository.getValueFactory().createBNode(ctxID.substring(2));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return repository.getValueFactory().createIRI(ctxID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get context IRIs from a series of tokens, starting from (zero-based) position within the series.
+&nbsp;	 *
+&nbsp;	 * @param tokens     command as series of tokens
+&nbsp;	 * @param pos        position to start from
+&nbsp;	 * @param repository repository
+&nbsp;	 * @return array of contexts or null for default context
+&nbsp;	 * @throws IllegalArgumentException
+&nbsp;	 */
+&nbsp;	public static Resource[] getContexts(String[] tokens, int pos, Repository repository)
+&nbsp;			throws IllegalArgumentException {
+<b class="nc">&nbsp;		Resource[] contexts = new Resource[] {};</b>
+&nbsp;
+<b class="nc">&nbsp;		if (tokens.length &gt; pos) {</b>
+<b class="nc">&nbsp;			contexts = new Resource[tokens.length - pos];</b>
+<b class="nc">&nbsp;			for (int i = pos; i &lt; tokens.length; i++) {</b>
+<b class="nc">&nbsp;				contexts[i - pos] = getContext(repository, tokens[i]);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get path from file or URI
+&nbsp;	 *
+&nbsp;	 * @param file file name
+&nbsp;	 * @return path or null
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static Path getPath(String file) {
+<b class="nc">&nbsp;		Path path = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			path = Paths.get(file);</b>
+<b class="nc">&nbsp;		} catch (InvalidPathException ipe) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				path = Paths.get(new URI(file));</b>
+<b class="nc">&nbsp;			} catch (URISyntaxException ex) {</b>
+&nbsp;				//
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return path;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if a string looks like a HTTP, HTTPS or file URI.
+&nbsp;	 *
+&nbsp;	 * @param str string
+&nbsp;	 * @return true if
+&nbsp;	 */
+&nbsp;	public static boolean isHttpOrFile(String str) {
+<b class="nc">&nbsp;		String lower = str.toLowerCase();</b>
+<b class="nc">&nbsp;		return lower.startsWith(&quot;http://&quot;) || lower.startsWith(&quot;https://&quot;) || lower.startsWith(&quot;file://&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get path from file string if it&#39;s absolute, or from working directory if the file is relative.
+&nbsp;	 *
+&nbsp;	 * @param workDir working dir
+&nbsp;	 * @param file    file name
+&nbsp;	 * @return path normalized path
+&nbsp;	 */
+&nbsp;	public static Path getNormalizedPath(Path workDir, String file) {
+<b class="nc">&nbsp;		Path path = Paths.get(file);</b>
+<b class="nc">&nbsp;		if (!path.isAbsolute() &amp;&amp; (workDir != null)) {</b>
+<b class="nc">&nbsp;			path = workDir.resolve(file);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return path.normalize();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get string representation for a value. If the value is an IRI and is part of a known namespace, the prefix will
+&nbsp;	 * be used to shorten it.
+&nbsp;	 *
+&nbsp;	 * @param value      value
+&nbsp;	 * @param namespaces mapping (uri,prefix)
+&nbsp;	 * @return string representation
+&nbsp;	 */
+&nbsp;	public static String getPrefixedValue(Value value, Map&lt;String, String&gt; namespaces) {
+<b class="nc">&nbsp;		if (value == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (namespaces.isEmpty()) {</b>
+<b class="nc">&nbsp;			return NTriplesUtil.toNTriplesString(value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			IRI uri = (IRI) value;</b>
+<b class="nc">&nbsp;			String prefix = namespaces.get(uri.getNamespace());</b>
+<b class="nc">&nbsp;			if (prefix != null) {</b>
+<b class="nc">&nbsp;				return prefix + &quot;:&quot; + uri.getLocalName();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal lit = (Literal) value;</b>
+<b class="nc">&nbsp;			IRI uri = lit.getDatatype();</b>
+<b class="nc">&nbsp;			String prefix = namespaces.get(uri.getNamespace());</b>
+<b class="nc">&nbsp;			if (prefix != null) {</b>
+<b class="nc">&nbsp;				return &quot;\&quot;&quot; + lit.getLabel() + &quot;\&quot;^^&quot; + prefix + &quot;:&quot; + uri.getLocalName();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (value instanceof Triple) {</b>
+<b class="nc">&nbsp;			return &quot;&lt;&lt;&quot; + getPrefixedValue(((Triple) value).getSubject(), namespaces) + &quot; &quot;</b>
+<b class="nc">&nbsp;					+ getPrefixedValue(((Triple) value).getPredicate(), namespaces) + &quot; &quot;</b>
+<b class="nc">&nbsp;					+ getPrefixedValue(((Triple) value).getObject(), namespaces) + &quot;&gt;&gt;&quot;;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return NTriplesUtil.toNTriplesString(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Format a string of values, starting new line(s) when the joined values exceed the width. Primarily used for
+&nbsp;	 * displaying formatted help (e.g namespaces, config files) to the console. To be replaced by a commons text method
+&nbsp;	 *
+&nbsp;	 * @param width     maximum column width
+&nbsp;	 * @param padding   left padding
+&nbsp;	 * @param str       joined string
+&nbsp;	 * @param separator value separator
+&nbsp;	 * @return list of values as a formatted string, or empty
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static String formatToWidth(int width, String padding, String str, String separator) {
+<b class="nc">&nbsp;		if (str.isEmpty()) {</b>
+<b class="nc">&nbsp;			return &quot;&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int padLen = padding.length();</b>
+<b class="nc">&nbsp;		int strLen = str.length();</b>
+<b class="nc">&nbsp;		int sepLen = separator.length();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (strLen + padLen &lt;= width) {</b>
+<b class="nc">&nbsp;			return padding + str;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String[] values = str.split(separator);</b>
+<b class="nc">&nbsp;		StringBuilder builder = new StringBuilder(strLen + 4 * padLen + 8 * sepLen);</b>
+&nbsp;
+<b class="nc">&nbsp;		int colpos = width; // force start on new line</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String value : values) {</b>
+<b class="nc">&nbsp;			int len = value.length();</b>
+<b class="nc">&nbsp;			if (colpos + sepLen + len &lt;= width) {</b>
+<b class="nc">&nbsp;				builder.append(separator);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				builder.append(&quot;\n&quot;).append(padding);</b>
+<b class="nc">&nbsp;				colpos = padLen;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			builder.append(value);</b>
+<b class="nc">&nbsp;			colpos += len;</b>
+&nbsp;		}
+&nbsp;		// don&#39;t return initial newline
+<b class="nc">&nbsp;		return builder.substring(1);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,255 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryResult</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryResult (org.eclipse.rdf4j.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositoryResult</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (5/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (2/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    47.4%
+  </span>
+  <span class="absValue">
+    (9/19)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;
+&nbsp;/**
+&nbsp; * A RepositoryResult is a result collection of objects (for example {@link org.eclipse.rdf4j.model.Statement} ,
+&nbsp; * {@link org.eclipse.rdf4j.model.Namespace}, or {@link Resource} objects) that can be iterated over. It keeps an open
+&nbsp; * connection to the backend for lazy retrieval of individual results. Additionally it has some utility methods to fetch
+&nbsp; * all results and add them to a collection.
+&nbsp; * &lt;p&gt;
+&nbsp; * By default, a RepositoryResult is not necessarily a (mathematical) set: it may contain duplicate objects. Duplicate
+&nbsp; * filtering can be {@link #enableDuplicateFilter() switched on}, but this should not be used lightly as the filtering
+&nbsp; * mechanism is potentially memory-intensive.
+&nbsp; * &lt;p&gt;
+&nbsp; * A RepositoryResult needs to be {@link #close() closed} after use to free up any resources (open connections, read
+&nbsp; * locks, etc.) it has on the underlying repository.
+&nbsp; *
+&nbsp; * @see RepositoryConnection#getStatements(Resource, IRI, Value, boolean, Resource[])
+&nbsp; * @see RepositoryConnection#getNamespaces()
+&nbsp; * @see RepositoryConnection#getContextIDs()
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;public class RepositoryResult&lt;T&gt; extends AbstractCloseableIteration&lt;T, RepositoryException&gt; implements Iterable&lt;T&gt; {</b>
+&nbsp;
+&nbsp;	private CloseableIteration&lt;? extends T, RepositoryException&gt; wrappedIter;
+&nbsp;
+<b class="fc">&nbsp;	public RepositoryResult(CloseableIteration&lt;? extends T, RepositoryException&gt; iter) {</b>
+<b class="pc">&nbsp;		assert iter != null;</b>
+<b class="fc">&nbsp;		wrappedIter = iter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() throws RepositoryException {
+<b class="fc">&nbsp;		return wrappedIter.hasNext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public T next() throws RepositoryException {
+<b class="fc">&nbsp;		return wrappedIter.next();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() throws RepositoryException {
+<b class="nc">&nbsp;		wrappedIter.remove();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws RepositoryException {
+&nbsp;		try {
+<b class="fc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			Iterations.closeCloseable(wrappedIter);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Switches on duplicate filtering while iterating over objects. The RepositoryResult will keep track of the
+&nbsp;	 * previously returned objects in a {@link java.util.Set} and on calling next() or hasNext() will ignore any objects
+&nbsp;	 * that already occur in this Set.
+&nbsp;	 * &lt;P&gt;
+&nbsp;	 * Caution: use of this filtering mechanism is potentially memory-intensive.
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException if a problem occurred during initialization of the filter.
+&nbsp;	 */
+&nbsp;	public void enableDuplicateFilter() throws RepositoryException {
+<b class="nc">&nbsp;		if (wrappedIter instanceof DistinctIteration) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		wrappedIter = new DistinctIteration&lt;T, RepositoryException&gt;(wrappedIter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link List} containing all objects of this RepositoryResult in order of iteration. The
+&nbsp;	 * RepositoryResult is fully consumed and automatically closed by this operation.
+&nbsp;	 * &lt;P&gt;
+&nbsp;	 * Note: use this method with caution! It pulls the entire RepositoryResult in memory and as such is potentially
+&nbsp;	 * very memory-intensive.
+&nbsp;	 *
+&nbsp;	 * @return a List containing all objects of this RepositoryResult.
+&nbsp;	 * @throws RepositoryException if a problem occurred during retrieval of the results.
+&nbsp;	 * @see #addTo(Collection)
+&nbsp;	 * @deprecated Use {@link Iterations#asList(Iteration)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public List&lt;T&gt; asList() throws RepositoryException {
+<b class="nc">&nbsp;		return addTo(new ArrayList&lt;&gt;());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds all objects of this RepositoryResult to the supplied collection. The RepositoryResult is fully consumed and
+&nbsp;	 * automatically closed by this operation.
+&nbsp;	 *
+&nbsp;	 * @return A reference to the collection that was supplied.
+&nbsp;	 * @throws RepositoryException if a problem occurred during retrieval of the results.
+&nbsp;	 * @deprecated Use {@link Iterations#addAll(Iteration, Collection)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public &lt;C extends Collection&lt;T&gt;&gt; C addTo(C collection) throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			while (hasNext()) {</b>
+<b class="nc">&nbsp;				collection.add(next());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return collection;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;T&gt; iterator() {
+<b class="nc">&nbsp;		return new CloseableIterationIterator&lt;&gt;(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

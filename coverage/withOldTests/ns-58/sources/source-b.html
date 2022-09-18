@@ -1,0 +1,469 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DefaultDatatype</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.base</a>
+</div>
+
+<h1>Coverage Summary for Class: DefaultDatatype (org.eclipse.rdf4j.model.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DefaultDatatype</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (2/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (2/3)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.base;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import javax.xml.datatype.Duration;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;
+&nbsp;public interface CoreDatatype {
+&nbsp;
+&nbsp;	CoreDatatype NONE = DefaultDatatype.NONE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is an XML Schema Datatype.
+&nbsp;	 *
+&nbsp;	 * @return true if the datatype is an XML Schema Datatype
+&nbsp;	 */
+&nbsp;	default boolean isXSDDatatype() {
+&nbsp;		return false;
+&nbsp;	}
+&nbsp;
+&nbsp;	default boolean isRDFDatatype() {
+&nbsp;		return false;
+&nbsp;	}
+&nbsp;
+&nbsp;	default boolean isGEODatatype() {
+&nbsp;		return false;
+&nbsp;	}
+&nbsp;
+&nbsp;	default Optional&lt;XSD&gt; asXSDDatatype() {
+&nbsp;		return Optional.empty();
+&nbsp;	}
+&nbsp;
+&nbsp;	default Optional&lt;RDF&gt; asRDFDatatype() {
+&nbsp;		return Optional.empty();
+&nbsp;	}
+&nbsp;
+&nbsp;	default Optional&lt;GEO&gt; asGEODatatype() {
+&nbsp;		return Optional.empty();
+&nbsp;	}
+&nbsp;
+&nbsp;	IRI getIri();
+&nbsp;
+&nbsp;	static CoreDatatype from(IRI datatype) {
+&nbsp;		if (datatype == null) {
+&nbsp;			return CoreDatatype.NONE;
+&nbsp;		}
+&nbsp;		return CoreDatatypeHelper.getReverseLookup().getOrDefault(datatype, CoreDatatype.NONE);
+&nbsp;	}
+&nbsp;
+&nbsp;	enum XSD implements CoreDatatype {
+&nbsp;
+&nbsp;		ENTITIES(iri(&quot;ENTITIES&quot;), false, false, false, true, false, false, false),
+&nbsp;		ENTITY(iri(&quot;ENTITY&quot;), false, false, false, true, false, false, false),
+&nbsp;		ID(iri(&quot;ID&quot;), false, false, false, true, false, false, false),
+&nbsp;		IDREF(iri(&quot;IDREF&quot;), false, false, false, true, false, false, false),
+&nbsp;		IDREFS(iri(&quot;IDREFS&quot;), false, false, false, true, false, false, false),
+&nbsp;		NCNAME(iri(&quot;NCName&quot;), false, false, false, true, false, false, false),
+&nbsp;		NMTOKEN(iri(&quot;NMTOKEN&quot;), false, false, false, true, false, false, false),
+&nbsp;		NMTOKENS(iri(&quot;NMTOKENS&quot;), false, false, false, true, false, false, false),
+&nbsp;		NOTATION(iri(&quot;NOTATION&quot;), true, false, false, false, false, false, false),
+&nbsp;		NAME(iri(&quot;Name&quot;), false, false, false, true, false, false, false),
+&nbsp;		QNAME(iri(&quot;QName&quot;), true, false, false, false, false, false, false),
+&nbsp;		ANYURI(iri(&quot;anyURI&quot;), true, false, false, false, false, false, false),
+&nbsp;		BASE64BINARY(iri(&quot;base64Binary&quot;), true, false, false, false, false, false, false),
+&nbsp;		BOOLEAN(iri(&quot;boolean&quot;), true, false, false, false, false, false, false),
+&nbsp;		BYTE(iri(&quot;byte&quot;), false, false, true, true, true, false, false),
+&nbsp;		DATE(iri(&quot;date&quot;), true, false, false, false, false, false, true),
+&nbsp;		DATETIME(iri(&quot;dateTime&quot;), true, false, false, false, false, false, true),
+&nbsp;		DATETIMESTAMP(iri(&quot;dateTimeStamp&quot;), false, false, false, true, false, false, true),
+&nbsp;		DAYTIMEDURATION(iri(&quot;dayTimeDuration&quot;), false, true, false, true, false, false, false),
+&nbsp;		DECIMAL(iri(&quot;decimal&quot;), true, false, false, false, true, false, false),
+&nbsp;		DOUBLE(iri(&quot;double&quot;), true, false, false, false, false, true, false),
+&nbsp;		DURATION(iri(&quot;duration&quot;), true, true, false, false, false, false, false),
+&nbsp;		FLOAT(iri(&quot;float&quot;), true, false, false, false, false, true, false),
+&nbsp;		GDAY(iri(&quot;gDay&quot;), true, false, false, false, false, false, true),
+&nbsp;		GMONTH(iri(&quot;gMonth&quot;), true, false, false, false, false, false, true),
+&nbsp;		GMONTHDAY(iri(&quot;gMonthDay&quot;), true, false, false, false, false, false, true),
+&nbsp;		GYEAR(iri(&quot;gYear&quot;), true, false, false, false, false, false, true),
+&nbsp;		GYEARMONTH(iri(&quot;gYearMonth&quot;), true, false, false, false, false, false, true),
+&nbsp;		HEXBINARY(iri(&quot;hexBinary&quot;), true, false, false, false, false, false, false),
+&nbsp;		INT(iri(&quot;int&quot;), false, false, true, true, true, false, false),
+&nbsp;		INTEGER(iri(&quot;integer&quot;), false, false, true, true, true, false, false),
+&nbsp;		LANGUAGE(iri(&quot;language&quot;), false, false, false, true, false, false, false),
+&nbsp;		LONG(iri(&quot;long&quot;), false, false, true, true, true, false, false),
+&nbsp;		NEGATIVE_INTEGER(iri(&quot;negativeInteger&quot;), false, false, true, true, true, false, false),
+&nbsp;		NON_NEGATIVE_INTEGER(iri(&quot;nonNegativeInteger&quot;), false, false, true, true, true, false, false),
+&nbsp;		NON_POSITIVE_INTEGER(iri(&quot;nonPositiveInteger&quot;), false, false, true, true, true, false, false),
+&nbsp;		NORMALIZEDSTRING(iri(&quot;normalizedString&quot;), false, false, false, true, false, false, false),
+&nbsp;		POSITIVE_INTEGER(iri(&quot;positiveInteger&quot;), false, false, true, true, true, false, false),
+&nbsp;		SHORT(iri(&quot;short&quot;), false, false, true, true, true, false, false),
+&nbsp;		STRING(iri(&quot;string&quot;), true, false, false, false, false, false, false),
+&nbsp;		TIME(iri(&quot;time&quot;), true, false, false, false, false, false, true),
+&nbsp;		TOKEN(iri(&quot;token&quot;), false, false, false, true, false, false, false),
+&nbsp;		UNSIGNED_BYTE(iri(&quot;unsignedByte&quot;), false, false, true, true, true, false, false),
+&nbsp;		UNSIGNED_INT(iri(&quot;unsignedInt&quot;), false, false, true, true, true, false, false),
+&nbsp;		UNSIGNED_LONG(iri(&quot;unsignedLong&quot;), false, false, true, true, true, false, false),
+&nbsp;		UNSIGNED_SHORT(iri(&quot;unsignedShort&quot;), false, false, true, true, true, false, false),
+&nbsp;		YEARMONTHDURATION(iri(&quot;yearMonthDuration&quot;), false, true, false, true, false, false, false);
+&nbsp;
+&nbsp;		public static final String NAMESPACE = &quot;http://www.w3.org/2001/XMLSchema#&quot;;
+&nbsp;
+&nbsp;		private static IRI iri(String localName) {
+&nbsp;			return new InternedIRI(NAMESPACE, localName);
+&nbsp;		}
+&nbsp;
+&nbsp;		private final IRI iri;
+&nbsp;		private final boolean primitive;
+&nbsp;		private final boolean duration;
+&nbsp;		private final boolean integer;
+&nbsp;		private final boolean derived;
+&nbsp;		private final boolean decimal;
+&nbsp;		private final boolean floatingPoint;
+&nbsp;		private final boolean calendar;
+&nbsp;		private final boolean builtIn;
+&nbsp;		private final boolean numeric;
+&nbsp;		private final boolean ordered;
+&nbsp;
+&nbsp;		// Creating optionals are expensive so we precompute one
+&nbsp;		private final Optional&lt;XSD&gt; optional;
+&nbsp;
+&nbsp;		XSD(IRI iri, boolean primitive, boolean duration, boolean integer, boolean derived, boolean decimal,
+&nbsp;				boolean floatingPoint, boolean calendar) {
+&nbsp;			this.iri = iri;
+&nbsp;			this.primitive = primitive;
+&nbsp;			this.duration = duration;
+&nbsp;			this.integer = integer;
+&nbsp;			this.derived = derived;
+&nbsp;			this.decimal = decimal;
+&nbsp;			this.floatingPoint = floatingPoint;
+&nbsp;			this.calendar = calendar;
+&nbsp;
+&nbsp;			this.builtIn = primitive || derived;
+&nbsp;			this.numeric = decimal || floatingPoint;
+&nbsp;			this.ordered = numeric || calendar;
+&nbsp;
+&nbsp;			this.optional = Optional.of(this);
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a primitive XML Schema datatype.
+&nbsp;		 *
+&nbsp;		 * @return true if the datatype is a primitive type
+&nbsp;		 */
+&nbsp;		public boolean isPrimitiveDatatype() {
+&nbsp;			return primitive;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a derived XML Schema datatype.
+&nbsp;		 *
+&nbsp;		 * @return true if the datatype is a derived type
+&nbsp;		 */
+&nbsp;		public boolean isDerivedDatatype() {
+&nbsp;			return derived;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a built-in XML Schema datatype.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a primitive or derived XML Schema type
+&nbsp;		 */
+&nbsp;		public boolean isBuiltInDatatype() {
+&nbsp;			return builtIn;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, xsd:double,
+&nbsp;		 * xsd:decimal or one of the datatypes derived from xsd:decimal.
+&nbsp;		 *
+&nbsp;		 * @return true of it is a decimal or floating point type
+&nbsp;		 */
+&nbsp;		public boolean isNumericDatatype() {
+&nbsp;			return numeric;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:decimal or one of the built-in datatypes that is derived
+&nbsp;		 * from xsd:decimal.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a decimal datatype
+&nbsp;		 */
+&nbsp;		public boolean isDecimalDatatype() {
+&nbsp;			return decimal;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:integer or one of the built-in datatypes that is derived
+&nbsp;		 * from xsd:integer.
+&nbsp;		 *
+&nbsp;		 * @return true if it is an integer type
+&nbsp;		 */
+&nbsp;		public boolean isIntegerDatatype() {
+&nbsp;			return integer;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:float or xsd:double.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a floating point type
+&nbsp;		 */
+&nbsp;		public boolean isFloatingPointDatatype() {
+&nbsp;			return floatingPoint;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:dateTime, xsd:date, xsd:time, xsd:gYearMonth,
+&nbsp;		 * xsd:gMonthDay, xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates
+&nbsp;		 * and/or times.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a calendar type
+&nbsp;		 * @see XMLGregorianCalendar
+&nbsp;		 */
+&nbsp;		public boolean isCalendarDatatype() {
+&nbsp;			return calendar;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration.
+&nbsp;		 * These are the datatypes that represents durations.
+&nbsp;		 *
+&nbsp;		 * @return true if it is a duration type
+&nbsp;		 * @see Duration
+&nbsp;		 */
+&nbsp;		public boolean isDurationDatatype() {
+&nbsp;			return duration;
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each
+&nbsp;		 * other using operators like &lt;var&gt;&amp;lt;&lt;/var&gt; and &lt;var&gt;&amp;gt;&lt;/var&gt;.
+&nbsp;		 *
+&nbsp;		 * @return true if the datatype is ordered
+&nbsp;		 */
+&nbsp;		public boolean isOrderedDatatype() {
+&nbsp;			return ordered;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isXSDDatatype() {
+&nbsp;			return true;
+&nbsp;		}
+&nbsp;
+&nbsp;		public IRI getIri() {
+&nbsp;			return iri;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Optional&lt;XSD&gt; asXSDDatatype() {
+&nbsp;			return optional;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+&nbsp;			return iri.toString();
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	enum RDF implements CoreDatatype {
+&nbsp;
+&nbsp;		HTML(iri(&quot;HTML&quot;)),
+&nbsp;		XMLLITERAL(iri(&quot;XMLLiteral&quot;)),
+&nbsp;		LANGSTRING(iri(&quot;langString&quot;));
+&nbsp;
+&nbsp;		public static final String NAMESPACE = &quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#&quot;;
+&nbsp;
+&nbsp;		private static IRI iri(String localName) {
+&nbsp;			return new InternedIRI(NAMESPACE, localName);
+&nbsp;		}
+&nbsp;
+&nbsp;		private final IRI iri;
+&nbsp;
+&nbsp;		// Creating optionals are expensive so we precompute one
+&nbsp;		private final Optional&lt;RDF&gt; optional;
+&nbsp;
+&nbsp;		RDF(IRI iri) {
+&nbsp;			this.iri = iri;
+&nbsp;			this.optional = Optional.of(this);
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isRDFDatatype() {
+&nbsp;			return true;
+&nbsp;		}
+&nbsp;
+&nbsp;		public IRI getIri() {
+&nbsp;			return iri;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Optional&lt;RDF&gt; asRDFDatatype() {
+&nbsp;			return optional;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+&nbsp;			return iri.toString();
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	enum GEO implements CoreDatatype {
+&nbsp;
+&nbsp;		WKT_LITERAL(iri(&quot;wktLiteral&quot;));
+&nbsp;
+&nbsp;		public static final String NAMESPACE = &quot;http://www.opengis.net/ont/geosparql#&quot;;
+&nbsp;
+&nbsp;		private static IRI iri(String localName) {
+&nbsp;			return new InternedIRI(NAMESPACE, localName);
+&nbsp;		}
+&nbsp;
+&nbsp;		private final IRI iri;
+&nbsp;
+&nbsp;		// Creating optionals are expensive so we precompute one
+&nbsp;		private final Optional&lt;GEO&gt; optional;
+&nbsp;
+&nbsp;		GEO(IRI iri) {
+&nbsp;			this.iri = iri;
+&nbsp;			this.optional = Optional.of(this);
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isGEODatatype() {
+&nbsp;			return true;
+&nbsp;		}
+&nbsp;
+&nbsp;		public IRI getIri() {
+&nbsp;			return iri;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Optional&lt;GEO&gt; asGEODatatype() {
+&nbsp;			return optional;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+&nbsp;			return iri.toString();
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+&nbsp;
+&nbsp;/**
+&nbsp; * This needs to be its own enum because we need it to be serializable.
+&nbsp; */
+<b class="fc">&nbsp;enum DefaultDatatype implements CoreDatatype {</b>
+<b class="fc">&nbsp;	NONE;</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI getIri() {
+<b class="nc">&nbsp;		throw new IllegalStateException();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

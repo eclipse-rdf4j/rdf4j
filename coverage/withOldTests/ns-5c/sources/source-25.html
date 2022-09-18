@@ -1,0 +1,521 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TIME</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: TIME (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TIME</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/94)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the Time Ontology in OWL.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/owl-time/&quot;&gt;Time Ontology in OWL&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class TIME {</b>
+&nbsp;	/**
+&nbsp;	 * The Time namespace: http://www.w3.org/2006/time#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/2006/time#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the namespace: &quot;time&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;time&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** time:DateTimeDescription */
+&nbsp;	public static final IRI DATE_TIME_DESCRIPTION;
+&nbsp;
+&nbsp;	/** time:DateTimeInterval */
+&nbsp;	public static final IRI DATE_TIME_INTERVAL;
+&nbsp;
+&nbsp;	/** time:DayOfWeek */
+&nbsp;	public static final IRI DAY_OF_WEEK;
+&nbsp;
+&nbsp;	/** time:Duration */
+&nbsp;	public static final IRI DURATION;
+&nbsp;
+&nbsp;	/** time:DurationDescription */
+&nbsp;	public static final IRI DURATION_DESCRIPTION;
+&nbsp;
+&nbsp;	/** time:GeneralDateTimeDescription */
+&nbsp;	public static final IRI GENERAL_DATE_TIME_DESCRIPTION;
+&nbsp;
+&nbsp;	/** time:GeneralDurationDescription */
+&nbsp;	public static final IRI GENERAL_DURATION_DESCRIPTION;
+&nbsp;
+&nbsp;	/** time:Instant */
+&nbsp;	public static final IRI INSTANT;
+&nbsp;
+&nbsp;	/** time:Interval */
+&nbsp;	public static final IRI INTERVAL;
+&nbsp;
+&nbsp;	/** time:January */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI JANUARY;
+&nbsp;
+&nbsp;	/** time:MonthOfYear */
+&nbsp;	public static final IRI MONTH_OF_YEAR;
+&nbsp;
+&nbsp;	/** time:ProperInterval */
+&nbsp;	public static final IRI PROPER_INTERVAL;
+&nbsp;
+&nbsp;	/** time:TRS */
+&nbsp;	public static final IRI TRS;
+&nbsp;
+&nbsp;	/** time:TemporalDuration */
+&nbsp;	public static final IRI TEMPORAL_DURATION;
+&nbsp;
+&nbsp;	/** time:TemporalEntity */
+&nbsp;	public static final IRI TEMPORAL_ENTITY;
+&nbsp;
+&nbsp;	/** time:TemporalPosition */
+&nbsp;	public static final IRI TEMPORAL_POSITION;
+&nbsp;
+&nbsp;	/** time:TemporalUnit */
+&nbsp;	public static final IRI TEMPORAL_UNIT;
+&nbsp;
+&nbsp;	/** time:TimePosition */
+&nbsp;	public static final IRI TIME_POSITION;
+&nbsp;
+&nbsp;	/** time:TimeZone */
+&nbsp;	public static final IRI TIME_ZONE;
+&nbsp;
+&nbsp;	/** time:Year */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI YEAR;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** time:after */
+&nbsp;	public static final IRI AFTER;
+&nbsp;
+&nbsp;	/** time:before */
+&nbsp;	public static final IRI BEFORE;
+&nbsp;
+&nbsp;	/** time:day */
+&nbsp;	public static final IRI DAY;
+&nbsp;
+&nbsp;	/** time:dayOfWeek */
+&nbsp;	public static final IRI DAY_OF_WEEK_PROP;
+&nbsp;
+&nbsp;	/** time:dayOfYear */
+&nbsp;	public static final IRI DAY_OF_YEAR;
+&nbsp;
+&nbsp;	/** time:days */
+&nbsp;	public static final IRI DAYS;
+&nbsp;
+&nbsp;	/** time:hasBeginning */
+&nbsp;	public static final IRI HAS_BEGINNING;
+&nbsp;
+&nbsp;	/** time:hasDateTimeDescription */
+&nbsp;	public static final IRI HAS_DATE_TIME_DESCRIPTION;
+&nbsp;
+&nbsp;	/** time:hasDuration */
+&nbsp;	public static final IRI HAS_DURATION;
+&nbsp;
+&nbsp;	/** time:hasDurationDescription */
+&nbsp;	public static final IRI HAS_DURATION_DESCRIPTION;
+&nbsp;
+&nbsp;	/** time:hasEnd */
+&nbsp;	public static final IRI HAS_END;
+&nbsp;
+&nbsp;	/** time:hasTRS */
+&nbsp;	public static final IRI HAS_TRS;
+&nbsp;
+&nbsp;	/** time:hasTemporalDuration */
+&nbsp;	public static final IRI HAS_TEMPORAL_DURATION;
+&nbsp;
+&nbsp;	/** time:hasTime */
+&nbsp;	public static final IRI HAS_TIME;
+&nbsp;
+&nbsp;	/** time:hasXSDDuration */
+&nbsp;	public static final IRI HAS_XSDDURATION;
+&nbsp;
+&nbsp;	/** time:hour */
+&nbsp;	public static final IRI HOUR;
+&nbsp;
+&nbsp;	/** time:hours */
+&nbsp;	public static final IRI HOURS;
+&nbsp;
+&nbsp;	/** time:inDateTime */
+&nbsp;	public static final IRI IN_DATE_TIME;
+&nbsp;
+&nbsp;	/** time:inTemporalPosition */
+&nbsp;	public static final IRI IN_TEMPORAL_POSITION;
+&nbsp;
+&nbsp;	/** time:inTimePosition */
+&nbsp;	public static final IRI IN_TIME_POSITION;
+&nbsp;
+&nbsp;	/** time:inXSDDate */
+&nbsp;	public static final IRI IN_XSDDATE;
+&nbsp;
+&nbsp;	/** time:inXSDDateTime */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI IN_XSDDATE_TIME;
+&nbsp;
+&nbsp;	/** time:inXSDDateTimeStamp */
+&nbsp;	public static final IRI IN_XSDDATE_TIME_STAMP;
+&nbsp;
+&nbsp;	/** time:inXSDgYear */
+&nbsp;	public static final IRI IN_XSDG_YEAR;
+&nbsp;
+&nbsp;	/** time:inXSDgYearMonth */
+&nbsp;	public static final IRI IN_XSDG_YEAR_MONTH;
+&nbsp;
+&nbsp;	/** time:inside */
+&nbsp;	public static final IRI INSIDE;
+&nbsp;
+&nbsp;	/** time:intervalAfter */
+&nbsp;	public static final IRI INTERVAL_AFTER;
+&nbsp;
+&nbsp;	/** time:intervalBefore */
+&nbsp;	public static final IRI INTERVAL_BEFORE;
+&nbsp;
+&nbsp;	/** time:intervalContains */
+&nbsp;	public static final IRI INTERVAL_CONTAINS;
+&nbsp;
+&nbsp;	/** time:intervalDisjoint */
+&nbsp;	public static final IRI INTERVAL_DISJOINT;
+&nbsp;
+&nbsp;	/** time:intervalDuring */
+&nbsp;	public static final IRI INTERVAL_DURING;
+&nbsp;
+&nbsp;	/** time:intervalEquals */
+&nbsp;	public static final IRI INTERVAL_EQUALS;
+&nbsp;
+&nbsp;	/** time:intervalFinishedBy */
+&nbsp;	public static final IRI INTERVAL_FINISHED_BY;
+&nbsp;
+&nbsp;	/** time:intervalFinishes */
+&nbsp;	public static final IRI INTERVAL_FINISHES;
+&nbsp;
+&nbsp;	/** time:intervalIn */
+&nbsp;	public static final IRI INTERVAL_IN;
+&nbsp;
+&nbsp;	/** time:intervalMeets */
+&nbsp;	public static final IRI INTERVAL_MEETS;
+&nbsp;
+&nbsp;	/** time:intervalMetBy */
+&nbsp;	public static final IRI INTERVAL_MET_BY;
+&nbsp;
+&nbsp;	/** time:intervalOverlappedBy */
+&nbsp;	public static final IRI INTERVAL_OVERLAPPED_BY;
+&nbsp;
+&nbsp;	/** time:intervalOverlaps */
+&nbsp;	public static final IRI INTERVAL_OVERLAPS;
+&nbsp;
+&nbsp;	/** time:intervalStartedBy */
+&nbsp;	public static final IRI INTERVAL_STARTED_BY;
+&nbsp;
+&nbsp;	/** time:intervalStarts */
+&nbsp;	public static final IRI INTERVAL_STARTS;
+&nbsp;
+&nbsp;	/** time:minute */
+&nbsp;	public static final IRI MINUTE;
+&nbsp;
+&nbsp;	/** time:minutes */
+&nbsp;	public static final IRI MINUTES;
+&nbsp;
+&nbsp;	/** time:month */
+&nbsp;	public static final IRI MONTH;
+&nbsp;
+&nbsp;	/** time:monthOfYear */
+&nbsp;	public static final IRI MONTH_OF_YEAR_PROP;
+&nbsp;
+&nbsp;	/** time:months */
+&nbsp;	public static final IRI MONTHS;
+&nbsp;
+&nbsp;	/** time:nominalPosition */
+&nbsp;	public static final IRI NOMINAL_POSITION;
+&nbsp;
+&nbsp;	/** time:numericDuration */
+&nbsp;	public static final IRI NUMERIC_DURATION;
+&nbsp;
+&nbsp;	/** time:numericPosition */
+&nbsp;	public static final IRI NUMERIC_POSITION;
+&nbsp;
+&nbsp;	/** time:second */
+&nbsp;	public static final IRI SECOND;
+&nbsp;
+&nbsp;	/** time:seconds */
+&nbsp;	public static final IRI SECONDS;
+&nbsp;
+&nbsp;	/** time:timeZone */
+&nbsp;	public static final IRI TIME_ZONE_PROP;
+&nbsp;
+&nbsp;	/** time:unitType */
+&nbsp;	public static final IRI UNIT_TYPE;
+&nbsp;
+&nbsp;	/** time:week */
+&nbsp;	public static final IRI WEEK;
+&nbsp;
+&nbsp;	/** time:weeks */
+&nbsp;	public static final IRI WEEKS;
+&nbsp;
+&nbsp;	/** time:xsdDateTime */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI XSD_DATE_TIME;
+&nbsp;
+&nbsp;	/** time:year */
+&nbsp;	public static final IRI YEAR_PROP;
+&nbsp;
+&nbsp;	/** time:years */
+&nbsp;	public static final IRI YEARS;
+&nbsp;
+&nbsp;	// Individuals
+&nbsp;	/** time:Monday */
+&nbsp;	public static final IRI MONDAY;
+&nbsp;
+&nbsp;	/** time:Tuesday */
+&nbsp;	public static final IRI TUESDAY;
+&nbsp;
+&nbsp;	/** time:Wednesday */
+&nbsp;	public static final IRI WEDNESDAY;
+&nbsp;
+&nbsp;	/** time:Thursday */
+&nbsp;	public static final IRI THURSDAY;
+&nbsp;
+&nbsp;	/** time:Friday */
+&nbsp;	public static final IRI FRIDAY;
+&nbsp;
+&nbsp;	/** time:Saturday */
+&nbsp;	public static final IRI SATURDAY;
+&nbsp;
+&nbsp;	/** time:Sunday */
+&nbsp;	public static final IRI SUNDAY;
+&nbsp;
+&nbsp;	/** time:unitSecond */
+&nbsp;	public static final IRI UNIT_SECOND;
+&nbsp;
+&nbsp;	/** time:unitMinute */
+&nbsp;	public static final IRI UNIT_MINUTE;
+&nbsp;
+&nbsp;	/** time:unitHour */
+&nbsp;	public static final IRI UNIT_HOUR;
+&nbsp;
+&nbsp;	/** time:unitDay */
+&nbsp;	public static final IRI UNIT_DAY;
+&nbsp;
+&nbsp;	/** time:unitWeek */
+&nbsp;	public static final IRI UNIT_WEEK;
+&nbsp;
+&nbsp;	/** time:unitMonth */
+&nbsp;	public static final IRI UNIT_MONTH;
+&nbsp;
+&nbsp;	/** time:unitYear */
+&nbsp;	public static final IRI UNIT_YEAR;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		DATE_TIME_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;DateTimeDescription&quot;);</b>
+<b class="nc">&nbsp;		DATE_TIME_INTERVAL = Vocabularies.createIRI(NAMESPACE, &quot;DateTimeInterval&quot;);</b>
+<b class="nc">&nbsp;		DAY_OF_WEEK = Vocabularies.createIRI(NAMESPACE, &quot;DayOfWeek&quot;);</b>
+<b class="nc">&nbsp;		DURATION = Vocabularies.createIRI(NAMESPACE, &quot;Duration&quot;);</b>
+<b class="nc">&nbsp;		DURATION_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;DurationDescription&quot;);</b>
+<b class="nc">&nbsp;		FRIDAY = Vocabularies.createIRI(NAMESPACE, &quot;Friday&quot;);</b>
+<b class="nc">&nbsp;		GENERAL_DATE_TIME_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;GeneralDateTimeDescription&quot;);</b>
+<b class="nc">&nbsp;		GENERAL_DURATION_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;GeneralDurationDescription&quot;);</b>
+<b class="nc">&nbsp;		INSTANT = Vocabularies.createIRI(NAMESPACE, &quot;Instant&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL = Vocabularies.createIRI(NAMESPACE, &quot;Interval&quot;);</b>
+<b class="nc">&nbsp;		JANUARY = Vocabularies.createIRI(NAMESPACE, &quot;January&quot;);</b>
+<b class="nc">&nbsp;		MONDAY = Vocabularies.createIRI(NAMESPACE, &quot;Monday&quot;);</b>
+<b class="nc">&nbsp;		MONTH_OF_YEAR = Vocabularies.createIRI(NAMESPACE, &quot;MonthOfYear&quot;);</b>
+<b class="nc">&nbsp;		PROPER_INTERVAL = Vocabularies.createIRI(NAMESPACE, &quot;ProperInterval&quot;);</b>
+<b class="nc">&nbsp;		SATURDAY = Vocabularies.createIRI(NAMESPACE, &quot;Saturday&quot;);</b>
+<b class="nc">&nbsp;		SUNDAY = Vocabularies.createIRI(NAMESPACE, &quot;Sunday&quot;);</b>
+<b class="nc">&nbsp;		TRS = Vocabularies.createIRI(NAMESPACE, &quot;TRS&quot;);</b>
+<b class="nc">&nbsp;		TEMPORAL_DURATION = Vocabularies.createIRI(NAMESPACE, &quot;TemporalDuration&quot;);</b>
+<b class="nc">&nbsp;		TEMPORAL_ENTITY = Vocabularies.createIRI(NAMESPACE, &quot;TemporalEntity&quot;);</b>
+<b class="nc">&nbsp;		TEMPORAL_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;TemporalPosition&quot;);</b>
+<b class="nc">&nbsp;		TEMPORAL_UNIT = Vocabularies.createIRI(NAMESPACE, &quot;TemporalUnit&quot;);</b>
+<b class="nc">&nbsp;		THURSDAY = Vocabularies.createIRI(NAMESPACE, &quot;Thursday&quot;);</b>
+<b class="nc">&nbsp;		TIME_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;TimePosition&quot;);</b>
+<b class="nc">&nbsp;		TIME_ZONE = Vocabularies.createIRI(NAMESPACE, &quot;TimeZone&quot;);</b>
+<b class="nc">&nbsp;		TUESDAY = Vocabularies.createIRI(NAMESPACE, &quot;Tuesday&quot;);</b>
+<b class="nc">&nbsp;		WEDNESDAY = Vocabularies.createIRI(NAMESPACE, &quot;Wednesday&quot;);</b>
+<b class="nc">&nbsp;		YEAR = Vocabularies.createIRI(NAMESPACE, &quot;Year&quot;);</b>
+<b class="nc">&nbsp;		UNIT_DAY = Vocabularies.createIRI(NAMESPACE, &quot;unitDay&quot;);</b>
+<b class="nc">&nbsp;		UNIT_HOUR = Vocabularies.createIRI(NAMESPACE, &quot;unitHour&quot;);</b>
+<b class="nc">&nbsp;		UNIT_MINUTE = Vocabularies.createIRI(NAMESPACE, &quot;unitMinute&quot;);</b>
+<b class="nc">&nbsp;		UNIT_MONTH = Vocabularies.createIRI(NAMESPACE, &quot;unitMonth&quot;);</b>
+<b class="nc">&nbsp;		UNIT_SECOND = Vocabularies.createIRI(NAMESPACE, &quot;unitSecond&quot;);</b>
+<b class="nc">&nbsp;		UNIT_WEEK = Vocabularies.createIRI(NAMESPACE, &quot;unitWeek&quot;);</b>
+<b class="nc">&nbsp;		UNIT_YEAR = Vocabularies.createIRI(NAMESPACE, &quot;unitYear&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		AFTER = Vocabularies.createIRI(NAMESPACE, &quot;after&quot;);</b>
+<b class="nc">&nbsp;		BEFORE = Vocabularies.createIRI(NAMESPACE, &quot;before&quot;);</b>
+<b class="nc">&nbsp;		DAY = Vocabularies.createIRI(NAMESPACE, &quot;day&quot;);</b>
+<b class="nc">&nbsp;		DAY_OF_WEEK_PROP = Vocabularies.createIRI(NAMESPACE, &quot;dayOfWeek&quot;);</b>
+<b class="nc">&nbsp;		DAY_OF_YEAR = Vocabularies.createIRI(NAMESPACE, &quot;dayOfYear&quot;);</b>
+<b class="nc">&nbsp;		DAYS = Vocabularies.createIRI(NAMESPACE, &quot;days&quot;);</b>
+<b class="nc">&nbsp;		HAS_BEGINNING = Vocabularies.createIRI(NAMESPACE, &quot;hasBeginning&quot;);</b>
+<b class="nc">&nbsp;		HAS_DATE_TIME_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;hasDateTimeDescription&quot;);</b>
+<b class="nc">&nbsp;		HAS_DURATION = Vocabularies.createIRI(NAMESPACE, &quot;hasDuration&quot;);</b>
+<b class="nc">&nbsp;		HAS_DURATION_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;hasDurationDescription&quot;);</b>
+<b class="nc">&nbsp;		HAS_END = Vocabularies.createIRI(NAMESPACE, &quot;hasEnd&quot;);</b>
+<b class="nc">&nbsp;		HAS_TRS = Vocabularies.createIRI(NAMESPACE, &quot;hasTRS&quot;);</b>
+<b class="nc">&nbsp;		HAS_TEMPORAL_DURATION = Vocabularies.createIRI(NAMESPACE, &quot;hasTemporalDuration&quot;);</b>
+<b class="nc">&nbsp;		HAS_TIME = Vocabularies.createIRI(NAMESPACE, &quot;hasTime&quot;);</b>
+<b class="nc">&nbsp;		HAS_XSDDURATION = Vocabularies.createIRI(NAMESPACE, &quot;hasXSDDuration&quot;);</b>
+<b class="nc">&nbsp;		HOUR = Vocabularies.createIRI(NAMESPACE, &quot;hour&quot;);</b>
+<b class="nc">&nbsp;		HOURS = Vocabularies.createIRI(NAMESPACE, &quot;hours&quot;);</b>
+<b class="nc">&nbsp;		IN_DATE_TIME = Vocabularies.createIRI(NAMESPACE, &quot;inDateTime&quot;);</b>
+<b class="nc">&nbsp;		IN_TEMPORAL_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;inTemporalPosition&quot;);</b>
+<b class="nc">&nbsp;		IN_TIME_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;inTimePosition&quot;);</b>
+<b class="nc">&nbsp;		IN_XSDDATE = Vocabularies.createIRI(NAMESPACE, &quot;inXSDDate&quot;);</b>
+<b class="nc">&nbsp;		IN_XSDDATE_TIME = Vocabularies.createIRI(NAMESPACE, &quot;inXSDDateTime&quot;);</b>
+<b class="nc">&nbsp;		IN_XSDDATE_TIME_STAMP = Vocabularies.createIRI(NAMESPACE, &quot;inXSDDateTimeStamp&quot;);</b>
+<b class="nc">&nbsp;		IN_XSDG_YEAR = Vocabularies.createIRI(NAMESPACE, &quot;inXSDgYear&quot;);</b>
+<b class="nc">&nbsp;		IN_XSDG_YEAR_MONTH = Vocabularies.createIRI(NAMESPACE, &quot;inXSDgYearMonth&quot;);</b>
+<b class="nc">&nbsp;		INSIDE = Vocabularies.createIRI(NAMESPACE, &quot;inside&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_AFTER = Vocabularies.createIRI(NAMESPACE, &quot;intervalAfter&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_BEFORE = Vocabularies.createIRI(NAMESPACE, &quot;intervalBefore&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_CONTAINS = Vocabularies.createIRI(NAMESPACE, &quot;intervalContains&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_DISJOINT = Vocabularies.createIRI(NAMESPACE, &quot;intervalDisjoint&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_DURING = Vocabularies.createIRI(NAMESPACE, &quot;intervalDuring&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_EQUALS = Vocabularies.createIRI(NAMESPACE, &quot;intervalEquals&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_FINISHED_BY = Vocabularies.createIRI(NAMESPACE, &quot;intervalFinishedBy&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_FINISHES = Vocabularies.createIRI(NAMESPACE, &quot;intervalFinishes&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_IN = Vocabularies.createIRI(NAMESPACE, &quot;intervalIn&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_MEETS = Vocabularies.createIRI(NAMESPACE, &quot;intervalMeets&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_MET_BY = Vocabularies.createIRI(NAMESPACE, &quot;intervalMetBy&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_OVERLAPPED_BY = Vocabularies.createIRI(NAMESPACE, &quot;intervalOverlappedBy&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_OVERLAPS = Vocabularies.createIRI(NAMESPACE, &quot;intervalOverlaps&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_STARTED_BY = Vocabularies.createIRI(NAMESPACE, &quot;intervalStartedBy&quot;);</b>
+<b class="nc">&nbsp;		INTERVAL_STARTS = Vocabularies.createIRI(NAMESPACE, &quot;intervalStarts&quot;);</b>
+<b class="nc">&nbsp;		MINUTE = Vocabularies.createIRI(NAMESPACE, &quot;minute&quot;);</b>
+<b class="nc">&nbsp;		MINUTES = Vocabularies.createIRI(NAMESPACE, &quot;minutes&quot;);</b>
+<b class="nc">&nbsp;		MONTH = Vocabularies.createIRI(NAMESPACE, &quot;month&quot;);</b>
+<b class="nc">&nbsp;		MONTH_OF_YEAR_PROP = Vocabularies.createIRI(NAMESPACE, &quot;monthOfYear&quot;);</b>
+<b class="nc">&nbsp;		MONTHS = Vocabularies.createIRI(NAMESPACE, &quot;months&quot;);</b>
+<b class="nc">&nbsp;		NOMINAL_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;nominalPosition&quot;);</b>
+<b class="nc">&nbsp;		NUMERIC_DURATION = Vocabularies.createIRI(NAMESPACE, &quot;numericDuration&quot;);</b>
+<b class="nc">&nbsp;		NUMERIC_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;numericPosition&quot;);</b>
+<b class="nc">&nbsp;		SECOND = Vocabularies.createIRI(NAMESPACE, &quot;second&quot;);</b>
+<b class="nc">&nbsp;		SECONDS = Vocabularies.createIRI(NAMESPACE, &quot;seconds&quot;);</b>
+<b class="nc">&nbsp;		TIME_ZONE_PROP = Vocabularies.createIRI(NAMESPACE, &quot;timeZone&quot;);</b>
+<b class="nc">&nbsp;		UNIT_TYPE = Vocabularies.createIRI(NAMESPACE, &quot;unitType&quot;);</b>
+<b class="nc">&nbsp;		WEEK = Vocabularies.createIRI(NAMESPACE, &quot;week&quot;);</b>
+<b class="nc">&nbsp;		WEEKS = Vocabularies.createIRI(NAMESPACE, &quot;weeks&quot;);</b>
+<b class="nc">&nbsp;		XSD_DATE_TIME = Vocabularies.createIRI(NAMESPACE, &quot;xsdDateTime&quot;);</b>
+<b class="nc">&nbsp;		YEAR_PROP = Vocabularies.createIRI(NAMESPACE, &quot;year&quot;);</b>
+<b class="nc">&nbsp;		YEARS = Vocabularies.createIRI(NAMESPACE, &quot;years&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

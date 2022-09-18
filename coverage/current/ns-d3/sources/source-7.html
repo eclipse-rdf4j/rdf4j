@@ -1,0 +1,439 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemoryOverflowModel</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: MemoryOverflowModel (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemoryOverflowModel</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/85)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">MemoryOverflowModel$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/89)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.ObjectInputStream;
+&nbsp;import java.io.ObjectOutputStream;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.AbstractModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.FilteredModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailStore;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Model implementation that stores in a {@link LinkedHashModel} until more than 10KB statements are added and the
+&nbsp; * estimated memory usage is more than the amount of free memory available. Once the threshold is cross this
+&nbsp; * implementation seamlessly changes to a disk based {@link SailSourceModel}.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="nc">&nbsp;abstract class MemoryOverflowModel extends AbstractModel {</b>
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 4119844228099208169L;
+&nbsp;
+<b class="nc">&nbsp;	private static final Runtime RUNTIME = Runtime.getRuntime();</b>
+&nbsp;
+&nbsp;	private static final int LARGE_BLOCK = 10000;
+&nbsp;
+&nbsp;	// To reduce the chance of OOM we will always overflow once we get close to running out of memory even if we think
+&nbsp;	// we have space for one more block. The limit is currently set at 32 MB
+&nbsp;	private static final int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = 32 * 1024 * 1024;
+&nbsp;
+<b class="nc">&nbsp;	final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);</b>
+&nbsp;
+&nbsp;	private volatile LinkedHashModel memory;
+&nbsp;
+&nbsp;	private transient File dataDir;
+&nbsp;
+&nbsp;	private transient SailStore store;
+&nbsp;
+&nbsp;	private transient volatile SailSourceModel disk;
+&nbsp;
+<b class="nc">&nbsp;	private long baseline = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;	private long maxBlockSize = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;	SimpleValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;	public MemoryOverflowModel() {</b>
+<b class="nc">&nbsp;		memory = new LinkedHashModel(LARGE_BLOCK);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public MemoryOverflowModel(Model model) {
+<b class="nc">&nbsp;		this(model.getNamespaces());</b>
+<b class="nc">&nbsp;		addAll(model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public MemoryOverflowModel(Set&lt;Namespace&gt; namespaces, Collection&lt;? extends Statement&gt; c) {
+<b class="nc">&nbsp;		this(namespaces);</b>
+<b class="nc">&nbsp;		addAll(c);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public MemoryOverflowModel(Set&lt;Namespace&gt; namespaces) {</b>
+<b class="nc">&nbsp;		memory = new LinkedHashModel(namespaces, LARGE_BLOCK);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void closeIterator(Iterator&lt;?&gt; iter) {
+<b class="nc">&nbsp;		super.closeIterator(iter);</b>
+<b class="nc">&nbsp;		if (disk != null) {</b>
+<b class="nc">&nbsp;			disk.closeIterator(iter);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized Set&lt;Namespace&gt; getNamespaces() {
+<b class="nc">&nbsp;		return memory.getNamespaces();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized Optional&lt;Namespace&gt; getNamespace(String prefix) {
+<b class="nc">&nbsp;		return memory.getNamespace(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized Namespace setNamespace(String prefix, String name) {
+<b class="nc">&nbsp;		return memory.setNamespace(prefix, name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(Namespace namespace) {
+<b class="nc">&nbsp;		memory.setNamespace(namespace);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized Optional&lt;Namespace&gt; removeNamespace(String prefix) {
+<b class="nc">&nbsp;		return memory.removeNamespace(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		return getDelegate().contains(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		checkMemoryOverflow();</b>
+<b class="nc">&nbsp;		return getDelegate().add(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean add(Statement st) {
+<b class="nc">&nbsp;		checkMemoryOverflow();</b>
+<b class="nc">&nbsp;		return getDelegate().add(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		return getDelegate().remove(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int size() {
+<b class="nc">&nbsp;		return getDelegate().size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;Statement&gt; iterator() {
+<b class="nc">&nbsp;		return getDelegate().iterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean clear(Resource... contexts) {
+<b class="nc">&nbsp;		return getDelegate().clear(contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Model filter(final Resource subj, final IRI pred, final Value obj, final Resource... contexts) {
+<b class="nc">&nbsp;		return new FilteredModel(this, subj, pred, obj, contexts) {</b>
+&nbsp;
+&nbsp;			private static final long serialVersionUID = -475666402618133101L;
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public int size() {
+<b class="nc">&nbsp;				return getDelegate().filter(subj, pred, obj, contexts).size();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Iterator&lt;Statement&gt; iterator() {
+<b class="nc">&nbsp;				return getDelegate().filter(subj, pred, obj, contexts).iterator();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void removeFilteredTermIteration(Iterator&lt;Statement&gt; iter, Resource subj, IRI pred, Value obj,
+&nbsp;					Resource... contexts) {
+<b class="nc">&nbsp;				MemoryOverflowModel.this.removeTermIteration(iter, subj, pred, obj, contexts);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void removeTermIteration(Iterator&lt;Statement&gt; iter, Resource subj, IRI pred, Value obj,
+&nbsp;			Resource... contexts) {
+<b class="nc">&nbsp;		if (disk == null) {</b>
+<b class="nc">&nbsp;			memory.removeTermIteration(iter, subj, pred, obj, contexts);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			disk.removeTermIteration(iter, subj, pred, obj, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract SailStore createSailStore(File dataDir) throws IOException, SailException;
+&nbsp;
+&nbsp;	private Model getDelegate() {
+<b class="nc">&nbsp;		LinkedHashModel memory = this.memory;</b>
+<b class="nc">&nbsp;		if (memory != null) {</b>
+<b class="nc">&nbsp;			return memory;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				return disk;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeObject(ObjectOutputStream s) throws IOException {
+&nbsp;		// Write out any hidden serialization magic
+<b class="nc">&nbsp;		s.defaultWriteObject();</b>
+&nbsp;		// Write in size
+<b class="nc">&nbsp;		Model delegate = getDelegate();</b>
+<b class="nc">&nbsp;		s.writeInt(delegate.size());</b>
+&nbsp;		// Write in all elements
+<b class="nc">&nbsp;		for (Statement st : delegate) {</b>
+<b class="nc">&nbsp;			Resource subj = st.getSubject();</b>
+<b class="nc">&nbsp;			IRI pred = st.getPredicate();</b>
+<b class="nc">&nbsp;			Value obj = st.getObject();</b>
+<b class="nc">&nbsp;			Resource ctx = st.getContext();</b>
+<b class="nc">&nbsp;			s.writeObject(vf.createStatement(subj, pred, obj, ctx));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void readObject(ObjectInputStream s) throws IOException, ClassNotFoundException {
+&nbsp;		// Read in any hidden serialization magic
+<b class="nc">&nbsp;		s.defaultReadObject();</b>
+&nbsp;		// Read in size
+<b class="nc">&nbsp;		int size = s.readInt();</b>
+&nbsp;		// Read in all elements
+<b class="nc">&nbsp;		for (int i = 0; i &lt; size; i++) {</b>
+<b class="nc">&nbsp;			add((Statement) s.readObject());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized void checkMemoryOverflow() {
+<b class="nc">&nbsp;		if (disk == null) {</b>
+<b class="nc">&nbsp;			int size = size();</b>
+<b class="nc">&nbsp;			if (size &gt;= LARGE_BLOCK &amp;&amp; size % LARGE_BLOCK == 0) {</b>
+&nbsp;				// maximum heap size the JVM can allocate
+<b class="nc">&nbsp;				long maxMemory = RUNTIME.maxMemory();</b>
+&nbsp;
+&nbsp;				// total currently allocated JVM memory
+<b class="nc">&nbsp;				long totalMemory = RUNTIME.totalMemory();</b>
+&nbsp;
+&nbsp;				// amount of memory free in the currently allocated JVM memory
+<b class="nc">&nbsp;				long freeMemory = RUNTIME.freeMemory();</b>
+&nbsp;
+&nbsp;				// estimated memory used
+<b class="nc">&nbsp;				long used = totalMemory - freeMemory;</b>
+&nbsp;
+&nbsp;				// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+<b class="nc">&nbsp;				long freeToAllocateMemory = maxMemory - used;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (baseline &gt; 0) {</b>
+<b class="nc">&nbsp;					long blockSize = used - baseline;</b>
+<b class="nc">&nbsp;					if (blockSize &gt; maxBlockSize) {</b>
+<b class="nc">&nbsp;						maxBlockSize = blockSize;</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					// Sync if either the estimated size of the next block is larger than remaining memory, or
+&nbsp;					// if less than 15% of the heap is still free (this last condition to avoid GC overhead limit)
+<b class="nc">&nbsp;					if (freeToAllocateMemory &lt; MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING ||</b>
+<b class="nc">&nbsp;							freeToAllocateMemory &lt; Math.min(0.15 * maxMemory, maxBlockSize)) {</b>
+<b class="nc">&nbsp;						logger.debug(&quot;syncing at {} triples. max block size: {}&quot;, size, maxBlockSize);</b>
+<b class="nc">&nbsp;						overflowToDisk();</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				baseline = used;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized void overflowToDisk() {
+&nbsp;		try {
+<b class="nc">&nbsp;			LinkedHashModel memory = this.memory;</b>
+<b class="nc">&nbsp;			this.memory = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			assert disk == null;</b>
+<b class="nc">&nbsp;			dataDir = Files.createTempDirectory(&quot;model&quot;).toFile();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;memory overflow using temp directory {}&quot;, dataDir);</b>
+<b class="nc">&nbsp;			store = createSailStore(dataDir);</b>
+<b class="nc">&nbsp;			disk = new SailSourceModel(store);</b>
+<b class="nc">&nbsp;			disk.addAll(memory);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;overflow synced to disk&quot;);</b>
+<b class="nc">&nbsp;		} catch (IOException | SailException e) {</b>
+<b class="nc">&nbsp;			String path = dataDir != null ? dataDir.getAbsolutePath() : &quot;(unknown)&quot;;</b>
+<b class="nc">&nbsp;			logger.error(&quot;Error while writing to overflow directory &quot; + path, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

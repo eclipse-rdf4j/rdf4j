@@ -1,0 +1,217 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SpinTupleFunction</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spin.function</a>
+</div>
+
+<h1>Coverage Summary for Class: SpinTupleFunction (org.eclipse.rdf4j.spin.function)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SpinTupleFunction</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.spin.function;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryPreparer;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.spin.Argument;
+&nbsp;import org.eclipse.rdf4j.spin.function.ConstructTupleFunction.GraphQueryResultIteration;
+&nbsp;import org.eclipse.rdf4j.spin.function.SelectTupleFunction.TupleQueryResultIteration;
+&nbsp;
+&nbsp;import com.google.common.base.Joiner;
+&nbsp;
+&nbsp;public class SpinTupleFunction extends AbstractSpinFunction implements TransientTupleFunction {
+&nbsp;
+&nbsp;	private ParsedQuery parsedQuery;
+&nbsp;
+<b class="nc">&nbsp;	private final List&lt;Argument&gt; arguments = new ArrayList&lt;&gt;(4);</b>
+&nbsp;
+&nbsp;	public SpinTupleFunction(String uri) {
+<b class="nc">&nbsp;		super(uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setParsedQuery(ParsedQuery query) {
+<b class="nc">&nbsp;		this.parsedQuery = query;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedQuery getParsedQuery() {
+<b class="nc">&nbsp;		return parsedQuery;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addArgument(Argument arg) {
+<b class="nc">&nbsp;		arguments.add(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;Argument&gt; getArguments() {
+<b class="nc">&nbsp;		return arguments;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return getURI() + &quot;(&quot; + Joiner.on(&quot;, &quot;).join(arguments) + &quot;)&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends List&lt;? extends Value&gt;, QueryEvaluationException&gt; evaluate(
+&nbsp;			ValueFactory valueFactory, Value... args) throws QueryEvaluationException {
+<b class="nc">&nbsp;		QueryPreparer qp = getCurrentQueryPreparer();</b>
+&nbsp;		CloseableIteration&lt;? extends List&lt;? extends Value&gt;, QueryEvaluationException&gt; iter;
+<b class="nc">&nbsp;		if (parsedQuery instanceof ParsedBooleanQuery) {</b>
+<b class="nc">&nbsp;			ParsedBooleanQuery askQuery = (ParsedBooleanQuery) parsedQuery;</b>
+<b class="nc">&nbsp;			BooleanQuery queryOp = qp.prepare(askQuery);</b>
+<b class="nc">&nbsp;			addBindings(queryOp, arguments, args);</b>
+<b class="nc">&nbsp;			Value result = BooleanLiteral.valueOf(queryOp.evaluate());</b>
+<b class="nc">&nbsp;			iter = new SingletonIteration&lt;&gt;(Collections.singletonList(result));</b>
+<b class="nc">&nbsp;		} else if (parsedQuery instanceof ParsedTupleQuery) {</b>
+<b class="nc">&nbsp;			ParsedTupleQuery selectQuery = (ParsedTupleQuery) parsedQuery;</b>
+<b class="nc">&nbsp;			TupleQuery queryOp = qp.prepare(selectQuery);</b>
+<b class="nc">&nbsp;			addBindings(queryOp, arguments, args);</b>
+<b class="nc">&nbsp;			iter = new TupleQueryResultIteration(queryOp.evaluate());</b>
+<b class="nc">&nbsp;		} else if (parsedQuery instanceof ParsedGraphQuery) {</b>
+<b class="nc">&nbsp;			ParsedGraphQuery graphQuery = (ParsedGraphQuery) parsedQuery;</b>
+<b class="nc">&nbsp;			GraphQuery queryOp = qp.prepare(graphQuery);</b>
+<b class="nc">&nbsp;			addBindings(queryOp, arguments, args);</b>
+<b class="nc">&nbsp;			iter = new GraphQueryResultIteration(queryOp.evaluate());</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Unexpected query: &quot; + parsedQuery);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return iter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void addBindings(Query query, List&lt;Argument&gt; arguments, Value... args) {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; args.length; i++) {</b>
+<b class="nc">&nbsp;			Argument argument = arguments.get(i);</b>
+<b class="nc">&nbsp;			query.setBinding(argument.getPredicate().getLocalName(), args[i]);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

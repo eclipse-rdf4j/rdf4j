@@ -1,0 +1,260 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LeftJoinQueryEvaluationStep</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps</a>
+</div>
+
+<h1>Coverage Summary for Class: LeftJoinQueryEvaluationStep (org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LeftJoinQueryEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    61.5%
+  </span>
+  <span class="absValue">
+    (16/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    71%
+  </span>
+  <span class="absValue">
+    (44/62)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
+&nbsp;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+&nbsp;
+&nbsp;public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
+&nbsp;	private final QueryEvaluationStep right;
+&nbsp;	private final QueryValueEvaluationStep condition;
+&nbsp;	private final QueryEvaluationStep left;
+&nbsp;	private final LeftJoin leftJoin;
+&nbsp;	private final Set&lt;String&gt; optionalVars;
+&nbsp;
+&nbsp;	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
+&nbsp;			QueryEvaluationContext context) {
+<b class="fc">&nbsp;		QueryEvaluationStep left = strategy.precompile(leftJoin.getLeftArg(), context);</b>
+<b class="fc">&nbsp;		QueryEvaluationStep right = strategy.precompile(leftJoin.getRightArg(), context);</b>
+<b class="fc">&nbsp;		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {</b>
+<b class="fc">&nbsp;			Set&lt;String&gt; leftBindingNames = leftJoin.getLeftArg().getBindingNames();</b>
+<b class="fc">&nbsp;			Set&lt;String&gt; rightBindingNames = leftJoin.getRightArg().getBindingNames();</b>
+<b class="fc">&nbsp;			String[] joinAttributes = leftBindingNames.stream()</b>
+<b class="fc">&nbsp;					.filter(rightBindingNames::contains)</b>
+<b class="fc">&nbsp;					.toArray(String[]::new);</b>
+<b class="fc">&nbsp;			return bs -&gt; new HashJoinIteration(left, right, bs, true, joinAttributes, context);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check whether optional join is &quot;well designed&quot; as defined in section
+&nbsp;		// 4.2 of &quot;Semantics and Complexity of SPARQL&quot;, 2006, Jorge Pérez et al.
+<b class="fc">&nbsp;		VarNameCollector optionalVarCollector = new VarNameCollector();</b>
+<b class="fc">&nbsp;		leftJoin.getRightArg().visit(optionalVarCollector);</b>
+&nbsp;		QueryValueEvaluationStep condition;
+<b class="pc">&nbsp;		if (leftJoin.hasCondition()) {</b>
+<b class="nc">&nbsp;			leftJoin.getCondition().visit(optionalVarCollector);</b>
+<b class="nc">&nbsp;			condition = strategy.precompile(leftJoin.getCondition(), context);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			condition = null;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin, optionalVarCollector.getVarNames());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true, since = &quot;4.1.0&quot;)
+&nbsp;	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
+&nbsp;			QueryEvaluationStep left, LeftJoin leftJoin,
+<b class="nc">&nbsp;			org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector optionalVarCollector) {</b>
+<b class="nc">&nbsp;		this.right = right;</b>
+<b class="nc">&nbsp;		this.condition = condition;</b>
+<b class="nc">&nbsp;		this.left = left;</b>
+<b class="nc">&nbsp;		this.leftJoin = leftJoin;</b>
+&nbsp;		// This is used to determine if the left join is well designed.
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; leftBindingNames = leftJoin.getLeftArg().getBindingNames();</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; optionalVars = optionalVarCollector.getVarNames();</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean optionalVarsContainLeftBindingName = false;</b>
+<b class="nc">&nbsp;		for (String leftBindingName : leftBindingNames) {</b>
+<b class="nc">&nbsp;			if (!optionalVarsContainLeftBindingName &amp;&amp; optionalVars.contains(leftBindingName)) {</b>
+<b class="nc">&nbsp;				optionalVars = new HashSet&lt;&gt;(optionalVars);</b>
+<b class="nc">&nbsp;				optionalVarsContainLeftBindingName = true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (optionalVarsContainLeftBindingName) {</b>
+<b class="nc">&nbsp;				optionalVars.remove(leftBindingName);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		this.optionalVars = optionalVars;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
+<b class="fc">&nbsp;			QueryEvaluationStep left, LeftJoin leftJoin, Set&lt;String&gt; optionalVars) {</b>
+<b class="fc">&nbsp;		this.right = right;</b>
+<b class="fc">&nbsp;		this.condition = condition;</b>
+<b class="fc">&nbsp;		this.left = left;</b>
+<b class="fc">&nbsp;		this.leftJoin = leftJoin;</b>
+&nbsp;		// This is used to determine if the left join is well designed.
+&nbsp;
+<b class="fc">&nbsp;		Set&lt;String&gt; leftBindingNames = leftJoin.getLeftArg().getBindingNames();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (!leftBindingNames.isEmpty()) {</b>
+<b class="fc">&nbsp;			if (leftBindingNames.containsAll(optionalVars)) {</b>
+<b class="fc">&nbsp;				optionalVars = Set.of();</b>
+&nbsp;			} else {
+<b class="pc">&nbsp;				for (String leftBindingName : leftBindingNames) {</b>
+<b class="fc">&nbsp;					if (optionalVars.contains(leftBindingName)) {</b>
+<b class="fc">&nbsp;						optionalVars = new HashSet&lt;&gt;(optionalVars);</b>
+<b class="fc">&nbsp;						optionalVars.removeAll(leftBindingNames);</b>
+<b class="fc">&nbsp;						break;</b>
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		this.optionalVars = optionalVars;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings) {
+&nbsp;
+<b class="fc">&nbsp;		boolean containsNone = true;</b>
+<b class="fc">&nbsp;		Set&lt;String&gt; bindingNames = bindings.getBindingNames();</b>
+<b class="fc">&nbsp;		for (String optionalVar : optionalVars) {</b>
+<b class="fc">&nbsp;			if (bindingNames.contains(optionalVar)) {</b>
+<b class="fc">&nbsp;				containsNone = false;</b>
+<b class="fc">&nbsp;				break;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (containsNone) {</b>
+&nbsp;			// left join is &quot;well designed&quot;
+<b class="fc">&nbsp;			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());</b>
+<b class="fc">&nbsp;			return new LeftJoinIterator(left, right, condition, bindings, leftJoin.getBindingNames());</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			Set&lt;String&gt; problemVars = new HashSet&lt;&gt;(optionalVars);</b>
+<b class="fc">&nbsp;			problemVars.retainAll(bindings.getBindingNames());</b>
+&nbsp;
+<b class="fc">&nbsp;			leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());</b>
+<b class="fc">&nbsp;			return new BadlyDesignedLeftJoinIterator(left, right, condition, bindings, problemVars);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

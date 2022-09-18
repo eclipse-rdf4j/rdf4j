@@ -1,0 +1,354 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLResultsTSVMappingStrategy</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.text.tsv</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLResultsTSVMappingStrategy (org.eclipse.rdf4j.query.resultio.text.tsv)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLResultsTSVMappingStrategy</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (7/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    43.5%
+  </span>
+  <span class="absValue">
+    (20/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40.6%
+  </span>
+  <span class="absValue">
+    (41/101)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.text.tsv;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.StringUtils;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.ListBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.resultio.text.SPARQLResultsXSVMappingStrategy;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+&nbsp;
+&nbsp;import com.opencsv.CSVReader;
+&nbsp;import com.opencsv.exceptions.CsvValidationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Implements a {@link com.opencsv.bean.MappingStrategy} to allow opencsv to work in parallel. This is where the input
+&nbsp; * is converted into {@link org.eclipse.rdf4j.query.BindingSet}s.
+&nbsp; *
+&nbsp; * @author Andrew Rucker Jones
+&nbsp; */
+&nbsp;public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStrategy {
+&nbsp;
+&nbsp;	public SPARQLResultsTSVMappingStrategy(ValueFactory valueFactory) {
+<b class="fc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void captureHeader(CSVReader reader) throws IOException {
+&nbsp;		try {
+&nbsp;			// header is mandatory in SPARQL TSV
+<b class="fc">&nbsp;			bindingNames = Stream.of(reader.readNext())</b>
+<b class="fc">&nbsp;					.map(s -&gt; StringUtils.removeStart(s, &quot;?&quot;))</b>
+<b class="fc">&nbsp;					.collect(Collectors.toList());</b>
+<b class="nc">&nbsp;		} catch (CsvValidationException ex) {</b>
+<b class="nc">&nbsp;			throw new IOException(ex);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet populateNewBean(String[] line) {
+&nbsp;		// process solution
+<b class="fc">&nbsp;		List&lt;Value&gt; values = new ArrayList&lt;&gt;(line.length);</b>
+<b class="fc">&nbsp;		for (String valueString : line) {</b>
+<b class="fc">&nbsp;			values.add(parseValue(valueString));</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return new ListBindingSet(bindingNames, values.toArray(new Value[values.size()]));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Value parseValue(String valueString) {
+<b class="fc">&nbsp;		Value v = null;</b>
+<b class="pc">&nbsp;		if (valueString.startsWith(&quot;&lt;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;			v = NTriplesUtil.parseTriple(valueString, valueFactory);</b>
+<b class="fc">&nbsp;		} else if (valueString.startsWith(&quot;_:&quot;)) {</b>
+<b class="fc">&nbsp;			v = valueFactory.createBNode(valueString.substring(2));</b>
+<b class="pc">&nbsp;		} else if (valueString.startsWith(&quot;&lt;&quot;) &amp;&amp; valueString.endsWith(&quot;&gt;&quot;)) {</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				v = valueFactory.createIRI(valueString.substring(1, valueString.length() - 1));</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				v = valueFactory.createLiteral(valueString);</b>
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;		} else if (valueString.startsWith(&quot;\&quot;&quot;)) {</b>
+<b class="fc">&nbsp;			v = parseLiteral(valueString);</b>
+<b class="fc">&nbsp;		} else if (!&quot;&quot;.equals(valueString)) {</b>
+<b class="pc">&nbsp;			if (numberPattern.matcher(valueString).matches()) {</b>
+<b class="fc">&nbsp;				v = parseNumberPatternMatch(valueString);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				v = valueFactory.createLiteral(valueString);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return v;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a literal, creates an object for it and returns this object.
+&nbsp;	 *
+&nbsp;	 * @param literal The literal to parse.
+&nbsp;	 * @return An object representing the parsed literal.
+&nbsp;	 * @throws IllegalArgumentException If the supplied literal could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	protected Literal parseLiteral(String literal) throws IllegalArgumentException {
+<b class="pc">&nbsp;		if (literal.startsWith(&quot;\&quot;&quot;)) {</b>
+&nbsp;			// Find string separation points
+<b class="fc">&nbsp;			int endLabelIdx = findEndOfLabel(literal);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (endLabelIdx != -1) {</b>
+<b class="fc">&nbsp;				int startLangIdx = literal.indexOf(&#39;@&#39;, endLabelIdx);</b>
+<b class="fc">&nbsp;				int startDtIdx = literal.indexOf(&quot;^^&quot;, endLabelIdx);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (startLangIdx != -1 &amp;&amp; startDtIdx != -1) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Literals can not have both a language and a datatype&quot;);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Get label
+<b class="fc">&nbsp;				String label = literal.substring(1, endLabelIdx);</b>
+<b class="fc">&nbsp;				label = decodeString(label);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (startLangIdx != -1) {</b>
+&nbsp;					// Get language
+<b class="nc">&nbsp;					String language = literal.substring(startLangIdx + 1);</b>
+<b class="nc">&nbsp;					return valueFactory.createLiteral(label, language);</b>
+<b class="fc">&nbsp;				} else if (startDtIdx != -1) {</b>
+&nbsp;					// Get datatype
+<b class="fc">&nbsp;					String datatype = literal.substring(startDtIdx + 2);</b>
+<b class="fc">&nbsp;					datatype = datatype.substring(1, datatype.length() - 1);</b>
+<b class="fc">&nbsp;					IRI dtURI = valueFactory.createIRI(datatype);</b>
+<b class="fc">&nbsp;					return valueFactory.createLiteral(label, dtURI);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return valueFactory.createLiteral(label);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;Not a legal literal: &quot; + literal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Finds the end of the label in a literal string.
+&nbsp;	 *
+&nbsp;	 * @return The index of the double quote ending the label.
+&nbsp;	 */
+&nbsp;	private int findEndOfLabel(String literal) {
+&nbsp;		// we just look for the last occurrence of a double quote
+<b class="fc">&nbsp;		return literal.lastIndexOf(&#39;&quot;&#39;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Decodes an encoded Turtle string. Any \-escape sequences are substituted with their decoded value.
+&nbsp;	 *
+&nbsp;	 * @param s An encoded Turtle string.
+&nbsp;	 * @return The unencoded string.
+&nbsp;	 * @exception IllegalArgumentException If the supplied string is not a correctly encoded Turtle string.
+&nbsp;	 **/
+&nbsp;	protected static String decodeString(String s) {
+<b class="fc">&nbsp;		int backSlashIdx = s.indexOf(&#39;\\&#39;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (backSlashIdx == -1) {</b>
+&nbsp;			// No escaped characters found
+<b class="fc">&nbsp;			return s;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int startIdx = 0;</b>
+<b class="nc">&nbsp;		int sLength = s.length();</b>
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(sLength);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (backSlashIdx != -1) {</b>
+<b class="nc">&nbsp;			sb.append(s.substring(startIdx, backSlashIdx));</b>
+&nbsp;
+<b class="nc">&nbsp;			if (backSlashIdx + 1 &gt;= sLength) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			char c = s.charAt(backSlashIdx + 1);</b>
+&nbsp;
+<b class="nc">&nbsp;			switch (c) {</b>
+&nbsp;			case &#39;t&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\t&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;r&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\r&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;n&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\n&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;&quot;&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;&quot;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;&gt;&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;&gt;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;\\&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\\&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;u&#39;: {
+&nbsp;				// \\uxxxx
+<b class="nc">&nbsp;				if (backSlashIdx + 5 &gt;= sLength) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Incomplete Unicode escape sequence in: &quot; + s);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					c = (char) Integer.parseInt(xx, 16);</b>
+<b class="nc">&nbsp;					sb.append(c);</b>
+&nbsp;
+<b class="nc">&nbsp;					startIdx = backSlashIdx + 6;</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Illegal Unicode escape sequence &#39;\\u&quot; + xx + &quot;&#39; in: &quot; + s);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;				break;
+&nbsp;			}
+&nbsp;			case &#39;U&#39;: {
+&nbsp;				// \\Uxxxxxxxx
+<b class="nc">&nbsp;				if (backSlashIdx + 9 &gt;= sLength) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Incomplete Unicode escape sequence in: &quot; + s);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					c = (char) Integer.parseInt(xx, 16);</b>
+<b class="nc">&nbsp;					sb.append(c);</b>
+&nbsp;
+<b class="nc">&nbsp;					startIdx = backSlashIdx + 10;</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Illegal Unicode escape sequence &#39;\\U&quot; + xx + &quot;&#39; in: &quot; + s);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;				break;
+&nbsp;			}
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			backSlashIdx = s.indexOf(&#39;\\&#39;, startIdx);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(s.substring(startIdx));</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

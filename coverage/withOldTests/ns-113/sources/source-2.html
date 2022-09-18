@@ -1,0 +1,234 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryResultUtils</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.util</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryResultUtils (org.eclipse.rdf4j.spring.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryResultUtils</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.util;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;@Experimental
+<b class="nc">&nbsp;public class QueryResultUtils {</b>
+&nbsp;
+&nbsp;	public static Optional&lt;Value&gt; getValueOptional(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return Optional.ofNullable(resultRow.getValue(varName));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;Value&gt; getValueOptional(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, var.getVarName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Value getValueMaybe(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, varName).orElse(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Value getValueMaybe(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getValueMaybe(resultRow, var.getVarName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Value getValue(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, varName)</b>
+<b class="nc">&nbsp;				.orElseThrow(</b>
+<b class="nc">&nbsp;						() -&gt; new IllegalStateException(</b>
+<b class="nc">&nbsp;								String.format(</b>
+&nbsp;										&quot;BindingSet does not contain binding for variable %s&quot;,
+&nbsp;										varName)));
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Value getValue(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getValue(resultRow, var.getVarName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static IRI getIRI(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return TypeMappingUtils.toIRI(getValue(resultRow, var));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static IRI getIRI(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return TypeMappingUtils.toIRI(getValue(resultRow, varName));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;IRI&gt; getIRIOptional(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, varName).map(TypeMappingUtils::toIRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;IRI&gt; getIRIOptional(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, var.getVarName()).map(TypeMappingUtils::toIRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static IRI getIRIMaybe(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getIRIOptional(resultRow, varName).orElse(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static IRI getIRIMaybe(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getIRIMaybe(resultRow, var.getVarName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getString(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getValue(resultRow, var).stringValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getString(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getValue(resultRow, varName).stringValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;String&gt; getStringOptional(
+&nbsp;			BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, var).map(Value::stringValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;String&gt; getStringOptional(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, varName).map(Value::stringValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getStringMaybe(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getStringOptional(resultRow, varName).orElse(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getStringMaybe(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getStringMaybe(resultRow, var.getVarName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Boolean getBoolean(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return TypeMappingUtils.toBoolean(getValue(resultRow, var));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Boolean getBoolean(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return TypeMappingUtils.toBoolean(getValue(resultRow, varName));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;Boolean&gt; getBooleanOptional(
+&nbsp;			BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, var).map(TypeMappingUtils::toBoolean);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Optional&lt;Boolean&gt; getBooleanOptional(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getValueOptional(resultRow, varName).map(TypeMappingUtils::toBoolean);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Boolean getBooleanMaybe(BindingSet resultRow, String varName) {
+<b class="nc">&nbsp;		return getBooleanOptional(resultRow, varName).orElse(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Boolean getBooleanMaybe(BindingSet resultRow, Variable var) {
+<b class="nc">&nbsp;		return getBooleanMaybe(resultRow, var.getVarName());</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

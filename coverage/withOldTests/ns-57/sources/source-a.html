@@ -1,0 +1,396 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValueFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model</a>
+</div>
+
+<h1>Coverage Summary for Class: ValueFactory (org.eclipse.rdf4j.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValueFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.time.temporal.TemporalAccessor;
+&nbsp;import java.time.temporal.TemporalAmount;
+&nbsp;import java.util.Date;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;
+&nbsp;/**
+&nbsp; * A factory for creating {@link IRI IRIs}, {@link BNode blank nodes}, {@link Literal literals} and {@link Statement
+&nbsp; * statements} based on the RDF-1.1 Concepts and Abstract Syntax, a W3C Recommendation.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/rdf11-concepts/&quot;&gt;RDF-1.1 Concepts and Abstract Syntax&lt;/a&gt;
+&nbsp; */
+&nbsp;public interface ValueFactory {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new IRI from the supplied string-representation.
+&nbsp;	 *
+&nbsp;	 * @param iri A string-representation of a IRI.
+&nbsp;	 * @return An object representing the IRI.
+&nbsp;	 * @throws IllegalArgumentException If the supplied string does not resolve to a legal (absolute) IRI.
+&nbsp;	 */
+&nbsp;	IRI createIRI(String iri);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new IRI from the supplied namespace and local name. Calling this method is funtionally equivalent to
+&nbsp;	 * calling {@link #createIRI(String) createIRI(namespace+localName)}, but allows the ValueFactory to reuse supplied
+&nbsp;	 * namespace and local name strings whenever possible. Note that the values returned by {@link IRI#getNamespace()}
+&nbsp;	 * and {@link IRI#getLocalName()} are not necessarily the same as the values that are supplied to this method.
+&nbsp;	 *
+&nbsp;	 * @param namespace The IRI&#39;s namespace.
+&nbsp;	 * @param localName The IRI&#39;s local name.
+&nbsp;	 * @throws IllegalArgumentException If the supplied namespace and localname do not resolve to a legal (absolute)
+&nbsp;	 *                                  IRI.
+&nbsp;	 */
+&nbsp;	IRI createIRI(String namespace, String localName);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new bNode.
+&nbsp;	 *
+&nbsp;	 * @return An object representing the bNode.
+&nbsp;	 */
+&nbsp;	BNode createBNode();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new blank node with the given node identifier.
+&nbsp;	 *
+&nbsp;	 * @param nodeID The blank node identifier.
+&nbsp;	 * @return An object representing the blank node.
+&nbsp;	 */
+&nbsp;	BNode createBNode(String nodeID);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal with the supplied label. The return value of {@link Literal#getDatatype()} for the returned
+&nbsp;	 * object must be &lt;a href=&quot;http://www.w3.org/2001/XMLSchema#string&quot;&gt;{@code xsd:string}&lt;/a&gt;.
+&nbsp;	 *
+&nbsp;	 * @param label The literal&#39;s label, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return A literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(String label);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal with the supplied label and language attribute. The return value of
+&nbsp;	 * {@link Literal#getDatatype()} for the returned object must be
+&nbsp;	 * &lt;a href=&quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#langString&quot;&gt;{@code rdf:langString}&lt;/a&gt;.
+&nbsp;	 *
+&nbsp;	 * @param label    The literal&#39;s label, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param language The literal&#39;s language attribute, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return A literal for the specified value and language attribute.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(String label, String language);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal with the supplied label and datatype.
+&nbsp;	 *
+&nbsp;	 * @param label    The literal&#39;s label, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param datatype The literal&#39;s datatype. If it is null, the datatype
+&nbsp;	 *                 &lt;a href=&quot;http://www.w3.org/2001/XMLSchema#string&quot;&gt;{@code xsd:string}&lt;/a&gt; will be assigned to this
+&nbsp;	 *                 literal.
+&nbsp;	 * @return A literal for the specified value and type.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(String label, IRI datatype);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal with the supplied label and datatype.
+&nbsp;	 *
+&nbsp;	 * @param label    The literal&#39;s label, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param datatype The literal&#39;s datatype. It may not be null.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(String label, CoreDatatype datatype);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal with the supplied label and datatype.
+&nbsp;	 *
+&nbsp;	 * @param label    The literal&#39;s label, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param datatype The literal&#39;s datatype. If it is null, the datatype
+&nbsp;	 *                 &lt;a href=&quot;http://www.w3.org/2001/XMLSchema#string&quot;&gt;{@code xsd:string}&lt;/a&gt; will be assigned to this
+&nbsp;	 *                 literal.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(String label, IRI datatype, CoreDatatype coreDatatype);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;xsd:boolean&lt;/var&gt;-typed literal representing the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:boolean&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(boolean value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;xsd:byte&lt;/var&gt;-typed literal representing the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:byte&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(byte value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;xsd:short&lt;/var&gt;-typed literal representing the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:short&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(short value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;xsd:int&lt;/var&gt;-typed literal representing the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:int&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(int value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;xsd:long&lt;/var&gt;-typed literal representing the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:long&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(long value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;xsd:float&lt;/var&gt;-typed literal representing the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:float&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(float value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new &lt;var&gt;xsd:double&lt;/var&gt;-typed literal representing the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:double&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(double value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal representing the specified bigDecimal that is typed as an &lt;var&gt;xsd:decimal&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param bigDecimal The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:decimal&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(BigDecimal bigDecimal);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal representing the specified bigInteger that is typed as an &lt;var&gt;xsd:integer&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param bigInteger The value for the literal.
+&nbsp;	 * @return An &lt;var&gt;xsd:integer&lt;/var&gt;-typed literal for the specified value.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(BigInteger bigInteger);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal representing a temporal accessor value.
+&nbsp;	 *
+&nbsp;	 * @param value the temporal accessor value for the literal
+&nbsp;	 *
+&nbsp;	 * @return a literal representing the specified temporal accessor {@code value} with the appropriate
+&nbsp;	 *         {@linkplain Literal#temporalAccessorValue() XML Schema date/time datatype}
+&nbsp;	 *
+&nbsp;	 * @throws NullPointerException     if {@code value} is {@code null}
+&nbsp;	 * @throws IllegalArgumentException if {@code value} cannot be represented by an XML Schema date/time datatype
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 * @author Alessandro Bollini
+&nbsp;	 *
+&nbsp;	 * @apiNote See datatype-related API notes for {@link Literal#temporalAccessorValue()}.
+&nbsp;	 *
+&nbsp;	 * @implNote the default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+&nbsp;	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+&nbsp;	 *           expected to override it.
+&nbsp;	 */
+&nbsp;	default Literal createLiteral(TemporalAccessor value) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal representing a temporal amount value.
+&nbsp;	 *
+&nbsp;	 * @param value the temporal amount value for the literal
+&nbsp;	 *
+&nbsp;	 * @return a literal representing the specified temporal amount {@code value} with the appropriate
+&nbsp;	 *         {@linkplain Literal#temporalAmountValue() XML Schema duration datatype}
+&nbsp;	 *
+&nbsp;	 * @throws NullPointerException     if {@code value} is {@code null}
+&nbsp;	 * @throws IllegalArgumentException if {@code value} cannot be represented by an XML Schema duration datatype
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 * @author Alessandro Bollini
+&nbsp;	 *
+&nbsp;	 * @apiNote See datatype-related API notes for {@link Literal#temporalAmountValue()}.
+&nbsp;	 *
+&nbsp;	 * @implNote the default method implementation throws an {@link UnsupportedOperationException} and is only supplied
+&nbsp;	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
+&nbsp;	 *           expected to override it.
+&nbsp;	 */
+&nbsp;	default Literal createLiteral(TemporalAmount value) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal representing the specified calendar that is typed using the appropriate XML Schema
+&nbsp;	 * date/time datatype.
+&nbsp;	 *
+&nbsp;	 * @param calendar The value for the literal.
+&nbsp;	 * @return A typed literal for the specified calendar.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(XMLGregorianCalendar calendar);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new literal representing the specified date that is typed using the appropriate XML Schema date/time
+&nbsp;	 * datatype.
+&nbsp;	 *
+&nbsp;	 * @param date The value for the literal.
+&nbsp;	 * @return A typed literal for the specified date.
+&nbsp;	 */
+&nbsp;	Literal createLiteral(Date date);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new statement with the supplied subject, predicate and object.
+&nbsp;	 *
+&nbsp;	 * @param subject   The statement&#39;s subject.
+&nbsp;	 * @param predicate The statement&#39;s predicate.
+&nbsp;	 * @param object    The statement&#39;s object.
+&nbsp;	 * @return The created statement.
+&nbsp;	 */
+&nbsp;	Statement createStatement(Resource subject, IRI predicate, Value object);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new statement with the supplied subject, predicate and object and associated context.
+&nbsp;	 *
+&nbsp;	 * @param subject   The statement&#39;s subject.
+&nbsp;	 * @param predicate The statement&#39;s predicate.
+&nbsp;	 * @param object    The statement&#39;s object.
+&nbsp;	 * @param context   The statement&#39;s context.
+&nbsp;	 * @return The created statement.
+&nbsp;	 */
+&nbsp;	Statement createStatement(Resource subject, IRI predicate, Value object, Resource context);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDF-star triple with the supplied subject, predicate and object.
+&nbsp;	 *
+&nbsp;	 * @param subject   The statement&#39;s subject.
+&nbsp;	 * @param predicate The statement&#39;s predicate.
+&nbsp;	 * @param object    The statement&#39;s object.
+&nbsp;	 * @return The created triple.
+&nbsp;	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility, but throws an
+&nbsp;	 *           {@link UnsupportedOperationException}. Concrete implementations are expected to override.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	default Triple createTriple(Resource subject, IRI predicate, Value object) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

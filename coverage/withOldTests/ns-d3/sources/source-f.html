@@ -1,0 +1,359 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SequentialRecordCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: SequentialRecordCache (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SequentialRecordCache</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SequentialRecordCache$RecordCacheIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/60)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.nio.file.Paths;
+&nbsp;import java.nio.file.StandardOpenOption;
+&nbsp;import java.util.EnumSet;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.NioFile;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+&nbsp;
+&nbsp;/**
+&nbsp; * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file is
+&nbsp; * deleted upon calling {@link #discard()}.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;final class SequentialRecordCache extends AbstractRecordCache {</b>
+&nbsp;
+<b class="nc">&nbsp;	private final static AtomicLong TEMP_FILE_COUNTER = new AtomicLong();</b>
+<b class="nc">&nbsp;	private final static String TEMP_FILE_PREFIX = &quot;txncache&quot; + UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;);</b>
+&nbsp;	private final static String TEMP_FILE_SUFFIX = &quot;.dat&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private static final EnumSet&lt;StandardOpenOption&gt; FILE_OPEN_OPTIONS = EnumSet.of(</b>
+&nbsp;			StandardOpenOption.READ,
+&nbsp;			StandardOpenOption.WRITE,
+&nbsp;			StandardOpenOption.CREATE_NEW,
+&nbsp;			StandardOpenOption.DELETE_ON_CLOSE
+&nbsp;	);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Magic number &quot;Sequential Record Cache&quot; to detect whether the file is actually a sequential record cache file. The
+&nbsp;	 * first three bytes of the file should be equal to this magic number.
+&nbsp;	 */
+<b class="nc">&nbsp;	private static final byte[] MAGIC_NUMBER = { &#39;s&#39;, &#39;r&#39;, &#39;c&#39; };</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The file format version number, stored as the fourth byte in sequential record cache files.
+&nbsp;	 */
+&nbsp;	private static final byte FILE_FORMAT_VERSION = 1;
+&nbsp;
+&nbsp;	// 3 bytes for magic number and 1 byte for file format version
+<b class="nc">&nbsp;	private static final int HEADER_LENGTH = MAGIC_NUMBER.length + 1;</b>
+&nbsp;
+&nbsp;	/*------------*
+&nbsp;	 * Attributes *
+&nbsp;	 *------------*/
+&nbsp;
+&nbsp;	private final int recordSize;
+&nbsp;	private long currentSize;
+&nbsp;	private long extendedSize;
+&nbsp;
+&nbsp;	private final NioFile nioFile;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public SequentialRecordCache(File cacheDir, int recordSize) throws IOException {
+<b class="nc">&nbsp;		this(cacheDir, recordSize, Long.MAX_VALUE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SequentialRecordCache(File cacheDir, int recordSize, long maxRecords) throws IOException {
+<b class="nc">&nbsp;		super(maxRecords);</b>
+<b class="nc">&nbsp;		this.recordSize = recordSize;</b>
+&nbsp;
+<b class="nc">&nbsp;		Path path = Paths.get(cacheDir.getCanonicalPath(),</b>
+<b class="nc">&nbsp;				TEMP_FILE_PREFIX + TEMP_FILE_COUNTER.incrementAndGet() + TEMP_FILE_SUFFIX);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.nioFile = new NioFile(path, FILE_OPEN_OPTIONS);</b>
+&nbsp;
+&nbsp;		// Write file header
+<b class="nc">&nbsp;		append(MAGIC_NUMBER);</b>
+<b class="nc">&nbsp;		append(new byte[] { FILE_FORMAT_VERSION });</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void append(byte[] data) throws IOException {
+<b class="nc">&nbsp;		if (currentSize &gt;= extendedSize - recordSize) {</b>
+<b class="nc">&nbsp;			long newExtendedSize = (((currentSize + recordSize) / BLOCK_SIZE) + 1) * BLOCK_SIZE;</b>
+<b class="nc">&nbsp;			assert newExtendedSize &gt; extendedSize;</b>
+<b class="nc">&nbsp;			int bytesToWrite = (int) (newExtendedSize - extendedSize);</b>
+<b class="nc">&nbsp;			nioFile.writeBytes(new byte[bytesToWrite], currentSize);</b>
+<b class="nc">&nbsp;			extendedSize += bytesToWrite;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		nioFile.writeBytes(data, currentSize);</b>
+<b class="nc">&nbsp;		currentSize += data.length;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void discard() throws IOException {
+<b class="nc">&nbsp;		nioFile.delete();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void clearInternal() throws IOException {
+<b class="nc">&nbsp;		nioFile.truncate(HEADER_LENGTH);</b>
+<b class="nc">&nbsp;		currentSize = nioFile.size();</b>
+<b class="nc">&nbsp;		extendedSize = currentSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void storeRecordInternal(byte[] data) throws IOException {
+<b class="nc">&nbsp;		append(data);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected RecordIterator getRecordsInternal() throws IOException {
+<b class="nc">&nbsp;		return new RecordCacheIterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------------------------------*
+&nbsp;	 * Inner class RecordCacheIterator *
+&nbsp;	 *---------------------------------*/
+&nbsp;
+<b class="nc">&nbsp;	protected class RecordCacheIterator implements RecordIterator {</b>
+&nbsp;
+<b class="nc">&nbsp;		private long position = HEADER_LENGTH;</b>
+<b class="nc">&nbsp;		private long readAheadBufferPosition = HEADER_LENGTH;</b>
+&nbsp;
+&nbsp;		private final ByteBuffer readAheadBuffer;
+&nbsp;
+&nbsp;		{
+<b class="nc">&nbsp;			readAheadBuffer = ByteBuffer.allocate(BLOCK_SIZE + recordSize);</b>
+<b class="nc">&nbsp;			readAheadBuffer.position(readAheadBuffer.limit());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void fillReadAheadBuffer() throws IOException {
+<b class="nc">&nbsp;			while (readAheadBuffer.limit() - readAheadBuffer.position() &lt; recordSize</b>
+&nbsp;					&amp;&amp; currentSize &gt; readAheadBufferPosition) {
+<b class="nc">&nbsp;				readAheadBuffer.compact();</b>
+&nbsp;
+&nbsp;				// align with 4K boundary
+<b class="nc">&nbsp;				if (readAheadBufferPosition == HEADER_LENGTH) {</b>
+<b class="nc">&nbsp;					readAheadBuffer.limit(readAheadBuffer.limit() - HEADER_LENGTH);</b>
+<b class="nc">&nbsp;				} else if (readAheadBufferPosition % BLOCK_SIZE != 0) {</b>
+<b class="nc">&nbsp;					readAheadBuffer.limit(</b>
+<b class="nc">&nbsp;							BLOCK_SIZE - (int) (readAheadBufferPosition % BLOCK_SIZE) + readAheadBuffer.position());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					readAheadBuffer.limit(BLOCK_SIZE + readAheadBuffer.position());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				int read = nioFile.read(readAheadBuffer, readAheadBufferPosition);</b>
+<b class="nc">&nbsp;				readAheadBufferPosition += read;</b>
+<b class="nc">&nbsp;				readAheadBuffer.flip();</b>
+&nbsp;
+&nbsp;				// override the limit if we have read outside the actual size (e.g. into the extended area).
+<b class="nc">&nbsp;				if (readAheadBufferPosition &gt; currentSize) {</b>
+<b class="nc">&nbsp;					readAheadBuffer.limit((int) (readAheadBuffer.limit() - (readAheadBufferPosition - currentSize)));</b>
+<b class="nc">&nbsp;					readAheadBufferPosition = currentSize;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (read &lt;= 0) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public byte[] next() throws IOException {
+<b class="nc">&nbsp;			fillReadAheadBuffer();</b>
+<b class="nc">&nbsp;			if (!readAheadBuffer.hasRemaining()) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			byte[] bytes = new byte[recordSize];</b>
+&nbsp;
+<b class="nc">&nbsp;			readAheadBuffer.get(bytes);</b>
+&nbsp;
+<b class="nc">&nbsp;			position += recordSize;</b>
+<b class="nc">&nbsp;			return bytes;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void set(byte[] value) throws IOException {
+<b class="nc">&nbsp;			if (position &gt;= HEADER_LENGTH + recordSize &amp;&amp; position &lt;= currentSize) {</b>
+<b class="nc">&nbsp;				nioFile.writeBytes(value, position - recordSize);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws IOException {
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

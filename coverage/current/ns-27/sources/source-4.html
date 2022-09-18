@@ -1,0 +1,238 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > XMLReaderFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.xml</a>
+</div>
+
+<h1>Coverage Summary for Class: XMLReaderFactory (org.eclipse.rdf4j.common.xml)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">XMLReaderFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (1/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (3/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    21.8%
+  </span>
+  <span class="absValue">
+    (12/55)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.xml;
+&nbsp;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.xml.sax.SAXException;
+&nbsp;import org.xml.sax.XMLReader;
+&nbsp;
+&nbsp;/**
+&nbsp; * Factory class for creating an XMLReader. This factory tries to use the system property &#39;org.xml.sax.driver&#39;, if that
+&nbsp; * fails it falls back on javax.xml.sax.parsers.SAXParserFactory. If the SAXParserFactory class can not be found (this
+&nbsp; * can happen when using a Java 1.3 or older), or the initialization using SAXParserFactory fails otherwise, the factory
+&nbsp; * falls back on the Xerces 2 SAX Parser.
+&nbsp; */
+<b class="nc">&nbsp;public class XMLReaderFactory {</b>
+&nbsp;
+&nbsp;	public static final String XERCES_SAXPARSER = &quot;org.apache.xerces.parsers.SAXParser&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * creates an org.xml.sax.XMLReader object. The method first tries to create the XMLReader object specified in the
+&nbsp;	 * &#39;org.xml.sax.driver&#39; system property. If that fails, it tries to use java.xml.parsers.SAXParserFactory. If that
+&nbsp;	 * also fails, it tries to initialize the Xerces 2 SAX parser. If that also fails, a SAXException is thrown.
+&nbsp;	 *
+&nbsp;	 * @return an XMLReader
+&nbsp;	 * @throws SAXException when no default XMLReader class can be found or instantiated.
+&nbsp;	 */
+&nbsp;	public static XMLReader createXMLReader() throws SAXException {
+<b class="fc">&nbsp;		final Logger logger = LoggerFactory.getLogger(XMLReader.class);</b>
+&nbsp;
+<b class="fc">&nbsp;		XMLReader reader = null;</b>
+&nbsp;
+&nbsp;		// first, try and initialize based on the system property.
+<b class="fc">&nbsp;		String xmlReaderName = System.getProperty(&quot;org.xml.sax.driver&quot;);</b>
+<b class="pc">&nbsp;		if (xmlReaderName != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				reader = _createXMLReader(xmlReaderName);</b>
+<b class="nc">&nbsp;			} catch (ClassNotFoundException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Class &quot; + xmlReaderName + &quot; not found&quot;);</b>
+<b class="nc">&nbsp;			} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;				logger.warn(xmlReaderName + &quot; is not a valid XMLReader.&quot;);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;could not create instance of &quot; + xmlReaderName);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			logger.debug(&quot;XMLReader initialized using system property: &quot; + xmlReaderName);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// next, try using javax.xml.parsers.SAXParserFactory
+<b class="pc">&nbsp;		if (reader == null) {</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				javax.xml.parsers.SAXParserFactory factory = javax.xml.parsers.SAXParserFactory.newInstance();</b>
+<b class="fc">&nbsp;				factory.setNamespaceAware(true);</b>
+&nbsp;
+<b class="fc">&nbsp;				reader = factory.newSAXParser().getXMLReader();</b>
+<b class="nc">&nbsp;			} catch (NoClassDefFoundError e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;javax.xml.parsers.SAXParserFactory not available&quot;);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Failed to initialize XMLReader through JAXP&quot;);</b>
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;			logger.debug(&quot;XMLReader initialized using JAXP: &quot; + reader);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Last resort: try using the Xerces 2 SAX Parser
+<b class="pc">&nbsp;		if (reader == null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				reader = _createXMLReader(XERCES_SAXPARSER);</b>
+<b class="nc">&nbsp;			} catch (ClassNotFoundException e) {</b>
+<b class="nc">&nbsp;				String message = &quot;Class &quot; + XERCES_SAXPARSER + &quot; not found&quot;;</b>
+<b class="nc">&nbsp;				logger.error(message);</b>
+<b class="nc">&nbsp;				throw new SAXException(message);</b>
+<b class="nc">&nbsp;			} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;				String message = XERCES_SAXPARSER + &quot; is not a valid XMLReader.&quot;;</b>
+<b class="nc">&nbsp;				logger.error(message);</b>
+<b class="nc">&nbsp;				throw new SAXException(message);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				String message = &quot;Could not create instance of &quot; + XERCES_SAXPARSER;</b>
+<b class="nc">&nbsp;				logger.error(message);</b>
+<b class="nc">&nbsp;				throw new SAXException(message);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			logger.debug(&quot;XMLReader initialized using default Xerces SAX parser &quot; + XERCES_SAXPARSER);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return reader;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an org.xml.sax.XMLReader object using the supplied name.
+&nbsp;	 *
+&nbsp;	 * @return an XMLReader
+&nbsp;	 * @throws SAXException when the supplied XMLReader class name can not be found or instantiated.
+&nbsp;	 */
+&nbsp;	public static XMLReader createXMLReader(String name) throws SAXException {
+<b class="nc">&nbsp;		final Logger logger = LoggerFactory.getLogger(XMLReader.class);</b>
+&nbsp;
+&nbsp;		XMLReader reader;
+&nbsp;		try {
+<b class="nc">&nbsp;			reader = _createXMLReader(name);</b>
+<b class="nc">&nbsp;		} catch (ClassNotFoundException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Class &quot; + name + &quot; not found&quot;);</b>
+<b class="nc">&nbsp;			throw new SAXException(e);</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			logger.error(name + &quot; is not a valid XMLReader.&quot;);</b>
+<b class="nc">&nbsp;			throw new SAXException(e);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Could not create instance of &quot; + name);</b>
+<b class="nc">&nbsp;			throw new SAXException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return reader;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static XMLReader _createXMLReader(String name)
+&nbsp;			throws ClassNotFoundException, ClassCastException, InstantiationException, IllegalAccessException {
+<b class="nc">&nbsp;		return (XMLReader) Class.forName(name).newInstance();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

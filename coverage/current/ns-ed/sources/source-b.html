@@ -1,0 +1,329 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TriplePattern</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.graphpattern</a>
+</div>
+
+<h1>Coverage Summary for Class: TriplePattern (org.eclipse.rdf4j.sparqlbuilder.graphpattern)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TriplePattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.toRdfLiteralArray;
+&nbsp;
+&nbsp;import java.util.function.Consumer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfObject;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicateObjectList;
+&nbsp;
+&nbsp;/**
+&nbsp; * Denotes a SPARQL Triple Pattern
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples&quot;&gt; Triple pattern syntax&lt;/a&gt;
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes&quot;&gt; blank node syntax&lt;/a&gt;
+&nbsp; */
+&nbsp;public interface TriplePattern extends GraphPattern {
+&nbsp;	@SuppressWarnings(&quot;javadoc&quot;)
+&nbsp;	String SUFFIX = &quot; .&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add predicate-object lists describing this triple pattern&#39;s subject
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(RdfPredicate predicate, RdfObject... objects) {
+<b class="nc">&nbsp;		return andHas(Rdf.predicateObjectList(predicate, objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add predicate-object lists describing this triple pattern&#39;s subject
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(IRI predicate, RdfObject... objects) {
+<b class="nc">&nbsp;		return andHas(Rdf.iri(predicate), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add predicate-object lists describing this triple pattern&#39;s subject
+&nbsp;	 *
+&nbsp;	 * @param lists the {@link RdfPredicateObjectList}(s) to add
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	TriplePattern andHas(RdfPredicateObjectList... lists);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes {@link Value}s and converts them to
+&nbsp;	 * StringLiterals
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(RdfPredicate predicate, Value... objects) {
+<b class="nc">&nbsp;		return andHas(predicate, Rdf.objects(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Strings and converts them to
+&nbsp;	 * StringLiterals
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(RdfPredicate predicate, String... objects) {
+<b class="nc">&nbsp;		return andHas(predicate, toRdfLiteralArray(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Strings and converts them to
+&nbsp;	 * StringLiterals
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(IRI predicate, String... objects) {
+<b class="nc">&nbsp;		return andHas(Rdf.iri(predicate), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Boolean and converts them to
+&nbsp;	 * BooleanLiterals
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(RdfPredicate predicate, Boolean... objects) {
+<b class="nc">&nbsp;		return andHas(predicate, toRdfLiteralArray(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Boolean and converts them to
+&nbsp;	 * BooleanLiterals
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(IRI predicate, Boolean... objects) {
+<b class="nc">&nbsp;		return andHas(Rdf.iri(predicate), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Numbers and converts them to
+&nbsp;	 * NumberLiterals
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(RdfPredicate predicate, Number... objects) {
+<b class="nc">&nbsp;		return andHas(predicate, toRdfLiteralArray(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience version of {@link #andHas(RdfPredicate, RdfObject...)} that takes Numbers and converts them to
+&nbsp;	 * NumberLiterals
+&nbsp;	 *
+&nbsp;	 * @param predicate the predicate to use to describe this triple pattern&#39;s subject
+&nbsp;	 * @param objects   the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(IRI predicate, Number... objects) {
+<b class="nc">&nbsp;		return andHas(Rdf.iri(predicate), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add a property path with an object list describing this triple pattern&#39;s subject
+&nbsp;	 *
+&nbsp;	 * @param propertyPathConfigurer an object accepting an {@link EmptyPropertyPathBuilder} that configures it as
+&nbsp;	 *                               needed
+&nbsp;	 * @param objects                the corresponding object(s)
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(Consumer&lt;EmptyPropertyPathBuilder&gt; propertyPathConfigurer, RdfObject... objects) {
+<b class="nc">&nbsp;		EmptyPropertyPathBuilder pathBuilder = new EmptyPropertyPathBuilder();</b>
+<b class="nc">&nbsp;		propertyPathConfigurer.accept(pathBuilder);</b>
+<b class="nc">&nbsp;		return andHas(pathBuilder.build(), objects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link Value} &lt;code&gt;objects&lt;/code&gt; to
+&nbsp;	 * {@link RdfObject}s.
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(Consumer&lt;EmptyPropertyPathBuilder&gt; propertyPathConfigurer, Value... objects) {
+<b class="nc">&nbsp;		return andHas(propertyPathConfigurer, Rdf.objects(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link String} &lt;code&gt;objects&lt;/code&gt; to
+&nbsp;	 * {@link RdfObject}s.
+&nbsp;	 */
+&nbsp;
+&nbsp;	default TriplePattern andHas(Consumer&lt;EmptyPropertyPathBuilder&gt; propertyPathConfigurer, String... objects) {
+<b class="nc">&nbsp;		return andHas(propertyPathConfigurer, toRdfLiteralArray(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link Number} &lt;code&gt;objects&lt;/code&gt; to
+&nbsp;	 * {@link RdfObject}s.
+&nbsp;	 */
+&nbsp;
+&nbsp;	default TriplePattern andHas(Consumer&lt;EmptyPropertyPathBuilder&gt; propertyPathConfigurer, Number... objects) {
+<b class="nc">&nbsp;		return andHas(propertyPathConfigurer, toRdfLiteralArray(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Wrapper for {@link #andHas(Consumer, RdfObject...)} converting the {@link Boolean} &lt;code&gt;objects&lt;/code&gt; to
+&nbsp;	 * {@link RdfObject}s.
+&nbsp;	 */
+&nbsp;	default TriplePattern andHas(Consumer&lt;EmptyPropertyPathBuilder&gt; propertyPathConfigurer, Boolean... objects) {
+<b class="nc">&nbsp;		return andHas(propertyPathConfigurer, toRdfLiteralArray(objects));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Use the built-in RDF shortcut {@code a} for {@code rdf:type} to specify the subject&#39;s type
+&nbsp;	 *
+&nbsp;	 * @param object the object describing this triple pattern&#39;s subject&#39;s {@code rdf:type}
+&nbsp;	 *
+&nbsp;	 * @return this triple pattern
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#abbrevRdfType&quot;&gt; RDF Type abbreviation&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	default TriplePattern andIsA(RdfObject object) {
+<b class="nc">&nbsp;		return andHas(RdfPredicate.a, object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	default boolean isEmpty() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

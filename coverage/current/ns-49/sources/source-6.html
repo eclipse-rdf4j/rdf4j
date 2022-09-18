@@ -1,0 +1,181 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ServerInterceptor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server</a>
+</div>
+
+<h1>Coverage Summary for Class: ServerInterceptor (org.eclipse.rdf4j.http.server)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ServerInterceptor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.springframework.web.servlet.handler.HandlerInterceptorAdapter;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for single-use request interceptors. This implementation sets the thread name to something sensible at the
+&nbsp; * start of the request handling and resets the name at the end. This is useful for logging frameworks that make use of
+&nbsp; * thread names, such as Log4J. Should not be a singleton bean! Configure as inner bean in openrdf-servlet.xml
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+<b class="nc">&nbsp;public abstract class ServerInterceptor extends HandlerInterceptorAdapter {</b>
+&nbsp;
+&nbsp;	private volatile String origThreadName;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		origThreadName = Thread.currentThread().getName();</b>
+<b class="nc">&nbsp;		Thread.currentThread().setName(getThreadName());</b>
+&nbsp;
+<b class="nc">&nbsp;		setRequestAttributes(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		return super.preHandle(request, response, handler);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
+&nbsp;			Exception exception) throws Exception {
+&nbsp;		try {
+<b class="nc">&nbsp;			cleanUpResources();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			Thread.currentThread().setName(origThreadName);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determine the thread name to use. Called before the request is forwarded to a handler.
+&nbsp;	 *
+&nbsp;	 * @return a name that makes sense based on the request
+&nbsp;	 * @throws ServerHTTPException if it was impossible to determine a name due to an internal error
+&nbsp;	 */
+&nbsp;	protected abstract String getThreadName() throws ServerHTTPException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set attributes for this request. Called before the request is forwarded to a handler. By default, this method
+&nbsp;	 * does nothing.
+&nbsp;	 *
+&nbsp;	 * @param request the request
+&nbsp;	 * @throws ClientHTTPException if it was impossible to set one or more attributes due to a bad request on the part
+&nbsp;	 *                             of the client
+&nbsp;	 * @throws ServerHTTPException if it was impossible to set one or more attributes due to an internal error
+&nbsp;	 */
+&nbsp;	protected void setRequestAttributes(HttpServletRequest request) throws ClientHTTPException, ServerHTTPException {
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clean up resources used in handling this request. Called after the request is handled and a the view is rendered
+&nbsp;	 * (or an exception has occurred). By default, this method does nothing.
+&nbsp;	 *
+&nbsp;	 * @throws ServerHTTPException if some resources could not be cleaned up because of an internal error
+&nbsp;	 */
+&nbsp;	protected void cleanUpResources() throws ServerHTTPException {
+<b class="nc">&nbsp;	}</b>
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

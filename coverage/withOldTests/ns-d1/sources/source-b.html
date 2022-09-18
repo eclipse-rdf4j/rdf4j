@@ -1,0 +1,311 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemStatementIteratorCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: MemStatementIteratorCache (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemStatementIteratorCache</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.1%
+  </span>
+  <span class="absValue">
+    (4/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    8.3%
+  </span>
+  <span class="absValue">
+    (2/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    28.9%
+  </span>
+  <span class="absValue">
+    (11/38)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">MemStatementIteratorCache$CachedIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (4/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    6.2%
+  </span>
+  <span class="absValue">
+    (2/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    20.8%
+  </span>
+  <span class="absValue">
+    (11/53)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.cache.Cache;
+&nbsp;import com.google.common.cache.CacheBuilder;
+&nbsp;
+&nbsp;/**
+&nbsp; * A cache for MemStatementIterator that tracks how frequently an iterator is used and caches the iterator as a list
+&nbsp; *
+&nbsp; * @author Håvard M. Ottestad
+&nbsp; */
+&nbsp;public class MemStatementIteratorCache {
+&nbsp;
+<b class="fc">&nbsp;	private final static Logger logger = LoggerFactory.getLogger(MemStatementIteratorCache.class);</b>
+&nbsp;
+&nbsp;	// the number of times an iterator needs to be used before it will be cached
+&nbsp;	public final int CACHE_FREQUENCY_THRESHOLD;
+&nbsp;
+&nbsp;	// a map that tracks the number of times a cacheable iterator has been used
+<b class="fc">&nbsp;	private final ConcurrentHashMap&lt;MemStatementIterator, Integer&gt; iteratorFrequencyMap = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	// a cache for commonly used iterators that are particularly costly
+<b class="fc">&nbsp;	private final Cache&lt;MemStatementIterator, List&lt;MemStatement&gt;&gt; iteratorCache = CacheBuilder</b>
+<b class="fc">&nbsp;			.newBuilder()</b>
+<b class="fc">&nbsp;			.softValues()</b>
+<b class="fc">&nbsp;			.build();</b>
+&nbsp;
+<b class="fc">&nbsp;	public MemStatementIteratorCache(int cacheFrequencyThreshold) {</b>
+<b class="fc">&nbsp;		this.CACHE_FREQUENCY_THRESHOLD = cacheFrequencyThreshold;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void invalidateCache() {
+<b class="pc">&nbsp;		if (!(iteratorFrequencyMap.isEmpty())) {</b>
+<b class="nc">&nbsp;			iteratorFrequencyMap.clear();</b>
+<b class="nc">&nbsp;			iteratorCache.invalidateAll();</b>
+<b class="nc">&nbsp;			iteratorCache.cleanUp();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (logger.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Invalidated cache&quot;, new Throwable());</b>
+<b class="nc">&nbsp;			} else if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Invalidated cache&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	void incrementIteratorFrequencyMap(MemStatementIterator iterator) {
+<b class="nc">&nbsp;		Integer compute = iteratorFrequencyMap.compute(iterator, (key, value) -&gt; {</b>
+<b class="nc">&nbsp;			if (value == null) {</b>
+<b class="nc">&nbsp;				return 0;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return value + 1;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Incremented iteratorFrequencyMap to {}\n{} \n{}&quot;, compute, iterator, iterator.getStats());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean shouldBeCached(MemStatementIterator iterator) {
+<b class="pc">&nbsp;		if (!iteratorFrequencyMap.isEmpty()) {</b>
+<b class="nc">&nbsp;			Integer integer = iteratorFrequencyMap.get(iterator);</b>
+<b class="nc">&nbsp;			return integer != null &amp;&amp; integer &gt; CACHE_FREQUENCY_THRESHOLD;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	CachedIteration getCachedIterator(MemStatementIterator iterator) {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;MemStatement&gt; cached = iteratorCache.getIfPresent(iterator);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (cached == null) {</b>
+<b class="nc">&nbsp;			try (iterator) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Filling cache {}&quot;, iterator);</b>
+<b class="nc">&nbsp;				ArrayList&lt;MemStatement&gt; newCache = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;				while (iterator.hasNext()) {</b>
+<b class="nc">&nbsp;					newCache.add(iterator.next());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				newCache.trimToSize();</b>
+<b class="nc">&nbsp;				cached = Collections.unmodifiableList(newCache);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			iteratorCache.put(iterator, cached);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new CachedIteration(cached.iterator());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class CachedIteration implements CloseableIteration&lt;MemStatement, SailException&gt; {
+&nbsp;
+&nbsp;		private Iterator&lt;MemStatement&gt; iter;
+&nbsp;
+<b class="nc">&nbsp;		public CachedIteration(Iterator&lt;MemStatement&gt; iter) {</b>
+<b class="nc">&nbsp;			this.iter = iter;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws SailException {
+<b class="nc">&nbsp;			if (iter == null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean result = iter.hasNext();</b>
+<b class="nc">&nbsp;			if (!result) {</b>
+<b class="nc">&nbsp;				close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public MemStatement next() throws SailException {
+<b class="nc">&nbsp;			if (iter == null) {</b>
+<b class="nc">&nbsp;				throw new NoSuchElementException(&quot;Iteration has been closed&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return iter.next();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() throws SailException {
+<b class="nc">&nbsp;			if (iter == null) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;Iteration has been closed&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			iter.remove();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public final void close() throws SailException {
+<b class="nc">&nbsp;			iter = null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,352 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONLDInternalTripleCallback</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.jsonld</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONLDInternalTripleCallback (org.eclipse.rdf4j.rio.jsonld)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONLDInternalTripleCallback</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.jsonld;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map.Entry;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.ParseErrorListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.RDFParserHelper;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;
+&nbsp;import com.github.jsonldjava.core.JsonLdConsts;
+&nbsp;import com.github.jsonldjava.core.JsonLdTripleCallback;
+&nbsp;import com.github.jsonldjava.core.RDFDataset;
+&nbsp;
+&nbsp;/**
+&nbsp; * A package private internal implementation class
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;class JSONLDInternalTripleCallback implements JsonLdTripleCallback {
+&nbsp;
+&nbsp;	private ValueFactory vf;
+&nbsp;
+&nbsp;	private RDFHandler handler;
+&nbsp;
+&nbsp;	private ParserConfig parserConfig;
+&nbsp;
+&nbsp;	private final ParseErrorListener parseErrorListener;
+&nbsp;
+&nbsp;	private final Function&lt;String, Resource&gt; namedBNodeCreator;
+&nbsp;
+&nbsp;	private final Supplier&lt;Resource&gt; anonymousBNodeCreator;
+&nbsp;
+&nbsp;	public JSONLDInternalTripleCallback() {
+<b class="nc">&nbsp;		this(new StatementCollector(new LinkedHashModel()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public JSONLDInternalTripleCallback(RDFHandler nextHandler) {
+<b class="nc">&nbsp;		this(nextHandler, SimpleValueFactory.getInstance());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf) {
+<b class="nc">&nbsp;		this(nextHandler, vf, new ParserConfig(), new ParseErrorLogger(), nodeID -&gt; vf.createBNode(nodeID),</b>
+<b class="nc">&nbsp;				() -&gt; vf.createBNode());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public JSONLDInternalTripleCallback(RDFHandler nextHandler, ValueFactory vf, ParserConfig parserConfig,
+&nbsp;			ParseErrorListener parseErrorListener, Function&lt;String, Resource&gt; namedBNodeCreator,
+<b class="nc">&nbsp;			Supplier&lt;Resource&gt; anonymousBNodeCreator) {</b>
+<b class="nc">&nbsp;		this.handler = nextHandler;</b>
+<b class="nc">&nbsp;		this.vf = vf;</b>
+<b class="nc">&nbsp;		this.parserConfig = parserConfig;</b>
+<b class="nc">&nbsp;		this.parseErrorListener = parseErrorListener;</b>
+<b class="nc">&nbsp;		this.namedBNodeCreator = namedBNodeCreator;</b>
+<b class="nc">&nbsp;		this.anonymousBNodeCreator = anonymousBNodeCreator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void triple(String s, String p, String o, String graph) {
+<b class="nc">&nbsp;		if (s == null || p == null || o == null) {</b>
+&nbsp;			// TODO: i don&#39;t know what to do here!!!!
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		Statement result;
+&nbsp;		// This method is always called with three Resources as subject
+&nbsp;		// predicate and
+&nbsp;		// object
+<b class="nc">&nbsp;		if (graph == null) {</b>
+<b class="nc">&nbsp;			result = vf.createStatement(createResource(s), vf.createIRI(p), createResource(o));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			result = vf.createStatement(createResource(s), vf.createIRI(p), createResource(o), createResource(graph));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (handler != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				handler.handleStatement(result);</b>
+<b class="nc">&nbsp;			} catch (final RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Resource createResource(String resource) {
+&nbsp;		// Blank node without any given identifier
+<b class="nc">&nbsp;		if (resource.equals(JsonLdConsts.BLANK_NODE_PREFIX)) {</b>
+<b class="nc">&nbsp;			return anonymousBNodeCreator.get();</b>
+<b class="nc">&nbsp;		} else if (resource.startsWith(JsonLdConsts.BLANK_NODE_PREFIX)) {</b>
+<b class="nc">&nbsp;			return namedBNodeCreator.apply(resource.substring(2));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return vf.createIRI(resource);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void triple(String s, String p, String value, String datatype, String language, String graph) {
+&nbsp;
+<b class="nc">&nbsp;		if (s == null || p == null || value == null) {</b>
+&nbsp;			// TODO: i don&#39;t know what to do here!!!!
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final Resource subject = createResource(s);</b>
+&nbsp;
+<b class="nc">&nbsp;		final IRI predicate = vf.createIRI(p);</b>
+<b class="nc">&nbsp;		final IRI datatypeURI = datatype == null ? null : vf.createIRI(datatype);</b>
+&nbsp;
+&nbsp;		Value object;
+&nbsp;		try {
+<b class="nc">&nbsp;			object = RDFParserHelper.createLiteral(value, language, datatypeURI, getParserConfig(),</b>
+<b class="nc">&nbsp;					getParserErrorListener(), getValueFactory());</b>
+<b class="nc">&nbsp;		} catch (final RDFParseException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		Statement result;
+<b class="nc">&nbsp;		if (graph == null) {</b>
+<b class="nc">&nbsp;			result = vf.createStatement(subject, predicate, object);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			result = vf.createStatement(subject, predicate, object, createResource(graph));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (handler != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				handler.handleStatement(result);</b>
+<b class="nc">&nbsp;			} catch (final RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParseErrorListener getParserErrorListener() {
+<b class="nc">&nbsp;		return this.parseErrorListener;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the handler
+&nbsp;	 */
+&nbsp;	public RDFHandler getHandler() {
+<b class="nc">&nbsp;		return handler;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param handler the handler to set
+&nbsp;	 */
+&nbsp;	public void setHandler(RDFHandler handler) {
+<b class="nc">&nbsp;		this.handler = handler;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the parserConfig
+&nbsp;	 */
+&nbsp;	public ParserConfig getParserConfig() {
+<b class="nc">&nbsp;		return parserConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param parserConfig the parserConfig to set
+&nbsp;	 */
+&nbsp;	public void setParserConfig(ParserConfig parserConfig) {
+<b class="nc">&nbsp;		this.parserConfig = parserConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the vf
+&nbsp;	 */
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;		return vf;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param vf the vf to set
+&nbsp;	 */
+&nbsp;	public void setValueFactory(ValueFactory vf) {
+<b class="nc">&nbsp;		this.vf = vf;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object call(final RDFDataset dataset) {
+<b class="nc">&nbsp;		if (handler != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				handler.startRDF();</b>
+<b class="nc">&nbsp;				for (final Entry&lt;String, String&gt; nextNamespace : dataset.getNamespaces().entrySet()) {</b>
+<b class="nc">&nbsp;					handler.handleNamespace(nextNamespace.getKey(), nextNamespace.getValue());</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (final RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(&quot;Could not handle start of RDF&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (String graphName : dataset.keySet()) {</b>
+<b class="nc">&nbsp;			final List&lt;RDFDataset.Quad&gt; quads = dataset.getQuads(graphName);</b>
+<b class="nc">&nbsp;			if (JsonLdConsts.DEFAULT.equals(graphName)) {</b>
+<b class="nc">&nbsp;				graphName = null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			for (final RDFDataset.Quad quad : quads) {</b>
+<b class="nc">&nbsp;				if (quad.getObject().isLiteral()) {</b>
+<b class="nc">&nbsp;					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(), quad.getObject().getValue(),</b>
+<b class="nc">&nbsp;							quad.getObject().getDatatype(), quad.getObject().getLanguage(), graphName);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					triple(quad.getSubject().getValue(), quad.getPredicate().getValue(), quad.getObject().getValue(),</b>
+&nbsp;							graphName);
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (handler != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				handler.endRDF();</b>
+<b class="nc">&nbsp;			} catch (final RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(&quot;Could not handle end of RDF&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return getHandler();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

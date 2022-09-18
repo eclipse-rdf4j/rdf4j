@@ -1,0 +1,143 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RecordCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: RecordCache (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">RecordCache</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+&nbsp;
+&nbsp;/**
+&nbsp; * A cache for fixed size byte array records.
+&nbsp; *
+&nbsp; * @author Håvard M. Ottestad
+&nbsp; */
+&nbsp;interface RecordCache {
+&nbsp;
+&nbsp;	int BLOCK_SIZE = 1024 * 4;
+&nbsp;
+&nbsp;	void setMaxRecords(long maxRecords);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the number of records currently stored in the cache, throwing an {@link IllegalStateException} if the cache
+&nbsp;	 * is no longer {@link #isValid() valid}.
+&nbsp;	 *
+&nbsp;	 * @return records in the cache
+&nbsp;	 * @throws IllegalStateException If the cache is not/no longer {@link #isValid() valid}.
+&nbsp;	 */
+&nbsp;	long getRecordCount();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stores a record in the cache.
+&nbsp;	 *
+&nbsp;	 * @param data The record to store.
+&nbsp;	 */
+&nbsp;	void storeRecord(byte[] data) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stores the records from the supplied cache into this cache.
+&nbsp;	 *
+&nbsp;	 * @param otherCache The cache to copy the records from.
+&nbsp;	 */
+&nbsp;	void storeRecords(RecordCache otherCache) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Clears the cache, deleting all stored records.
+&nbsp;	 */
+&nbsp;	void clear() throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all records that are stored in the cache, throwing an {@link IllegalStateException} if the cache is no
+&nbsp;	 * longer {@link #isValid() valid}.
+&nbsp;	 *
+&nbsp;	 * @return An iterator over all records.
+&nbsp;	 * @throws IllegalStateException If the cache is not/no longer {@link #isValid() valid}.
+&nbsp;	 */
+&nbsp;	RecordIterator getRecords() throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the cache is still valid. Caches are valid if the number of stored records is smaller than or
+&nbsp;	 * equal to the maximum number of records.
+&nbsp;	 */
+&nbsp;	boolean isValid();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Discards the cache, deleting any allocated files.
+&nbsp;	 */
+&nbsp;	void discard() throws IOException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

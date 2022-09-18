@@ -1,0 +1,1876 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLUpdateTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLUpdateTest (org.eclipse.rdf4j.testsuite.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLUpdateTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/84)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/803)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.query.parser.sparql;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;import static org.junit.Assert.assertFalse;
+&nbsp;import static org.junit.Assert.assertNotNull;
+&nbsp;import static org.junit.Assert.assertTrue;
+&nbsp;import static org.junit.Assert.fail;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.DC;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FOAF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.Test;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Tests for SPARQL 1.1 Update functionality.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public abstract class SPARQLUpdateTest {</b>
+&nbsp;
+<b class="nc">&nbsp;	protected static final Logger logger = LoggerFactory.getLogger(SPARQLUpdateTest.class);</b>
+&nbsp;
+&nbsp;	private Repository rep;
+&nbsp;
+&nbsp;	protected RepositoryConnection con;
+&nbsp;
+&nbsp;	protected ValueFactory f;
+&nbsp;
+&nbsp;	protected IRI bob;
+&nbsp;
+&nbsp;	protected IRI alice;
+&nbsp;
+&nbsp;	protected IRI graph1;
+&nbsp;
+&nbsp;	protected IRI graph2;
+&nbsp;
+&nbsp;	protected static final String EX_NS = &quot;http://example.org/&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws java.lang.Exception
+&nbsp;	 */
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;setting up test&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		rep = createRepository();</b>
+<b class="nc">&nbsp;		con = rep.getConnection();</b>
+<b class="nc">&nbsp;		f = rep.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		loadDataset(&quot;/testdata-update/dataset-update.trig&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		bob = f.createIRI(EX_NS, &quot;bob&quot;);</b>
+<b class="nc">&nbsp;		alice = f.createIRI(EX_NS, &quot;alice&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		graph1 = f.createIRI(EX_NS, &quot;graph1&quot;);</b>
+<b class="nc">&nbsp;		graph2 = f.createIRI(EX_NS, &quot;graph2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;setup complete.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws java.lang.Exception
+&nbsp;	 */
+&nbsp;	@After
+&nbsp;	public void tearDown() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;tearing down...&quot;);</b>
+<b class="nc">&nbsp;		con.close();</b>
+<b class="nc">&nbsp;		con = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		rep.shutDown();</b>
+<b class="nc">&nbsp;		rep = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;tearDown complete.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/* test methods */
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteFromDefaultGraph() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST);</b>
+<b class="nc">&nbsp;		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.ALT);</b>
+<b class="nc">&nbsp;		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.BAG);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE { GRAPH sesame:nil { ?s ?p ?o } } WHERE { GRAPH rdf:Alt { ?s ?p ?o } }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.ALT));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.BAG));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF4J.NIL));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, (Resource) null));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteFromDefaultGraphUsingWith() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST);</b>
+<b class="nc">&nbsp;		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.ALT);</b>
+<b class="nc">&nbsp;		con.add(RDF.FIRST, RDF.FIRST, RDF.FIRST, RDF.BAG);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;WITH sesame:nil DELETE { ?s ?p ?o  } WHERE { ?s ?p ?o }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.ALT));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF.BAG));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, RDF4J.NIL));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(RDF.FIRST, RDF.FIRST, RDF.FIRST, true, (Resource) null));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereInvalidTriple() throws Exception {
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?name a foaf:Person. ?x a &lt;urn:TestSubject&gt;. } WHERE { ?x foaf:name ?name }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			operation.execute();</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			fail(&quot;subject-literal triple pattern should be silently ignored&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(</b>
+<b class="nc">&nbsp;				con.hasStatement((Resource) null, RDF.TYPE, con.getValueFactory().createIRI(&quot;urn:TestSubject&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteWhereInvalidTriple() throws Exception {
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE {?name a foaf:Person. ?x foaf:name ?name } WHERE { ?x foaf:name ?name }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			operation.execute();</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			fail(&quot;subject-literal triple pattern should be silently ignored&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, FOAF.NAME, null, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteInsertWhereInvalidTriple() throws Exception {
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE {?name a foaf:Person} INSERT {?name a foaf:Agent} WHERE { ?x foaf:name ?name }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			operation.execute();</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			fail(&quot;subject-literal triple pattern should be silently ignored&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhere() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test InsertWhere&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x rdfs:label ?y . } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereWithBinding() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testInsertWhereWithBinding&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x rdfs:label ?y . } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;x&quot;, bob);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereWithBindings2() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testInsertWhereWithBindings2&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x rdfs:label ?z . } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;z&quot;, f.createLiteral(&quot;Bobbie&quot;));</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;x&quot;, bob);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bobbie&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, null, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bobbie&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertEmptyWhere() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testInsertEmptyWhere&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT { &lt;&quot; + bob + &quot;&gt; rdfs:label \&quot;Bob\&quot; . } WHERE { }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertEmptyWhereWithBinding() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testInsertEmptyWhereWithBinding&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x rdfs:label ?y . } WHERE { }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;x&quot;, bob);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;y&quot;, f.createLiteral(&quot;Bob&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertNonMatchingWhere() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testInsertNonMatchingWhere&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT { ?x rdfs:label ?y . } WHERE { ?x rdfs:comment ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, null, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, null, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertNonMatchingWhereWithBindings() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testInsertNonMatchingWhereWithBindings&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT { ?x rdfs:label ?y . } WHERE { ?x rdfs:comment ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;x&quot;, bob);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;y&quot;, f.createLiteral(&quot;Bob&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, null, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, null, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereWithBindings() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testInsertWhereWithBindings&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT { ?x rdfs:comment ?z . } WHERE { ?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Literal comment = f.createLiteral(&quot;Bob has a comment&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;x&quot;, bob);</b>
+<b class="nc">&nbsp;		operation.setBinding(&quot;z&quot;, comment);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, RDFS.COMMENT, comment, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.COMMENT, comment, true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.COMMENT, comment, true));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereWithOptional() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertWhereWithOptional&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot; INSERT { ?s ex:age ?incAge } &quot; +
+&nbsp;				// update.append(&quot; DELETE { ?s ex:age ?age } &quot;);
+&nbsp;				&quot; WHERE { ?s foaf:name ?name . &quot; +
+&nbsp;				&quot; OPTIONAL {?s ex:age ?age . BIND ((?age + 1) as ?incAge)  } &quot; +
+&nbsp;				&quot; } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI age = f.createIRI(EX_NS, &quot;age&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, age, null, true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, age, null, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		RepositoryResult&lt;Statement&gt; result = con.getStatements(bob, age, null, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (result.hasNext()) {</b>
+<b class="nc">&nbsp;			System.out.println(result.next().toString());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, age, f.createLiteral(&quot;43&quot;, XSD.INTEGER), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		result = con.getStatements(alice, age, null, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (result.hasNext()) {</b>
+<b class="nc">&nbsp;			System.out.println(result.next());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, age, null, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereWithBlankNode() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertWhereWithBlankNode&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot; INSERT { ?s ex:complexAge [ rdf:value ?age; rdfs:label \&quot;old\&quot; ] . } &quot; +
+&nbsp;				&quot; WHERE { ?s ex:age ?age . &quot; +
+&nbsp;				&quot; } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI age = f.createIRI(EX_NS, &quot;age&quot;);</b>
+<b class="nc">&nbsp;		IRI complexAge = f.createIRI(EX_NS, &quot;complexAge&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, age, null, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		RepositoryResult&lt;Statement&gt; sts = con.getStatements(bob, complexAge, null, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(sts.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;		Value v1 = sts.next().getObject();</b>
+&nbsp;
+<b class="nc">&nbsp;		sts.close();</b>
+&nbsp;
+<b class="nc">&nbsp;		sts = con.getStatements(null, RDF.VALUE, null, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(sts.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;		Value v2 = sts.next().getSubject();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertEquals(v1, v2);</b>
+&nbsp;
+<b class="nc">&nbsp;		sts.close();</b>
+&nbsp;
+<b class="nc">&nbsp;		String query = getNamespaceDeclarations()</b>
+&nbsp;				+ &quot; SELECT ?bn ?age ?l WHERE { ex:bob ex:complexAge ?bn. ?bn rdf:value ?age. ?bn rdfs:label ?l .} &quot;;
+&nbsp;
+<b class="nc">&nbsp;		TupleQueryResult result = con.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(result.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;		BindingSet bs = result.next();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(result.hasNext());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteInsertWhere() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test DeleteInsertWhere&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE { ?x foaf:name ?y } INSERT {?x rdfs:label ?y . } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteWhereOptional() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testDeleteWhereOptional&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot; DELETE { ?x foaf:name ?y; foaf:mbox ?mbox. } &quot; +
+&nbsp;				&quot; WHERE {?x foaf:name ?y. &quot; +
+&nbsp;				&quot; OPTIONAL { ?x foaf:mbox ?mbox. FILTER (str(?mbox) = \&quot;bob@example.org\&quot;) } }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		Literal mboxBob = f.createLiteral(&quot;bob@example.org&quot;);</b>
+<b class="nc">&nbsp;		Literal mboxAlice = f.createLiteral(&quot;alice@example.org&quot;);</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.MBOX, mboxBob, true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.MBOX, mboxAlice, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, FOAF.MBOX, mboxBob, true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.MBOX, mboxAlice, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteInsertWhereWithBindings() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testDeleteInsertWhereWithBindings&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE { ?x foaf:name ?y } INSERT {?x rdfs:label ?y . } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.setBinding(&quot;x&quot;, bob);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteInsertWhereWithBindings2() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testDeleteInsertWhereWithBindings2&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE { ?x foaf:name ?y } INSERT {?x rdfs:label ?z . } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.setBinding(&quot;z&quot;, f.createLiteral(&quot;person&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;person&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;person&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteInsertWhereLoopingBehavior() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testDeleteInsertWhereLoopingBehavior&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot; DELETE { ?x ex:age ?y } INSERT {?x ex:age ?z }&quot; +
+&nbsp;				&quot; WHERE { &quot; +
+&nbsp;				&quot;   ?x ex:age ?y .&quot; +
+&nbsp;				&quot;   BIND((?y + 1) as ?z) &quot; +
+&nbsp;				&quot;   FILTER( ?y &lt; 46 ) &quot; +
+&nbsp;				&quot; } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI age = f.createIRI(EX_NS, &quot;age&quot;);</b>
+<b class="nc">&nbsp;		Literal originalAgeValue = f.createLiteral(&quot;42&quot;, XSD.INTEGER);</b>
+<b class="nc">&nbsp;		Literal correctAgeValue = f.createLiteral(&quot;43&quot;, CoreDatatype.XSD.INTEGER);</b>
+<b class="nc">&nbsp;		Literal inCorrectAgeValue = f.createLiteral(&quot;46&quot;, XSD.INTEGER);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, age, originalAgeValue, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, age, originalAgeValue, true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, age, correctAgeValue, true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, age, inCorrectAgeValue, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAutoCommitHandling() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testAutoCommitHandling&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder update = new StringBuilder();</b>
+<b class="nc">&nbsp;		update.append(getNamespaceDeclarations());</b>
+<b class="nc">&nbsp;		update.append(&quot;DELETE { ?x foaf:name ?y } INSERT {?x rdfs:label ?y . } WHERE {?x foaf:name ?y }&quot;);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;			operation.execute();</b>
+&nbsp;
+&nbsp;			// update should be visible to own connection.
+<b class="nc">&nbsp;			assertTrue(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;			assertTrue(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;			try (RepositoryConnection con2 = rep.getConnection()) {</b>
+&nbsp;				// update should not yet be visible to separate connection
+<b class="nc">&nbsp;				assertFalse(con2.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;				assertFalse(con2.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(con2.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;				assertTrue(con2.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;				con.commit();</b>
+&nbsp;
+&nbsp;				// after commit, update should be visible to separate connection.
+<b class="nc">&nbsp;				assertTrue(con2.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;				assertTrue(con2.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertFalse(con2.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;				assertFalse(con2.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (con.isActive()) {</b>
+<b class="nc">&nbsp;				con.rollback();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			con.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testConsecutiveUpdatesInSameTransaction() throws Exception {
+&nbsp;		// this tests if consecutive updates in the same transaction behave
+&nbsp;		// correctly. See issue SES-930
+<b class="nc">&nbsp;		logger.debug(&quot;executing test testConsecutiveUpdatesInSameTransaction&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder update1 = new StringBuilder();</b>
+<b class="nc">&nbsp;		update1.append(getNamespaceDeclarations());</b>
+<b class="nc">&nbsp;		update1.append(&quot;DELETE { ?x foaf:name ?y } WHERE {?x foaf:name ?y }&quot;);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update1.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;			operation.execute();</b>
+&nbsp;
+&nbsp;			// update should be visible to own connection.
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;			String update2 = getNamespaceDeclarations() +</b>
+&nbsp;					&quot;INSERT { ?x rdfs:label ?y } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;			operation = con.prepareUpdate(QueryLanguage.SPARQL, update2);</b>
+&nbsp;
+<b class="nc">&nbsp;			operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;			con.commit();</b>
+&nbsp;
+&nbsp;			// update should not have resulted in any inserts: where clause is
+&nbsp;			// empty.
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;			assertFalse(con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (con.isActive()) {</b>
+<b class="nc">&nbsp;				con.rollback();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertTransformedWhere() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing test InsertTransformedWhere&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x rdfs:label [] . } WHERE {?y ex:containsPerson ?x.  }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(bob, RDFS.LABEL, null, true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, RDFS.LABEL, null, true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, RDFS.LABEL, null, true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, RDFS.LABEL, null, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertWhereGraph&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {GRAPH ?g {?x rdfs:label ?y . }} WHERE {GRAPH ?g {?x foaf:name ?y }}&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String message = &quot;labels should have been inserted in corresponding named graphs only.&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereUsing() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertWhereUsing&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x rdfs:label ?y . } USING ex:graph1 WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String message = &quot;label should have been inserted in default graph, for ex:bob only&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereUsingWith() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertWhereUsingWith&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;WITH ex:graph2 INSERT {?x rdfs:label ?y . } USING ex:graph1 WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String message = &quot;label should have been inserted in graph2, for ex:bob only&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertWhereWith() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertWhereWith&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;WITH ex:graph1 INSERT {?x rdfs:label ?y . } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String message = &quot;label should have been inserted in graph1 only, for ex:bob only&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(bob, RDFS.LABEL, f.createLiteral(&quot;Bob&quot;), true, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(message, con.hasStatement(alice, RDFS.LABEL, f.createLiteral(&quot;Alice&quot;), true, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteWhereShortcut() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteWhereShortcut&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;foaf:name properties should have been deleted&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		msg = &quot;foaf:knows properties should not have been deleted&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(bob, FOAF.KNOWS, null, true));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(alice, FOAF.KNOWS, null, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteWhere() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteWhere&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE {?x foaf:name ?y } WHERE {?x foaf:name ?y }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;foaf:name properties should have been deleted&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteTransformedWhere() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteTransformedWhere&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE {?y foaf:name ?n } WHERE {?x ex:containsPerson ?y . ?y foaf:name ?n . }&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;foaf:name properties should have been deleted&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		msg = &quot;ex:containsPerson properties should not have been deleted&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(graph1, f.createIRI(EX_NS, &quot;containsPerson&quot;), bob, true));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(graph2, f.createIRI(EX_NS, &quot;containsPerson&quot;), alice, true));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertData() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertData&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { ex:book1 dc:title \&quot;book 1\&quot; ; dc:creator \&quot;Ringo\&quot; . } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI book1 = f.createIRI(EX_NS, &quot;book1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;two new statements about ex:book1 should have been inserted&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertData2() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertData2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { ex:book1 dc:title \&quot;the number four\&quot;^^&lt;http://www.w3.org/2001/XMLSchema#integer&gt; . }; &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI book1 = f.createIRI(EX_NS, &quot;book1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;the number four&quot;, XSD.INTEGER), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;new statement about ex:book1 should have been inserted&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(msg,</b>
+<b class="nc">&nbsp;				con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;the number four&quot;, CoreDatatype.XSD.INTEGER), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataLangTaggedLiteral() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertDataLangTaggedLiteral&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { ex:book1 dc:title \&quot;book 1\&quot;@en . } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI book1 = f.createIRI(EX_NS, &quot;book1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;, &quot;en&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;new statement about ex:book1 should have been inserted&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;, &quot;en&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataGraph1() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertDataGraph1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;INSERT DATA { \n&quot; +</b>
+&nbsp;				&quot;GRAPH &lt;urn:g1&gt; { &lt;urn:s1&gt; &lt;urn:p1&gt; &lt;urn:o1&gt; . } \n&quot; +
+&nbsp;				&quot;&lt;urn:s1&gt; a &lt;urn:C1&gt; . \n&quot; +
+&nbsp;				&quot;}&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), RDF.TYPE, null, true, (Resource) null));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), f.createIRI(&quot;urn:p1&quot;), f.createIRI(&quot;urn:o1&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), RDF.TYPE, null, true, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), f.createIRI(&quot;urn:p1&quot;), f.createIRI(&quot;urn:o1&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataGraph2() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertDataGraph2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;INSERT DATA { \n&quot; +</b>
+&nbsp;				&quot;&lt;urn:s1&gt; a &lt;urn:C1&gt; . \n&quot; +
+&nbsp;				&quot;GRAPH &lt;urn:g1&gt; { &lt;urn:s1&gt; &lt;urn:p1&gt; &lt;urn:o1&gt; . } \n&quot; +
+&nbsp;				&quot;}&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), RDF.TYPE, null, true, (Resource) null));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), f.createIRI(&quot;urn:p1&quot;), f.createIRI(&quot;urn:o1&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), RDF.TYPE, null, true, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), f.createIRI(&quot;urn:p1&quot;), f.createIRI(&quot;urn:o1&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataGraph3() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertDataGraph3&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;INSERT DATA { \n&quot; +</b>
+&nbsp;				&quot;&lt;urn:s1&gt; a &lt;urn:C1&gt; . \n&quot; +
+&nbsp;				&quot;GRAPH &lt;urn:g1&gt;{ &lt;urn:s1&gt; &lt;urn:p1&gt; &lt;urn:o1&gt; . &lt;urn:s2&gt; &lt;urn:p2&gt; &lt;urn:o2&gt; } \n&quot; +
+&nbsp;				&quot;&lt;urn:s2&gt; a &lt;urn:C2&gt; \n&quot; +
+&nbsp;				&quot;}&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), RDF.TYPE, null, true, (Resource) null));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), f.createIRI(&quot;urn:p1&quot;), f.createIRI(&quot;urn:o1&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(f.createIRI(&quot;urn:s2&quot;), f.createIRI(&quot;urn:p2&quot;), f.createIRI(&quot;urn:o2&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), RDF.TYPE, null, true, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s2&quot;), RDF.TYPE, null, true, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s1&quot;), f.createIRI(&quot;urn:p1&quot;), f.createIRI(&quot;urn:o1&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(f.createIRI(&quot;urn:s2&quot;), f.createIRI(&quot;urn:p2&quot;), f.createIRI(&quot;urn:o2&quot;), true,</b>
+<b class="nc">&nbsp;				f.createIRI(&quot;urn:g1&quot;)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataBlankNode() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertDataBlankNode&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { _:foo dc:title \&quot;book 1\&quot; ; dc:creator \&quot;Ringo\&quot; . } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, DC.TITLE, f.createLiteral(&quot;book 1&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		RepositoryResult&lt;Statement&gt; titleStatements = con.getStatements(null, DC.TITLE, f.createLiteral(&quot;book 1&quot;),</b>
+&nbsp;				true);
+<b class="nc">&nbsp;		assertNotNull(titleStatements);</b>
+&nbsp;
+<b class="nc">&nbsp;		RepositoryResult&lt;Statement&gt; creatorStatements = con.getStatements(null, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;),</b>
+&nbsp;				true);
+<b class="nc">&nbsp;		assertNotNull(creatorStatements);</b>
+&nbsp;
+<b class="nc">&nbsp;		BNode bookNode = null;</b>
+<b class="nc">&nbsp;		if (titleStatements.hasNext()) {</b>
+<b class="nc">&nbsp;			Statement ts = titleStatements.next();</b>
+<b class="nc">&nbsp;			assertFalse(titleStatements.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;			Resource subject = ts.getSubject();</b>
+<b class="nc">&nbsp;			assertTrue(subject instanceof BNode);</b>
+<b class="nc">&nbsp;			bookNode = (BNode) subject;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		titleStatements.close();</b>
+<b class="nc">&nbsp;		assertNotNull(bookNode);</b>
+<b class="nc">&nbsp;		assertFalse(&quot;_:foo&quot;.equals(bookNode.getID()));</b>
+&nbsp;
+<b class="nc">&nbsp;		if (creatorStatements.hasNext()) {</b>
+<b class="nc">&nbsp;			Statement cs = creatorStatements.next();</b>
+<b class="nc">&nbsp;			assertFalse(creatorStatements.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;			Resource subject = cs.getSubject();</b>
+<b class="nc">&nbsp;			assertTrue(subject instanceof BNode);</b>
+<b class="nc">&nbsp;			assertEquals(bookNode, subject);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			fail(&quot;at least one creator statement expected&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		creatorStatements.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataMultiplePatterns() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertData&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { ex:book1 dc:title \&quot;book 1\&quot;. ex:book1 dc:creator \&quot;Ringo\&quot; . ex:book2 dc:creator \&quot;George\&quot;. } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI book1 = f.createIRI(EX_NS, &quot;book1&quot;);</b>
+<b class="nc">&nbsp;		IRI book2 = f.createIRI(EX_NS, &quot;book2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book2, DC.CREATOR, f.createLiteral(&quot;George&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;newly inserted statement missing&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book2, DC.CREATOR, f.createLiteral(&quot;George&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataInGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertDataInGraph&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { GRAPH ex:graph1 { ex:book1 dc:title \&quot;book 1\&quot; ; dc:creator \&quot;Ringo\&quot; . } } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI book1 = f.createIRI(EX_NS, &quot;book1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;), true, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(book1, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;), true, graph1));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;two new statements about ex:book1 should have been inserted in graph1&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.TITLE, f.createLiteral(&quot;book 1&quot;), true, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.CREATOR, f.createLiteral(&quot;Ringo&quot;), true, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testInsertDataInGraph2() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testInsertDataInGraph2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { GRAPH ex:graph1 { ex:Human rdfs:subClassOf ex:Mammal. ex:Mammal rdfs:subClassOf ex:Animal. ex:george a ex:Human. ex:ringo a ex:Human. } } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI human = f.createIRI(EX_NS, &quot;Human&quot;);</b>
+<b class="nc">&nbsp;		IRI mammal = f.createIRI(EX_NS, &quot;Mammal&quot;);</b>
+<b class="nc">&nbsp;		IRI george = f.createIRI(EX_NS, &quot;george&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(human, RDFS.SUBCLASSOF, mammal, true, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(mammal, RDFS.SUBCLASSOF, null, true, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(george, RDF.TYPE, human, true, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteData() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteData&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE DATA { ex:alice foaf:knows ex:bob. } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statement should have been deleted.&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteDataUnicode() throws Exception {
+<b class="nc">&nbsp;		IRI i18n = con.getValueFactory().createIRI(EX_NS, &quot;東京&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		con.add(i18n, FOAF.KNOWS, bob);</b>
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteData&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE DATA { ex:東京 foaf:knows ex:bob. } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(i18n, FOAF.KNOWS, bob, true));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statement should have been deleted.&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(i18n, FOAF.KNOWS, bob, true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteDataMultiplePatterns() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteData&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \&quot;alice@example.org\&quot; .} &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.MBOX, f.createLiteral(&quot;alice@example.org&quot;), true));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statement should have been deleted.&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral(&quot;alice@example.org&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteDataFromGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteDataFromGraph&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE DATA { GRAPH ex:graph1 {ex:alice foaf:knows ex:bob. } } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statement should have been deleted from graph1&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDeleteDataFromWrongGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDeleteDataFromWrongGraph&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;
+&nbsp;		// statement does not exist in graph2.
+&nbsp;				&quot;DELETE DATA { GRAPH ex:graph2 {ex:alice foaf:knows ex:bob. } } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statement should have not have been deleted from graph1&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCreateNewGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testCreateNewGraph&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder update = new StringBuilder();</b>
+<b class="nc">&nbsp;		update.append(getNamespaceDeclarations());</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI newGraph = f.createIRI(EX_NS, &quot;new-graph&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		update.append(&quot;CREATE GRAPH &lt;&quot; + newGraph + &quot;&gt; &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, newGraph));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCreateExistingGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testCreateExistingGraph&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;CREATE GRAPH &lt;&quot; + graph1 + &quot;&gt; &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;			fail(&quot;creation of existing graph should have resulted in error.&quot;);</b>
+<b class="nc">&nbsp;		} catch (UpdateExecutionException e) {</b>
+&nbsp;			// expected behavior
+<b class="nc">&nbsp;			if (con.isActive()) {</b>
+<b class="nc">&nbsp;				con.rollback();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCopyToDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testCopyToDefault&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+<b class="nc">&nbsp;				&quot;COPY GRAPH &lt;&quot; + graph1.stringValue() + &quot;&gt; TO DEFAULT&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCopyToExistingNamed() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testCopyToExistingNamed&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;COPY GRAPH ex:graph1 TO ex:graph2&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, null, false, graph2));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, FOAF.NAME, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCopyToNewNamed() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testCopyToNewNamed&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;COPY GRAPH ex:graph1 TO ex:graph3&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, f.createIRI(EX_NS, &quot;graph3&quot;)));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCopyFromDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testCopyFromDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;COPY DEFAULT TO ex:graph3&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, f.createIRI(EX_NS, &quot;graph3&quot;)));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, f.createIRI(EX_NS, &quot;graph3&quot;)));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testCopyFromDefaultToDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testCopyFromDefaultToDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;COPY DEFAULT TO DEFAULT&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddToDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testAddToDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+<b class="nc">&nbsp;				&quot;ADD GRAPH &lt;&quot; + graph1.stringValue() + &quot;&gt; TO DEFAULT&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddToExistingNamed() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testAddToExistingNamed&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;ADD GRAPH ex:graph1 TO ex:graph2&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddToNewNamed() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testAddToNewNamed&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;ADD GRAPH ex:graph1 TO ex:graph3&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, f.createIRI(EX_NS, &quot;graph3&quot;)));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddFromDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testAddFromDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;ADD DEFAULT TO ex:graph3&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI graph3 = f.createIRI(EX_NS, &quot;graph3&quot;);</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, false, graph1));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, graph3));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, graph3));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, false, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(alice, FOAF.KNOWS, bob, false, graph3));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testAddFromDefaultToDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testAddFromDefaultToDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;ADD DEFAULT TO DEFAULT&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMoveToDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testMoveToDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+<b class="nc">&nbsp;				&quot;MOVE GRAPH &lt;&quot; + graph1.stringValue() + &quot;&gt; TO DEFAULT&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMoveToNewNamed() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testMoveToNewNamed&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;MOVE GRAPH ex:graph1 TO ex:graph3&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, null, false, f.createIRI(EX_NS, &quot;graph3&quot;)));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph1));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMoveFromDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testMoveFromDefault&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;MOVE DEFAULT TO ex:graph3&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, f.createIRI(EX_NS, &quot;graph3&quot;)));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, f.createIRI(EX_NS, &quot;graph3&quot;)));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMoveFromDefaultToDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testMoveFromDefaultToDefault&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;MOVE DEFAULT TO DEFAULT&quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph1, DC.PUBLISHER, null, false, (Resource) null));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(graph2, DC.PUBLISHER, null, false, (Resource) null));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testClearAll() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testClearAll&quot;);</b>
+<b class="nc">&nbsp;		String update = &quot;CLEAR ALL&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testClearDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testClearDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;CLEAR DEFAULT&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+&nbsp;		// Verify statements exist in the named graphs.
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph2));</b>
+&nbsp;		// Verify statements exist in the default graph.
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, new Resource[] { null }));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph2));</b>
+&nbsp;		// Verify that no statements remain in the &#39;default&#39; graph.
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, new Resource[] { null }));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testClearGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testClearGraph&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+<b class="nc">&nbsp;				&quot;CLEAR GRAPH &lt;&quot; + graph1.stringValue() + &quot;&gt; &quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testClearNamed() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testClearNamed&quot;);</b>
+<b class="nc">&nbsp;		String update = &quot;CLEAR NAMED&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDropAll() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDropAll&quot;);</b>
+<b class="nc">&nbsp;		String update = &quot;DROP ALL&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDropDefault() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDropDefault&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;DROP DEFAULT&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+&nbsp;		// Verify statements exist in the named graphs.
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph2));</b>
+&nbsp;		// Verify statements exist in the default graph.
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, new Resource[] { null }));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph2));</b>
+&nbsp;		// Verify that no statements remain in the &#39;default&#39; graph.
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, new Resource[] { null }));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDropGraph() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDropGraph&quot;);</b>
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+<b class="nc">&nbsp;				&quot;DROP GRAPH &lt;&quot; + graph1.stringValue() + &quot;&gt; &quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testDropNamed() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testDropNamed&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;DROP NAMED&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph1));</b>
+<b class="nc">&nbsp;		assertFalse(con.hasStatement(null, null, null, false, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(null, null, null, false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testUpdateSequenceDeleteInsert() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testUpdateSequenceDeleteInsert&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE {?y foaf:name ?n } WHERE {?x ex:containsPerson ?y. ?y foaf:name ?n . }; &quot; +
+<b class="nc">&nbsp;				getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x foaf:name \&quot;foo\&quot; } WHERE {?y ex:containsPerson ?x} &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;foaf:name properties should have been deleted&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		msg = &quot;foaf:name properties with value &#39;foo&#39; should have been added&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;foo&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;foo&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testUpdateSequenceInsertDelete() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testUpdateSequenceInsertDelete&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT {?x foaf:name \&quot;foo\&quot; } WHERE {?y ex:containsPerson ?x}; &quot; +
+<b class="nc">&nbsp;				getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE {?y foaf:name ?n } WHERE {?x ex:containsPerson ?y. ?y foaf:name ?n . } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;foaf:name properties should have been deleted&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true));</b>
+&nbsp;
+<b class="nc">&nbsp;		msg = &quot;foaf:name properties with value &#39;foo&#39; should not have been added&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;foo&quot;), true));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;foo&quot;), true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testUpdateSequenceInsertDelete2() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testUpdateSequenceInsertDelete2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT { GRAPH ex:graph2 { ?s ?p ?o } } WHERE { GRAPH ex:graph1 { ?s ?p ?o . FILTER (?s = ex:bob) } }; &quot;
+&nbsp;				+
+&nbsp;				&quot;WITH ex:graph1 DELETE { ?s ?p ?o } WHERE {?s ?p ?o . FILTER (?s = ex:bob) } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true, graph1));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.NAME, f.createLiteral(&quot;Alice&quot;), true, graph2));</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statements about bob should have been removed from graph1&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(bob, null, null, true, graph1));</b>
+&nbsp;
+<b class="nc">&nbsp;		msg = &quot;statements about bob should have been added to graph2&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(bob, FOAF.NAME, f.createLiteral(&quot;Bob&quot;), true, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(bob, FOAF.MBOX, null, true, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(bob, FOAF.KNOWS, alice, true, graph2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testUpdateSequenceInsertDeleteExample9() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testUpdateSequenceInsertDeleteExample9&quot;);</b>
+&nbsp;
+&nbsp;		// replace the standard dataset with one specific to this case.
+<b class="nc">&nbsp;		con.clear();</b>
+<b class="nc">&nbsp;		loadDataset(&quot;/testdata-update/dataset-update-example9.trig&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI book1 = f.createIRI(&quot;http://example/book1&quot;);</b>
+<b class="nc">&nbsp;		IRI book3 = f.createIRI(&quot;http://example/book3&quot;);</b>
+<b class="nc">&nbsp;		IRI bookStore = f.createIRI(&quot;http://example/bookStore&quot;);</b>
+<b class="nc">&nbsp;		IRI bookStore2 = f.createIRI(&quot;http://example/bookStore2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = &quot;prefix rdf: &lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt; &quot; +</b>
+&nbsp;				&quot;prefix rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt;  &quot; +
+&nbsp;				&quot;prefix xsd: &lt;http://www.w3.org/2001/XMLSchema#&gt;  &quot; +
+&nbsp;				&quot;prefix dc: &lt;http://purl.org/dc/elements/1.1/&gt;  &quot; +
+&nbsp;				&quot;prefix dcmitype: &lt;http://purl.org/dc/dcmitype/&gt;  &quot; +
+&nbsp;				&quot;INSERT  { GRAPH &lt;http://example/bookStore2&gt; { ?book ?p ?v } } &quot; +
+&nbsp;				&quot; WHERE &quot; +
+&nbsp;				&quot; { GRAPH  &lt;http://example/bookStore&gt; &quot; +
+&nbsp;				&quot;   { ?book dc:date ?date . &quot; +
+&nbsp;				&quot;       FILTER ( ?date &lt; \&quot;2000-01-01T00:00:00-02:00\&quot;^^xsd:dateTime ) &quot; +
+&nbsp;				&quot;       ?book ?p ?v &quot; +
+&nbsp;				&quot;      } &quot; +
+&nbsp;				&quot; } ;&quot; +
+&nbsp;				&quot;WITH &lt;http://example/bookStore&gt; &quot; +
+&nbsp;				&quot; DELETE { ?book ?p ?v } &quot; +
+&nbsp;				&quot; WHERE &quot; +
+&nbsp;				&quot; { ?book dc:date ?date ; &quot; +
+&nbsp;				&quot;         a dcmitype:PhysicalObject .&quot; +
+&nbsp;				&quot;    FILTER ( ?date &lt; \&quot;2000-01-01T00:00:00-02:00\&quot;^^xsd:dateTime ) &quot; +
+&nbsp;				&quot;   ?book ?p ?v&quot; +
+&nbsp;				&quot; } &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+&nbsp;
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statements about book1 should have been removed from bookStore&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(book1, null, null, true, bookStore));</b>
+&nbsp;
+<b class="nc">&nbsp;		msg = &quot;statements about book1 should have been added to bookStore2&quot;;</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, RDF.TYPE, null, true, bookStore2));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.DATE, null, true, bookStore2));</b>
+<b class="nc">&nbsp;		assertTrue(msg, con.hasStatement(book1, DC.TITLE, null, true, bookStore2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testUpdateSequenceWithRelativeIRI() throws Exception {
+<b class="nc">&nbsp;		logger.debug(&quot;executing testUpdateSequenceWithRelativeIRI&quot;);</b>
+<b class="nc">&nbsp;		String update = &quot;base &lt;http://example.com/resource/&gt;\n&quot; + &quot;prefix em: &lt;http://example.com/resource/ontology/&gt;\n&quot; //</b>
+&nbsp;				+ &quot;insert {\n&quot; //
+&nbsp;				+ &quot;  graph &lt;relations&gt; { ?company em:parent ?other. ?other em:subsidiary ?company }\n&quot; + &quot;} where {\n&quot; //
+&nbsp;				+ &quot;  values ?type {&lt;relation/parent&gt; &lt;relation/acquisition&gt;}\n&quot;
+&nbsp;				+ &quot;  [em:type ?type; em:company ?company; em:investor ?other]\n&quot; //
+&nbsp;				+ &quot;};\n&quot; // inherit base &lt;http://example.com/resource/&gt;
+&nbsp;				+ &quot;insert {\n&quot; //
+&nbsp;				+ &quot;  graph &lt;relations&gt; { ?company em:hasCompetitor ?other. ?other em:hasCompetitor ?company. }\n&quot;
+&nbsp;				+ &quot;} where {\n&quot; //
+&nbsp;				+ &quot;  [em:type &lt;relation/competition&gt;; em:company ?company; em:company ?other]\n&quot;
+&nbsp;				+ &quot;  filter(str(?company)&lt;str(?other)) \n&quot; //
+&nbsp;				+ &quot;};&quot;;
+<b class="nc">&nbsp;		Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		operation.execute();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void contextualInsertDeleteData()
+&nbsp;			throws RepositoryException, MalformedQueryException, UpdateExecutionException {
+<b class="nc">&nbsp;		String insert = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;INSERT DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \&quot;alice@example.org\&quot; .} &quot;;
+&nbsp;
+<b class="nc">&nbsp;		SimpleDataset ds = new SimpleDataset();</b>
+<b class="nc">&nbsp;		ds.setDefaultInsertGraph(graph2);</b>
+<b class="nc">&nbsp;		ds.addDefaultRemoveGraph(graph2);</b>
+&nbsp;
+<b class="nc">&nbsp;		Update updInsert = con.prepareUpdate(QueryLanguage.SPARQL, insert);</b>
+<b class="nc">&nbsp;		updInsert.setDataset(ds);</b>
+<b class="nc">&nbsp;		updInsert.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));</b>
+<b class="nc">&nbsp;		assertTrue(con.hasStatement(alice, FOAF.MBOX, f.createLiteral(&quot;alice@example.org&quot;), true, graph2));</b>
+&nbsp;
+<b class="nc">&nbsp;		String update = getNamespaceDeclarations() +</b>
+&nbsp;				&quot;DELETE DATA { ex:alice foaf:knows ex:bob. ex:alice foaf:mbox \&quot;alice@example.org\&quot; .} &quot;;
+&nbsp;
+<b class="nc">&nbsp;		Update updDelete = con.prepareUpdate(QueryLanguage.SPARQL, update);</b>
+<b class="nc">&nbsp;		updDelete.setDataset(ds);</b>
+<b class="nc">&nbsp;		updDelete.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;		String msg = &quot;statement should have been deleted.&quot;;</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.KNOWS, bob, true, graph2));</b>
+<b class="nc">&nbsp;		assertFalse(msg, con.hasStatement(alice, FOAF.MBOX, f.createLiteral(&quot;alice@example.org&quot;), true, graph2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test(expected = MalformedQueryException.class)
+&nbsp;	public void testInvalidInsertUpdate() {
+<b class="nc">&nbsp;		RepositoryConnection connection = rep.getConnection();</b>
+<b class="nc">&nbsp;		Update update = connection.prepareUpdate(QueryLanguage.SPARQL, &quot;insert data { ?s ?p ?o }&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test(expected = MalformedQueryException.class)
+&nbsp;	public void testInvalidDeleteUpdate() {
+<b class="nc">&nbsp;		RepositoryConnection connection = rep.getConnection();</b>
+<b class="nc">&nbsp;		Update delete = connection.prepareUpdate(QueryLanguage.SPARQL, &quot;delete data { ?s ?p ?o }&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * @Test public void testLoad() throws Exception { String update =
+&nbsp;	 * &quot;LOAD &lt;http://www.daml.org/2001/01/gedcom/royal92.daml&gt;&quot;; String ns =
+&nbsp;	 * &quot;http://www.daml.org/2001/01/gedcom/gedcom#&quot;; Update operation = con.prepareUpdate(QueryLanguage.SPARQL, update);
+&nbsp;	 * operation.execute(); assertTrue(con.hasStatement(null, RDF.TYPE, f.createIRI(ns, &quot;Family&quot;), true)); }
+&nbsp;	 *
+&nbsp;	 * @Test public void testLoadIntoGraph() throws Exception { String ns =
+&nbsp;	 * &quot;http://www.daml.org/2001/01/gedcom/gedcom#&quot;; String update =
+&nbsp;	 * &quot;LOAD &lt;http://www.daml.org/2001/01/gedcom/royal92.daml&gt; INTO GRAPH &lt;&quot; + ns + &quot;&gt; &quot;; Update operation =
+&nbsp;	 * con.prepareUpdate(QueryLanguage.SPARQL, update); operation.execute();
+&nbsp;	 * assertFalse(con.hasStatement((Resource)null, RDF.TYPE, f.createIRI(ns, &quot;Family&quot;), true, (Resource)null));
+&nbsp;	 * assertTrue(con.hasStatement((Resource)null, RDF.TYPE, f.createIRI(ns, &quot;Family&quot;), true, f.createIRI(ns))); }
+&nbsp;	 */
+&nbsp;
+&nbsp;	/* protected methods */
+&nbsp;
+&nbsp;	protected void loadDataset(String datasetFile) throws RDFParseException, RepositoryException, IOException {
+<b class="nc">&nbsp;		logger.debug(&quot;loading dataset...&quot;);</b>
+<b class="nc">&nbsp;		try (InputStream dataset = SPARQLUpdateTest.class.getResourceAsStream(datasetFile)) {</b>
+<b class="nc">&nbsp;			con.add(dataset, &quot;&quot;, RDFFormat.TRIG);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		logger.debug(&quot;dataset loaded.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a set of useful namespace prefix declarations.
+&nbsp;	 *
+&nbsp;	 * @return namespace prefix declarations for rdf, rdfs, dc, foaf and ex.
+&nbsp;	 */
+&nbsp;	protected String getNamespaceDeclarations() {
+<b class="nc">&nbsp;		String declarations = &quot;PREFIX rdf: &lt;&quot; + RDF.NAMESPACE + &quot;&gt; \n&quot; +</b>
+&nbsp;				&quot;PREFIX rdfs: &lt;&quot; + RDFS.NAMESPACE + &quot;&gt; \n&quot; +
+&nbsp;				&quot;PREFIX dc: &lt;&quot; + DC.NAMESPACE + &quot;&gt; \n&quot; +
+&nbsp;				&quot;PREFIX foaf: &lt;&quot; + FOAF.NAMESPACE + &quot;&gt; \n&quot; +
+&nbsp;				&quot;PREFIX ex: &lt;&quot; + EX_NS + &quot;&gt; \n&quot; +
+&nbsp;				&quot;PREFIX xsd: &lt;&quot; + XSD.NAMESPACE + &quot;&gt; \n&quot; +
+&nbsp;				&quot;\n&quot;;
+&nbsp;
+<b class="nc">&nbsp;		return declarations;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates, initializes and clears a repository.
+&nbsp;	 *
+&nbsp;	 * @return an initialized empty repository.
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	protected Repository createRepository() throws Exception {
+<b class="nc">&nbsp;		Repository repository = newRepository();</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			con.clear();</b>
+<b class="nc">&nbsp;			con.clearNamespaces();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return repository;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new Repository object. Subclasses are expected to implement this method to supply the test case with a
+&nbsp;	 * specific Repository type and configuration.
+&nbsp;	 *
+&nbsp;	 * @return a new (uninitialized) Repository
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	protected abstract Repository newRepository() throws Exception;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

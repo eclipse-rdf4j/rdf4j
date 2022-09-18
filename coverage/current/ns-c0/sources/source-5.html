@@ -1,0 +1,607 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExtensibleDynamicEvaluationStatistics</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics</a>
+</div>
+
+<h1>Coverage Summary for Class: ExtensibleDynamicEvaluationStatistics (org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ExtensibleDynamicEvaluationStatistics</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/112)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ExtensibleDynamicEvaluationStatistics$ExtensibleDynamicEvaluationStatisticsCardinalityCalculator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ExtensibleDynamicEvaluationStatistics$StatementQueueItem</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ExtensibleDynamicEvaluationStatistics$StatementQueueItem$Type</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/158)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.extensiblestore.evaluationstatistics;
+&nbsp;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.concurrent.ConcurrentLinkedQueue;
+&nbsp;import java.util.concurrent.atomic.AtomicInteger;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.ExtensibleSailStore;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.hash.HashFunction;
+&nbsp;import com.google.common.hash.Hashing;
+&nbsp;
+&nbsp;import net.agkn.hll.HLL;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;p&gt;
+&nbsp; * ExtensibleDynamicEvaluationStatistics aims to keep an internal estimate of the cardinality of various statement
+&nbsp; * patterns.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * It support getting the overall size, any single dimension cardinality (eg. ?a rdf:type ?b) and also two
+&nbsp; * multidimensional patterns (:Peter rdf:type ?b; and ?a rdf:type foaf:Person).
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * Since evaluation statistics are best-effort, we use HLL as sets to keep the number of statements for each pattern we
+&nbsp; * support. HLL is a very memory efficient set implementation. Furthermore we hash each pattern into a fixed bucket
+&nbsp; * size, 1024 for single dimension and 64 per dimension for multidimensional patterns.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * This means that adding &#39;:peter rdf:type foaf:Person&#39; and &#39;:lisa rdf:type foaf:Person&#39; could potentially return
+&nbsp; * getCardinality(:peter, ?b, ?c) = 2 if both :peter and :lisa hash to the same of the 1024 buckets in subjectIndex.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * HLL does not support &quot;remove&quot; operations, so there are two sets of every index. One for all added statements and one
+&nbsp; * for all removed statements. If the user adds, removes and re-adds the same statement then the cardinality for that
+&nbsp; * statement will be incorrect. We call this effect &quot;staleness&quot;. To prevent staleness from affecting the returned
+&nbsp; * cardinalities this class needs to be monitored by calling the staleness(...) method. This will automatically be done
+&nbsp; * every 60 seconds by the ExtensibleSailStore.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; */
+<b class="nc">&nbsp;@Experimental</b>
+&nbsp;public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationStatistics implements DynamicStatistics {
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ExtensibleDynamicEvaluationStatistics.class);</b>
+&nbsp;	private static final int QUEUE_LIMIT = 128;
+&nbsp;	private static final int SINGLE_DIMENSION_INDEX_SIZE = 1024;
+&nbsp;
+<b class="nc">&nbsp;	ConcurrentLinkedQueue&lt;StatementQueueItem&gt; queue = new ConcurrentLinkedQueue&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Object monitor = new Object();</b>
+&nbsp;
+<b class="nc">&nbsp;	AtomicInteger queueSize = new AtomicInteger();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final HashFunction HASH_FUNCTION = Hashing.murmur3_128();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final HLL EMPTY_HLL = getHLL();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final HLL size = getHLL();</b>
+<b class="nc">&nbsp;	private final HLL size_removed = getHLL();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; subjectIndex = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; predicateIndex = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; objectIndex = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; contextIndex = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final HLL defaultContext = getHLL();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final HLL[][] subjectPredicateIndex = new HLL[64][64];</b>
+<b class="nc">&nbsp;	private final HLL[][] predicateObjectIndex = new HLL[64][64];</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; subjectIndex_removed = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; predicateIndex_removed = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; objectIndex_removed = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Map&lt;Integer, HLL&gt; contextIndex_removed = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final HLL defaultContext_removed = getHLL();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final HLL[][] subjectPredicateIndex_removed = new HLL[64][64];</b>
+<b class="nc">&nbsp;	private final HLL[][] predicateObjectIndex_removed = new HLL[64][64];</b>
+&nbsp;	volatile private Thread queueConsumingThread;
+&nbsp;
+&nbsp;	public ExtensibleDynamicEvaluationStatistics(ExtensibleSailStore extensibleSailStore) {
+<b class="nc">&nbsp;		super(extensibleSailStore);</b>
+&nbsp;
+<b class="nc">&nbsp;		Stream.of(subjectPredicateIndex, predicateObjectIndex, subjectPredicateIndex_removed,</b>
+<b class="nc">&nbsp;				predicateObjectIndex_removed).forEach(index -&gt; {</b>
+<b class="nc">&nbsp;					for (int i = 0; i &lt; index.length; i++) {</b>
+<b class="nc">&nbsp;						for (int j = 0; j &lt; index[i].length; j++) {</b>
+<b class="nc">&nbsp;							index[i][j] = getHLL();</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				});
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CardinalityCalculator createCardinalityCalculator() {
+<b class="nc">&nbsp;		return new ExtensibleDynamicEvaluationStatisticsCardinalityCalculator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public double staleness(long expectedSize) {
+<b class="nc">&nbsp;		synchronized (monitor) {</b>
+<b class="nc">&nbsp;			double estimatedSize = size.cardinality() - size_removed.cardinality();</b>
+&nbsp;
+&nbsp;			// add 500 because this is our minimum margin of error
+<b class="nc">&nbsp;			estimatedSize += 500;</b>
+<b class="nc">&nbsp;			expectedSize += 500;</b>
+&nbsp;
+<b class="nc">&nbsp;			double diff = Math.abs(estimatedSize - expectedSize);</b>
+&nbsp;
+&nbsp;			double staleness;
+&nbsp;
+<b class="nc">&nbsp;			if (estimatedSize + expectedSize == 0 || diff == 0) {</b>
+<b class="nc">&nbsp;				staleness = 0;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (expectedSize &gt; estimatedSize) {</b>
+<b class="nc">&nbsp;					staleness = diff / expectedSize;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					staleness = diff / Math.max(0, estimatedSize);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;expected size {}; estimated size: {}; staleness: {}&quot;, expectedSize, estimatedSize, staleness);</b>
+&nbsp;
+<b class="nc">&nbsp;			return staleness;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	class ExtensibleDynamicEvaluationStatisticsCardinalityCalculator extends CardinalityCalculator {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected double getCardinality(StatementPattern sp) {
+<b class="nc">&nbsp;			synchronized (monitor) {</b>
+&nbsp;
+<b class="nc">&nbsp;				double min = size.cardinality() - size_removed.cardinality();</b>
+&nbsp;
+<b class="nc">&nbsp;				min = Math.min(min, getSubjectCardinality(sp.getSubjectVar()));</b>
+<b class="nc">&nbsp;				min = Math.min(min, getPredicateCardinality(sp.getPredicateVar()));</b>
+<b class="nc">&nbsp;				min = Math.min(min, getObjectCardinality(sp.getObjectVar()));</b>
+&nbsp;
+&nbsp;				// skip more complex evaluations if min is unlikely to get lower
+<b class="nc">&nbsp;				if (min &lt; 2) {</b>
+<b class="nc">&nbsp;					return min;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (sp.getSubjectVar().getValue() != null &amp;&amp; sp.getPredicateVar().getValue() != null) {</b>
+<b class="nc">&nbsp;					min = Math.min(min,</b>
+<b class="nc">&nbsp;							getHllCardinality(</b>
+&nbsp;									subjectPredicateIndex,
+&nbsp;									subjectPredicateIndex_removed,
+<b class="nc">&nbsp;									sp.getSubjectVar().getValue(),</b>
+<b class="nc">&nbsp;									sp.getPredicateVar().getValue()));</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (sp.getPredicateVar().getValue() != null &amp;&amp; sp.getObjectVar().getValue() != null) {</b>
+<b class="nc">&nbsp;					min = Math.min(min,</b>
+<b class="nc">&nbsp;							getHllCardinality(</b>
+&nbsp;									predicateObjectIndex,
+&nbsp;									predicateObjectIndex_removed,
+<b class="nc">&nbsp;									sp.getPredicateVar().getValue(),</b>
+<b class="nc">&nbsp;									sp.getObjectVar().getValue()));</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				return min;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected double getSubjectCardinality(Var var) {
+<b class="nc">&nbsp;			synchronized (monitor) {</b>
+<b class="nc">&nbsp;				if (var.getValue() == null) {</b>
+<b class="nc">&nbsp;					return size.cardinality();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return getHllCardinality(subjectIndex, subjectIndex_removed, var.getValue());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected double getPredicateCardinality(Var var) {
+<b class="nc">&nbsp;			synchronized (monitor) {</b>
+<b class="nc">&nbsp;				if (var.getValue() == null) {</b>
+<b class="nc">&nbsp;					return size.cardinality();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return getHllCardinality(predicateIndex, predicateIndex_removed, var.getValue());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected double getObjectCardinality(Var var) {
+<b class="nc">&nbsp;			synchronized (monitor) {</b>
+<b class="nc">&nbsp;				if (var.getValue() == null) {</b>
+<b class="nc">&nbsp;					return size.cardinality();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return getHllCardinality(objectIndex, objectIndex_removed, var.getValue());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected double getContextCardinality(Var var) {
+<b class="nc">&nbsp;			synchronized (monitor) {</b>
+<b class="nc">&nbsp;				if (var.getValue() == null) {</b>
+<b class="nc">&nbsp;					return defaultContext.cardinality() - defaultContext_removed.cardinality();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return getHllCardinality(contextIndex, contextIndex_removed, var.getValue());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private double getHllCardinality(HLL[][] index, HLL[][] index_removed,
+&nbsp;			Value value1, Value value2) {
+&nbsp;
+<b class="nc">&nbsp;		int value1IndexIntoAdded = Math.abs(value1.hashCode() % index.length);</b>
+<b class="nc">&nbsp;		int value2IndexIntoAdded = Math.abs(value2.hashCode() % index.length);</b>
+<b class="nc">&nbsp;		double cardinalityAdded = index[value1IndexIntoAdded][value2IndexIntoAdded].cardinality();</b>
+&nbsp;
+<b class="nc">&nbsp;		int value1IndexIntoRemoved = Math.abs(value1.hashCode() % index_removed.length);</b>
+<b class="nc">&nbsp;		int value2IndexIntoRemoved = Math.abs(value2.hashCode() % index_removed.length);</b>
+<b class="nc">&nbsp;		double removedStatements = index_removed[value1IndexIntoRemoved][value2IndexIntoRemoved].cardinality();</b>
+&nbsp;
+<b class="nc">&nbsp;		return cardinalityAdded - removedStatements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private double getHllCardinality(Map&lt;Integer, HLL&gt; index,
+&nbsp;			Map&lt;Integer, HLL&gt; index_removed, Value value) {
+&nbsp;
+<b class="nc">&nbsp;		int indexIntoMap = Math.abs(value.hashCode() % SINGLE_DIMENSION_INDEX_SIZE);</b>
+&nbsp;
+<b class="nc">&nbsp;		double cardinalityAdded = index.getOrDefault(indexIntoMap, EMPTY_HLL).cardinality();</b>
+<b class="nc">&nbsp;		double cardinalityRemoved = index_removed.getOrDefault(indexIntoMap, EMPTY_HLL).cardinality();</b>
+&nbsp;
+<b class="nc">&nbsp;		return cardinalityAdded - cardinalityRemoved;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(ExtensibleStatement statement) {
+&nbsp;
+<b class="nc">&nbsp;		queue.add(new StatementQueueItem(statement, StatementQueueItem.Type.added));</b>
+&nbsp;
+<b class="nc">&nbsp;		int size = queueSize.incrementAndGet();</b>
+<b class="nc">&nbsp;		if (size &gt; QUEUE_LIMIT &amp;&amp; queueConsumingThread == null) {</b>
+<b class="nc">&nbsp;			startQueueConsumingThread();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void startQueueConsumingThread() {
+<b class="nc">&nbsp;		synchronized (monitor) {</b>
+<b class="nc">&nbsp;			if (queueConsumingThread == null) {</b>
+<b class="nc">&nbsp;				queueConsumingThread = new Thread(() -&gt; {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						while (!queue.isEmpty()) {</b>
+<b class="nc">&nbsp;							StatementQueueItem poll = queue.poll();</b>
+<b class="nc">&nbsp;							queueSize.decrementAndGet();</b>
+<b class="nc">&nbsp;							Statement statement = poll.statement;</b>
+<b class="nc">&nbsp;							long statementHash = HASH_FUNCTION</b>
+<b class="nc">&nbsp;									.hashString(statement.toString(), StandardCharsets.UTF_8)</b>
+<b class="nc">&nbsp;									.asLong();</b>
+&nbsp;
+<b class="nc">&nbsp;							if (poll.type == StatementQueueItem.Type.added) {</b>
+&nbsp;
+<b class="nc">&nbsp;								handleStatement(statement, statementHash, size, subjectIndex, predicateIndex,</b>
+&nbsp;										objectIndex,
+&nbsp;										subjectPredicateIndex, predicateObjectIndex, defaultContext, contextIndex);
+&nbsp;
+&nbsp;							} else { // removed
+&nbsp;
+<b class="nc">&nbsp;								assert poll.type == StatementQueueItem.Type.removed;</b>
+&nbsp;
+<b class="nc">&nbsp;								handleStatement(statement, statementHash, size_removed, subjectIndex_removed,</b>
+&nbsp;										predicateIndex_removed, objectIndex_removed, subjectPredicateIndex_removed,
+&nbsp;										predicateObjectIndex_removed, defaultContext_removed, contextIndex_removed);
+&nbsp;
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							if (queue.isEmpty()) {</b>
+&nbsp;								try {
+<b class="nc">&nbsp;									Thread.sleep(2);</b>
+<b class="nc">&nbsp;								} catch (InterruptedException ignored) {</b>
+&nbsp;
+<b class="nc">&nbsp;								}</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						queueConsumingThread = null;</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+&nbsp;				});
+&nbsp;
+<b class="nc">&nbsp;				queueConsumingThread.setDaemon(true);</b>
+<b class="nc">&nbsp;				queueConsumingThread.start();</b>
+&nbsp;
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void handleStatement(Statement statement, long statementHash, HLL size,
+&nbsp;			Map&lt;Integer, HLL&gt; subjectIndex, Map&lt;Integer, HLL&gt; predicateIndex,
+&nbsp;			Map&lt;Integer, HLL&gt; objectIndex, HLL[][] subjectPredicateIndex,
+&nbsp;			HLL[][] predicateObjectIndex, HLL defaultContext,
+&nbsp;			Map&lt;Integer, HLL&gt; contextIndex) {
+<b class="nc">&nbsp;		synchronized (monitor) {</b>
+<b class="nc">&nbsp;			size.addRaw(statementHash);</b>
+&nbsp;
+<b class="nc">&nbsp;			int subjectHash = statement.getSubject().hashCode();</b>
+<b class="nc">&nbsp;			int predicateHash = statement.getPredicate().hashCode();</b>
+<b class="nc">&nbsp;			int objectHash = statement.getObject().hashCode();</b>
+&nbsp;
+<b class="nc">&nbsp;			indexOneValue(statementHash, subjectIndex, subjectHash);</b>
+<b class="nc">&nbsp;			indexOneValue(statementHash, predicateIndex, predicateHash);</b>
+<b class="nc">&nbsp;			indexOneValue(statementHash, objectIndex, objectHash);</b>
+&nbsp;
+<b class="nc">&nbsp;			indexTwoValues(statementHash, subjectPredicateIndex, subjectHash, predicateHash);</b>
+<b class="nc">&nbsp;			indexTwoValues(statementHash, predicateObjectIndex, predicateHash, objectHash);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (statement.getContext() == null) {</b>
+<b class="nc">&nbsp;				defaultContext.addRaw(statementHash);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				indexOneValue(statementHash, contextIndex, statement.getContext().hashCode());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static class StatementQueueItem {
+&nbsp;		ExtensibleStatement statement;
+&nbsp;		Type type;
+&nbsp;
+<b class="nc">&nbsp;		public StatementQueueItem(ExtensibleStatement statement, Type type) {</b>
+<b class="nc">&nbsp;			this.statement = statement;</b>
+<b class="nc">&nbsp;			this.type = type;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		enum Type {</b>
+<b class="nc">&nbsp;			added,</b>
+<b class="nc">&nbsp;			removed</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void indexTwoValues(long statementHash, HLL[][] index, int indexHash, int indexHash2) {
+<b class="nc">&nbsp;		index[Math.abs(indexHash % index.length)][Math.abs(indexHash2 % index.length)].addRaw(statementHash);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void indexOneValue(long statementHash, Map&lt;Integer, HLL&gt; index, int indexHash) {
+<b class="nc">&nbsp;		index.compute(Math.abs(indexHash % SINGLE_DIMENSION_INDEX_SIZE), (key, val) -&gt; {</b>
+<b class="nc">&nbsp;			if (val == null) {</b>
+<b class="nc">&nbsp;				val = getHLL();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			val.addRaw(statementHash);</b>
+<b class="nc">&nbsp;			return val;</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private HLL getHLL() {
+<b class="nc">&nbsp;		return new HLL(13/* log2m */, 5/* registerWidth */);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(ExtensibleStatement statement) {
+&nbsp;
+<b class="nc">&nbsp;		queue.add(new StatementQueueItem(statement, StatementQueueItem.Type.removed));</b>
+&nbsp;
+<b class="nc">&nbsp;		int size = queueSize.incrementAndGet();</b>
+<b class="nc">&nbsp;		if (size &gt; QUEUE_LIMIT &amp;&amp; queueConsumingThread == null) {</b>
+<b class="nc">&nbsp;			startQueueConsumingThread();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource... contexts) {
+&nbsp;		// not implemented yet
+&nbsp;		// we should be able to handle cases where we are removing with up to two specified dimensions.
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	public void waitForQueue() throws InterruptedException {
+<b class="nc">&nbsp;		while (queueConsumingThread != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				queueConsumingThread.join();</b>
+<b class="nc">&nbsp;			} catch (NullPointerException ignored) {</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

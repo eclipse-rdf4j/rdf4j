@@ -1,0 +1,167 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Sail</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail</a>
+</div>
+
+<h1>Coverage Summary for Class: Sail (org.eclipse.rdf4j.sail)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">Sail</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Sail (Storage And Inference Layer) is an interface for RDF storage. RDF Sails can store RDF statements and evaluate
+&nbsp; * queries over them. Statements can be stored in named contexts or in the null context. Contexts can be used to group
+&nbsp; * sets of statements that logically belong together, for example because they come from the same source. Both URIs and
+&nbsp; * blank nodes can be used as context identifiers.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public interface Sail {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the data directory for the Sail. The Sail can use this directory for storage of data, parameters, etc. This
+&nbsp;	 * directory must be set before the Sail is {@link #initialize() initialized}.
+&nbsp;	 *
+&nbsp;	 * @throws IllegalStateException If this method is called when the Sail has already been initialized.
+&nbsp;	 */
+&nbsp;	void setDataDir(File dataDir);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the Sail&#39;s data directory.
+&nbsp;	 *
+&nbsp;	 * @see #setDataDir(File)
+&nbsp;	 */
+&nbsp;	File getDataDir();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initializes the Sail. Care should be taken that required initialization parameters have been set before this
+&nbsp;	 * method is called. Please consult the specific Sail implementation for information about the relevant parameters.
+&nbsp;	 *
+&nbsp;	 * @throws SailException If the Sail could not be initialized.
+&nbsp;	 *
+&nbsp;	 * @since 2.5
+&nbsp;	 */
+&nbsp;	void init() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Shuts down the Sail, giving it the opportunity to synchronize any stale data. Care should be taken that all
+&nbsp;	 * initialized Sails are being shut down before an application exits to avoid potential loss of data. Once shut
+&nbsp;	 * down, a Sail can no longer be used until it is re-initialized.
+&nbsp;	 *
+&nbsp;	 * @throws SailException If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 */
+&nbsp;	void shutDown() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this Sail object is writable, i.e. if the data contained in this Sail object can be changed.
+&nbsp;	 */
+&nbsp;	boolean isWritable() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Opens a connection on the Sail which can be used to query and update data. Depending on how the implementation
+&nbsp;	 * handles concurrent access, a call to this method might block when there is another open connection on this Sail.
+&nbsp;	 *
+&nbsp;	 * @throws SailException         If no transaction could be started, for example because the Sail is not writable.
+&nbsp;	 * @throws IllegalStateException If the Sail has not been initialized or has been shut down.
+&nbsp;	 */
+&nbsp;	SailConnection getConnection() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a ValueFactory object that can be used to create IRI-, blank node-, literal- and statement objects.
+&nbsp;	 *
+&nbsp;	 * @return a ValueFactory object for this Sail object.
+&nbsp;	 */
+&nbsp;	ValueFactory getValueFactory();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the {@link IsolationLevel}s supported by this SAIL, ordered by increasing complexity.
+&nbsp;	 *
+&nbsp;	 * @return a non-empty List of supported Isolation Levels, in order of increasing complexity. Every SAIL supports at
+&nbsp;	 *         least one {@link IsolationLevel}.
+&nbsp;	 */
+&nbsp;	List&lt;IsolationLevel&gt; getSupportedIsolationLevels();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the default {@link IsolationLevel} level on which transactions in this Sail operate.
+&nbsp;	 *
+&nbsp;	 * @return the {@link IsolationLevel} that will be used with {@link SailConnection#begin()}, for SAIL connections
+&nbsp;	 *         returned by {@link #getConnection()}.
+&nbsp;	 */
+&nbsp;	IsolationLevel getDefaultIsolationLevel();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,219 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryListController</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryListController (org.eclipse.rdf4j.http.server.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositoryListController</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.ServerHTTPException;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;import org.springframework.context.ApplicationContextException;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.mvc.AbstractController;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles requests for the list of repositories available on this server.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class RepositoryListController extends AbstractController {
+&nbsp;
+&nbsp;	private RepositoryManager repositoryManager;
+&nbsp;
+<b class="nc">&nbsp;	public RepositoryListController() throws ApplicationContextException {</b>
+<b class="nc">&nbsp;		setSupportedMethods(new String[] { METHOD_GET, METHOD_HEAD });</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setRepositoryManager(RepositoryManager repMan) {
+<b class="nc">&nbsp;		repositoryManager = repMan;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (METHOD_GET.equals(request.getMethod())) {</b>
+<b class="nc">&nbsp;			ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				List&lt;String&gt; bindingNames = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;				List&lt;BindingSet&gt; bindingSets = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;				// Determine the repository&#39;s URI
+<b class="nc">&nbsp;				StringBuffer requestURL = request.getRequestURL();</b>
+<b class="nc">&nbsp;				if (requestURL.charAt(requestURL.length() - 1) != &#39;/&#39;) {</b>
+<b class="nc">&nbsp;					requestURL.append(&#39;/&#39;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String namespace = requestURL.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;				repositoryManager.getAllRepositoryInfos(false).forEach(info -&gt; {</b>
+<b class="nc">&nbsp;					QueryBindingSet bindings = new QueryBindingSet();</b>
+<b class="nc">&nbsp;					bindings.addBinding(&quot;uri&quot;, vf.createIRI(namespace, info.getId()));</b>
+<b class="nc">&nbsp;					bindings.addBinding(&quot;id&quot;, vf.createLiteral(info.getId()));</b>
+<b class="nc">&nbsp;					if (info.getDescription() != null) {</b>
+<b class="nc">&nbsp;						bindings.addBinding(&quot;title&quot;, vf.createLiteral(info.getDescription()));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					bindings.addBinding(&quot;readable&quot;, vf.createLiteral(info.isReadable()));</b>
+<b class="nc">&nbsp;					bindings.addBinding(&quot;writable&quot;, vf.createLiteral(info.isWritable()));</b>
+<b class="nc">&nbsp;					bindingSets.add(bindings);</b>
+&nbsp;				});
+&nbsp;
+<b class="nc">&nbsp;				bindingNames.add(&quot;uri&quot;);</b>
+<b class="nc">&nbsp;				bindingNames.add(&quot;id&quot;);</b>
+<b class="nc">&nbsp;				bindingNames.add(&quot;title&quot;);</b>
+<b class="nc">&nbsp;				bindingNames.add(&quot;readable&quot;);</b>
+<b class="nc">&nbsp;				bindingNames.add(&quot;writable&quot;);</b>
+<b class="nc">&nbsp;				model.put(QueryResultView.QUERY_RESULT_KEY, new IteratingTupleQueryResult(bindingNames, bindingSets));</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				throw new ServerHTTPException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		TupleQueryResultWriterFactory factory = ProtocolUtil.getAcceptableService(request, response,</b>
+<b class="nc">&nbsp;				TupleQueryResultWriterRegistry.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;		model.put(QueryResultView.FILENAME_HINT_KEY, &quot;repositories&quot;);</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.FACTORY_KEY, factory);</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ModelAndView(TupleQueryResultView.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

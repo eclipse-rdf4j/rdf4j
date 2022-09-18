@@ -1,0 +1,1011 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ODRL2</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: ODRL2 (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ODRL2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/207)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the Open Digital Rights Language.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/odrl-vocab/&quot;&gt;Open Digital Rights Language&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class ODRL2 {</b>
+&nbsp;	/**
+&nbsp;	 * The ODRL 2.2 namespace: http://www.w3.org/ns/odrl/2/
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/ns/odrl/2/&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the namespace: &quot;odrl&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;odrl&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** odrl:Action */
+&nbsp;	public static final IRI ACTION;
+&nbsp;
+&nbsp;	/** odrl:Agreement */
+&nbsp;	public static final IRI AGREEMENT;
+&nbsp;
+&nbsp;	/** odrl:Assertion */
+&nbsp;	public static final IRI ASSERTION;
+&nbsp;
+&nbsp;	/** odrl:Asset */
+&nbsp;	public static final IRI ASSET;
+&nbsp;
+&nbsp;	/** odrl:AssetCollection */
+&nbsp;	public static final IRI ASSET_COLLECTION;
+&nbsp;
+&nbsp;	/** odrl:AssetScope */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ASSET_SCOPE;
+&nbsp;
+&nbsp;	/** odrl:ConflictTerm */
+&nbsp;	public static final IRI CONFLICT_TERM;
+&nbsp;
+&nbsp;	/** odrl:Constraint */
+&nbsp;	public static final IRI CONSTRAINT;
+&nbsp;
+&nbsp;	/** odrl:Duty */
+&nbsp;	public static final IRI DUTY;
+&nbsp;
+&nbsp;	/** odrl:LeftOperand */
+&nbsp;	public static final IRI LEFT_OPERAND;
+&nbsp;
+&nbsp;	/** odrl:LogicalConstraint */
+&nbsp;	public static final IRI LOGICAL_CONSTRAINT;
+&nbsp;
+&nbsp;	/** odrl:Offer */
+&nbsp;	public static final IRI OFFER;
+&nbsp;
+&nbsp;	/** odrl:Operator */
+&nbsp;	public static final IRI OPERATOR;
+&nbsp;
+&nbsp;	/** odrl:Party */
+&nbsp;	public static final IRI PARTY;
+&nbsp;
+&nbsp;	/** odrl:PartyCollection */
+&nbsp;	public static final IRI PARTY_COLLECTION;
+&nbsp;
+&nbsp;	/** odrl:PartyScope */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PARTY_SCOPE;
+&nbsp;
+&nbsp;	/** odrl:Permission */
+&nbsp;	public static final IRI PERMISSION;
+&nbsp;
+&nbsp;	/** odrl:Policy */
+&nbsp;	public static final IRI POLICY;
+&nbsp;
+&nbsp;	/** odrl:Privacy */
+&nbsp;	public static final IRI PRIVACY;
+&nbsp;
+&nbsp;	/** odrl:Prohibition */
+&nbsp;	public static final IRI PROHIBITION;
+&nbsp;
+&nbsp;	/** odrl:Request */
+&nbsp;	public static final IRI REQUEST;
+&nbsp;
+&nbsp;	/** odrl:RightOperand */
+&nbsp;	public static final IRI RIGHT_OPERAND;
+&nbsp;
+&nbsp;	/** odrl:Rule */
+&nbsp;	public static final IRI RULE;
+&nbsp;
+&nbsp;	/** odrl:Set */
+&nbsp;	public static final IRI SET;
+&nbsp;
+&nbsp;	/** odrl:Ticket */
+&nbsp;	public static final IRI TICKET;
+&nbsp;
+&nbsp;	/** odrl:UndefinedTerm */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI UNDEFINED_TERM;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** odrl:action */
+&nbsp;	public static final IRI ACTION_PROP;
+&nbsp;
+&nbsp;	/** odrl:and */
+&nbsp;	public static final IRI AND;
+&nbsp;
+&nbsp;	/** odrl:andSequence */
+&nbsp;	public static final IRI AND_SEQUENCE;
+&nbsp;
+&nbsp;	/** odrl:assignee */
+&nbsp;	public static final IRI ASSIGNEE;
+&nbsp;
+&nbsp;	/** odrl:assigneeOf */
+&nbsp;	public static final IRI ASSIGNEE_OF;
+&nbsp;
+&nbsp;	/** odrl:assigner */
+&nbsp;	public static final IRI ASSIGNER;
+&nbsp;
+&nbsp;	/** odrl:assignerOf */
+&nbsp;	public static final IRI ASSIGNER_OF;
+&nbsp;
+&nbsp;	/** odrl:attributedParty */
+&nbsp;	public static final IRI ATTRIBUTED_PARTY;
+&nbsp;
+&nbsp;	/** odrl:attributingParty */
+&nbsp;	public static final IRI ATTRIBUTING_PARTY;
+&nbsp;
+&nbsp;	/** odrl:compensatedParty */
+&nbsp;	public static final IRI COMPENSATED_PARTY;
+&nbsp;
+&nbsp;	/** odrl:compensatingParty */
+&nbsp;	public static final IRI COMPENSATING_PARTY;
+&nbsp;
+&nbsp;	/** odrl:conflict */
+&nbsp;	public static final IRI CONFLICT;
+&nbsp;
+&nbsp;	/** odrl:consentedParty */
+&nbsp;	public static final IRI CONSENTED_PARTY;
+&nbsp;
+&nbsp;	/** odrl:consentingParty */
+&nbsp;	public static final IRI CONSENTING_PARTY;
+&nbsp;
+&nbsp;	/** odrl:consequence */
+&nbsp;	public static final IRI CONSEQUENCE;
+&nbsp;
+&nbsp;	/** odrl:constraint */
+&nbsp;	public static final IRI CONSTRAINT_PROP;
+&nbsp;
+&nbsp;	/** odrl:contractedParty */
+&nbsp;	public static final IRI CONTRACTED_PARTY;
+&nbsp;
+&nbsp;	/** odrl:contractingParty */
+&nbsp;	public static final IRI CONTRACTING_PARTY;
+&nbsp;
+&nbsp;	/** odrl:dataType */
+&nbsp;	public static final IRI DATA_TYPE;
+&nbsp;
+&nbsp;	/** odrl:duty */
+&nbsp;	public static final IRI DUTY_PROP;
+&nbsp;
+&nbsp;	/** odrl:failure */
+&nbsp;	public static final IRI FAILURE;
+&nbsp;
+&nbsp;	/** odrl:function */
+&nbsp;	public static final IRI FUNCTION;
+&nbsp;
+&nbsp;	/** odrl:hasPolicy */
+&nbsp;	public static final IRI HAS_POLICY;
+&nbsp;
+&nbsp;	/** odrl:implies */
+&nbsp;	public static final IRI IMPLIES;
+&nbsp;
+&nbsp;	/** odrl:includedIn */
+&nbsp;	public static final IRI INCLUDED_IN;
+&nbsp;
+&nbsp;	/** odrl:informedParty */
+&nbsp;	public static final IRI INFORMED_PARTY;
+&nbsp;
+&nbsp;	/** odrl:informingParty */
+&nbsp;	public static final IRI INFORMING_PARTY;
+&nbsp;
+&nbsp;	/** odrl:inheritAllowed */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI INHERIT_ALLOWED;
+&nbsp;
+&nbsp;	/** odrl:inheritFrom */
+&nbsp;	public static final IRI INHERIT_FROM;
+&nbsp;
+&nbsp;	/** odrl:inheritRelation */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI INHERIT_RELATION;
+&nbsp;
+&nbsp;	/** odrl:leftOperand */
+&nbsp;	public static final IRI LEFT_OPERAND_PROP;
+&nbsp;
+&nbsp;	/** odrl:obligation */
+&nbsp;	public static final IRI OBLIGATION;
+&nbsp;
+&nbsp;	/** odrl:operand */
+&nbsp;	public static final IRI OPERAND;
+&nbsp;
+&nbsp;	/** odrl:operator */
+&nbsp;	public static final IRI OPERATOR_PROP;
+&nbsp;
+&nbsp;	/** odrl:or */
+&nbsp;	public static final IRI OR;
+&nbsp;
+&nbsp;	/** odrl:output */
+&nbsp;	public static final IRI OUTPUT;
+&nbsp;
+&nbsp;	/** odrl:partOf */
+&nbsp;	public static final IRI PART_OF;
+&nbsp;
+&nbsp;	/** odrl:payeeParty */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PAYEE_PARTY;
+&nbsp;
+&nbsp;	/** odrl:permission */
+&nbsp;	public static final IRI PERMISSION_PROP;
+&nbsp;
+&nbsp;	/** odrl:profile */
+&nbsp;	public static final IRI PROFILE;
+&nbsp;
+&nbsp;	/** odrl:prohibition */
+&nbsp;	public static final IRI PROHIBITION_PROP;
+&nbsp;
+&nbsp;	/** odrl:proximity */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PROXIMITY;
+&nbsp;
+&nbsp;	/** odrl:refinement */
+&nbsp;	public static final IRI REFINEMENT;
+&nbsp;
+&nbsp;	/** odrl:relation */
+&nbsp;	public static final IRI RELATION;
+&nbsp;
+&nbsp;	/** odrl:remedy */
+&nbsp;	public static final IRI REMEDY;
+&nbsp;
+&nbsp;	/** odrl:rightOperand */
+&nbsp;	public static final IRI RIGHT_OPERAND_PROP;
+&nbsp;
+&nbsp;	/** odrl:rightOperandReference */
+&nbsp;	public static final IRI RIGHT_OPERAND_REFERENCE;
+&nbsp;
+&nbsp;	/** odrl:scope */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI SCOPE;
+&nbsp;
+&nbsp;	/** odrl:source */
+&nbsp;	public static final IRI SOURCE;
+&nbsp;
+&nbsp;	/** odrl:status */
+&nbsp;	public static final IRI STATUS;
+&nbsp;
+&nbsp;	/** odrl:target */
+&nbsp;	public static final IRI TARGET;
+&nbsp;
+&nbsp;	/** odrl:timedCount */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI TIMED_COUNT;
+&nbsp;
+&nbsp;	/** odrl:trackedParty */
+&nbsp;	public static final IRI TRACKED_PARTY;
+&nbsp;
+&nbsp;	/** odrl:trackingParty */
+&nbsp;	public static final IRI TRACKING_PARTY;
+&nbsp;
+&nbsp;	/** odrl:uid */
+&nbsp;	public static final IRI UID;
+&nbsp;
+&nbsp;	/** odrl:undefined */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI UNDEFINED;
+&nbsp;
+&nbsp;	/** odrl:unit */
+&nbsp;	public static final IRI UNIT;
+&nbsp;
+&nbsp;	/** odrl:xone */
+&nbsp;	public static final IRI XONE;
+&nbsp;
+&nbsp;	// Individuals
+&nbsp;	/** odrl:All */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ALL;
+&nbsp;
+&nbsp;	/** odrl:All2ndConnections */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ALL2ND_CONNECTIONS;
+&nbsp;
+&nbsp;	/** odrl:AllConnections */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ALL_CONNECTIONS;
+&nbsp;
+&nbsp;	/** odrl:AllGroups */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ALL_GROUPS;
+&nbsp;
+&nbsp;	/** odrl:Group */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI GROUP;
+&nbsp;
+&nbsp;	/** odrl:Individual */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI INDIVIDUAL;
+&nbsp;
+&nbsp;	/** odrl:absolutePosition */
+&nbsp;	public static final IRI ABSOLUTE_POSITION;
+&nbsp;
+&nbsp;	/** odrl:absoluteSize */
+&nbsp;	public static final IRI ABSOLUTE_SIZE;
+&nbsp;
+&nbsp;	/** odrl:absoluteSpatialPosition */
+&nbsp;	public static final IRI ABSOLUTE_SPATIAL_POSITION;
+&nbsp;
+&nbsp;	/** odrl:absoluteTemporalPosition */
+&nbsp;	public static final IRI ABSOLUTE_TEMPORAL_POSITION;
+&nbsp;
+&nbsp;	/** odrl:acceptTracking */
+&nbsp;	public static final IRI ACCEPT_TRACKING;
+&nbsp;
+&nbsp;	/** odrl:adHocShare */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI AD_HOC_SHARE;
+&nbsp;
+&nbsp;	/** odrl:aggregate */
+&nbsp;	public static final IRI AGGREGATE;
+&nbsp;
+&nbsp;	/** odrl:annotate */
+&nbsp;	public static final IRI ANNOTATE;
+&nbsp;
+&nbsp;	/** odrl:anonymize */
+&nbsp;	public static final IRI ANONYMIZE;
+&nbsp;
+&nbsp;	/** odrl:append */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI APPEND;
+&nbsp;
+&nbsp;	/** odrl:appendTo */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI APPEND_TO;
+&nbsp;
+&nbsp;	/** odrl:archive */
+&nbsp;	public static final IRI ARCHIVE;
+&nbsp;
+&nbsp;	/** odrl:attachPolicy */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ATTACH_POLICY;
+&nbsp;
+&nbsp;	/** odrl:attachSource */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ATTACH_SOURCE;
+&nbsp;
+&nbsp;	/** odrl:attribute */
+&nbsp;	public static final IRI ATTRIBUTE;
+&nbsp;
+&nbsp;	/** odrl:commercialize */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI COMMERCIALIZE;
+&nbsp;
+&nbsp;	/** odrl:compensate */
+&nbsp;	public static final IRI COMPENSATE;
+&nbsp;
+&nbsp;	/** odrl:concurrentUse */
+&nbsp;	public static final IRI CONCURRENT_USE;
+&nbsp;
+&nbsp;	/** odrl:copy */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI COPY;
+&nbsp;
+&nbsp;	/** odrl:count */
+&nbsp;	public static final IRI COUNT;
+&nbsp;
+&nbsp;	/** odrl:dateTime */
+&nbsp;	public static final IRI DATE_TIME;
+&nbsp;
+&nbsp;	/** odrl:delayPeriod */
+&nbsp;	public static final IRI DELAY_PERIOD;
+&nbsp;
+&nbsp;	/** odrl:delete */
+&nbsp;	public static final IRI DELETE;
+&nbsp;
+&nbsp;	/** odrl:deliveryChannel */
+&nbsp;	public static final IRI DELIVERY_CHANNEL;
+&nbsp;
+&nbsp;	/** odrl:derive */
+&nbsp;	public static final IRI DERIVE;
+&nbsp;
+&nbsp;	/** odrl:device */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI DEVICE;
+&nbsp;
+&nbsp;	/** odrl:digitize */
+&nbsp;	public static final IRI DIGITIZE;
+&nbsp;
+&nbsp;	/** odrl:display */
+&nbsp;	public static final IRI DISPLAY;
+&nbsp;
+&nbsp;	/** odrl:distribute */
+&nbsp;	public static final IRI DISTRIBUTE;
+&nbsp;
+&nbsp;	/** odrl:elapsedTime */
+&nbsp;	public static final IRI ELAPSED_TIME;
+&nbsp;
+&nbsp;	/** odrl:ensureExclusivity */
+&nbsp;	public static final IRI ENSURE_EXCLUSIVITY;
+&nbsp;
+&nbsp;	/** odrl:eq */
+&nbsp;	public static final IRI EQ;
+&nbsp;
+&nbsp;	/** odrl:event */
+&nbsp;	public static final IRI EVENT;
+&nbsp;
+&nbsp;	/** odrl:execute */
+&nbsp;	public static final IRI EXECUTE;
+&nbsp;
+&nbsp;	/** odrl:export */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI EXPORT;
+&nbsp;
+&nbsp;	/** odrl:extract */
+&nbsp;	public static final IRI EXTRACT;
+&nbsp;
+&nbsp;	/** odrl:extractChar */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI EXTRACT_CHAR;
+&nbsp;
+&nbsp;	/** odrl:extractPage */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI EXTRACT_PAGE;
+&nbsp;
+&nbsp;	/** odrl:extractWord */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI EXTRACT_WORD;
+&nbsp;
+&nbsp;	/** odrl:fileFormat */
+&nbsp;	public static final IRI FILE_FORMAT;
+&nbsp;
+&nbsp;	/** odrl:give */
+&nbsp;	public static final IRI GIVE;
+&nbsp;
+&nbsp;	/** odrl:grantUse */
+&nbsp;	public static final IRI GRANT_USE;
+&nbsp;
+&nbsp;	/** odrl:gt */
+&nbsp;	public static final IRI GT;
+&nbsp;
+&nbsp;	/** odrl:gteq */
+&nbsp;	public static final IRI GTEQ;
+&nbsp;
+&nbsp;	/** odrl:hasPart */
+&nbsp;	public static final IRI HAS_PART;
+&nbsp;
+&nbsp;	/** odrl:ignore */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI IGNORE;
+&nbsp;
+&nbsp;	/** odrl:include */
+&nbsp;	public static final IRI INCLUDE;
+&nbsp;
+&nbsp;	/** odrl:index */
+&nbsp;	public static final IRI INDEX;
+&nbsp;
+&nbsp;	/** odrl:industry */
+&nbsp;	public static final IRI INDUSTRY;
+&nbsp;
+&nbsp;	/** odrl:inform */
+&nbsp;	public static final IRI INFORM;
+&nbsp;
+&nbsp;	/** odrl:install */
+&nbsp;	public static final IRI INSTALL;
+&nbsp;
+&nbsp;	/** odrl:invalid */
+&nbsp;	public static final IRI INVALID;
+&nbsp;
+&nbsp;	/** odrl:isA */
+&nbsp;	public static final IRI IS_A;
+&nbsp;
+&nbsp;	/** odrl:isAllOf */
+&nbsp;	public static final IRI IS_ALL_OF;
+&nbsp;
+&nbsp;	/** odrl:isAnyOf */
+&nbsp;	public static final IRI IS_ANY_OF;
+&nbsp;
+&nbsp;	/** odrl:isNoneOf */
+&nbsp;	public static final IRI IS_NONE_OF;
+&nbsp;
+&nbsp;	/** odrl:isPartOf */
+&nbsp;	public static final IRI IS_PART_OF;
+&nbsp;
+&nbsp;	/** odrl:language */
+&nbsp;	public static final IRI LANGUAGE;
+&nbsp;
+&nbsp;	/** odrl:lease */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LEASE;
+&nbsp;
+&nbsp;	/** odrl:lend */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LEND;
+&nbsp;
+&nbsp;	/** odrl:license */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LICENSE;
+&nbsp;
+&nbsp;	/** odrl:lt */
+&nbsp;	public static final IRI LT;
+&nbsp;
+&nbsp;	/** odrl:lteq */
+&nbsp;	public static final IRI LTEQ;
+&nbsp;
+&nbsp;	/** odrl:media */
+&nbsp;	public static final IRI MEDIA;
+&nbsp;
+&nbsp;	/** odrl:meteredTime */
+&nbsp;	public static final IRI METERED_TIME;
+&nbsp;
+&nbsp;	/** odrl:modify */
+&nbsp;	public static final IRI MODIFY;
+&nbsp;
+&nbsp;	/** odrl:move */
+&nbsp;	public static final IRI MOVE;
+&nbsp;
+&nbsp;	/** odrl:neq */
+&nbsp;	public static final IRI NEQ;
+&nbsp;
+&nbsp;	/** odrl:nextPolicy */
+&nbsp;	public static final IRI NEXT_POLICY;
+&nbsp;
+&nbsp;	/** odrl:obtainConsent */
+&nbsp;	public static final IRI OBTAIN_CONSENT;
+&nbsp;
+&nbsp;	/** odrl:pay */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PAY;
+&nbsp;
+&nbsp;	/** odrl:payAmount */
+&nbsp;	public static final IRI PAY_AMOUNT;
+&nbsp;
+&nbsp;	/** odrl:percentage */
+&nbsp;	public static final IRI PERCENTAGE;
+&nbsp;
+&nbsp;	/** odrl:perm */
+&nbsp;	public static final IRI PERM;
+&nbsp;
+&nbsp;	/** odrl:play */
+&nbsp;	public static final IRI PLAY;
+&nbsp;
+&nbsp;	/** odrl:policyUsage */
+&nbsp;	public static final IRI POLICY_USAGE;
+&nbsp;
+&nbsp;	/** odrl:present */
+&nbsp;	public static final IRI PRESENT;
+&nbsp;
+&nbsp;	/** odrl:preview */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PREVIEW;
+&nbsp;
+&nbsp;	/** odrl:print */
+&nbsp;	public static final IRI PRINT;
+&nbsp;
+&nbsp;	/** odrl:product */
+&nbsp;	public static final IRI PRODUCT;
+&nbsp;
+&nbsp;	/** odrl:prohibit */
+&nbsp;	public static final IRI PROHIBIT;
+&nbsp;
+&nbsp;	/** odrl:purpose */
+&nbsp;	public static final IRI PURPOSE;
+&nbsp;
+&nbsp;	/** odrl:read */
+&nbsp;	public static final IRI READ;
+&nbsp;
+&nbsp;	/** odrl:recipient */
+&nbsp;	public static final IRI RECIPIENT;
+&nbsp;
+&nbsp;	/** odrl:relativePosition */
+&nbsp;	public static final IRI RELATIVE_POSITION;
+&nbsp;
+&nbsp;	/** odrl:relativeSize */
+&nbsp;	public static final IRI RELATIVE_SIZE;
+&nbsp;
+&nbsp;	/** odrl:relativeSpatialPosition */
+&nbsp;	public static final IRI RELATIVE_SPATIAL_POSITION;
+&nbsp;
+&nbsp;	/** odrl:relativeTemporalPosition */
+&nbsp;	public static final IRI RELATIVE_TEMPORAL_POSITION;
+&nbsp;
+&nbsp;	/** odrl:reproduce */
+&nbsp;	public static final IRI REPRODUCE;
+&nbsp;
+&nbsp;	/** odrl:resolution */
+&nbsp;	public static final IRI RESOLUTION;
+&nbsp;
+&nbsp;	/** odrl:reviewPolicy */
+&nbsp;	public static final IRI REVIEW_POLICY;
+&nbsp;
+&nbsp;	/** odrl:secondaryUse */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI SECONDARY_USE;
+&nbsp;
+&nbsp;	/** odrl:sell */
+&nbsp;	public static final IRI SELL;
+&nbsp;
+&nbsp;	/** odrl:share */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI SHARE;
+&nbsp;
+&nbsp;	/** odrl:shareAlike */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI SHARE_ALIKE;
+&nbsp;
+&nbsp;	/** odrl:spatial */
+&nbsp;	public static final IRI SPATIAL;
+&nbsp;
+&nbsp;	/** odrl:spatialCoordinates */
+&nbsp;	public static final IRI SPATIAL_COORDINATES;
+&nbsp;
+&nbsp;	/** odrl:stream */
+&nbsp;	public static final IRI STREAM;
+&nbsp;
+&nbsp;	/** odrl:support */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI SUPPORT;
+&nbsp;
+&nbsp;	/** odrl:synchronize */
+&nbsp;	public static final IRI SYNCHRONIZE;
+&nbsp;
+&nbsp;	/** odrl:system */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI SYSTEM;
+&nbsp;
+&nbsp;	/** odrl:systemDevice */
+&nbsp;	public static final IRI SYSTEM_DEVICE;
+&nbsp;
+&nbsp;	/** odrl:textToSpeech */
+&nbsp;	public static final IRI TEXT_TO_SPEECH;
+&nbsp;
+&nbsp;	/** odrl:timeInterval */
+&nbsp;	public static final IRI TIME_INTERVAL;
+&nbsp;
+&nbsp;	/** odrl:transfer */
+&nbsp;	public static final IRI TRANSFER;
+&nbsp;
+&nbsp;	/** odrl:transform */
+&nbsp;	public static final IRI TRANSFORM;
+&nbsp;
+&nbsp;	/** odrl:translate */
+&nbsp;	public static final IRI TRANSLATE;
+&nbsp;
+&nbsp;	/** odrl:uninstall */
+&nbsp;	public static final IRI UNINSTALL;
+&nbsp;
+&nbsp;	/** odrl:unitOfCount */
+&nbsp;	public static final IRI UNIT_OF_COUNT;
+&nbsp;
+&nbsp;	/** odrl:use */
+&nbsp;	public static final IRI USE;
+&nbsp;
+&nbsp;	/** odrl:version */
+&nbsp;	public static final IRI VERSION;
+&nbsp;
+&nbsp;	/** odrl:virtualLocation */
+&nbsp;	public static final IRI VIRTUAL_LOCATION;
+&nbsp;
+&nbsp;	/** odrl:watermark */
+&nbsp;	public static final IRI WATERMARK;
+&nbsp;
+&nbsp;	/** odrl:write */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI WRITE;
+&nbsp;
+&nbsp;	/** odrl:writeTo */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI WRITE_TO;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		ACTION = Vocabularies.createIRI(NAMESPACE, &quot;Action&quot;);</b>
+<b class="nc">&nbsp;		AGREEMENT = Vocabularies.createIRI(NAMESPACE, &quot;Agreement&quot;);</b>
+<b class="nc">&nbsp;		ASSERTION = Vocabularies.createIRI(NAMESPACE, &quot;Assertion&quot;);</b>
+<b class="nc">&nbsp;		ASSET = Vocabularies.createIRI(NAMESPACE, &quot;Asset&quot;);</b>
+<b class="nc">&nbsp;		ASSET_COLLECTION = Vocabularies.createIRI(NAMESPACE, &quot;AssetCollection&quot;);</b>
+<b class="nc">&nbsp;		ASSET_SCOPE = Vocabularies.createIRI(NAMESPACE, &quot;AssetScope&quot;);</b>
+<b class="nc">&nbsp;		CONFLICT_TERM = Vocabularies.createIRI(NAMESPACE, &quot;ConflictTerm&quot;);</b>
+<b class="nc">&nbsp;		CONSTRAINT = Vocabularies.createIRI(NAMESPACE, &quot;Constraint&quot;);</b>
+<b class="nc">&nbsp;		DUTY = Vocabularies.createIRI(NAMESPACE, &quot;Duty&quot;);</b>
+<b class="nc">&nbsp;		LEFT_OPERAND = Vocabularies.createIRI(NAMESPACE, &quot;LeftOperand&quot;);</b>
+<b class="nc">&nbsp;		LOGICAL_CONSTRAINT = Vocabularies.createIRI(NAMESPACE, &quot;LogicalConstraint&quot;);</b>
+<b class="nc">&nbsp;		OFFER = Vocabularies.createIRI(NAMESPACE, &quot;Offer&quot;);</b>
+<b class="nc">&nbsp;		OPERATOR = Vocabularies.createIRI(NAMESPACE, &quot;Operator&quot;);</b>
+<b class="nc">&nbsp;		PARTY = Vocabularies.createIRI(NAMESPACE, &quot;Party&quot;);</b>
+<b class="nc">&nbsp;		PARTY_COLLECTION = Vocabularies.createIRI(NAMESPACE, &quot;PartyCollection&quot;);</b>
+<b class="nc">&nbsp;		PARTY_SCOPE = Vocabularies.createIRI(NAMESPACE, &quot;PartyScope&quot;);</b>
+<b class="nc">&nbsp;		PERMISSION = Vocabularies.createIRI(NAMESPACE, &quot;Permission&quot;);</b>
+<b class="nc">&nbsp;		POLICY = Vocabularies.createIRI(NAMESPACE, &quot;Policy&quot;);</b>
+<b class="nc">&nbsp;		PRIVACY = Vocabularies.createIRI(NAMESPACE, &quot;Privacy&quot;);</b>
+<b class="nc">&nbsp;		PROHIBITION = Vocabularies.createIRI(NAMESPACE, &quot;Prohibition&quot;);</b>
+<b class="nc">&nbsp;		REQUEST = Vocabularies.createIRI(NAMESPACE, &quot;Request&quot;);</b>
+<b class="nc">&nbsp;		RIGHT_OPERAND = Vocabularies.createIRI(NAMESPACE, &quot;RightOperand&quot;);</b>
+<b class="nc">&nbsp;		RULE = Vocabularies.createIRI(NAMESPACE, &quot;Rule&quot;);</b>
+<b class="nc">&nbsp;		SET = Vocabularies.createIRI(NAMESPACE, &quot;Set&quot;);</b>
+<b class="nc">&nbsp;		TICKET = Vocabularies.createIRI(NAMESPACE, &quot;Ticket&quot;);</b>
+<b class="nc">&nbsp;		UNDEFINED_TERM = Vocabularies.createIRI(NAMESPACE, &quot;UndefinedTerm&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ACTION_PROP = Vocabularies.createIRI(NAMESPACE, &quot;action&quot;);</b>
+<b class="nc">&nbsp;		AND = Vocabularies.createIRI(NAMESPACE, &quot;and&quot;);</b>
+<b class="nc">&nbsp;		AND_SEQUENCE = Vocabularies.createIRI(NAMESPACE, &quot;andSequence&quot;);</b>
+<b class="nc">&nbsp;		ASSIGNEE = Vocabularies.createIRI(NAMESPACE, &quot;assignee&quot;);</b>
+<b class="nc">&nbsp;		ASSIGNEE_OF = Vocabularies.createIRI(NAMESPACE, &quot;assigneeOf&quot;);</b>
+<b class="nc">&nbsp;		ASSIGNER = Vocabularies.createIRI(NAMESPACE, &quot;assigner&quot;);</b>
+<b class="nc">&nbsp;		ASSIGNER_OF = Vocabularies.createIRI(NAMESPACE, &quot;assignerOf&quot;);</b>
+<b class="nc">&nbsp;		ATTRIBUTED_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;attributedParty&quot;);</b>
+<b class="nc">&nbsp;		ATTRIBUTING_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;attributingParty&quot;);</b>
+<b class="nc">&nbsp;		COMPENSATED_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;compensatedParty&quot;);</b>
+<b class="nc">&nbsp;		COMPENSATING_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;compensatingParty&quot;);</b>
+<b class="nc">&nbsp;		CONFLICT = Vocabularies.createIRI(NAMESPACE, &quot;conflict&quot;);</b>
+<b class="nc">&nbsp;		CONSENTED_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;consentedParty&quot;);</b>
+<b class="nc">&nbsp;		CONSENTING_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;consentingParty&quot;);</b>
+<b class="nc">&nbsp;		CONSEQUENCE = Vocabularies.createIRI(NAMESPACE, &quot;consequence&quot;);</b>
+<b class="nc">&nbsp;		CONSTRAINT_PROP = Vocabularies.createIRI(NAMESPACE, &quot;constraint&quot;);</b>
+<b class="nc">&nbsp;		CONTRACTED_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;contractedParty&quot;);</b>
+<b class="nc">&nbsp;		CONTRACTING_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;contractingParty&quot;);</b>
+<b class="nc">&nbsp;		DATA_TYPE = Vocabularies.createIRI(NAMESPACE, &quot;dataType&quot;);</b>
+<b class="nc">&nbsp;		DUTY_PROP = Vocabularies.createIRI(NAMESPACE, &quot;duty&quot;);</b>
+<b class="nc">&nbsp;		FAILURE = Vocabularies.createIRI(NAMESPACE, &quot;failure&quot;);</b>
+<b class="nc">&nbsp;		FUNCTION = Vocabularies.createIRI(NAMESPACE, &quot;function&quot;);</b>
+<b class="nc">&nbsp;		HAS_POLICY = Vocabularies.createIRI(NAMESPACE, &quot;hasPolicy&quot;);</b>
+<b class="nc">&nbsp;		IMPLIES = Vocabularies.createIRI(NAMESPACE, &quot;implies&quot;);</b>
+<b class="nc">&nbsp;		INCLUDED_IN = Vocabularies.createIRI(NAMESPACE, &quot;includedIn&quot;);</b>
+<b class="nc">&nbsp;		INFORMED_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;informedParty&quot;);</b>
+<b class="nc">&nbsp;		INFORMING_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;informingParty&quot;);</b>
+<b class="nc">&nbsp;		INHERIT_ALLOWED = Vocabularies.createIRI(NAMESPACE, &quot;inheritAllowed&quot;);</b>
+<b class="nc">&nbsp;		INHERIT_FROM = Vocabularies.createIRI(NAMESPACE, &quot;inheritFrom&quot;);</b>
+<b class="nc">&nbsp;		INHERIT_RELATION = Vocabularies.createIRI(NAMESPACE, &quot;inheritRelation&quot;);</b>
+<b class="nc">&nbsp;		LEFT_OPERAND_PROP = Vocabularies.createIRI(NAMESPACE, &quot;leftOperand&quot;);</b>
+<b class="nc">&nbsp;		OBLIGATION = Vocabularies.createIRI(NAMESPACE, &quot;obligation&quot;);</b>
+<b class="nc">&nbsp;		OPERAND = Vocabularies.createIRI(NAMESPACE, &quot;operand&quot;);</b>
+<b class="nc">&nbsp;		OPERATOR_PROP = Vocabularies.createIRI(NAMESPACE, &quot;operator&quot;);</b>
+<b class="nc">&nbsp;		OR = Vocabularies.createIRI(NAMESPACE, &quot;or&quot;);</b>
+<b class="nc">&nbsp;		OUTPUT = Vocabularies.createIRI(NAMESPACE, &quot;output&quot;);</b>
+<b class="nc">&nbsp;		PART_OF = Vocabularies.createIRI(NAMESPACE, &quot;partOf&quot;);</b>
+<b class="nc">&nbsp;		PAYEE_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;payeeParty&quot;);</b>
+<b class="nc">&nbsp;		PERMISSION_PROP = Vocabularies.createIRI(NAMESPACE, &quot;permission&quot;);</b>
+<b class="nc">&nbsp;		PROFILE = Vocabularies.createIRI(NAMESPACE, &quot;profile&quot;);</b>
+<b class="nc">&nbsp;		PROHIBITION_PROP = Vocabularies.createIRI(NAMESPACE, &quot;prohibition&quot;);</b>
+<b class="nc">&nbsp;		PROXIMITY = Vocabularies.createIRI(NAMESPACE, &quot;proximity&quot;);</b>
+<b class="nc">&nbsp;		REFINEMENT = Vocabularies.createIRI(NAMESPACE, &quot;refinement&quot;);</b>
+<b class="nc">&nbsp;		RELATION = Vocabularies.createIRI(NAMESPACE, &quot;relation&quot;);</b>
+<b class="nc">&nbsp;		REMEDY = Vocabularies.createIRI(NAMESPACE, &quot;remedy&quot;);</b>
+<b class="nc">&nbsp;		RIGHT_OPERAND_PROP = Vocabularies.createIRI(NAMESPACE, &quot;rightOperand&quot;);</b>
+<b class="nc">&nbsp;		RIGHT_OPERAND_REFERENCE = Vocabularies.createIRI(NAMESPACE, &quot;rightOperandReference&quot;);</b>
+<b class="nc">&nbsp;		SCOPE = Vocabularies.createIRI(NAMESPACE, &quot;scope&quot;);</b>
+<b class="nc">&nbsp;		SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;source&quot;);</b>
+<b class="nc">&nbsp;		STATUS = Vocabularies.createIRI(NAMESPACE, &quot;status&quot;);</b>
+<b class="nc">&nbsp;		TARGET = Vocabularies.createIRI(NAMESPACE, &quot;target&quot;);</b>
+<b class="nc">&nbsp;		TIMED_COUNT = Vocabularies.createIRI(NAMESPACE, &quot;timedCount&quot;);</b>
+<b class="nc">&nbsp;		TRACKED_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;trackedParty&quot;);</b>
+<b class="nc">&nbsp;		TRACKING_PARTY = Vocabularies.createIRI(NAMESPACE, &quot;trackingParty&quot;);</b>
+<b class="nc">&nbsp;		UID = Vocabularies.createIRI(NAMESPACE, &quot;uid&quot;);</b>
+<b class="nc">&nbsp;		UNDEFINED = Vocabularies.createIRI(NAMESPACE, &quot;undefined&quot;);</b>
+<b class="nc">&nbsp;		UNIT = Vocabularies.createIRI(NAMESPACE, &quot;unit&quot;);</b>
+<b class="nc">&nbsp;		XONE = Vocabularies.createIRI(NAMESPACE, &quot;xone&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ALL = Vocabularies.createIRI(NAMESPACE, &quot;All&quot;);</b>
+<b class="nc">&nbsp;		ALL2ND_CONNECTIONS = Vocabularies.createIRI(NAMESPACE, &quot;All2ndConnections&quot;);</b>
+<b class="nc">&nbsp;		ALL_CONNECTIONS = Vocabularies.createIRI(NAMESPACE, &quot;AllConnections&quot;);</b>
+<b class="nc">&nbsp;		ALL_GROUPS = Vocabularies.createIRI(NAMESPACE, &quot;AllGroups&quot;);</b>
+<b class="nc">&nbsp;		GROUP = Vocabularies.createIRI(NAMESPACE, &quot;Group&quot;);</b>
+<b class="nc">&nbsp;		INDIVIDUAL = Vocabularies.createIRI(NAMESPACE, &quot;Individual&quot;);</b>
+<b class="nc">&nbsp;		ABSOLUTE_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;absolutePosition&quot;);</b>
+<b class="nc">&nbsp;		ABSOLUTE_SIZE = Vocabularies.createIRI(NAMESPACE, &quot;absoluteSize&quot;);</b>
+<b class="nc">&nbsp;		ABSOLUTE_SPATIAL_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;absoluteSpatialPosition&quot;);</b>
+<b class="nc">&nbsp;		ABSOLUTE_TEMPORAL_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;absoluteTemporalPosition&quot;);</b>
+<b class="nc">&nbsp;		ACCEPT_TRACKING = Vocabularies.createIRI(NAMESPACE, &quot;acceptTracking&quot;);</b>
+<b class="nc">&nbsp;		AD_HOC_SHARE = Vocabularies.createIRI(NAMESPACE, &quot;adHocShare&quot;);</b>
+<b class="nc">&nbsp;		AGGREGATE = Vocabularies.createIRI(NAMESPACE, &quot;aggregate&quot;);</b>
+<b class="nc">&nbsp;		ANNOTATE = Vocabularies.createIRI(NAMESPACE, &quot;annotate&quot;);</b>
+<b class="nc">&nbsp;		ANONYMIZE = Vocabularies.createIRI(NAMESPACE, &quot;anonymize&quot;);</b>
+<b class="nc">&nbsp;		APPEND = Vocabularies.createIRI(NAMESPACE, &quot;append&quot;);</b>
+<b class="nc">&nbsp;		APPEND_TO = Vocabularies.createIRI(NAMESPACE, &quot;appendTo&quot;);</b>
+<b class="nc">&nbsp;		ARCHIVE = Vocabularies.createIRI(NAMESPACE, &quot;archive&quot;);</b>
+<b class="nc">&nbsp;		ATTACH_POLICY = Vocabularies.createIRI(NAMESPACE, &quot;attachPolicy&quot;);</b>
+<b class="nc">&nbsp;		ATTACH_SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;attachSource&quot;);</b>
+<b class="nc">&nbsp;		ATTRIBUTE = Vocabularies.createIRI(NAMESPACE, &quot;attribute&quot;);</b>
+<b class="nc">&nbsp;		COMMERCIALIZE = Vocabularies.createIRI(NAMESPACE, &quot;commercialize&quot;);</b>
+<b class="nc">&nbsp;		COMPENSATE = Vocabularies.createIRI(NAMESPACE, &quot;compensate&quot;);</b>
+<b class="nc">&nbsp;		CONCURRENT_USE = Vocabularies.createIRI(NAMESPACE, &quot;concurrentUse&quot;);</b>
+<b class="nc">&nbsp;		COPY = Vocabularies.createIRI(NAMESPACE, &quot;copy&quot;);</b>
+<b class="nc">&nbsp;		COUNT = Vocabularies.createIRI(NAMESPACE, &quot;count&quot;);</b>
+<b class="nc">&nbsp;		DATE_TIME = Vocabularies.createIRI(NAMESPACE, &quot;dateTime&quot;);</b>
+<b class="nc">&nbsp;		DELAY_PERIOD = Vocabularies.createIRI(NAMESPACE, &quot;delayPeriod&quot;);</b>
+<b class="nc">&nbsp;		DELETE = Vocabularies.createIRI(NAMESPACE, &quot;delete&quot;);</b>
+<b class="nc">&nbsp;		DELIVERY_CHANNEL = Vocabularies.createIRI(NAMESPACE, &quot;deliveryChannel&quot;);</b>
+<b class="nc">&nbsp;		DERIVE = Vocabularies.createIRI(NAMESPACE, &quot;derive&quot;);</b>
+<b class="nc">&nbsp;		DEVICE = Vocabularies.createIRI(NAMESPACE, &quot;device&quot;);</b>
+<b class="nc">&nbsp;		DIGITIZE = Vocabularies.createIRI(NAMESPACE, &quot;digitize&quot;);</b>
+<b class="nc">&nbsp;		DISPLAY = Vocabularies.createIRI(NAMESPACE, &quot;display&quot;);</b>
+<b class="nc">&nbsp;		DISTRIBUTE = Vocabularies.createIRI(NAMESPACE, &quot;distribute&quot;);</b>
+<b class="nc">&nbsp;		ELAPSED_TIME = Vocabularies.createIRI(NAMESPACE, &quot;elapsedTime&quot;);</b>
+<b class="nc">&nbsp;		ENSURE_EXCLUSIVITY = Vocabularies.createIRI(NAMESPACE, &quot;ensureExclusivity&quot;);</b>
+<b class="nc">&nbsp;		EQ = Vocabularies.createIRI(NAMESPACE, &quot;eq&quot;);</b>
+<b class="nc">&nbsp;		EVENT = Vocabularies.createIRI(NAMESPACE, &quot;event&quot;);</b>
+<b class="nc">&nbsp;		EXECUTE = Vocabularies.createIRI(NAMESPACE, &quot;execute&quot;);</b>
+<b class="nc">&nbsp;		EXPORT = Vocabularies.createIRI(NAMESPACE, &quot;export&quot;);</b>
+<b class="nc">&nbsp;		EXTRACT = Vocabularies.createIRI(NAMESPACE, &quot;extract&quot;);</b>
+<b class="nc">&nbsp;		EXTRACT_CHAR = Vocabularies.createIRI(NAMESPACE, &quot;extractChar&quot;);</b>
+<b class="nc">&nbsp;		EXTRACT_PAGE = Vocabularies.createIRI(NAMESPACE, &quot;extractPage&quot;);</b>
+<b class="nc">&nbsp;		EXTRACT_WORD = Vocabularies.createIRI(NAMESPACE, &quot;extractWord&quot;);</b>
+<b class="nc">&nbsp;		FILE_FORMAT = Vocabularies.createIRI(NAMESPACE, &quot;fileFormat&quot;);</b>
+<b class="nc">&nbsp;		GIVE = Vocabularies.createIRI(NAMESPACE, &quot;give&quot;);</b>
+<b class="nc">&nbsp;		GRANT_USE = Vocabularies.createIRI(NAMESPACE, &quot;grantUse&quot;);</b>
+<b class="nc">&nbsp;		GT = Vocabularies.createIRI(NAMESPACE, &quot;gt&quot;);</b>
+<b class="nc">&nbsp;		GTEQ = Vocabularies.createIRI(NAMESPACE, &quot;gteq&quot;);</b>
+<b class="nc">&nbsp;		HAS_PART = Vocabularies.createIRI(NAMESPACE, &quot;hasPart&quot;);</b>
+<b class="nc">&nbsp;		IGNORE = Vocabularies.createIRI(NAMESPACE, &quot;ignore&quot;);</b>
+<b class="nc">&nbsp;		INCLUDE = Vocabularies.createIRI(NAMESPACE, &quot;include&quot;);</b>
+<b class="nc">&nbsp;		INDEX = Vocabularies.createIRI(NAMESPACE, &quot;index&quot;);</b>
+<b class="nc">&nbsp;		INDUSTRY = Vocabularies.createIRI(NAMESPACE, &quot;industry&quot;);</b>
+<b class="nc">&nbsp;		INFORM = Vocabularies.createIRI(NAMESPACE, &quot;inform&quot;);</b>
+<b class="nc">&nbsp;		INSTALL = Vocabularies.createIRI(NAMESPACE, &quot;install&quot;);</b>
+<b class="nc">&nbsp;		INVALID = Vocabularies.createIRI(NAMESPACE, &quot;invalid&quot;);</b>
+<b class="nc">&nbsp;		IS_A = Vocabularies.createIRI(NAMESPACE, &quot;isA&quot;);</b>
+<b class="nc">&nbsp;		IS_ALL_OF = Vocabularies.createIRI(NAMESPACE, &quot;isAllOf&quot;);</b>
+<b class="nc">&nbsp;		IS_ANY_OF = Vocabularies.createIRI(NAMESPACE, &quot;isAnyOf&quot;);</b>
+<b class="nc">&nbsp;		IS_NONE_OF = Vocabularies.createIRI(NAMESPACE, &quot;isNoneOf&quot;);</b>
+<b class="nc">&nbsp;		IS_PART_OF = Vocabularies.createIRI(NAMESPACE, &quot;isPartOf&quot;);</b>
+<b class="nc">&nbsp;		LANGUAGE = Vocabularies.createIRI(NAMESPACE, &quot;language&quot;);</b>
+<b class="nc">&nbsp;		LEASE = Vocabularies.createIRI(NAMESPACE, &quot;lease&quot;);</b>
+<b class="nc">&nbsp;		LEND = Vocabularies.createIRI(NAMESPACE, &quot;lend&quot;);</b>
+<b class="nc">&nbsp;		LICENSE = Vocabularies.createIRI(NAMESPACE, &quot;license&quot;);</b>
+<b class="nc">&nbsp;		LT = Vocabularies.createIRI(NAMESPACE, &quot;lt&quot;);</b>
+<b class="nc">&nbsp;		LTEQ = Vocabularies.createIRI(NAMESPACE, &quot;lteq&quot;);</b>
+<b class="nc">&nbsp;		MEDIA = Vocabularies.createIRI(NAMESPACE, &quot;media&quot;);</b>
+<b class="nc">&nbsp;		METERED_TIME = Vocabularies.createIRI(NAMESPACE, &quot;meteredTime&quot;);</b>
+<b class="nc">&nbsp;		MODIFY = Vocabularies.createIRI(NAMESPACE, &quot;modify&quot;);</b>
+<b class="nc">&nbsp;		MOVE = Vocabularies.createIRI(NAMESPACE, &quot;move&quot;);</b>
+<b class="nc">&nbsp;		NEQ = Vocabularies.createIRI(NAMESPACE, &quot;neq&quot;);</b>
+<b class="nc">&nbsp;		NEXT_POLICY = Vocabularies.createIRI(NAMESPACE, &quot;nextPolicy&quot;);</b>
+<b class="nc">&nbsp;		OBTAIN_CONSENT = Vocabularies.createIRI(NAMESPACE, &quot;obtainConsent&quot;);</b>
+<b class="nc">&nbsp;		PAY = Vocabularies.createIRI(NAMESPACE, &quot;pay&quot;);</b>
+<b class="nc">&nbsp;		PAY_AMOUNT = Vocabularies.createIRI(NAMESPACE, &quot;payAmount&quot;);</b>
+<b class="nc">&nbsp;		PERCENTAGE = Vocabularies.createIRI(NAMESPACE, &quot;percentage&quot;);</b>
+<b class="nc">&nbsp;		PERM = Vocabularies.createIRI(NAMESPACE, &quot;perm&quot;);</b>
+<b class="nc">&nbsp;		PLAY = Vocabularies.createIRI(NAMESPACE, &quot;play&quot;);</b>
+<b class="nc">&nbsp;		POLICY_USAGE = Vocabularies.createIRI(NAMESPACE, &quot;policyUsage&quot;);</b>
+<b class="nc">&nbsp;		PRESENT = Vocabularies.createIRI(NAMESPACE, &quot;present&quot;);</b>
+<b class="nc">&nbsp;		PREVIEW = Vocabularies.createIRI(NAMESPACE, &quot;preview&quot;);</b>
+<b class="nc">&nbsp;		PRINT = Vocabularies.createIRI(NAMESPACE, &quot;print&quot;);</b>
+<b class="nc">&nbsp;		PRODUCT = Vocabularies.createIRI(NAMESPACE, &quot;product&quot;);</b>
+<b class="nc">&nbsp;		PROHIBIT = Vocabularies.createIRI(NAMESPACE, &quot;prohibit&quot;);</b>
+<b class="nc">&nbsp;		PURPOSE = Vocabularies.createIRI(NAMESPACE, &quot;purpose&quot;);</b>
+<b class="nc">&nbsp;		READ = Vocabularies.createIRI(NAMESPACE, &quot;read&quot;);</b>
+<b class="nc">&nbsp;		RECIPIENT = Vocabularies.createIRI(NAMESPACE, &quot;recipient&quot;);</b>
+<b class="nc">&nbsp;		RELATIVE_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;relativePosition&quot;);</b>
+<b class="nc">&nbsp;		RELATIVE_SIZE = Vocabularies.createIRI(NAMESPACE, &quot;relativeSize&quot;);</b>
+<b class="nc">&nbsp;		RELATIVE_SPATIAL_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;relativeSpatialPosition&quot;);</b>
+<b class="nc">&nbsp;		RELATIVE_TEMPORAL_POSITION = Vocabularies.createIRI(NAMESPACE, &quot;relativeTemporalPosition&quot;);</b>
+<b class="nc">&nbsp;		REPRODUCE = Vocabularies.createIRI(NAMESPACE, &quot;reproduce&quot;);</b>
+<b class="nc">&nbsp;		RESOLUTION = Vocabularies.createIRI(NAMESPACE, &quot;resolution&quot;);</b>
+<b class="nc">&nbsp;		REVIEW_POLICY = Vocabularies.createIRI(NAMESPACE, &quot;reviewPolicy&quot;);</b>
+<b class="nc">&nbsp;		SECONDARY_USE = Vocabularies.createIRI(NAMESPACE, &quot;secondaryUse&quot;);</b>
+<b class="nc">&nbsp;		SELL = Vocabularies.createIRI(NAMESPACE, &quot;sell&quot;);</b>
+<b class="nc">&nbsp;		SHARE = Vocabularies.createIRI(NAMESPACE, &quot;share&quot;);</b>
+<b class="nc">&nbsp;		SHARE_ALIKE = Vocabularies.createIRI(NAMESPACE, &quot;shareAlike&quot;);</b>
+<b class="nc">&nbsp;		SPATIAL = Vocabularies.createIRI(NAMESPACE, &quot;spatial&quot;);</b>
+<b class="nc">&nbsp;		SPATIAL_COORDINATES = Vocabularies.createIRI(NAMESPACE, &quot;spatialCoordinates&quot;);</b>
+<b class="nc">&nbsp;		STREAM = Vocabularies.createIRI(NAMESPACE, &quot;stream&quot;);</b>
+<b class="nc">&nbsp;		SUPPORT = Vocabularies.createIRI(NAMESPACE, &quot;support&quot;);</b>
+<b class="nc">&nbsp;		SYNCHRONIZE = Vocabularies.createIRI(NAMESPACE, &quot;synchronize&quot;);</b>
+<b class="nc">&nbsp;		SYSTEM = Vocabularies.createIRI(NAMESPACE, &quot;system&quot;);</b>
+<b class="nc">&nbsp;		SYSTEM_DEVICE = Vocabularies.createIRI(NAMESPACE, &quot;systemDevice&quot;);</b>
+<b class="nc">&nbsp;		TEXT_TO_SPEECH = Vocabularies.createIRI(NAMESPACE, &quot;textToSpeech&quot;);</b>
+<b class="nc">&nbsp;		TIME_INTERVAL = Vocabularies.createIRI(NAMESPACE, &quot;timeInterval&quot;);</b>
+<b class="nc">&nbsp;		TRANSFER = Vocabularies.createIRI(NAMESPACE, &quot;transfer&quot;);</b>
+<b class="nc">&nbsp;		TRANSFORM = Vocabularies.createIRI(NAMESPACE, &quot;transform&quot;);</b>
+<b class="nc">&nbsp;		TRANSLATE = Vocabularies.createIRI(NAMESPACE, &quot;translate&quot;);</b>
+<b class="nc">&nbsp;		UNINSTALL = Vocabularies.createIRI(NAMESPACE, &quot;uninstall&quot;);</b>
+<b class="nc">&nbsp;		UNIT_OF_COUNT = Vocabularies.createIRI(NAMESPACE, &quot;unitOfCount&quot;);</b>
+<b class="nc">&nbsp;		USE = Vocabularies.createIRI(NAMESPACE, &quot;use&quot;);</b>
+<b class="nc">&nbsp;		VERSION = Vocabularies.createIRI(NAMESPACE, &quot;version&quot;);</b>
+<b class="nc">&nbsp;		VIRTUAL_LOCATION = Vocabularies.createIRI(NAMESPACE, &quot;virtualLocation&quot;);</b>
+<b class="nc">&nbsp;		WATERMARK = Vocabularies.createIRI(NAMESPACE, &quot;watermark&quot;);</b>
+<b class="nc">&nbsp;		WRITE = Vocabularies.createIRI(NAMESPACE, &quot;write&quot;);</b>
+<b class="nc">&nbsp;		WRITE_TO = Vocabularies.createIRI(NAMESPACE, &quot;writeTo&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,244 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractParserUpdate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractParserUpdate (org.eclipse.rdf4j.query.parser.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractParserUpdate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/47)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.impl;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.impl.AbstractUpdate;
+&nbsp;import org.eclipse.rdf4j.query.impl.DatasetImpl;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public abstract class AbstractParserUpdate extends AbstractUpdate {
+&nbsp;
+&nbsp;	private final ParsedUpdate parsedUpdate;
+&nbsp;
+<b class="nc">&nbsp;	protected AbstractParserUpdate(ParsedUpdate parsedUpdate) {</b>
+<b class="nc">&nbsp;		this.parsedUpdate = parsedUpdate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedUpdate getParsedUpdate() {
+<b class="nc">&nbsp;		return parsedUpdate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return parsedUpdate.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines the active dataset by appropriately merging the pre-set dataset and the dataset defined in the SPARQL
+&nbsp;	 * operation itself. If the SPARQL operation contains WITH, USING, or USING NAMED clauses, these should override
+&nbsp;	 * whatever is preset.
+&nbsp;	 *
+&nbsp;	 * @param sparqlDefinedDataset the dataset as defined in the SPARQL update itself.
+&nbsp;	 * @return a {@link Dataset} comprised of a merge between the pre-set dataset and the SPARQL-defined dataset.
+&nbsp;	 */
+&nbsp;	protected Dataset getMergedDataset(Dataset sparqlDefinedDataset) {
+<b class="nc">&nbsp;		if (sparqlDefinedDataset == null) {</b>
+<b class="nc">&nbsp;			return dataset;</b>
+<b class="nc">&nbsp;		} else if (dataset == null) {</b>
+<b class="nc">&nbsp;			return sparqlDefinedDataset;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final DatasetImpl mergedDataset = new DatasetImpl();</b>
+&nbsp;
+<b class="nc">&nbsp;		final boolean hasWithClause = sparqlDefinedDataset.getDefaultInsertGraph() != null;</b>
+<b class="nc">&nbsp;		final Set&lt;IRI&gt; sparqlDefaultGraphs = sparqlDefinedDataset.getDefaultGraphs();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (hasWithClause) {</b>
+&nbsp;			// a WITH-clause in the update, we need to define the default
+&nbsp;			// graphs, the default insert graph and default remove graphs
+&nbsp;			// by means of the update itself.
+<b class="nc">&nbsp;			for (IRI graphURI : sparqlDefaultGraphs) {</b>
+<b class="nc">&nbsp;				mergedDataset.addDefaultGraph(graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			mergedDataset.setDefaultInsertGraph(sparqlDefinedDataset.getDefaultInsertGraph());</b>
+&nbsp;
+<b class="nc">&nbsp;			for (IRI drg : sparqlDefinedDataset.getDefaultRemoveGraphs()) {</b>
+<b class="nc">&nbsp;				mergedDataset.addDefaultRemoveGraph(drg);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// if the preset dataset specifies any named graphs, we include
+&nbsp;			// these, to ensure that any GRAPH clauses
+&nbsp;			// in the update can override the WITH clause.
+<b class="nc">&nbsp;			for (IRI graphURI : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				mergedDataset.addNamedGraph(graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// we&#39;re done here.
+<b class="nc">&nbsp;			return mergedDataset;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		mergedDataset.setDefaultInsertGraph(dataset.getDefaultInsertGraph());</b>
+<b class="nc">&nbsp;		for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {</b>
+<b class="nc">&nbsp;			mergedDataset.addDefaultRemoveGraph(graphURI);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// if there are default graphs in the SPARQL update but it&#39;s not a WITH
+&nbsp;		// clause, it&#39;s a USING clause
+<b class="nc">&nbsp;		final boolean hasUsingClause = !hasWithClause &amp;&amp; sparqlDefaultGraphs != null ? sparqlDefaultGraphs.size() &gt; 0</b>
+<b class="nc">&nbsp;				: false;</b>
+&nbsp;
+<b class="nc">&nbsp;		final Set&lt;IRI&gt; sparqlNamedGraphs = sparqlDefinedDataset.getNamedGraphs();</b>
+<b class="nc">&nbsp;		final boolean hasUsingNamedClause = sparqlNamedGraphs != null ? sparqlNamedGraphs.size() &gt; 0 : false;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (hasUsingClause) {</b>
+&nbsp;			// one or more USING-clauses in the update itself, we need to
+&nbsp;			// define the default graphs by means of the update itself
+<b class="nc">&nbsp;			for (IRI graphURI : sparqlDefaultGraphs) {</b>
+<b class="nc">&nbsp;				mergedDataset.addDefaultGraph(graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (IRI graphURI : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;				mergedDataset.addDefaultGraph(graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hasUsingNamedClause) {</b>
+&nbsp;			// one or more USING NAMED-clauses in the update, we need to
+&nbsp;			// define the named graphs by means of the update itself.
+<b class="nc">&nbsp;			for (IRI graphURI : sparqlNamedGraphs) {</b>
+<b class="nc">&nbsp;				mergedDataset.addNamedGraph(graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} else if (!hasUsingClause) {</b>
+&nbsp;			// we only merge in the pre-specified named graphs if the SPARQL
+&nbsp;			// update itself did not have any USING clauses. This is to ensure
+&nbsp;			// that a GRAPH-clause in the update can not override a USING
+&nbsp;			// clause.
+<b class="nc">&nbsp;			for (IRI graphURI : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				mergedDataset.addNamedGraph(graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return mergedDataset;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

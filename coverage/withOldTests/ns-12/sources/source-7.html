@@ -1,0 +1,205 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DistinctIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iteration</a>
+</div>
+
+<h1>Coverage Summary for Class: DistinctIteration (org.eclipse.rdf4j.common.iteration)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DistinctIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    72.7%
+  </span>
+  <span class="absValue">
+    (8/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iteration;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;/**
+&nbsp; * An Iteration that filters any duplicate elements from an underlying iterator.
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class DistinctIteration&lt;E, X extends Exception&gt; extends FilterIteration&lt;E, X&gt; {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The elements that have already been returned.
+&nbsp;	 */
+&nbsp;	private final Set&lt;E&gt; excludeSet;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new DistinctIterator.
+&nbsp;	 *
+&nbsp;	 * @param iter The underlying iterator.
+&nbsp;	 */
+&nbsp;	public DistinctIteration(Iteration&lt;? extends E, ? extends X&gt; iter) {
+<b class="nc">&nbsp;		super(iter);</b>
+&nbsp;
+<b class="nc">&nbsp;		excludeSet = makeSet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public DistinctIteration(Iteration&lt;? extends E, ? extends X&gt; iter, Supplier&lt;Set&lt;E&gt;&gt; setMaker) {
+<b class="fc">&nbsp;		super(iter);</b>
+<b class="fc">&nbsp;		excludeSet = setMaker.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns &lt;var&gt;true&lt;/var&gt; if the specified object hasn&#39;t been seen before.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected boolean accept(E object) throws X {
+<b class="fc">&nbsp;		if (inExcludeSet(object)) {</b>
+&nbsp;			// object has already been returned
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			add(object);</b>
+<b class="fc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param object
+&nbsp;	 * @return true if the object is in the excludeSet
+&nbsp;	 */
+&nbsp;	private boolean inExcludeSet(E object) {
+<b class="fc">&nbsp;		return excludeSet.contains(object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param object to put into the set
+&nbsp;	 */
+&nbsp;	protected boolean add(E object) throws X {
+<b class="fc">&nbsp;		return excludeSet.add(object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Set&lt;E&gt; makeSet() {
+<b class="nc">&nbsp;		return new HashSet&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

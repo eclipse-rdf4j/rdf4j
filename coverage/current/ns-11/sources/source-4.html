@@ -1,0 +1,676 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > IOUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.io</a>
+</div>
+
+<h1>Coverage Summary for Class: IOUtil (org.eclipse.rdf4j.common.io)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">IOUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    12.1%
+  </span>
+  <span class="absValue">
+    (4/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    14.6%
+  </span>
+  <span class="absValue">
+    (7/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    15.5%
+  </span>
+  <span class="absValue">
+    (20/129)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.io;
+&nbsp;
+&nbsp;import java.io.ByteArrayInputStream;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.io.CharArrayWriter;
+&nbsp;import java.io.EOFException;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.FileWriter;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.io.Writer;
+&nbsp;import java.net.URL;
+&nbsp;import java.net.URLConnection;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.Properties;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for I/O working with Readers, Writers, InputStreams and OutputStreams.
+&nbsp; */
+<b class="nc">&nbsp;public class IOUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read the contents as a string from the given (unbuffered) file.
+&nbsp;	 *
+&nbsp;	 * @param file file to read
+&nbsp;	 * @return content as one single string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static String readString(File file) throws IOException {
+<b class="nc">&nbsp;		try (FileInputStream in = new FileInputStream(file)) {</b>
+<b class="nc">&nbsp;			return readString(in);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read the contents of a (unbuffered) resource into one single string.
+&nbsp;	 *
+&nbsp;	 * @param url url to get the data from
+&nbsp;	 * @return string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static String readString(URL url) throws IOException {
+<b class="nc">&nbsp;		try (Reader reader = urlToReader(url)) {</b>
+<b class="nc">&nbsp;			return readString(reader);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read the contents of an (unbuffered) input stream into a single string.
+&nbsp;	 *
+&nbsp;	 * @param in input stream
+&nbsp;	 * @return string
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static String readString(InputStream in) throws IOException {
+<b class="nc">&nbsp;		return readString(new InputStreamReader(in));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads all characters from the supplied reader and returns them as a string.
+&nbsp;	 *
+&nbsp;	 * @param r The Reader supplying the characters
+&nbsp;	 * @return A String containing all characters from the supplied reader.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static String readString(Reader r) throws IOException {
+<b class="fc">&nbsp;		return readFully(r).toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads a string of at most length &lt;var&gt;maxChars&lt;/var&gt; from the supplied Reader.
+&nbsp;	 *
+&nbsp;	 * @param r        The Reader to read the string from.
+&nbsp;	 * @param maxChars The maximum number of characters to read.
+&nbsp;	 * @return A String of length &lt;var&gt;maxChars&lt;/var&gt;, or less if the supplied Reader did not contain that much
+&nbsp;	 *         characters.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static String readString(Reader r, int maxChars) throws IOException {
+<b class="nc">&nbsp;		char[] charBuf = new char[maxChars];</b>
+<b class="nc">&nbsp;		int charsRead = readChars(r, charBuf);</b>
+<b class="nc">&nbsp;		return new String(charBuf, 0, charsRead);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read the contents of a (unbuffered) resource into a character array.
+&nbsp;	 *
+&nbsp;	 * @param url url to get the data from
+&nbsp;	 * @return character array
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static char[] readChars(URL url) throws IOException {
+<b class="nc">&nbsp;		try (Reader reader = urlToReader(url)) {</b>
+<b class="nc">&nbsp;			return readChars(reader);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads all characters from the supplied reader and returns them.
+&nbsp;	 *
+&nbsp;	 * @param r The Reader supplying the characters
+&nbsp;	 * @return A character array containing all characters from the supplied reader.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static char[] readChars(Reader r) throws IOException {
+<b class="nc">&nbsp;		return readFully(r).toCharArray();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Fills the supplied character array with characters read from the specified Reader. This method will only stop
+&nbsp;	 * reading when the character array has been filled completely, or the end of the stream has been reached.
+&nbsp;	 *
+&nbsp;	 * @param r         The Reader to read the characters from.
+&nbsp;	 * @param charArray The character array to fill with characters.
+&nbsp;	 * @return The number of characters written to the character array.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static int readChars(Reader r, char[] charArray) throws IOException {
+<b class="nc">&nbsp;		int totalCharsRead = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		int charsRead = r.read(charArray);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (charsRead &gt;= 0) {</b>
+<b class="nc">&nbsp;			totalCharsRead += charsRead;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (totalCharsRead == charArray.length) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			charsRead = r.read(charArray, totalCharsRead, charArray.length - totalCharsRead);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return totalCharsRead;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads all bytes from the specified file and returns them as a byte array.
+&nbsp;	 *
+&nbsp;	 * @param file The file to read.
+&nbsp;	 * @return A byte array containing all bytes from the specified file.
+&nbsp;	 * @throws IOException              If an I/O error occurred while reading from the file.
+&nbsp;	 * @throws IllegalArgumentException If the file size exceeds the maximum array length (larger than
+&nbsp;	 *                                  {@link Integer#MAX_VALUE}.
+&nbsp;	 */
+&nbsp;	public static byte[] readBytes(File file) throws IOException {
+<b class="nc">&nbsp;		long fileSize = file.length();</b>
+<b class="nc">&nbsp;		if (fileSize &gt; Integer.MAX_VALUE) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+&nbsp;					&quot;File size exceeds maximum array length (&quot; + fileSize + &quot; &gt; &quot; + Integer.MAX_VALUE + &quot;)&quot;);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (FileInputStream in = new FileInputStream(file)) {</b>
+<b class="nc">&nbsp;			return readBytes(in, (int) fileSize);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads all bytes from the supplied input stream and returns them as a byte array.
+&nbsp;	 *
+&nbsp;	 * @param in The InputStream supplying the bytes.
+&nbsp;	 * @return A byte array containing all bytes from the supplied input stream.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static byte[] readBytes(InputStream in) throws IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream out = new ByteArrayOutputStream(4096);</b>
+<b class="nc">&nbsp;		transfer(in, out);</b>
+<b class="nc">&nbsp;		return out.toByteArray();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads at most &lt;var&gt;maxBytes&lt;/var&gt; bytes from the supplied input stream and returns them as a byte array.
+&nbsp;	 *
+&nbsp;	 * @param in       The InputStream supplying the bytes.
+&nbsp;	 * @param maxBytes The maximum number of bytes to read from the input stream.
+&nbsp;	 * @return A byte array of size &lt;var&gt;maxBytes&lt;/var&gt; if the input stream can produce that amount of bytes, or a
+&nbsp;	 *         smaller byte array containing all available bytes from the stream otherwise.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static byte[] readBytes(InputStream in, int maxBytes) throws IOException {
+<b class="fc">&nbsp;		byte[] result = new byte[maxBytes];</b>
+&nbsp;
+<b class="fc">&nbsp;		int bytesRead = readBytes(in, result);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (bytesRead &lt; maxBytes) {</b>
+&nbsp;			// Create smaller byte array
+<b class="fc">&nbsp;			byte[] tmp = new byte[bytesRead];</b>
+<b class="fc">&nbsp;			System.arraycopy(result, 0, tmp, 0, bytesRead);</b>
+<b class="fc">&nbsp;			result = tmp;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Fills the supplied byte array with bytes read from the specified InputStream. This method will only stop reading
+&nbsp;	 * when the byte array has been filled completely, or the end of the stream has been reached.
+&nbsp;	 *
+&nbsp;	 * @param in        The InputStream to read the bytes from.
+&nbsp;	 * @param byteArray The byte array to fill with bytes.
+&nbsp;	 * @return The number of bytes written to the byte array.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static int readBytes(InputStream in, byte[] byteArray) throws IOException {
+<b class="fc">&nbsp;		int totalBytesRead = 0;</b>
+&nbsp;
+<b class="fc">&nbsp;		int bytesRead = in.read(byteArray);</b>
+&nbsp;
+<b class="fc">&nbsp;		while (bytesRead &gt;= 0) {</b>
+<b class="fc">&nbsp;			totalBytesRead += bytesRead;</b>
+&nbsp;
+<b class="pc">&nbsp;			if (totalBytesRead == byteArray.length) {</b>
+<b class="fc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			bytesRead = in.read(byteArray, totalBytesRead, byteArray.length - totalBytesRead);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return totalBytesRead;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read properties from the specified file.
+&nbsp;	 *
+&nbsp;	 * @param propsFile the file to read from
+&nbsp;	 * @return Properties loaded from the specified file
+&nbsp;	 * @throws IOException when the file could not be read properly
+&nbsp;	 */
+&nbsp;	public static Properties readProperties(File propsFile) throws IOException {
+<b class="nc">&nbsp;		return readProperties(propsFile, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read properties from the specified file.
+&nbsp;	 *
+&nbsp;	 * @param propsFile the file to read from
+&nbsp;	 * @param defaults  the default properties to use
+&nbsp;	 * @return Properties loaded from the specified file
+&nbsp;	 * @throws IOException when the file could not be read properly
+&nbsp;	 */
+&nbsp;	public static Properties readProperties(File propsFile, Properties defaults) throws IOException {
+<b class="nc">&nbsp;		return readProperties(new FileInputStream(propsFile), defaults);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read properties from the specified InputStream.
+&nbsp;	 *
+&nbsp;	 * @param in the stream to read from. The stream will be closed by this method.
+&nbsp;	 * @return Properties loaded from the specified stream. The stream will be closed by this method.
+&nbsp;	 * @throws IOException when the stream could not be read properly
+&nbsp;	 */
+&nbsp;	public static Properties readProperties(InputStream in) throws IOException {
+<b class="nc">&nbsp;		return readProperties(in, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read properties from the specified InputStream.
+&nbsp;	 *
+&nbsp;	 * @param in       the stream to read from. The stream will be closed by this method.
+&nbsp;	 * @param defaults the default properties
+&nbsp;	 * @return Properties loaded from the specified stream. The stream will be closed by this method.
+&nbsp;	 * @throws IOException when the stream could not be read properly
+&nbsp;	 */
+&nbsp;	public static Properties readProperties(InputStream in, Properties defaults) throws IOException {
+<b class="nc">&nbsp;		Properties result = new Properties(defaults);</b>
+<b class="nc">&nbsp;		try (in) {</b>
+<b class="nc">&nbsp;			result.load(in);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write the specified properties to the specified file.
+&nbsp;	 *
+&nbsp;	 * @param props           the properties to write
+&nbsp;	 * @param file            the file to write to
+&nbsp;	 * @param includeDefaults true when default values need to be included
+&nbsp;	 * @throws IOException when the properties could not be written to the file properly
+&nbsp;	 */
+&nbsp;	public static void writeProperties(Properties props, File file, boolean includeDefaults) throws IOException {
+<b class="nc">&nbsp;		writeProperties(props, new FileOutputStream(file), includeDefaults);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write the specified properties to the specified output stream.
+&nbsp;	 *
+&nbsp;	 * @param props           the properties to write
+&nbsp;	 * @param out             the output stream to write to
+&nbsp;	 * @param includeDefaults true if default values need to be included
+&nbsp;	 * @throws IOException when the properties could not be written to the output stream properly
+&nbsp;	 */
+&nbsp;	public static void writeProperties(Properties props, OutputStream out, boolean includeDefaults) throws IOException {
+<b class="nc">&nbsp;		if (includeDefaults) {</b>
+<b class="nc">&nbsp;			Properties all = new Properties();</b>
+<b class="nc">&nbsp;			Enumeration&lt;?&gt; propNames = props.propertyNames();</b>
+<b class="nc">&nbsp;			while (propNames.hasMoreElements()) {</b>
+<b class="nc">&nbsp;				String propName = (String) propNames.nextElement();</b>
+<b class="nc">&nbsp;				String propValue = props.getProperty(propName);</b>
+<b class="nc">&nbsp;				all.put(propName, propValue);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			props = all;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (out) {</b>
+<b class="nc">&nbsp;			props.store(out, null);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes all data that can be read from the supplied InputStream to the specified file.
+&nbsp;	 *
+&nbsp;	 * @param in   An InputStream.
+&nbsp;	 * @param file The file to write the data to.
+&nbsp;	 * @throws IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public static void writeStream(InputStream in, File file) throws IOException {
+<b class="nc">&nbsp;		try (FileOutputStream out = new FileOutputStream(file)) {</b>
+<b class="nc">&nbsp;			transfer(in, out);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write the contents of a string (unbuffered) to a file
+&nbsp;	 *
+&nbsp;	 * @param contents string contents to write
+&nbsp;	 * @param file     file to write to
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void writeString(String contents, File file) throws IOException {
+<b class="nc">&nbsp;		try (FileWriter out = new FileWriter(file)) {</b>
+<b class="nc">&nbsp;			out.write(contents);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write the contents of a byte array (unbuffered) to a file.
+&nbsp;	 *
+&nbsp;	 * @param data data to write
+&nbsp;	 * @param file file
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void writeBytes(byte[] data, File file) throws IOException {
+<b class="nc">&nbsp;		try (FileOutputStream out = new FileOutputStream(file)) {</b>
+<b class="nc">&nbsp;			writeBytes(data, out);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write he contents of a byte array (unbuffered) to an output stream.
+&nbsp;	 *
+&nbsp;	 * @param data data to write
+&nbsp;	 * @param out  file
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void writeBytes(byte[] data, OutputStream out) throws IOException {
+<b class="nc">&nbsp;		transfer(new ByteArrayInputStream(data), out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read the contents of a resource into a reader. Currently ignores HTTP Content-Encoding response header.
+&nbsp;	 *
+&nbsp;	 * @param url url
+&nbsp;	 * @return reader
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static Reader urlToReader(URL url) throws IOException {
+&nbsp;		// FIXME: character encoding should be read from response headers or
+&nbsp;		// should default to ISO-8859-1
+<b class="nc">&nbsp;		URLConnection con = url.openConnection();</b>
+<b class="nc">&nbsp;		return new InputStreamReader(con.getInputStream());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read into a character array writer.
+&nbsp;	 *
+&nbsp;	 * @param r input reader
+&nbsp;	 * @return character array writer
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private static CharArrayWriter readFully(Reader r) throws IOException {
+<b class="fc">&nbsp;		CharArrayWriter result = new CharArrayWriter();</b>
+<b class="fc">&nbsp;		char[] buf = new char[4096];</b>
+&nbsp;		int charsRead;
+&nbsp;
+<b class="fc">&nbsp;		while ((charsRead = r.read(buf)) != -1) {</b>
+<b class="fc">&nbsp;			result.write(buf, 0, charsRead);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Transfers all bytes that can be read from &lt;var&gt;in&lt;/var&gt; to &lt;var&gt;out&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param in  The InputStream to read data from.
+&nbsp;	 * @param out The OutputStream to write data to.
+&nbsp;	 * @return The total number of bytes transfered.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static final long transfer(InputStream in, OutputStream out) throws IOException {
+<b class="nc">&nbsp;		long totalBytes = 0;</b>
+&nbsp;		int bytesInBuf;
+<b class="nc">&nbsp;		byte[] buf = new byte[4096];</b>
+&nbsp;
+<b class="nc">&nbsp;		while ((bytesInBuf = in.read(buf)) != -1) {</b>
+<b class="nc">&nbsp;			out.write(buf, 0, bytesInBuf);</b>
+<b class="nc">&nbsp;			totalBytes += bytesInBuf;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return totalBytes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes all bytes from an &lt;var&gt;InputStream&lt;/var&gt; to a file.
+&nbsp;	 *
+&nbsp;	 * @param in   The &lt;var&gt;InputStream&lt;/var&gt; containing the data to write to the file.
+&nbsp;	 * @param file The file to write the data to.
+&nbsp;	 * @return The total number of bytes written.
+&nbsp;	 * @throws IOException If an I/O error occurred while trying to write the data to the file.
+&nbsp;	 */
+&nbsp;	public static final long transfer(InputStream in, File file) throws IOException {
+<b class="nc">&nbsp;		try (FileOutputStream out = new FileOutputStream(file)) {</b>
+<b class="nc">&nbsp;			return transfer(in, out);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Transfers all characters that can be read from &lt;var&gt;in&lt;/var&gt; to &lt;var&gt;out&lt;/var&gt; .
+&nbsp;	 *
+&nbsp;	 * @param in  The Reader to read characters from.
+&nbsp;	 * @param out The Writer to write characters to.
+&nbsp;	 * @return The total number of characters transfered.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static final long transfer(Reader in, Writer out) throws IOException {
+<b class="nc">&nbsp;		long totalChars = 0;</b>
+&nbsp;		int charsInBuf;
+<b class="nc">&nbsp;		char[] buf = new char[4096];</b>
+&nbsp;
+<b class="nc">&nbsp;		while ((charsInBuf = in.read(buf)) != -1) {</b>
+<b class="nc">&nbsp;			out.write(buf, 0, charsInBuf);</b>
+<b class="nc">&nbsp;			totalChars += charsInBuf;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return totalChars;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes all characters from a &lt;var&gt;Reader&lt;/var&gt; to a file using the default character encoding.
+&nbsp;	 *
+&nbsp;	 * @param reader The &lt;var&gt;Reader&lt;/var&gt; containing the data to write to the file.
+&nbsp;	 * @param file   The file to write the data to.
+&nbsp;	 * @return The total number of characters written.
+&nbsp;	 * @throws IOException If an I/O error occurred while trying to write the data to the file.
+&nbsp;	 * @see java.io.FileWriter
+&nbsp;	 */
+&nbsp;	public static final long transfer(Reader reader, File file) throws IOException {
+<b class="nc">&nbsp;		try (FileWriter writer = new FileWriter(file)) {</b>
+<b class="nc">&nbsp;			return transfer(reader, writer);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Write an variable length (non-negative) integer.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The variable length integer encoding (also know as &lt;i&gt;varint&lt;/i&gt; and &lt;i&gt;vint&lt;/i&gt;) writes non-negative / unsigned
+&nbsp;	 * integers in a minimal number of bytes (binary octets). The encoding uses the most significant bit is used to
+&nbsp;	 * indicate whether another varint byte follows. The remaining 7 bits of every octet are used to store the binary
+&nbsp;	 * representation of the actual integer value. Note that the least significant bytes of the integer value are stored
+&nbsp;	 * before more significate bytes.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The table below shows a few examples of decimals encoded both as a 32-bit integer and as variable length binary:
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * {@code
+&nbsp;	 * decimal |           32-bit integer            |          variable length binary
+&nbsp;	 *       0 | 00000000 00000000 00000000 00000000 |                   00000000   (1 byte)
+&nbsp;	 *       1 | 00000000 00000000 00000000 00000001 |                   00000001   (1 byte)
+&nbsp;	 *      42 | 00000000 00000000 00000000 00101010 |                   00101010   (1 byte)
+&nbsp;	 *     421 | 00000000 00000000 00000001 10100101 |          10100101 00000011   (2 bytes)
+&nbsp;	 *  100000 | 00000000 00000001 10000110 10100000 | 10100000 10001101 00000110   (3 bytes)
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param out   The {@link OutputStream} to write to.
+&nbsp;	 * @param value The {@code int} value to write.
+&nbsp;	 * @throws IOException If an error occurred while writing the integer.
+&nbsp;	 */
+&nbsp;	public static void writeVarInt(OutputStream out, int value) throws IOException {
+<b class="nc">&nbsp;		if (value &lt; 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unable to write negative variable length integer&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		while (value &gt; 127) {</b>
+<b class="nc">&nbsp;			out.write(value &amp; 0b01111111 | 0b10000000);</b>
+<b class="nc">&nbsp;			value &gt;&gt;&gt;= 7;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		out.write(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void main(String[] args) throws IOException {
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		writeVarInt(baos, 100000);</b>
+<b class="nc">&nbsp;		byte[] bytes = baos.toByteArray();</b>
+<b class="nc">&nbsp;		for (byte b : bytes) {</b>
+<b class="nc">&nbsp;			System.out.print(&quot; &quot;);</b>
+<b class="nc">&nbsp;			System.out.print(Integer.toBinaryString(0xff &amp; b));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		System.out.println();</b>
+&nbsp;
+<b class="nc">&nbsp;		ByteArrayInputStream bis = new ByteArrayInputStream(</b>
+&nbsp;				new byte[] { (byte) 0b10100000, (byte) 0b10001101, (byte) 0b00000110 });
+<b class="nc">&nbsp;		System.out.println(&quot;read: &quot; + readVarInt(bis));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read an variable length integer. See {@link #writeVarInt(OutputStream, int)} for encoding details.
+&nbsp;	 *
+&nbsp;	 * @param in The {@link InputStream} to read from.
+&nbsp;	 * @return The integer read.
+&nbsp;	 * @throws IOException If an error occurred while reading the integer.
+&nbsp;	 */
+&nbsp;	public static int readVarInt(InputStream in) throws IOException {
+<b class="nc">&nbsp;		byte b = readByte(in);</b>
+<b class="nc">&nbsp;		int v = b &amp; 0b01111111;</b>
+<b class="nc">&nbsp;		for (int i = 7; (b &amp; 0b10000000) != 0; i += 7) {</b>
+<b class="nc">&nbsp;			b = readByte(in);</b>
+<b class="nc">&nbsp;			v |= (b &amp; 0b01111111) &lt;&lt; i;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return v;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static byte readByte(InputStream in) throws IOException {
+<b class="nc">&nbsp;		int read = in.read();</b>
+<b class="nc">&nbsp;		if (read == -1) {</b>
+<b class="nc">&nbsp;			throw new EOFException();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (byte) read;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

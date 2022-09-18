@@ -1,0 +1,254 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Extension</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: Extension (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Extension</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (12/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (12/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    82.5%
+  </span>
+  <span class="absValue">
+    (33/40)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;/**
+&nbsp; * An extension operator that can be used to add bindings to solutions whose values are defined by {@link ValueExpr
+&nbsp; * value expressions}.
+&nbsp; */
+&nbsp;public class Extension extends UnaryTupleOperator {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="fc">&nbsp;	private List&lt;ExtensionElem&gt; elements = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="fc">&nbsp;	public Extension() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Extension(TupleExpr arg) {
+<b class="fc">&nbsp;		super(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Extension(TupleExpr arg, ExtensionElem... elements) {
+<b class="nc">&nbsp;		this(arg);</b>
+<b class="nc">&nbsp;		addElements(elements);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Extension(TupleExpr arg, Iterable&lt;ExtensionElem&gt; elements) {
+<b class="fc">&nbsp;		this(arg);</b>
+<b class="fc">&nbsp;		addElements(elements);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public List&lt;ExtensionElem&gt; getElements() {
+<b class="fc">&nbsp;		return elements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setElements(Iterable&lt;ExtensionElem&gt; elements) {
+<b class="nc">&nbsp;		this.elements.clear();</b>
+<b class="nc">&nbsp;		addElements(elements);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addElements(ExtensionElem... elements) {
+<b class="nc">&nbsp;		for (ExtensionElem pe : elements) {</b>
+<b class="nc">&nbsp;			addElement(pe);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addElements(Iterable&lt;ExtensionElem&gt; elements) {
+<b class="fc">&nbsp;		for (ExtensionElem pe : elements) {</b>
+<b class="fc">&nbsp;			addElement(pe);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addElement(ExtensionElem pe) {
+<b class="fc">&nbsp;		elements.add(pe);</b>
+<b class="fc">&nbsp;		pe.setParentNode(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="fc">&nbsp;		Set&lt;String&gt; bindingNames = new LinkedHashSet&lt;&gt;(arg.getBindingNames());</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ExtensionElem pe : elements) {</b>
+<b class="fc">&nbsp;			bindingNames.add(pe.getName());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return bindingNames;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		visitor.meet(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		super.visitChildren(visitor);</b>
+<b class="fc">&nbsp;		for (ExtensionElem elem : elements) {</b>
+<b class="fc">&nbsp;			elem.visit(visitor);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+<b class="pc">&nbsp;		if (replaceNodeInList(elements, current, replacement)) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="fc">&nbsp;		super.replaceChildNode(current, replacement);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="pc">&nbsp;		if (other instanceof Extension &amp;&amp; super.equals(other)) {</b>
+<b class="fc">&nbsp;			Extension o = (Extension) other;</b>
+<b class="fc">&nbsp;			return elements.equals(o.getElements());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return super.hashCode() ^ elements.hashCode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Extension clone() {
+<b class="fc">&nbsp;		Extension clone = (Extension) super.clone();</b>
+&nbsp;
+<b class="fc">&nbsp;		clone.elements = new ArrayList&lt;&gt;(getElements().size());</b>
+<b class="fc">&nbsp;		for (ExtensionElem elem : getElements()) {</b>
+<b class="fc">&nbsp;			clone.addElement(elem.clone());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return clone;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

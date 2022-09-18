@@ -1,0 +1,241 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BindingSetAssignmentQueryEvaluationStep</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps</a>
+</div>
+
+<h1>Coverage Summary for Class: BindingSetAssignmentQueryEvaluationStep (org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BindingSetAssignmentQueryEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (8/8)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">BindingSetAssignmentQueryEvaluationStep$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    68.8%
+  </span>
+  <span class="absValue">
+    (11/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    88.9%
+  </span>
+  <span class="absValue">
+    (16/18)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    72.2%
+  </span>
+  <span class="absValue">
+    (13/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    92.3%
+  </span>
+  <span class="absValue">
+    (24/26)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;
+&nbsp;public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationStep {
+&nbsp;	private final BindingSetAssignment node;
+&nbsp;	private final Function&lt;BindingSet, MutableBindingSet&gt; bsMaker;
+&nbsp;
+<b class="fc">&nbsp;	public BindingSetAssignmentQueryEvaluationStep(BindingSetAssignment node, QueryEvaluationContext context) {</b>
+<b class="fc">&nbsp;		this.node = node;</b>
+<b class="fc">&nbsp;		bsMaker = context::createBindingSet;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings) {
+<b class="fc">&nbsp;		final Iterator&lt;BindingSet&gt; assignments = node.getBindingSets().iterator();</b>
+<b class="fc">&nbsp;		if (bindings.size() == 0) {</b>
+&nbsp;			// we can just return the assignments directly without checking existing bindings
+<b class="fc">&nbsp;			return new CloseableIteratorIteration&lt;&gt;(assignments);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// we need to verify that new binding assignments do not overwrite existing bindings
+&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; result;
+&nbsp;
+<b class="fc">&nbsp;		result = new LookAheadIteration&lt;BindingSet, QueryEvaluationException&gt;() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected BindingSet getNextElement() throws QueryEvaluationException {
+<b class="fc">&nbsp;				MutableBindingSet nextResult = null;</b>
+<b class="fc">&nbsp;				while (nextResult == null &amp;&amp; assignments.hasNext()) {</b>
+<b class="fc">&nbsp;					final BindingSet assignedBindings = assignments.next();</b>
+&nbsp;
+<b class="fc">&nbsp;					for (String name : assignedBindings.getBindingNames()) {</b>
+<b class="pc">&nbsp;						if (nextResult == null) {</b>
+<b class="fc">&nbsp;							nextResult = bsMaker.apply(bindings);</b>
+&nbsp;						}
+&nbsp;
+<b class="fc">&nbsp;						final Value assignedValue = assignedBindings.getValue(name);</b>
+<b class="fc">&nbsp;						if (assignedValue != null) {</b>
+&nbsp;							// check that the binding assignment does not overwrite existing bindings.
+<b class="fc">&nbsp;							Value existingValue = bindings.getValue(name);</b>
+<b class="pc">&nbsp;							if (existingValue == null || assignedValue.equals(existingValue)) {</b>
+<b class="pc">&nbsp;								if (existingValue == null) {</b>
+&nbsp;									// we are not overwriting an existing binding.
+<b class="fc">&nbsp;									nextResult.addBinding(name, assignedValue);</b>
+&nbsp;								}
+&nbsp;							} else {
+&nbsp;								// if values are not equal there is no compatible merge and we should return no next
+&nbsp;								// element.
+<b class="nc">&nbsp;								nextResult = null;</b>
+<b class="nc">&nbsp;								break;</b>
+&nbsp;							}
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+<b class="fc">&nbsp;				}</b>
+<b class="fc">&nbsp;				return nextResult;</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

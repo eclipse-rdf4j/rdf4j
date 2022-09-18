@@ -1,0 +1,178 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FederatedService</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.federation</a>
+</div>
+
+<h1>Coverage Summary for Class: FederatedService (org.eclipse.rdf4j.query.algebra.evaluation.federation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">FederatedService</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.federation;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;
+&nbsp;/**
+&nbsp; * FederatedService to allow for customized evaluation of SERVICE expression. By default
+&nbsp; * {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService} is used.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @author James Leigh
+&nbsp; * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService
+&nbsp; */
+&nbsp;public interface FederatedService {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Evaluate the provided SPARQL ASK query at this federated service.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * Expected behavior: evaluate boolean query using the bindings as constraints
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param service  the reference to the service node, contains additional meta information (vars, prefixes)
+&nbsp;	 * @param bindings the bindings serving as additional constraints
+&nbsp;	 * @param baseUri
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if at least one result exists
+&nbsp;	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
+&nbsp;	 */
+&nbsp;	boolean ask(Service service, BindingSet bindings, String baseUri) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Evaluate the provided SPARQL query at this federated service.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;b&gt;Important:&lt;/b&gt; The original bindings need to be inserted into the result.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * Expected behavior: evaluate the given SPARQL query using the bindings as constraints
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param service        the reference to the service node, contains additional meta information (vars, prefixes)
+&nbsp;	 * @param projectionVars The variables with unknown value that should be projected from this evaluation
+&nbsp;	 * @param bindings       the bindings serving as additional constraints
+&nbsp;	 * @param baseUri
+&nbsp;	 * @return an iteration over the results of the query
+&nbsp;	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; select(Service service, Set&lt;String&gt; projectionVars,
+&nbsp;			BindingSet bindings, String baseUri) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the provided SPARQL query at this federated service, possibilities for vectored evaluation.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;b&gt;Contracts:&lt;/b&gt;
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;The original bindings need to be inserted into the result&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;SILENT service must be dealt with in the method&lt;/li&gt;
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Compare {@link org.eclipse.rdf4j.query.algebra.evaluation.federation.SPARQLFederatedService} for a reference
+&nbsp;	 * implementation
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param service  the reference to the service node, contains information to construct the query
+&nbsp;	 * @param bindings the bindings serving as additional constraints (for vectored evaluation)
+&nbsp;	 * @param baseUri  the baseUri
+&nbsp;	 * @return the result of evaluating the query using bindings as constraints, the original bindings need to be
+&nbsp;	 *         inserted into the results!
+&nbsp;	 * @throws QueryEvaluationException If there was an exception generated while evaluating the query.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Service service,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; bindings, String baseUri)
+&nbsp;			throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method to check if {@link #initialize()} had been called.
+&nbsp;	 */
+&nbsp;	boolean isInitialized();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method to perform any initializations, invoked after construction.
+&nbsp;	 *
+&nbsp;	 * @throws QueryEvaluationException If there was an exception generated while initializing the service.
+&nbsp;	 */
+&nbsp;	void initialize() throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Method to perform any shutDown code, invoked at unregistering.
+&nbsp;	 *
+&nbsp;	 * @throws QueryEvaluationException If there was an exception generated while shutting down the service.
+&nbsp;	 */
+&nbsp;	void shutdown() throws QueryEvaluationException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

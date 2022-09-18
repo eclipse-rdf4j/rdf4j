@@ -1,0 +1,674 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlValueExprRenderer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlValueExprRenderer (org.eclipse.rdf4j.queryrender.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlValueExprRenderer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/39)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/156)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/142)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAll;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAny;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Count;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.In;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsResource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Label;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LangMatches;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LocalName;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Max;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Min;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Namespace;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.queryrender.BaseTupleExprRenderer;
+&nbsp;import org.eclipse.rdf4j.queryrender.RenderUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;p&gt;
+&nbsp; * Renders a {@link ValueExpr} into SPARQL syntax.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Michael Grove
+&nbsp; */
+<b class="nc">&nbsp;final class SparqlValueExprRenderer extends AbstractQueryModelVisitor&lt;Exception&gt; {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The current rendered value
+&nbsp;	 */
+<b class="nc">&nbsp;	private StringBuffer mBuffer = new StringBuffer();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reset the state of this renderer
+&nbsp;	 */
+&nbsp;	public void reset() {
+<b class="nc">&nbsp;		mBuffer = new StringBuffer();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the rendering of the ValueExpr object
+&nbsp;	 *
+&nbsp;	 * @param theExpr the expression to render
+&nbsp;	 * @return the rendering
+&nbsp;	 * @throws Exception if there is an error while rendering
+&nbsp;	 */
+&nbsp;	public String render(ValueExpr theExpr) throws Exception {
+<b class="nc">&nbsp;		theExpr.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		return mBuffer.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Bound theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot; bound(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Var theVar) throws Exception {
+<b class="nc">&nbsp;		if (theVar.isAnonymous() &amp;&amp; !theVar.hasValue()) {</b>
+<b class="nc">&nbsp;			mBuffer.append(&quot;?&quot;).append(BaseTupleExprRenderer.scrubVarName(theVar.getName()));</b>
+<b class="nc">&nbsp;		} else if (theVar.hasValue()) {</b>
+<b class="nc">&nbsp;			mBuffer.append(RenderUtils.toSPARQL(theVar.getValue()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			mBuffer.append(&quot;?&quot;).append(theVar.getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(BNodeGenerator theGen) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(theGen.getSignature());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(MathExpr theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot; &quot;).append(theOp.getOperator().getSymbol()).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		theOp.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Compare theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot; &quot;).append(theOp.getOperator().getSymbol()).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		theOp.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Exists theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot; exists(&quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(renderTupleExpr(theOp.getSubQuery()));</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(In theOp) throws Exception {
+<b class="nc">&nbsp;		theOp.getArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot; in &quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(renderTupleExpr(theOp.getSubQuery()));</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Renders the tuple expression as a query string.
+&nbsp;	 *
+&nbsp;	 * @param theExpr the expr to render
+&nbsp;	 * @return the rendered expression
+&nbsp;	 * @throws Exception if there is an error while rendering
+&nbsp;	 */
+&nbsp;	private String renderTupleExpr(TupleExpr theExpr) throws Exception {
+<b class="nc">&nbsp;		SparqlTupleExprRenderer aRenderer = new SparqlTupleExprRenderer();</b>
+<b class="nc">&nbsp;		return aRenderer.render(theExpr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAll theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot; &quot;).append(theOp.getOperator().getSymbol()).append(&quot; all &quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(renderTupleExpr(theOp.getSubQuery()));</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(ValueConstant theVal) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(RenderUtils.toSPARQL(theVal.getValue()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(FunctionCall theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(knownFunctionsUriReduction(theOp.getURI())).append(&quot;(&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean aFirst = true;</b>
+<b class="nc">&nbsp;		for (ValueExpr aArg : theOp.getArgs()) {</b>
+<b class="nc">&nbsp;			if (!aFirst) {</b>
+<b class="nc">&nbsp;				mBuffer.append(&quot;, &quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				aFirst = false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			aArg.visit(this);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAny theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot; &quot;).append(theOp.getOperator().getSymbol()).append(&quot; any &quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(renderTupleExpr(theOp.getSubQuery()));</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Regex theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot; regex(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;, &quot;);</b>
+<b class="nc">&nbsp;		theOp.getPatternArg().visit(this);</b>
+<b class="nc">&nbsp;		if (theOp.getFlagsArg() != null) {</b>
+<b class="nc">&nbsp;			mBuffer.append(&quot;,&quot;);</b>
+<b class="nc">&nbsp;			theOp.getFlagsArg().visit(this);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(LangMatches theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot; langMatches(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;, &quot;);</b>
+<b class="nc">&nbsp;		theOp.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(SameTerm theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot; sameTerm(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;, &quot;);</b>
+<b class="nc">&nbsp;		theOp.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(And theAnd) throws Exception {
+<b class="nc">&nbsp;		binaryMeet(&quot;&amp;&amp;&quot;, theAnd);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Or theOr) throws Exception {
+<b class="nc">&nbsp;		binaryMeet(&quot;||&quot;, theOr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Not theNot) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		unaryMeet(&quot;!&quot;, theNot);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Count theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;count&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Datatype theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;datatype&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(IsBNode theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;isBlank&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(IsLiteral theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;isLiteral&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(IsNumeric theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;isNumeric&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(IsResource theOp) throws Exception {
+&nbsp;		// there&#39;s no isResource method in SPARQL, so lets serialize this as not
+&nbsp;		// isLiteral -- if something is not a literal
+&nbsp;		// then its probably a resource, tho it might be just not bound so this
+&nbsp;		// might not be 100% correct,
+&nbsp;		// but close enough for right now.
+<b class="nc">&nbsp;		unaryMeet(&quot;!isLiteral&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(IsURI theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;isURI&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(IRIFunction theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;IRI&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Label theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;label&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Lang theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;lang&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(LocalName theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;localName&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Min theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;min&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Max theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;max&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Namespace theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;namespace&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Str theOp) throws Exception {
+<b class="nc">&nbsp;		unaryMeet(&quot;str&quot;, theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void binaryMeet(String theOpStr, BinaryValueOperator theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot; (&quot;);</b>
+<b class="nc">&nbsp;		theOp.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot; &quot;).append(theOpStr).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		theOp.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void unaryMeet(String theOpStr, UnaryValueOperator theOp) throws Exception {
+<b class="nc">&nbsp;		mBuffer.append(&quot; &quot;).append(theOpStr).append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getArg().visit(this);</b>
+<b class="nc">&nbsp;		mBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String knownFunctionsUriReduction(String functionUri) {
+<b class="nc">&nbsp;		switch (functionUri.toLowerCase()) {</b>
+&nbsp;		// Functional Forms
+&nbsp;
+&nbsp;		// Functions on RDF Terms
+&nbsp;		case &quot;strdt&quot;:
+<b class="nc">&nbsp;			return &quot;strdt&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;strlang&quot;:
+<b class="nc">&nbsp;			return &quot;strlang&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;uuid&quot;:
+<b class="nc">&nbsp;			return &quot;uuid&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;struuid&quot;:
+<b class="nc">&nbsp;			return &quot;struuid&quot;;</b>
+&nbsp;
+&nbsp;		// Functions on Strings
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#string-length&quot;:
+<b class="nc">&nbsp;			return &quot;strlen&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#substring&quot;:
+<b class="nc">&nbsp;			return &quot;substr&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#upper-case&quot;:
+<b class="nc">&nbsp;			return &quot;ucase&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#lower-case&quot;:
+<b class="nc">&nbsp;			return &quot;lcase&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#starts-with&quot;:
+<b class="nc">&nbsp;			return &quot;strstarts&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#ends-with&quot;:
+<b class="nc">&nbsp;			return &quot;strends&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#contains&quot;:
+<b class="nc">&nbsp;			return &quot;contains&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#substring-before&quot;:
+<b class="nc">&nbsp;			return &quot;strbefore&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#substring-after&quot;:
+<b class="nc">&nbsp;			return &quot;strafter&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#encode-for-uri&quot;:
+<b class="nc">&nbsp;			return &quot;encode_for_uri&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#concat&quot;:
+<b class="nc">&nbsp;			return &quot;concat&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#matches&quot;:
+<b class="nc">&nbsp;			return &quot;regex&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#replace&quot;:
+<b class="nc">&nbsp;			return &quot;replace&quot;;</b>
+&nbsp;
+&nbsp;		// Functions on Numerics
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#numeric-abs&quot;:
+<b class="nc">&nbsp;			return &quot;abs&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#numeric-round&quot;:
+<b class="nc">&nbsp;			return &quot;round&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#numeric-ceil&quot;:
+<b class="nc">&nbsp;			return &quot;ceil&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#numeric-floor&quot;:
+<b class="nc">&nbsp;			return &quot;floor&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;rand&quot;:
+<b class="nc">&nbsp;			return &quot;rand&quot;;</b>
+&nbsp;
+&nbsp;		// Functions on Dates and Times
+&nbsp;		case &quot;now&quot;:
+<b class="nc">&nbsp;			return &quot;now&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#year-from-datetime&quot;:
+<b class="nc">&nbsp;			return &quot;year&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#month-from-datetime&quot;:
+<b class="nc">&nbsp;			return &quot;month&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#day-from-datetime&quot;:
+<b class="nc">&nbsp;			return &quot;day&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#hours-from-datetime&quot;:
+<b class="nc">&nbsp;			return &quot;hours&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#minutes-from-datetime&quot;:
+<b class="nc">&nbsp;			return &quot;minutes&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#seconds-from-datetime&quot;:
+<b class="nc">&nbsp;			return &quot;seconds&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;http://www.w3.org/2005/xpath-functions#timezone-from-datetime&quot;:
+<b class="nc">&nbsp;			return &quot;timezone&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;tz&quot;:
+<b class="nc">&nbsp;			return &quot;tz&quot;;</b>
+&nbsp;
+&nbsp;		// Hash Functions
+&nbsp;		case &quot;md5&quot;:
+<b class="nc">&nbsp;			return &quot;md5&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;sha1&quot;:
+<b class="nc">&nbsp;			return &quot;sha1&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;sha256&quot;:
+<b class="nc">&nbsp;			return &quot;sha256&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;sha384&quot;:
+<b class="nc">&nbsp;			return &quot;sha384&quot;;</b>
+&nbsp;
+&nbsp;		case &quot;sha512&quot;:
+<b class="nc">&nbsp;			return &quot;sha512&quot;;</b>
+&nbsp;
+&nbsp;		default:
+<b class="nc">&nbsp;			return &quot;&lt;&quot; + functionUri + &quot;&gt;&quot;;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

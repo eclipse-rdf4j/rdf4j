@@ -1,0 +1,619 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PathIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: PathIteration (org.eclipse.rdf4j.query.algebra.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PathIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (11/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    93.1%
+  </span>
+  <span class="absValue">
+    (95/102)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    98.5%
+  </span>
+  <span class="absValue">
+    (132/134)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">PathIteration$ValuePair</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40.9%
+  </span>
+  <span class="absValue">
+    (9/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.9%
+  </span>
+  <span class="absValue">
+    (19/28)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">PathIteration$VarReplacer</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    62.5%
+  </span>
+  <span class="absValue">
+    (10/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    76.9%
+  </span>
+  <span class="absValue">
+    (10/13)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (18/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    81.4%
+  </span>
+  <span class="absValue">
+    (114/140)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    92%
+  </span>
+  <span class="absValue">
+    (161/175)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.Queue;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;
+&nbsp;public class PathIteration extends LookAheadIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private final EvaluationStrategy strategy;
+&nbsp;
+&nbsp;	private long currentLength;
+&nbsp;
+&nbsp;	private CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; currentIter;
+&nbsp;
+&nbsp;	private final BindingSet bindings;
+&nbsp;
+&nbsp;	private final Scope scope;
+&nbsp;
+&nbsp;	private final Var startVar;
+&nbsp;
+&nbsp;	private final Var endVar;
+&nbsp;
+&nbsp;	private final boolean startVarFixed;
+&nbsp;
+&nbsp;	private final boolean endVarFixed;
+&nbsp;
+&nbsp;	private final Queue&lt;ValuePair&gt; valueQueue;
+&nbsp;
+&nbsp;	private final Set&lt;ValuePair&gt; reportedValues;
+&nbsp;
+&nbsp;	private final Set&lt;ValuePair&gt; unreportedValues;
+&nbsp;
+&nbsp;	private final TupleExpr pathExpression;
+&nbsp;
+&nbsp;	private final Var contextVar;
+&nbsp;
+&nbsp;	private ValuePair currentVp;
+&nbsp;
+&nbsp;	private static final String JOINVAR_PREFIX = &quot;intermediate_join_&quot;;
+&nbsp;
+&nbsp;	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
+&nbsp;			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
+<b class="fc">&nbsp;			throws QueryEvaluationException {</b>
+<b class="fc">&nbsp;		this.strategy = strategy;</b>
+<b class="fc">&nbsp;		this.scope = scope;</b>
+<b class="fc">&nbsp;		this.startVar = startVar;</b>
+<b class="fc">&nbsp;		this.endVar = endVar;</b>
+&nbsp;
+<b class="fc">&nbsp;		this.startVarFixed = startVar.hasValue() || bindings.hasBinding(startVar.getName());</b>
+<b class="fc">&nbsp;		this.endVarFixed = endVar.hasValue() || bindings.hasBinding(endVar.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		this.pathExpression = pathExpression;</b>
+<b class="fc">&nbsp;		this.contextVar = contextVar;</b>
+&nbsp;
+<b class="fc">&nbsp;		this.currentLength = minLength;</b>
+<b class="fc">&nbsp;		this.bindings = bindings;</b>
+&nbsp;
+<b class="fc">&nbsp;		this.reportedValues = strategy.makeSet();</b>
+<b class="fc">&nbsp;		this.unreportedValues = strategy.makeSet();</b>
+<b class="fc">&nbsp;		this.valueQueue = strategy.makeQueue();</b>
+&nbsp;
+<b class="fc">&nbsp;		createIteration();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet getNextElement() throws QueryEvaluationException {
+&nbsp;		again: while (true) {
+<b class="fc">&nbsp;			while (currentIter != null &amp;&amp; !currentIter.hasNext()) {</b>
+<b class="fc">&nbsp;				Iterations.closeCloseable(currentIter);</b>
+<b class="fc">&nbsp;				createIteration();</b>
+&nbsp;				// stop condition: if the iter is an EmptyIteration
+<b class="fc">&nbsp;				if (currentIter == null) {</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			while (currentIter != null &amp;&amp; currentIter.hasNext()) {</b>
+<b class="fc">&nbsp;				BindingSet potentialNextElement = currentIter.next();</b>
+&nbsp;				MutableBindingSet nextElement;
+&nbsp;				// if it is not a compatible type of BindingSet
+<b class="pc">&nbsp;				if (potentialNextElement instanceof QueryBindingSet) {</b>
+<b class="fc">&nbsp;					nextElement = (MutableBindingSet) potentialNextElement;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					nextElement = new QueryBindingSet(potentialNextElement);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				if (!startVarFixed &amp;&amp; !endVarFixed &amp;&amp; currentVp != null) {</b>
+<b class="fc">&nbsp;					Value startValue = currentVp.getStartValue();</b>
+&nbsp;
+<b class="pc">&nbsp;					if (startValue != null) {</b>
+<b class="fc">&nbsp;						nextElement = new QueryBindingSet(nextElement);</b>
+<b class="fc">&nbsp;						addBinding(nextElement, startVar.getName(), startValue);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+&nbsp;				Value v1, v2;
+&nbsp;
+<b class="fc">&nbsp;				if (startVarFixed &amp;&amp; endVarFixed &amp;&amp; currentLength &gt; 2) {</b>
+<b class="fc">&nbsp;					v1 = getVarValue(startVar, startVarFixed, nextElement);</b>
+<b class="fc">&nbsp;					v2 = nextElement.getValue(&quot;END_&quot; + JOINVAR_PREFIX + this.hashCode());</b>
+<b class="pc">&nbsp;				} else if (startVarFixed &amp;&amp; endVarFixed &amp;&amp; currentLength == 2) {</b>
+<b class="fc">&nbsp;					v1 = getVarValue(startVar, startVarFixed, nextElement);</b>
+<b class="fc">&nbsp;					v2 = nextElement.getValue(JOINVAR_PREFIX + (currentLength - 1) + &quot;_&quot; + this.hashCode());</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					v1 = getVarValue(startVar, startVarFixed, nextElement);</b>
+<b class="fc">&nbsp;					v2 = getVarValue(endVar, endVarFixed, nextElement);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				if (!isCyclicPath(v1, v2)) {</b>
+&nbsp;
+<b class="fc">&nbsp;					ValuePair vp = new ValuePair(v1, v2);</b>
+<b class="fc">&nbsp;					if (reportedValues.contains(vp)) {</b>
+&nbsp;						// new arbitrary-length path semantics: filter out
+&nbsp;						// duplicates
+<b class="fc">&nbsp;						if (currentIter.hasNext()) {</b>
+<b class="fc">&nbsp;							continue;</b>
+&nbsp;						} else {
+&nbsp;							// if the current iter is exhausted, we need to check
+&nbsp;							// that no further paths of greater length still exists.
+&nbsp;							continue again;
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					if (startVarFixed &amp;&amp; endVarFixed) {</b>
+<b class="fc">&nbsp;						Value endValue = getVarValue(endVar, endVarFixed, nextElement);</b>
+<b class="fc">&nbsp;						if (endValue.equals(v2)) {</b>
+<b class="fc">&nbsp;							add(reportedValues, vp);</b>
+<b class="pc">&nbsp;							if (!v1.equals(v2)) {</b>
+<b class="fc">&nbsp;								addToQueue(valueQueue, vp);</b>
+&nbsp;							}
+<b class="fc">&nbsp;							if (!nextElement.hasBinding(startVar.getName())) {</b>
+<b class="fc">&nbsp;								addBinding(nextElement, startVar.getName(), v1);</b>
+&nbsp;							}
+<b class="fc">&nbsp;							if (!nextElement.hasBinding(endVar.getName())) {</b>
+<b class="fc">&nbsp;								addBinding(nextElement, endVar.getName(), v2);</b>
+&nbsp;							}
+<b class="fc">&nbsp;							return nextElement;</b>
+&nbsp;						} else {
+<b class="fc">&nbsp;							if (add(unreportedValues, vp)) {</b>
+<b class="fc">&nbsp;								if (!v1.equals(v2)) {</b>
+<b class="fc">&nbsp;									addToQueue(valueQueue, vp);</b>
+&nbsp;								}
+&nbsp;							}
+&nbsp;							continue again;
+&nbsp;						}
+&nbsp;					} else {
+<b class="fc">&nbsp;						add(reportedValues, vp);</b>
+<b class="fc">&nbsp;						if (!v1.equals(v2)) {</b>
+<b class="fc">&nbsp;							addToQueue(valueQueue, vp);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						if (!nextElement.hasBinding(startVar.getName())) {</b>
+<b class="fc">&nbsp;							addBinding(nextElement, startVar.getName(), v1);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						if (!nextElement.hasBinding(endVar.getName())) {</b>
+<b class="fc">&nbsp;							addBinding(nextElement, endVar.getName(), v2);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						return nextElement;</b>
+&nbsp;					}
+&nbsp;				} else {
+&nbsp;					continue again;
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// if we&#39;re done, throw away the cached lists of values to avoid
+&nbsp;			// hogging resources
+<b class="fc">&nbsp;			reportedValues.clear();</b>
+<b class="fc">&nbsp;			unreportedValues.clear();</b>
+<b class="fc">&nbsp;			valueQueue.clear();</b>
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void addBinding(MutableBindingSet bs, String name, Value value) {
+<b class="fc">&nbsp;		bs.addBinding(name, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="fc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			Iterations.closeCloseable(currentIter);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param valueQueue2
+&nbsp;	 * @param vp
+&nbsp;	 */
+&nbsp;	protected boolean addToQueue(Queue&lt;ValuePair&gt; valueQueue2, ValuePair vp) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return valueQueue2.add(vp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param valueSet
+&nbsp;	 * @param vp
+&nbsp;	 */
+&nbsp;	protected boolean add(Set&lt;ValuePair&gt; valueSet, ValuePair vp) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return valueSet.add(vp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Value getVarValue(Var var, boolean fixedValue, BindingSet bindingSet) {
+&nbsp;		Value v;
+<b class="fc">&nbsp;		if (fixedValue) {</b>
+<b class="fc">&nbsp;			v = var.getValue();</b>
+<b class="fc">&nbsp;			if (v == null) {</b>
+<b class="fc">&nbsp;				v = this.bindings.getValue(var.getName());</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="fc">&nbsp;			v = bindingSet.getValue(var.getName());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return v;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isCyclicPath(Value v1, Value v2) {
+<b class="fc">&nbsp;		if (currentLength &lt;= 2) {</b>
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return reportedValues.contains(new ValuePair(v1, v2));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void createIteration() throws QueryEvaluationException {
+&nbsp;
+<b class="pc">&nbsp;		if (isUnbound(startVar, bindings) || isUnbound(endVar, bindings)) {</b>
+&nbsp;			// the variable must remain unbound for this solution see https://www.w3.org/TR/sparql11-query/#assignment
+<b class="fc">&nbsp;			currentIter = null;</b>
+<b class="fc">&nbsp;		} else if (currentLength == 0L) {</b>
+<b class="fc">&nbsp;			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),</b>
+<b class="fc">&nbsp;					contextVar != null ? contextVar.clone() : null);</b>
+<b class="fc">&nbsp;			currentIter = this.strategy.evaluate(zlp, bindings);</b>
+<b class="fc">&nbsp;			currentLength++;</b>
+<b class="fc">&nbsp;		} else if (currentLength == 1) {</b>
+<b class="fc">&nbsp;			TupleExpr pathExprClone = pathExpression.clone();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (startVarFixed &amp;&amp; endVarFixed) {</b>
+<b class="fc">&nbsp;				Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + &quot;_&quot; + this.hashCode());</b>
+&nbsp;
+<b class="fc">&nbsp;				VarReplacer replacer = new VarReplacer(endVar, replacement, 0, false);</b>
+<b class="fc">&nbsp;				pathExprClone.visit(replacer);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			currentIter = this.strategy.evaluate(pathExprClone, bindings);</b>
+<b class="fc">&nbsp;			currentLength++;</b>
+<b class="fc">&nbsp;		} else {</b>
+&nbsp;
+<b class="fc">&nbsp;			currentVp = valueQueue.poll();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (currentVp != null) {</b>
+&nbsp;
+<b class="fc">&nbsp;				TupleExpr pathExprClone = pathExpression.clone();</b>
+&nbsp;
+<b class="fc">&nbsp;				if (startVarFixed &amp;&amp; endVarFixed) {</b>
+&nbsp;
+<b class="fc">&nbsp;					Var startReplacement = createAnonVar(JOINVAR_PREFIX + currentLength + &quot;_&quot; + this.hashCode());</b>
+<b class="fc">&nbsp;					Var endReplacement = createAnonVar(&quot;END_&quot; + JOINVAR_PREFIX + this.hashCode());</b>
+<b class="fc">&nbsp;					startReplacement.setAnonymous(false);</b>
+<b class="fc">&nbsp;					endReplacement.setAnonymous(false);</b>
+&nbsp;
+<b class="fc">&nbsp;					Value v = currentVp.getEndValue();</b>
+<b class="fc">&nbsp;					startReplacement.setValue(v);</b>
+&nbsp;
+<b class="fc">&nbsp;					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);</b>
+<b class="fc">&nbsp;					pathExprClone.visit(replacer);</b>
+&nbsp;
+<b class="fc">&nbsp;					replacer = new VarReplacer(endVar, endReplacement, 0, false);</b>
+<b class="fc">&nbsp;					pathExprClone.visit(replacer);</b>
+<b class="fc">&nbsp;				} else {</b>
+&nbsp;					Var toBeReplaced;
+&nbsp;					Value v;
+<b class="fc">&nbsp;					if (!endVarFixed) {</b>
+<b class="fc">&nbsp;						toBeReplaced = startVar;</b>
+<b class="fc">&nbsp;						v = currentVp.getEndValue();</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						toBeReplaced = endVar;</b>
+<b class="fc">&nbsp;						v = currentVp.getStartValue();</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					Var replacement = createAnonVar(JOINVAR_PREFIX + currentLength + &quot;-&quot; + this.hashCode());</b>
+<b class="fc">&nbsp;					replacement.setValue(v);</b>
+&nbsp;
+<b class="fc">&nbsp;					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);</b>
+<b class="fc">&nbsp;					pathExprClone.visit(replacer);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				currentIter = this.strategy.evaluate(pathExprClone, bindings);</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				currentIter = null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			currentLength++;</b>
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean isUnbound(Var var, BindingSet bindings) {
+<b class="pc">&nbsp;		if (var == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return bindings.hasBinding(var.getName()) &amp;&amp; bindings.getValue(var.getName()) == null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static class ValuePair {
+&nbsp;
+&nbsp;		private final Value startValue;
+&nbsp;
+&nbsp;		private final Value endValue;
+&nbsp;
+<b class="fc">&nbsp;		public ValuePair(Value startValue, Value endValue) {</b>
+<b class="fc">&nbsp;			this.startValue = startValue;</b>
+<b class="fc">&nbsp;			this.endValue = endValue;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the startValue.
+&nbsp;		 */
+&nbsp;		public Value getStartValue() {
+<b class="fc">&nbsp;			return startValue;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the endValue.
+&nbsp;		 */
+&nbsp;		public Value getEndValue() {
+<b class="fc">&nbsp;			return endValue;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int hashCode() {
+<b class="fc">&nbsp;			final int prime = 31;</b>
+<b class="fc">&nbsp;			int result = 1;</b>
+<b class="pc">&nbsp;			result = prime * result + ((endValue == null) ? 0 : endValue.hashCode());</b>
+<b class="pc">&nbsp;			result = prime * result + ((startValue == null) ? 0 : startValue.hashCode());</b>
+<b class="fc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean equals(Object obj) {
+<b class="pc">&nbsp;			if (this == obj) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (obj == null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (!(obj instanceof ValuePair)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			ValuePair other = (ValuePair) obj;</b>
+<b class="pc">&nbsp;			if (endValue == null) {</b>
+<b class="nc">&nbsp;				if (other.endValue != null) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (!endValue.equals(other.endValue)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (startValue == null) {</b>
+<b class="nc">&nbsp;				if (other.startValue != null) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (!startValue.equals(other.startValue)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	class VarReplacer extends AbstractQueryModelVisitor&lt;QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;		private final Var toBeReplaced;
+&nbsp;
+&nbsp;		private final Var replacement;
+&nbsp;
+&nbsp;		private final long index;
+&nbsp;
+&nbsp;		private final boolean replaceAnons;
+&nbsp;
+<b class="fc">&nbsp;		public VarReplacer(Var toBeReplaced, Var replacement, long index, boolean replaceAnons) {</b>
+<b class="fc">&nbsp;			this.toBeReplaced = toBeReplaced;</b>
+<b class="fc">&nbsp;			this.replacement = replacement;</b>
+<b class="fc">&nbsp;			this.index = index;</b>
+<b class="fc">&nbsp;			this.replaceAnons = replaceAnons;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="fc">&nbsp;			if (toBeReplaced.equals(var) || (toBeReplaced.isAnonymous() &amp;&amp; var.isAnonymous()</b>
+<b class="pc">&nbsp;					&amp;&amp; (toBeReplaced.hasValue() &amp;&amp; toBeReplaced.getValue().equals(var.getValue())))) {</b>
+<b class="fc">&nbsp;				QueryModelNode parent = var.getParentNode();</b>
+<b class="fc">&nbsp;				parent.replaceChildNode(var, replacement.clone());</b>
+<b class="pc">&nbsp;			} else if (replaceAnons &amp;&amp; var.isAnonymous() &amp;&amp; !var.hasValue()) {</b>
+<b class="nc">&nbsp;				Var replacementVar = createAnonVar(&quot;anon-replace-&quot; + var.getName() + index);</b>
+<b class="nc">&nbsp;				QueryModelNode parent = var.getParentNode();</b>
+<b class="nc">&nbsp;				parent.replaceChildNode(var, replacementVar);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public Var createAnonVar(String varName) {
+<b class="fc">&nbsp;		Var var = new Var(varName);</b>
+<b class="fc">&nbsp;		var.setAnonymous(true);</b>
+<b class="fc">&nbsp;		return var;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

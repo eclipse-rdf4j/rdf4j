@@ -1,0 +1,232 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Iterators</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: Iterators (org.eclipse.rdf4j.common.iterator)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Iterators</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iterator;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;/**
+&nbsp; * This class consists exclusively of static methods that operate on or return iterators. It is the Iterator-equivalent
+&nbsp; * of {@link Collections}.
+&nbsp; *
+&nbsp; * @deprecated use Commons Collections or Guava instead.
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+<b class="nc">&nbsp;public class Iterators {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a List containing all elements obtained from the specified iterator.
+&nbsp;	 *
+&nbsp;	 * @param iter the iterator to get the elements from
+&nbsp;	 * @return a List containing all elements obtained from the specified iterator.
+&nbsp;	 */
+&nbsp;	public static &lt;E&gt; List&lt;E&gt; asList(Iterator&lt;? extends E&gt; iter) {
+<b class="nc">&nbsp;		List&lt;E&gt; result = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		addAll(iter, result);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds all elements from the supplied iterator to the specified collection.
+&nbsp;	 *
+&nbsp;	 * @param iter       An iterator containing elements to add to the container.
+&nbsp;	 * @param collection The collection to add the elements to.
+&nbsp;	 * @return The &lt;var&gt;collection&lt;/var&gt; object that was supplied to this method.
+&nbsp;	 */
+&nbsp;	public static &lt;E, C extends Collection&lt;E&gt;&gt; C addAll(Iterator&lt;? extends E&gt; iter, C collection) {
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			collection.add(iter.next());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return collection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an iterator to a string by concatenating all of the string representations of objects in the iterator,
+&nbsp;	 * divided by a separator.
+&nbsp;	 *
+&nbsp;	 * @param iter      An iterator over arbitrary objects that are expected to implement {@link Object#toString()}.
+&nbsp;	 * @param separator The separator to insert between the object strings.
+&nbsp;	 * @return A String representation of the objects provided by the supplied iterator.
+&nbsp;	 */
+&nbsp;	public static String toString(Iterator&lt;?&gt; iter, String separator) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		toString(iter, separator, sb);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an iterator to a string by concatenating all of the string representations of objects in the iterator,
+&nbsp;	 * divided by a separator.
+&nbsp;	 *
+&nbsp;	 * @param iter      An iterator over arbitrary objects that are expected to implement {@link Object#toString()}.
+&nbsp;	 * @param separator The separator to insert between the object strings.
+&nbsp;	 * @param sb        A StringBuilder to append the iterator string to.
+&nbsp;	 */
+&nbsp;	public static void toString(Iterator&lt;?&gt; iter, String separator, StringBuilder sb) {
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			sb.append(iter.next());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				sb.append(separator);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the given iterator if it implements {@link java.io.Closeable} else do nothing.
+&nbsp;	 *
+&nbsp;	 * @param iter The iterator to close.
+&nbsp;	 * @throws IOException If an underlying I/O error occurs.
+&nbsp;	 */
+&nbsp;	public static void close(Iterator&lt;?&gt; iter) throws IOException {
+<b class="nc">&nbsp;		if (iter instanceof Closeable) {</b>
+<b class="nc">&nbsp;			((Closeable) iter).close();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the given iterator, swallowing any IOExceptions, if it implements {@link java.io.Closeable} else do
+&nbsp;	 * nothing.
+&nbsp;	 *
+&nbsp;	 * @param iter The iterator to close.
+&nbsp;	 */
+&nbsp;	public static void closeSilently(Iterator&lt;?&gt; iter) {
+<b class="nc">&nbsp;		if (iter instanceof Closeable) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				((Closeable) iter).close();</b>
+<b class="nc">&nbsp;			} catch (IOException ioe) {</b>
+&nbsp;				// ignore
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

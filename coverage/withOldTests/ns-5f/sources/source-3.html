@@ -1,0 +1,283 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EvaluationStrategy</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: EvaluationStrategy (org.eclipse.rdf4j.query.algebra.evaluation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EvaluationStrategy</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (2/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (2/8)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Queue;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.SPARQLFederatedService;
+&nbsp;
+&nbsp;/**
+&nbsp; * Evaluates {@link TupleExpr}s and {@link ValueExpr}s.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public interface EvaluationStrategy extends FederatedServiceResolver {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the {@link FederatedService} registered for serviceUrl. If there is no service registered for
+&nbsp;	 * serviceUrl, a new {@link SPARQLFederatedService} is created and registered.
+&nbsp;	 *
+&nbsp;	 * @param serviceUrl URL of the service.
+&nbsp;	 * @return the {@link FederatedService} registered for the serviceUrl.
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @see org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver#getService(java.lang.String)
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	FederatedService getService(String serviceUrl) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the {@link QueryOptimizerPipeline} to use for optimizing any incoming queries.
+&nbsp;	 *
+&nbsp;	 * @param pipeline the {@link QueryOptimizerPipeline}.
+&nbsp;	 * @see #optimize(TupleExpr, EvaluationStatistics, BindingSet)
+&nbsp;	 * @since 3.0
+&nbsp;	 */
+&nbsp;	void setOptimizerPipeline(QueryOptimizerPipeline pipeline);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
+&nbsp;	 *
+&nbsp;	 * @param expr                 the {@link TupleExpr} to optimize.
+&nbsp;	 * @param evaluationStatistics the {@link EvaluationStatistics} of the data source, to be used for query planning.
+&nbsp;	 * @param bindings             a-priori bindings supplied for the query, which can potentially be inlined.
+&nbsp;	 * @return the optimized {@link TupleExpr}.
+&nbsp;	 * @see #setOptimizerPipeline(QueryOptimizerPipeline)
+&nbsp;	 * @since 3.0
+&nbsp;	 */
+&nbsp;	TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics,
+&nbsp;			BindingSet bindings);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
+&nbsp;	 * input.
+&nbsp;	 *
+&nbsp;	 * @param expr       The Service Expression to evaluate
+&nbsp;	 * @param serviceUri TODO
+&nbsp;	 * @param bindings   The variables bindings iterator to use for evaluating the expression, if applicable.
+&nbsp;	 * @return A closeable iterator over all of variable binding sets that match the tuple expression.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Service expr, String serviceUri,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; bindings) throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the tuple expression against the supplied triple source with the specified set of variable bindings as
+&nbsp;	 * input.
+&nbsp;	 *
+&nbsp;	 * @param expr     The Tuple Expression to evaluate
+&nbsp;	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
+&nbsp;	 * @return A closeable iterator over the variable binding sets that match the tuple expression.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(TupleExpr expr, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepare a QueryEvaluationStep that tries to do as much work once per query avoiding repeated calls to the same
+&nbsp;	 * code as much as possible. This depends on java invoke dynamic for performance.
+&nbsp;	 *
+&nbsp;	 * @param expr that is to be evaluated later
+&nbsp;	 * @return a QueryEvaluationStep that may avoid doing repeating the same work over and over.
+&nbsp;	 */
+&nbsp;	default QueryEvaluationStep precompile(TupleExpr expr) {
+<b class="nc">&nbsp;		return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+<b class="nc">&nbsp;		return QueryEvaluationStep.minimal(this, expr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the value of this expression.
+&nbsp;	 *
+&nbsp;	 * @param expr
+&nbsp;	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
+&nbsp;	 * @return The Value that this expression evaluates to, or &lt;var&gt;null&lt;/var&gt; if the expression could not be evaluated.
+&nbsp;	 */
+&nbsp;	Value evaluate(ValueExpr expr, BindingSet bindings)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the boolean expression on the supplied TripleSource object.
+&nbsp;	 *
+&nbsp;	 * @param expr
+&nbsp;	 * @param bindings The variables bindings to use for evaluating the expression, if applicable.
+&nbsp;	 * @return The result of the evaluation.
+&nbsp;	 * @throws ValueExprEvaluationException If the value expression could not be evaluated, for example when comparing
+&nbsp;	 *                                      two incompatible operands. When thrown, the result of the boolean expression
+&nbsp;	 *                                      is neither &lt;var&gt;true&lt;/var&gt; nor &lt;var&gt;false&lt;/var&gt; , but unknown.
+&nbsp;	 */
+&nbsp;	boolean isTrue(ValueExpr expr, BindingSet bindings)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException;
+&nbsp;
+&nbsp;	boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings)
+&nbsp;			throws ValueExprEvaluationException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enable or disable results size tracking for the query plan. Useful to determine which parts of a query plan
+&nbsp;	 * generated the most data.
+&nbsp;	 *
+&nbsp;	 * @param trackResultSize true to enable tracking.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	default void setTrackResultSize(boolean trackResultSize) {
+&nbsp;		// no-op for backwards compatibility
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enable or disable results size tracking for the query plan.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	default boolean isTrackResultSize() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enable or disable time tracking for the query plan. Useful to determine which parts of a query plan take the most
+&nbsp;	 * time to evaluate.
+&nbsp;	 *
+&nbsp;	 * @param trackTime true to enable tracking.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	default void setTrackTime(boolean trackTime) {
+&nbsp;		// no-op for backwards compatibility
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	default QueryValueEvaluationStep precompile(ValueExpr arg, QueryEvaluationContext context) {
+<b class="nc">&nbsp;		return new QueryValueEvaluationStep.Minimal(this, arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default &lt;T&gt; Set&lt;T&gt; makeSet() {
+<b class="fc">&nbsp;		return new HashSet&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	default &lt;T&gt; Queue&lt;T&gt; makeQueue() {
+<b class="fc">&nbsp;		return new ArrayDeque&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

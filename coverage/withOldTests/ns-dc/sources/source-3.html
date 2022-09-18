@@ -1,0 +1,596 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BindSelect</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: BindSelect (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BindSelect</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/70)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/85)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">BindSelect$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">BindSelect$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/60)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/72)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/132)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/162)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import static java.util.stream.Collectors.toCollection;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.apache.commons.text.StringEscapeUtils;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Takes a plan node as a source and for each tuple in the source it will build a BindingSet from the vars and the tuple
+&nbsp; * and inject it into the query
+&nbsp; *
+&nbsp; * @author Håvard Ottestad
+&nbsp; */
+<b class="nc">&nbsp;public class BindSelect implements PlanNode {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(BindSelect.class);</b>
+&nbsp;
+&nbsp;	private final SailConnection connection;
+&nbsp;	private final Dataset dataset;
+&nbsp;	private final Function&lt;BindingSet, ValidationTuple&gt; mapper;
+&nbsp;
+&nbsp;	private final String query;
+&nbsp;	private final List&lt;StatementMatcher.Variable&gt; vars;
+&nbsp;	private final int bulkSize;
+&nbsp;	private final PlanNode source;
+&nbsp;	private final EffectiveTarget.Extend direction;
+&nbsp;	private final boolean includePropertyShapeValues;
+&nbsp;	private final List&lt;String&gt; varNames;
+&nbsp;	private final ConstraintComponent.Scope scope;
+&nbsp;	private StackTraceElement[] stackTrace;
+<b class="nc">&nbsp;	private boolean printed = false;</b>
+&nbsp;	private ValidationExecutionLogger validationExecutionLogger;
+&nbsp;
+&nbsp;	public BindSelect(SailConnection connection, Resource[] dataGraph, String query,
+&nbsp;			List&lt;StatementMatcher.Variable&gt; vars, PlanNode source,
+&nbsp;			List&lt;String&gt; varNames, ConstraintComponent.Scope scope, int bulkSize, EffectiveTarget.Extend direction,
+<b class="nc">&nbsp;			boolean includePropertyShapeValues) {</b>
+<b class="nc">&nbsp;		this.connection = connection;</b>
+<b class="nc">&nbsp;		assert this.connection != null;</b>
+<b class="nc">&nbsp;		this.mapper = (bindingSet) -&gt; new ValidationTuple(bindingSet, varNames, scope, includePropertyShapeValues,</b>
+&nbsp;				dataGraph);
+<b class="nc">&nbsp;		this.varNames = varNames;</b>
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.vars = vars;</b>
+<b class="nc">&nbsp;		this.bulkSize = bulkSize;</b>
+<b class="nc">&nbsp;		this.source = PlanNodeHelper.handleSorting(this, source);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (query.trim().equals(&quot;&quot;)) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query);</b>
+<b class="nc">&nbsp;		this.direction = direction;</b>
+<b class="nc">&nbsp;		this.includePropertyShapeValues = includePropertyShapeValues;</b>
+&nbsp;
+<b class="nc">&nbsp;		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);</b>
+&nbsp;
+&nbsp;		// this.stackTrace = Thread.currentThread().getStackTrace();
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void updateQuery(TupleExpr parsedQuery, List&lt;BindingSet&gt; newBindindingset, int expectedSize) {
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			parsedQuery</b>
+<b class="nc">&nbsp;					.visit(new AbstractQueryModelVisitor&lt;Exception&gt;() {</b>
+&nbsp;						@Override
+&nbsp;						public void meet(BindingSetAssignment node) throws Exception {
+<b class="nc">&nbsp;							Set&lt;String&gt; bindingNames = node.getBindingNames();</b>
+<b class="nc">&nbsp;							if (bindingNames.size() == expectedSize) { // TODO consider checking if bindingnames is</b>
+&nbsp;								// equal to
+&nbsp;								// vars
+<b class="nc">&nbsp;								node.setBindingSets(newBindindingset);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							super.meet(node);</b>
+&nbsp;						}
+&nbsp;
+&nbsp;					});
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator() {
+<b class="nc">&nbsp;		return new LoggingCloseableIteration(this, validationExecutionLogger) {</b>
+&nbsp;
+&nbsp;			CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; bindingSet;
+&nbsp;
+<b class="nc">&nbsp;			final CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator = source.iterator();</b>
+<b class="nc">&nbsp;			List&lt;ValidationTuple&gt; bulk = new ArrayList&lt;&gt;(bulkSize);</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleExpr parsedQuery = null;</b>
+&nbsp;
+&nbsp;			public void calculateNext() {
+&nbsp;
+<b class="nc">&nbsp;				while (bindingSet == null || !bindingSet.hasNext()) {</b>
+&nbsp;
+<b class="nc">&nbsp;					if (bindingSet != null) {</b>
+<b class="nc">&nbsp;						bindingSet.close();</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (bulk.isEmpty() &amp;&amp; !iterator.hasNext()) {</b>
+&nbsp;						return;
+&nbsp;					}
+&nbsp;
+&nbsp;					ValidationTuple next;
+<b class="nc">&nbsp;					if (bulk.isEmpty()) {</b>
+<b class="nc">&nbsp;						next = iterator.next();</b>
+<b class="nc">&nbsp;						bulk.add(next);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						next = bulk.get(0);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (includePropertyShapeValues) {</b>
+<b class="nc">&nbsp;						assert next.getScope() == ConstraintComponent.Scope.propertyShape;</b>
+<b class="nc">&nbsp;						assert next.hasValue();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					int targetChainSize;
+<b class="nc">&nbsp;					if (includePropertyShapeValues || next.getScope() != ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;						targetChainSize = next.getFullChainSize(true);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						targetChainSize = next.getFullChainSize(includePropertyShapeValues);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (parsedQuery == null) {</b>
+<b class="nc">&nbsp;						parsedQuery = getParsedQuery(targetChainSize);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					while (bulk.size() &lt; bulkSize &amp;&amp; iterator.hasNext()) {</b>
+<b class="nc">&nbsp;						bulk.add(iterator.next());</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					List&lt;String&gt; varNames;
+&nbsp;
+<b class="nc">&nbsp;					if (direction == EffectiveTarget.Extend.right) {</b>
+<b class="nc">&nbsp;						varNames = vars</b>
+<b class="nc">&nbsp;								.stream()</b>
+<b class="nc">&nbsp;								.limit(targetChainSize)</b>
+<b class="nc">&nbsp;								.map(StatementMatcher.Variable::getName)</b>
+<b class="nc">&nbsp;								.collect(Collectors.toList());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						varNames = vars</b>
+<b class="nc">&nbsp;								.stream()</b>
+<b class="nc">&nbsp;								.skip(vars.size() - targetChainSize)</b>
+<b class="nc">&nbsp;								.map(StatementMatcher.Variable::getName)</b>
+<b class="nc">&nbsp;								.collect(Collectors.toList());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					Set&lt;String&gt; varNamesSet = new HashSet&lt;&gt;(varNames);</b>
+&nbsp;
+<b class="nc">&nbsp;					List&lt;BindingSet&gt; bindingSets = bulk</b>
+<b class="nc">&nbsp;							.stream()</b>
+<b class="nc">&nbsp;							.filter(t -&gt; {</b>
+&nbsp;								int temp;
+<b class="nc">&nbsp;								if (includePropertyShapeValues</b>
+<b class="nc">&nbsp;										|| t.getScope() != ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;									temp = t.getFullChainSize(true);</b>
+&nbsp;								} else {
+<b class="nc">&nbsp;									temp = t.getFullChainSize(includePropertyShapeValues);</b>
+&nbsp;								}
+&nbsp;
+<b class="nc">&nbsp;								return temp == targetChainSize;</b>
+&nbsp;							})
+<b class="nc">&nbsp;							.map(t -&gt; {</b>
+<b class="nc">&nbsp;								List&lt;Value&gt; targetChain = t.getTargetChain(includePropertyShapeValues);</b>
+<b class="nc">&nbsp;								if (targetChain.size() == 1) {</b>
+<b class="nc">&nbsp;									return new SingletonBindingSet(varNames.get(0), targetChain.get(0));</b>
+&nbsp;								} else {
+<b class="nc">&nbsp;									return new SimpleBindingSet(varNamesSet, varNames, targetChain);</b>
+&nbsp;								}
+&nbsp;							})
+<b class="nc">&nbsp;							.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;					bulk = bulk</b>
+<b class="nc">&nbsp;							.stream()</b>
+<b class="nc">&nbsp;							.filter(t -&gt; {</b>
+&nbsp;								int temp;
+<b class="nc">&nbsp;								if (includePropertyShapeValues</b>
+<b class="nc">&nbsp;										|| t.getScope() != ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;									temp = t.getFullChainSize(true);</b>
+&nbsp;								} else {
+<b class="nc">&nbsp;									temp = t.getFullChainSize(includePropertyShapeValues);</b>
+&nbsp;								}
+&nbsp;
+<b class="nc">&nbsp;								return temp != targetChainSize;</b>
+&nbsp;							})
+<b class="nc">&nbsp;							.collect(toCollection(ArrayList::new));</b>
+&nbsp;
+<b class="nc">&nbsp;					updateQuery(parsedQuery, bindingSets, targetChainSize);</b>
+&nbsp;
+<b class="nc">&nbsp;					bindingSet = connection.evaluate(parsedQuery, dataset,</b>
+<b class="nc">&nbsp;							EmptyBindingSet.getInstance(), true);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void localClose() throws SailException {
+&nbsp;				try {
+<b class="nc">&nbsp;					bulk = null;</b>
+<b class="nc">&nbsp;					parsedQuery = null;</b>
+<b class="nc">&nbsp;					assert !iterator.hasNext();</b>
+<b class="nc">&nbsp;					iterator.close();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					if (bindingSet != null) {</b>
+<b class="nc">&nbsp;						bindingSet.close();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected boolean localHasNext() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				return bindingSet != null &amp;&amp; bindingSet.hasNext();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected ValidationTuple loggingNext() throws SailException {
+<b class="nc">&nbsp;				calculateNext();</b>
+<b class="nc">&nbsp;				return mapper.apply(bindingSet.next());</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr getParsedQuery(int targetChainSize) {
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder values = new StringBuilder(&quot;\nVALUES( &quot;);</b>
+<b class="nc">&nbsp;		if (direction == EffectiveTarget.Extend.right) {</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; i &lt; targetChainSize; i++) {</b>
+<b class="nc">&nbsp;				values.append(&quot;?&quot;).append(vars.get(i).getName()).append(&quot; &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (direction == EffectiveTarget.Extend.left) {</b>
+<b class="nc">&nbsp;			for (int i = vars.size() - targetChainSize; i &lt; vars.size(); i++) {</b>
+<b class="nc">&nbsp;				values.append(&quot;?&quot;).append(vars.get(i).getName()).append(&quot; &quot;);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Unknown direction: &quot; + direction);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		values.append(&quot;){}\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String query = BindSelect.this.query;</b>
+&nbsp;
+<b class="nc">&nbsp;		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, values.toString());</b>
+<b class="nc">&nbsp;		query = &quot;select * where { &quot; + values + query + &quot;\n}&quot;;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			return SparqlQueryParserCache.get(query);</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Malformed query:\n{}&quot;, query);</b>
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int depth() {
+<b class="nc">&nbsp;		return 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+<b class="nc">&nbsp;		if (printed) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		printed = true;</b>
+<b class="nc">&nbsp;		stringBuilder.append(getId() + &quot; [label=\&quot;&quot; + StringEscapeUtils.escapeJava(this.toString()) + &quot;\&quot;];&quot;)</b>
+<b class="nc">&nbsp;				.append(&quot;\n&quot;);</b>
+&nbsp;
+&nbsp;		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+&nbsp;		// sail
+<b class="nc">&nbsp;		if (connection instanceof MemoryStoreConnection) {</b>
+<b class="nc">&nbsp;			stringBuilder</b>
+<b class="nc">&nbsp;					.append(System.identityHashCode(((MemoryStoreConnection) connection).getSail()) + &quot; -&gt; &quot; + getId())</b>
+<b class="nc">&nbsp;					.append(&quot;\n&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			stringBuilder.append(System.identityHashCode(connection) + &quot; -&gt; &quot; + getId()).append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return System.identityHashCode(this) + &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+<b class="nc">&nbsp;		this.validationExecutionLogger = validationExecutionLogger;</b>
+<b class="nc">&nbsp;		source.receiveLogger(validationExecutionLogger);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean producesSorted() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean requiresSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		BindSelect that = (BindSelect) o;</b>
+&nbsp;
+&nbsp;		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+&nbsp;		// sail
+<b class="nc">&nbsp;		if (connection instanceof MemoryStoreConnection &amp;&amp; that.connection instanceof MemoryStoreConnection) {</b>
+<b class="nc">&nbsp;			return bulkSize == that.bulkSize &amp;&amp;</b>
+&nbsp;					includePropertyShapeValues == that.includePropertyShapeValues &amp;&amp;
+<b class="nc">&nbsp;					((MemoryStoreConnection) connection).getSail()</b>
+<b class="nc">&nbsp;							.equals(((MemoryStoreConnection) that.connection).getSail())</b>
+&nbsp;					&amp;&amp;
+<b class="nc">&nbsp;					varNames.equals(that.varNames) &amp;&amp;</b>
+<b class="nc">&nbsp;					scope.equals(that.scope) &amp;&amp;</b>
+<b class="nc">&nbsp;					query.equals(that.query) &amp;&amp;</b>
+<b class="nc">&nbsp;					vars.equals(that.vars) &amp;&amp;</b>
+<b class="nc">&nbsp;					source.equals(that.source) &amp;&amp;</b>
+<b class="nc">&nbsp;					Objects.equals(dataset, that.dataset) &amp;&amp;</b>
+&nbsp;					direction == that.direction;
+&nbsp;		} else {
+<b class="nc">&nbsp;			return bulkSize == that.bulkSize &amp;&amp;</b>
+&nbsp;					includePropertyShapeValues == that.includePropertyShapeValues &amp;&amp;
+<b class="nc">&nbsp;					Objects.equals(connection, that.connection) &amp;&amp;</b>
+<b class="nc">&nbsp;					varNames.equals(that.varNames) &amp;&amp;</b>
+<b class="nc">&nbsp;					scope.equals(that.scope) &amp;&amp;</b>
+<b class="nc">&nbsp;					query.equals(that.query) &amp;&amp;</b>
+<b class="nc">&nbsp;					vars.equals(that.vars) &amp;&amp;</b>
+<b class="nc">&nbsp;					source.equals(that.source) &amp;&amp;</b>
+<b class="nc">&nbsp;					Objects.equals(dataset, that.dataset) &amp;&amp;</b>
+&nbsp;					direction == that.direction;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+&nbsp;		// added/removed connections are always newly minted per plan node, so we instead need to compare the underlying
+&nbsp;		// sail
+<b class="nc">&nbsp;		if (connection instanceof MemoryStoreConnection) {</b>
+<b class="nc">&nbsp;			return Objects.hash(((MemoryStoreConnection) connection).getSail(), varNames, scope, query, vars, bulkSize,</b>
+<b class="nc">&nbsp;					source, direction, includePropertyShapeValues, dataset);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return Objects.hash(connection, varNames, scope, query, vars, bulkSize, source, direction,</b>
+<b class="nc">&nbsp;					includePropertyShapeValues, dataset);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;BindSelect{&quot; +</b>
+<b class="nc">&nbsp;				&quot;query=&#39;&quot; + query.replace(&quot;\n&quot;, &quot;\t&quot;) + &#39;\&#39;&#39; +</b>
+&nbsp;				&quot;, vars=&quot; + vars +
+&nbsp;				&quot;, bulkSize=&quot; + bulkSize +
+&nbsp;				&quot;, source=&quot; + source +
+&nbsp;				&quot;, direction=&quot; + direction +
+&nbsp;				&quot;, includePropertyShapeValues=&quot; + includePropertyShapeValues +
+&nbsp;				&quot;, varNames=&quot; + varNames +
+&nbsp;				&quot;, scope=&quot; + scope +
+&nbsp;				&#39;}&#39;;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

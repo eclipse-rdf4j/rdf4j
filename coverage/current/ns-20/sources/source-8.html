@@ -1,0 +1,183 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NavigationNode</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.webapp.navigation</a>
+</div>
+
+<h1>Coverage Summary for Class: NavigationNode (org.eclipse.rdf4j.common.webapp.navigation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">NavigationNode</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.webapp.navigation;
+&nbsp;
+&nbsp;/**
+&nbsp; * NavigationNode represents a node in a NavigationModel.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public interface NavigationNode extends Cloneable {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the ID of the node.
+&nbsp;	 *
+&nbsp;	 * @return the ID of the node
+&nbsp;	 */
+&nbsp;	String getId();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Is the node hidden?
+&nbsp;	 *
+&nbsp;	 * @return true if the node is hidden, false otherwise
+&nbsp;	 */
+&nbsp;	boolean isHidden();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the hidden status of the node.
+&nbsp;	 *
+&nbsp;	 * @param hidden the new hidden status of the node
+&nbsp;	 */
+&nbsp;	void setHidden(boolean hidden);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Is the node enabled/active?
+&nbsp;	 *
+&nbsp;	 * @return true if the node is enabled, false otherwise
+&nbsp;	 */
+&nbsp;	boolean isEnabled();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the enabled status of the node.
+&nbsp;	 *
+&nbsp;	 * @param enabled the new enabled status of the node
+&nbsp;	 */
+&nbsp;	void setEnabled(boolean enabled);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the parent node of this node.
+&nbsp;	 *
+&nbsp;	 * @return the parent node of this node, or null if this node is the root NavigationModel
+&nbsp;	 */
+&nbsp;	NavigationNode getParent();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the parent of this node.
+&nbsp;	 *
+&nbsp;	 * @param parent the new parent of this node
+&nbsp;	 */
+&nbsp;	void setParent(NavigationNode parent);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Is this node a parent of the specified node?
+&nbsp;	 *
+&nbsp;	 * @param node the node to check
+&nbsp;	 * @return true if this node is a direct or indirect parent of the specified node, false otherwise
+&nbsp;	 */
+&nbsp;	boolean isParent(NavigationNode node);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the depth of this node in the hierarchy. The root NavigationModel has depth 0, all other nodes have a depth
+&nbsp;	 * equal to the depth of their parent + 1.
+&nbsp;	 *
+&nbsp;	 * @return the depth of the node in the hierarhcy
+&nbsp;	 */
+&nbsp;	int getDepth();
+&nbsp;
+&nbsp;	String getPathPrefix();
+&nbsp;
+&nbsp;	String getPathSeparator();
+&nbsp;
+&nbsp;	String getPath();
+&nbsp;
+&nbsp;	void setPath(String path);
+&nbsp;
+&nbsp;	String getIconPrefix();
+&nbsp;
+&nbsp;	String getIconSeparator();
+&nbsp;
+&nbsp;	String getIconSuffix();
+&nbsp;
+&nbsp;	String getIcon();
+&nbsp;
+&nbsp;	void setIcon(String icon);
+&nbsp;
+&nbsp;	String getI18nPrefix();
+&nbsp;
+&nbsp;	String getI18nSeparator();
+&nbsp;
+&nbsp;	String getI18nSuffix();
+&nbsp;
+&nbsp;	String getI18n();
+&nbsp;
+&nbsp;	void setI18n(String i18n);
+&nbsp;
+&nbsp;	String getViewSuffix();
+&nbsp;
+&nbsp;	void setViewSuffix(String suffix);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

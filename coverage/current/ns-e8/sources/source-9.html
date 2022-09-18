@@ -1,0 +1,774 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Expressions</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.constraint</a>
+</div>
+
+<h1>Coverage Summary for Class: Expressions (org.eclipse.rdf4j.sparqlbuilder.constraint)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Expressions</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/65)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.constraint;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.ABS;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.BNODE;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.BOUND;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CEIL;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.COALESCE;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.CONCAT;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlFunction.REGEX;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.*;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.EmptyPropertyPathBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPathBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Assignable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfLiteral;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfValue;
+&nbsp;
+&nbsp;/**
+&nbsp; * A class with static methods to create SPARQL expressions. Obviously there&#39;s some more flushing out TODO still
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#SparqlOps&quot;&gt; SPARQL Function Definitions&lt;/a&gt;
+&nbsp; */
+&nbsp;public class Expressions {
+&nbsp;	private Expressions() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;ABS(operand&lt;/code&gt;)
+&nbsp;	 *
+&nbsp;	 * @param operand the argument to the absolute value function
+&nbsp;	 * @return an ABS() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-abs&quot;&gt; SPARQL ABS Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; abs(Number operand) {
+<b class="nc">&nbsp;		return abs(Rdf.literalOf(operand));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;ABS(operand&lt;/code&gt;)
+&nbsp;	 *
+&nbsp;	 * @param operand the argument to the absolute value function
+&nbsp;	 * @return an ABS() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-abs&quot;&gt; SPARQL ABS Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; abs(Operand operand) {
+<b class="nc">&nbsp;		return function(ABS, operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;BNODE()&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @return a no-arg BNODE() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-bnode&quot;&gt; SPARQL BNODE Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; bnode() {
+<b class="nc">&nbsp;		return function(BNODE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;BNODE(operand)&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param literal the RDF literal argument to the function
+&nbsp;	 * @return a BNODE() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-bnode&quot;&gt; SPARQL BNODE Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; bnode(RdfLiteral&lt;?&gt; literal) {
+<b class="nc">&nbsp;		return function(BNODE, literal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;BNODE(operand)&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param literal the String literal argument to the function
+&nbsp;	 * @return a BNODE() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-bnode&quot;&gt; SPARQL BNODE Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; bnode(String literal) {
+<b class="nc">&nbsp;		return function(BNODE, Rdf.literalOf(literal));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;BOUND(operand)&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param var the SPARQL variable argument to the function
+&nbsp;	 * @return a BOUND() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-bound&quot;&gt; SPARQL BOUND Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; bound(Variable var) {
+<b class="nc">&nbsp;		return function(BOUND, var);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;CEIL(operand)&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operand the argument to the function
+&nbsp;	 * @return a CEIL() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-ceil&quot;&gt; SPARQL CEIL Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; ceil(Operand operand) {
+<b class="nc">&nbsp;		return function(CEIL, operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;COALESCE(operand1, operand2, ... , operandN)&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments to the function
+&nbsp;	 * @return a COALESCE() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-coalesce&quot;&gt; SPARQL COALESCE Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; coalesce(Operand... operands) {
+<b class="nc">&nbsp;		return function(COALESCE, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;CONCAT(operand1, operand2, ... , operandN)&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments to the function
+&nbsp;	 * @return a CONCAT() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-concat&quot;&gt; SPARQL CONCAT Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; concat(Operand... operands) {
+<b class="nc">&nbsp;		return function(CONCAT, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;REGEX(testString, pattern)&lt;code&gt;
+&nbsp;	 *
+&nbsp;	 * @param testString the text to match against
+&nbsp;	 * @param pattern    the regex pattern to match
+&nbsp;	 * @return a REGEX() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-regex&quot;&gt; SPARQL REGEX Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; regex(Operand testString, String pattern) {
+<b class="nc">&nbsp;		return regex(testString, Rdf.literalOf(pattern));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;REGEX(testString, pattern, flags)&lt;code&gt;
+&nbsp;	 *
+&nbsp;	 * @param testString the text to match against
+&nbsp;	 * @param pattern    the regular expression pattern to match
+&nbsp;	 * @param flags      flags to specify matching options
+&nbsp;	 * @return a REGEX() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-regex&quot;&gt; SPARQL REGEX Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; regex(Operand testString, String pattern, String flags) {
+<b class="nc">&nbsp;		return regex(testString, Rdf.literalOf(pattern), Rdf.literalOf(flags));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;REGEX(testString, pattern)&lt;code&gt;
+&nbsp;	 *
+&nbsp;	 * @param testString the text to match against
+&nbsp;	 * @param pattern    the regex pattern to match
+&nbsp;	 * @return a REGEX() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-regex&quot;&gt; SPARQL REGEX Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; regex(Operand testString, Operand pattern) {
+<b class="nc">&nbsp;		return function(REGEX, testString, pattern);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;REGEX(testString, pattern, flags)&lt;code&gt;
+&nbsp;	 *
+&nbsp;	 * @param testString the text to match against
+&nbsp;	 * @param pattern    the regular expression pattern to match
+&nbsp;	 * @param flags      flags to specify matching options
+&nbsp;	 * @return a REGEX() function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-regex&quot;&gt; SPARQL REGEX Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; regex(Operand testString, Operand pattern, Operand flags) {
+<b class="nc">&nbsp;		return function(REGEX, testString, pattern, flags);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@code STR(literal)} or {@code STR(iri)}
+&nbsp;	 *
+&nbsp;	 * @param operand the arg to convert to a string
+&nbsp;	 *
+&nbsp;	 * @return a {@code STR()} function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#func-str&quot;&gt; SPARQL STR Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; str(Operand operand) {
+<b class="nc">&nbsp;		return function(SparqlFunction.STRING, operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; custom(Iri functionIri, Operand... operands) {
+<b class="nc">&nbsp;		return new CustomFunction(functionIri).addOperand(operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; custom(IRI functionIri, Operand... operands) {
+<b class="nc">&nbsp;		return new CustomFunction(functionIri).addOperand(operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@code operand IN (expression1, expression2...)}
+&nbsp;	 *
+&nbsp;	 * @param searchTerm
+&nbsp;	 * @param expressions
+&nbsp;	 * @return an {@code IN} function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-query/#func-in&quot;&gt;SPARQL IN Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; in(Operand searchTerm, Operand... expressions) {
+<b class="nc">&nbsp;		return new In(searchTerm, expressions);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@code operand NOT IN (expression1, expression2...)}
+&nbsp;	 *
+&nbsp;	 * @param searchTerm
+&nbsp;	 * @param expressions
+&nbsp;	 * @return an {@code NOT IN} function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-query/#func-not-in&quot;&gt;SPARQL NOT IN Function&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; notIn(Operand searchTerm, Operand... expressions) {
+<b class="nc">&nbsp;		return new In(searchTerm, false, expressions);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// ... etc...
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Too lazy at the moment. Make the rest of the functions this way for now.
+&nbsp;	 *
+&nbsp;	 * @param function a SPARQL Function
+&nbsp;	 * @param operands arguments to the function
+&nbsp;	 * @return a function object of the given &lt;code&gt;function&lt;/code&gt; type and &lt;code&gt;operands&lt;/code&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; function(SparqlFunction function, Operand... operands) {
+<b class="nc">&nbsp;		return new Function(function).addOperand(operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;!operand&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operand argument to the function
+&nbsp;	 * @return logical not operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; not(Operand operand) {
+<b class="nc">&nbsp;		return unaryExpression(UnaryOperator.NOT, operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;+operand&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operand argument to the function
+&nbsp;	 * @return unary plus operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; plus(Operand operand) {
+<b class="nc">&nbsp;		return unaryExpression(UnaryOperator.UNARY_PLUS, operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;-operand&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operand argument to the function
+&nbsp;	 * @return unary minus operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; minus(Operand operand) {
+<b class="nc">&nbsp;		return unaryExpression(UnaryOperator.UNARY_MINUS, operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static UnaryOperation unaryExpression(UnaryOperator operator, Operand operand) {
+<b class="nc">&nbsp;		return new UnaryOperation(operator).addOperand(operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left = right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical equals operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; equals(Operand left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.EQUALS, left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left != right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical not equals operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; notEquals(Operand left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.NOT_EQUALS, left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; notEquals(Variable left, RdfValue right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.NOT_EQUALS, left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; notEquals(Variable left, IRI right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.NOT_EQUALS, left, iri(right));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &gt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical greater than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; gt(Number left, Number right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.GREATER_THAN, Rdf.literalOf(left), Rdf.literalOf(right));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &gt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical greater than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; gt(Number left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.GREATER_THAN, Rdf.literalOf(left), right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &gt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical greater than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; gt(Operand left, Number right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.GREATER_THAN, left, Rdf.literalOf(right));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &gt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical greater than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; gt(Operand left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.GREATER_THAN, left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &gt;= right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical greater than or equals operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; gte(Operand left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.GREATER_THAN_EQUALS, left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &lt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical less than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; lt(Number left, Number right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.LESS_THAN, Rdf.literalOf(left), Rdf.literalOf(right));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &lt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical less than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; lt(Number left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.LESS_THAN, Rdf.literalOf(left), right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &lt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical less than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; lt(Operand left, Number right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.LESS_THAN, left, Rdf.literalOf(right));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &lt; right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical less than operation
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; lt(Operand left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.LESS_THAN, left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;left &lt;= right&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param left  the left operand
+&nbsp;	 * @param right the right operand
+&nbsp;	 * @return logical less than or equals operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; lte(Operand left, Operand right) {
+<b class="nc">&nbsp;		return binaryExpression(BinaryOperator.LESS_THAN_EQUALS, left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static BinaryOperation binaryExpression(BinaryOperator operator, Operand op1, Operand op2) {
+<b class="nc">&nbsp;		BinaryOperation op = new BinaryOperation(operator);</b>
+&nbsp;
+<b class="nc">&nbsp;		op.addOperand(op1).addOperand(op2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return op;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;operand1 &amp;&amp; operand2 &amp;&amp; ... operandN&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments
+&nbsp;	 * @return logical and operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; and(Operand... operands) {
+<b class="nc">&nbsp;		return connectiveExpression(ConnectiveOperator.AND, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;operand1 || operand2 || ... || operandN&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments
+&nbsp;	 * @return logical or operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; or(Operand... operands) {
+<b class="nc">&nbsp;		return connectiveExpression(ConnectiveOperator.OR, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;operand1 + operand2 + ... + operandN&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments
+&nbsp;	 * @return arithmetic addition operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; add(Operand... operands) {
+<b class="nc">&nbsp;		return connectiveExpression(ConnectiveOperator.ADD, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;operand1 - operand2 - ... - operandN&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments
+&nbsp;	 * @return arithmetic subtraction operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; subtract(Operand... operands) {
+<b class="nc">&nbsp;		return connectiveExpression(ConnectiveOperator.SUBTRACT, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;operand1 * operand2 * ... * operandN&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments
+&nbsp;	 * @return arithmetic multiplication operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; multiply(Operand... operands) {
+<b class="nc">&nbsp;		return connectiveExpression(ConnectiveOperator.MULTIPLY, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;code&gt;operand1 / operand2 / ... / operandN&lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * @param operands the arguments
+&nbsp;	 * @return arithmetic division operation
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#OperatorMapping&quot;&gt;SPARQL Operators&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Expression&lt;?&gt; divide(Operand... operands) {
+<b class="nc">&nbsp;		return connectiveExpression(ConnectiveOperator.DIVIDE, operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static ConnectiveOperation connectiveExpression(ConnectiveOperator operator, Operand... operands) {
+<b class="nc">&nbsp;		ConnectiveOperation op = new ConnectiveOperation(operator);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Operand operand : operands) {</b>
+<b class="nc">&nbsp;			op.addOperand(operand);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return op;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Aggregates
+&nbsp;	 */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@code avg(...)}
+&nbsp;	 *
+&nbsp;	 * @param operand the expression to average
+&nbsp;	 * @return an avg aggregate function
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#aggregates&quot;&gt; SPARQL aggregates&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Aggregate avg(Operand operand) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.AVG).addOperand(operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@code count()}
+&nbsp;	 *
+&nbsp;	 * @param operand the expression to count
+&nbsp;	 * @return a count aggregate
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#aggregates&quot;&gt; SPARQL aggregates&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static Aggregate count(Operand operand) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.COUNT).addOperand(operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Aggregate countAll() {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.COUNT).countAll();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Aggregate group_concat(Operand... operands) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.GROUP_CONCAT).addOperand(operands);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Aggregate group_concat(String separator, Operand... operands) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.GROUP_CONCAT).addOperand(operands).separator(separator);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Aggregate max(Operand operand) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.MAX).addOperand(operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Aggregate min(Operand operand) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.MIN).addOperand(operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Aggregate sample(Operand operand) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.SAMPLE).addOperand(operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Aggregate sum(Operand operand) {
+<b class="nc">&nbsp;		return new Aggregate(SparqlAggregate.SUM).addOperand(operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Bind bind(Assignable exp, Variable var) {
+<b class="nc">&nbsp;		return new Bind(exp, var);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; notIn(Variable var, RdfValue... options) {
+<b class="nc">&nbsp;		return new NotIn(var, options);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; notIn(Variable var, IRI... options) {
+<b class="nc">&nbsp;		return notIn(var, parseIRIOptionsToRDFValueVarargs(options));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; in(Variable var, RdfValue... options) {
+<b class="nc">&nbsp;		return new In(var, options);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; in(Variable var, IRI... options) {
+<b class="nc">&nbsp;		return in(var, parseIRIOptionsToRDFValueVarargs(options));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; strdt(Operand lexicalForm, Operand datatype) {
+<b class="nc">&nbsp;		return function(SparqlFunction.STRDT, lexicalForm, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; strlen(Operand operand) {
+<b class="nc">&nbsp;		return function(SparqlFunction.STRLEN, operand);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; isBlank(Variable var) {
+<b class="nc">&nbsp;		return function(SparqlFunction.IS_BLANK, var);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; datatype(Variable var) {
+<b class="nc">&nbsp;		return function(SparqlFunction.DATATYPE, var);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Expression&lt;?&gt; iff(Operand testExp, Operand thenExp, Operand elseExp) {
+<b class="nc">&nbsp;		return function(SparqlFunction.IF, testExp, thenExp, elseExp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses IRI... options to RdfValue... options to give more flexibility in expressions use
+&nbsp;	 *
+&nbsp;	 * @param options options as IRIs
+&nbsp;	 * @return options as RDFValues
+&nbsp;	 */
+&nbsp;	private static RdfValue[] parseIRIOptionsToRDFValueVarargs(IRI... options) {
+<b class="nc">&nbsp;		List&lt;RdfValue&gt; rdfValueOptions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (IRI option : options) {</b>
+<b class="nc">&nbsp;			rdfValueOptions.add(iri(option));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return rdfValueOptions.toArray(new RdfValue[0]);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

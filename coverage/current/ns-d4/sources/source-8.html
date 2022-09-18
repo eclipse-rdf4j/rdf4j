@@ -1,0 +1,128 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NodeListener</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.btree</a>
+</div>
+
+<h1>Coverage Summary for Class: NodeListener (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">NodeListener</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.btree;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;interface NodeListener {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Signals to registered node listeners that a value has been added to a node.
+&nbsp;	 *
+&nbsp;	 * @param node  The node which the value has been added to.
+&nbsp;	 * @param index The index where the value was inserted.
+&nbsp;	 * @return Indicates whether the node listener should be deregistered as a result of this event.
+&nbsp;	 */
+&nbsp;	boolean valueAdded(Node node, int index);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Signals to registered node listeners that a value has been removed from a node.
+&nbsp;	 *
+&nbsp;	 * @param node  The node which the value has been removed from.
+&nbsp;	 * @param index The index where the value was removed.
+&nbsp;	 * @return Indicates whether the node listener should be deregistered as a result of this event.
+&nbsp;	 */
+&nbsp;	boolean valueRemoved(Node node, int index);
+&nbsp;
+&nbsp;	boolean rotatedLeft(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
+&nbsp;
+&nbsp;	boolean rotatedRight(Node node, int index, Node leftChildNode, Node rightChildNode) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Signals to registered node listeners that a node has been split.
+&nbsp;	 *
+&nbsp;	 * @param node      The node which has been split.
+&nbsp;	 * @param newNode   The newly allocated node containing the &quot;right&quot; half of the values.
+&nbsp;	 * @param medianIdx The index where the node has been split. The value at this index has been moved to the node&#39;s
+&nbsp;	 *                  parent.
+&nbsp;	 * @return Indicates whether the node listener should be deregistered as a result of this event.
+&nbsp;	 */
+&nbsp;	boolean nodeSplit(Node node, Node newNode, int medianIdx) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Signals to registered node listeners that two nodes have been merged. All values from the source node have been
+&nbsp;	 * appended to the value of the target node.
+&nbsp;	 *
+&nbsp;	 * @param sourceNode The node that donated its values to the target node.
+&nbsp;	 * @param targetNode The node in which the values have been merged.
+&nbsp;	 * @param mergeIdx   The index of &lt;var&gt;sourceNode&lt;/var&gt;&#39;s values in &lt;var&gt;targetNode&lt;/var&gt; .
+&nbsp;	 * @return Indicates whether the node listener should be deregistered with the &lt;em&gt;source node&lt;/em&gt; as a result of
+&nbsp;	 *         this event.
+&nbsp;	 */
+&nbsp;	boolean nodeMergedWith(Node sourceNode, Node targetNode, int mergeIdx) throws IOException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

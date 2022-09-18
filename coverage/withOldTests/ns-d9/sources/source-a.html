@@ -1,0 +1,316 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlFragment</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlFragment (org.eclipse.rdf4j.sail.shacl.ast)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlFragment</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/87)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent.VALUES_INJECTION_POINT;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+<b class="nc">&nbsp;public class SparqlFragment {</b>
+&nbsp;
+<b class="nc">&nbsp;	final static Pattern REGEX_INDENT = Pattern.compile(&quot;(?m)^&quot;);</b>
+&nbsp;
+&nbsp;	private final String fragment;
+<b class="nc">&nbsp;	private final List&lt;String&gt; unionFragments = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private boolean filterCondition;
+&nbsp;	private boolean bgp;
+&nbsp;	private boolean union;
+&nbsp;
+&nbsp;	// This is currently experimental!
+&nbsp;	private static final boolean USE_UNION_PRESERVING_JOIN = false;
+&nbsp;
+<b class="nc">&nbsp;	private final List&lt;StatementMatcher&gt; statementMatchers = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private SparqlFragment(List&lt;String&gt; unionFragments, List&lt;StatementMatcher&gt; statementMatchers) {</b>
+<b class="nc">&nbsp;		this.fragment = null;</b>
+<b class="nc">&nbsp;		this.unionFragments.addAll(unionFragments);</b>
+<b class="nc">&nbsp;		this.union = true;</b>
+<b class="nc">&nbsp;		this.statementMatchers.addAll(statementMatchers);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private SparqlFragment(String fragment, boolean filterCondition, boolean bgp,
+<b class="nc">&nbsp;			List&lt;StatementMatcher&gt; statementMatchers) {</b>
+<b class="nc">&nbsp;		this.fragment = fragment;</b>
+<b class="nc">&nbsp;		this.filterCondition = filterCondition;</b>
+<b class="nc">&nbsp;		this.bgp = bgp;</b>
+<b class="nc">&nbsp;		this.statementMatchers.addAll(statementMatchers);</b>
+&nbsp;
+<b class="nc">&nbsp;		assert filterCondition != bgp;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static SparqlFragment filterCondition(String fragment, List&lt;StatementMatcher&gt; statementMatchers) {
+<b class="nc">&nbsp;		return new SparqlFragment(fragment, true, false, statementMatchers);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static SparqlFragment bgp(String fragment, List&lt;StatementMatcher&gt; statementMatchers) {
+<b class="nc">&nbsp;		return new SparqlFragment(fragment, false, true, statementMatchers);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static SparqlFragment and(List&lt;SparqlFragment&gt; sparqlFragments) {
+<b class="nc">&nbsp;		String collect = sparqlFragments.stream()</b>
+<b class="nc">&nbsp;				.peek(s -&gt; {</b>
+<b class="nc">&nbsp;					assert s.filterCondition;</b>
+&nbsp;				})
+<b class="nc">&nbsp;				.map(SparqlFragment::getFragment)</b>
+<b class="nc">&nbsp;				.collect(Collectors.joining(&quot; ) &amp;&amp; ( &quot;, &quot;( &quot;,</b>
+&nbsp;						&quot; )&quot;));
+&nbsp;
+<b class="nc">&nbsp;		return filterCondition(collect,</b>
+<b class="nc">&nbsp;				getStatementMatchers(sparqlFragments));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static SparqlFragment or(List&lt;SparqlFragment&gt; sparqlFragments) {
+<b class="nc">&nbsp;		String collect = sparqlFragments.stream()</b>
+<b class="nc">&nbsp;				.peek(s -&gt; {</b>
+<b class="nc">&nbsp;					assert s.filterCondition;</b>
+&nbsp;				})
+<b class="nc">&nbsp;				.map(SparqlFragment::getFragment)</b>
+<b class="nc">&nbsp;				.collect(Collectors.joining(&quot; ) || ( &quot;, &quot;( &quot;,</b>
+&nbsp;						&quot; )&quot;));
+&nbsp;
+<b class="nc">&nbsp;		return filterCondition(collect,</b>
+<b class="nc">&nbsp;				getStatementMatchers(sparqlFragments));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static SparqlFragment join(List&lt;SparqlFragment&gt; sparqlFragments) {
+&nbsp;
+<b class="nc">&nbsp;		if (USE_UNION_PRESERVING_JOIN &amp;&amp; sparqlFragments.stream().anyMatch(s1 -&gt; s1.union)) {</b>
+&nbsp;			return unionPreservingJoin(sparqlFragments);
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			String collect = sparqlFragments.stream()</b>
+<b class="nc">&nbsp;					.peek(s -&gt; {</b>
+<b class="nc">&nbsp;						assert !s.filterCondition;</b>
+&nbsp;					})
+<b class="nc">&nbsp;					.map(SparqlFragment::getFragment)</b>
+<b class="nc">&nbsp;					.reduce((a, b) -&gt; a + &quot;\n&quot; + b)</b>
+<b class="nc">&nbsp;					.orElse(&quot;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			return bgp(collect, getStatementMatchers(sparqlFragments));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static SparqlFragment unionPreservingJoin(List&lt;SparqlFragment&gt; sparqlFragments) {
+<b class="nc">&nbsp;		List&lt;String&gt; workingSet = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		SparqlFragment firstSparqlFragment = sparqlFragments.get(0);</b>
+<b class="nc">&nbsp;		if (firstSparqlFragment.union) {</b>
+<b class="nc">&nbsp;			workingSet.addAll(firstSparqlFragment.unionFragments);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			assert firstSparqlFragment.bgp;</b>
+<b class="nc">&nbsp;			workingSet.add(firstSparqlFragment.fragment);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 1; i &lt; sparqlFragments.size(); i++) {</b>
+<b class="nc">&nbsp;			SparqlFragment sparqlFragment = sparqlFragments.get(i);</b>
+<b class="nc">&nbsp;			if (sparqlFragment.union) {</b>
+&nbsp;
+<b class="nc">&nbsp;				List&lt;String&gt; newWorkingSet = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;				for (String unionFragment : sparqlFragment.unionFragments) {</b>
+<b class="nc">&nbsp;					for (String workingSetFragment : workingSet) {</b>
+<b class="nc">&nbsp;						newWorkingSet.add(workingSetFragment + &quot;\n&quot; + unionFragment);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				workingSet = newWorkingSet;</b>
+&nbsp;
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				assert sparqlFragment.bgp;</b>
+<b class="nc">&nbsp;				workingSet = workingSet</b>
+<b class="nc">&nbsp;						.stream()</b>
+<b class="nc">&nbsp;						.map(s -&gt; sparqlFragment.fragment + &quot;\n&quot; + s)</b>
+<b class="nc">&nbsp;						.collect(Collectors.toList());</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		SparqlFragment union = union(workingSet.toArray(new String[0]));</b>
+<b class="nc">&nbsp;		union.addStatementMatchers(getStatementMatchers(sparqlFragments));</b>
+<b class="nc">&nbsp;		return union;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isFilterCondition(List&lt;SparqlFragment&gt; sparqlFragments) {
+<b class="nc">&nbsp;		boolean isFilterCondtion = sparqlFragments</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.anyMatch(SparqlFragment::isFilterCondition);</b>
+&nbsp;
+<b class="nc">&nbsp;		assert !isFilterCondtion || sparqlFragments.stream().allMatch(SparqlFragment::isFilterCondition);</b>
+&nbsp;
+<b class="nc">&nbsp;		return isFilterCondtion;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static SparqlFragment union(List&lt;SparqlFragment&gt; sparqlFragments) {
+<b class="nc">&nbsp;		List&lt;String&gt; sparqlFragmentString = sparqlFragments</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.map(SparqlFragment::getFragment)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;		return new SparqlFragment(sparqlFragmentString, getStatementMatchers(sparqlFragments));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static List&lt;StatementMatcher&gt; getStatementMatchers(List&lt;SparqlFragment&gt; sparqlFragments) {
+<b class="nc">&nbsp;		return sparqlFragments</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.flatMap(s -&gt; s.statementMatchers.stream())</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static SparqlFragment union(String... query) {
+<b class="nc">&nbsp;		return new SparqlFragment(Arrays.asList(query), Collections.emptyList());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getFragment() {
+<b class="nc">&nbsp;		if (union) {</b>
+<b class="nc">&nbsp;			return unionFragments.stream()</b>
+<b class="nc">&nbsp;					.collect(</b>
+<b class="nc">&nbsp;							Collectors.joining(</b>
+&nbsp;									&quot;\n} UNION {\n&quot; + VALUES_INJECTION_POINT + &quot;\n&quot;,
+&nbsp;									&quot;{\n&quot; + VALUES_INJECTION_POINT + &quot;\n&quot;,
+&nbsp;									&quot;\n}&quot;));
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return fragment;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isFilterCondition() {
+<b class="nc">&nbsp;		return filterCondition;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;StatementMatcher&gt; getStatementMatchers() {
+<b class="nc">&nbsp;		return statementMatchers;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addStatementMatchers(List&lt;StatementMatcher&gt; statementMatchers) {
+<b class="nc">&nbsp;		this.statementMatchers.addAll(statementMatchers);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

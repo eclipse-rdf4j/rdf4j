@@ -1,0 +1,515 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.commands</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryServlet (org.eclipse.rdf4j.workbench.commands)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/72)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/172)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.commands;
+&nbsp;
+&nbsp;import java.io.BufferedWriter;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.PrintWriter;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.WeakHashMap;
+&nbsp;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+&nbsp;import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.repository.http.HTTPRepository;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.QueryEvaluator;
+&nbsp;import org.eclipse.rdf4j.workbench.util.QueryStorage;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.fasterxml.jackson.databind.ObjectMapper;
+&nbsp;import com.fasterxml.jackson.databind.node.ObjectNode;
+&nbsp;
+<b class="nc">&nbsp;public class QueryServlet extends TransformationServlet {</b>
+&nbsp;
+&nbsp;	protected static final String REF = &quot;ref&quot;;
+&nbsp;
+&nbsp;	protected static final String LIMIT = &quot;limit_query&quot;;
+&nbsp;
+&nbsp;	private static final String QUERY_LN = &quot;queryLn&quot;;
+&nbsp;
+&nbsp;	private static final String INFER = &quot;infer&quot;;
+&nbsp;
+&nbsp;	private static final String ACCEPT = &quot;Accept&quot;;
+&nbsp;
+&nbsp;	protected static final String QUERY = &quot;query&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private static final String[] EDIT_PARAMS = new String[] { QUERY_LN, QUERY, INFER, LIMIT };</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger LOGGER = LoggerFactory.getLogger(QueryServlet.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final QueryEvaluator EVAL = QueryEvaluator.INSTANCE;</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final ObjectMapper mapper = new ObjectMapper();</b>
+&nbsp;
+&nbsp;	private QueryStorage storage;
+&nbsp;
+&nbsp;	protected boolean writeQueryCookie;
+&nbsp;
+&nbsp;	// Poor Man&#39;s Cache: At the very least, garbage collection can clean up keys
+&nbsp;	// followed by values whenever the JVM faces memory pressure.
+<b class="nc">&nbsp;	private static Map&lt;String, String&gt; queryCache = Collections.synchronizedMap(new WeakHashMap&lt;&gt;());</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * For testing purposes only.
+&nbsp;	 *
+&nbsp;	 * @param testQueryCache cache to use instead of the production cache instance
+&nbsp;	 */
+&nbsp;	protected static void substituteQueryCache(Map&lt;String, String&gt; testQueryCache) {
+<b class="nc">&nbsp;		queryCache = testQueryCache;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void substituteQueryStorage(QueryStorage storage) {
+<b class="nc">&nbsp;		this.storage = storage;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the names of the cookies that will be retrieved from the request, and returned in the response
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String[] getCookieNames() {
+&nbsp;		String[] result;
+<b class="nc">&nbsp;		if (writeQueryCookie) {</b>
+<b class="nc">&nbsp;			result = new String[] { QUERY, REF, LIMIT, QUERY_LN, INFER, &quot;total_result_count&quot;, &quot;show-datatypes&quot; };</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			result = new String[] { REF, LIMIT, QUERY_LN, INFER, &quot;total_result_count&quot;, &quot;show-datatypes&quot; };</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize this instance of the servlet.
+&nbsp;	 *
+&nbsp;	 * @param config configuration passed in by the application container
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void init(final ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		super.init(config);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			this.storage = QueryStorage.getSingletonInstance(this.appConfig);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new ServletException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() {
+<b class="nc">&nbsp;		this.storage.shutdown();</b>
+<b class="nc">&nbsp;		super.destroy();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Long query strings could blow past the Tomcat default 8k HTTP header limit if stuffed into a cookie. In this
+&nbsp;	 * case, we need to set a flag to avoid this happening before
+&nbsp;	 * {@link TransformationServlet#service(HttpServletRequest, HttpServletResponse)} is called. A much lower limit on
+&nbsp;	 * the size of the query text is used to stay well below the Tomcat limitation.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public final void service(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws ServletException, IOException {
+<b class="nc">&nbsp;		this.writeQueryCookie = shouldWriteQueryCookie(req.getParameter(QUERY));</b>
+<b class="nc">&nbsp;		super.service(req, resp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Determines if the servlet should write out the query text into a cookie as received, or write it&#39;s hash instead.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note: This is a separate method for testing purposes.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param queryText the text received as the value for the parameter &#39;query&#39;
+&nbsp;	 */
+&nbsp;	protected boolean shouldWriteQueryCookie(String queryText) {
+<b class="nc">&nbsp;		return (null == queryText || queryText.length() &lt;= 2048);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void service(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+&nbsp;			throws IOException, RDF4JException, BadRequestException {
+<b class="nc">&nbsp;		if (!writeQueryCookie) {</b>
+&nbsp;			// If we suppressed putting the query text into the cookies before.
+<b class="nc">&nbsp;			cookies.addCookie(req, resp, REF, &quot;hash&quot;);</b>
+<b class="nc">&nbsp;			String queryValue = req.getParameter(QUERY);</b>
+<b class="nc">&nbsp;			String hash = String.valueOf(queryValue.hashCode());</b>
+<b class="nc">&nbsp;			queryCache.put(hash, queryValue);</b>
+<b class="nc">&nbsp;			cookies.addCookie(req, resp, QUERY, hash);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (&quot;get&quot;.equals(req.getParameter(&quot;action&quot;))) {</b>
+<b class="nc">&nbsp;			ObjectNode jsonObject = mapper.createObjectNode();</b>
+<b class="nc">&nbsp;			jsonObject.put(&quot;queryText&quot;, getQueryText(req));</b>
+<b class="nc">&nbsp;			PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				writer.write(mapper.writeValueAsString(jsonObject));</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				writer.flush();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			handleStandardBrowserRequest(req, resp, xslPath);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void handleStandardBrowserRequest(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+&nbsp;			throws IOException, RDF4JException, QueryResultHandlerException {
+<b class="nc">&nbsp;		setContentType(req, resp);</b>
+<b class="nc">&nbsp;		OutputStream out = resp.getOutputStream();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			service(req, resp, out, xslPath);</b>
+<b class="nc">&nbsp;		} catch (BadRequestException | HTTPQueryEvaluationException exc) {</b>
+<b class="nc">&nbsp;			LOGGER.warn(exc.toString(), exc);</b>
+<b class="nc">&nbsp;			TupleResultBuilder builder = getTupleResultBuilder(req, resp, out);</b>
+<b class="nc">&nbsp;			builder.transform(xslPath, &quot;query.xsl&quot;);</b>
+<b class="nc">&nbsp;			builder.start(&quot;error-message&quot;);</b>
+<b class="nc">&nbsp;			builder.link(Arrays.asList(INFO, &quot;namespaces&quot;));</b>
+<b class="nc">&nbsp;			builder.result(exc.getMessage());</b>
+<b class="nc">&nbsp;			builder.end();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			out.flush();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp, final String xslPath)
+&nbsp;			throws IOException, BadRequestException, RDF4JException {
+<b class="nc">&nbsp;		final String action = req.getParameter(&quot;action&quot;);</b>
+<b class="nc">&nbsp;		if (&quot;save&quot;.equals(action)) {</b>
+<b class="nc">&nbsp;			saveQuery(req, resp);</b>
+<b class="nc">&nbsp;		} else if (&quot;edit&quot;.equals(action)) {</b>
+<b class="nc">&nbsp;			if (canReadSavedQuery(req)) {</b>
+&nbsp;				/*
+&nbsp;				 * only need read access for edit action, since we are only reading the saved query text to present it
+&nbsp;				 * in the editor
+&nbsp;				 */
+<b class="nc">&nbsp;				final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;				builder.transform(xslPath, &quot;query.xsl&quot;);</b>
+<b class="nc">&nbsp;				builder.start(EDIT_PARAMS);</b>
+<b class="nc">&nbsp;				builder.link(Arrays.asList(INFO, &quot;namespaces&quot;));</b>
+<b class="nc">&nbsp;				final String queryLn = req.getParameter(EDIT_PARAMS[0]);</b>
+<b class="nc">&nbsp;				final String query = getQueryText(req);</b>
+<b class="nc">&nbsp;				final Boolean infer = Boolean.valueOf(req.getParameter(EDIT_PARAMS[2]));</b>
+<b class="nc">&nbsp;				final Literal limit = SimpleValueFactory.getInstance()</b>
+<b class="nc">&nbsp;						.createLiteral(req.getParameter(EDIT_PARAMS[3]), XSD.INTEGER);</b>
+<b class="nc">&nbsp;				builder.result(queryLn, query, infer, limit);</b>
+<b class="nc">&nbsp;				builder.end();</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				throw new BadRequestException(&quot;Current user may not read the given query.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (&quot;exec&quot;.equals(action)) {</b>
+<b class="nc">&nbsp;			if (canReadSavedQuery(req)) {</b>
+<b class="nc">&nbsp;				service(req, resp, xslPath);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new BadRequestException(&quot;Current user may not read the given query.&quot;);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new BadRequestException(&quot;POST with unexpected action parameter value: &quot; + action);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void saveQuery(final WorkbenchRequest req, final HttpServletResponse resp)
+&nbsp;			throws IOException, BadRequestException, RDF4JException {
+<b class="nc">&nbsp;		resp.setContentType(&quot;application/json&quot;);</b>
+<b class="nc">&nbsp;		ObjectNode jsonObject = mapper.createObjectNode();</b>
+<b class="nc">&nbsp;		jsonObject.put(&quot;queryText&quot;, getQueryText(req));</b>
+&nbsp;
+<b class="nc">&nbsp;		final HTTPRepository http = (HTTPRepository) repository;</b>
+<b class="nc">&nbsp;		final boolean accessible = storage.checkAccess(http);</b>
+<b class="nc">&nbsp;		jsonObject.put(&quot;accessible&quot;, accessible);</b>
+<b class="nc">&nbsp;		if (accessible) {</b>
+<b class="nc">&nbsp;			final String queryName = req.getParameter(&quot;query-name&quot;);</b>
+<b class="nc">&nbsp;			String userName = getUserNameFromParameter(req, SERVER_USER);</b>
+<b class="nc">&nbsp;			final boolean existed = storage.askExists(http, queryName, userName);</b>
+<b class="nc">&nbsp;			jsonObject.put(&quot;existed&quot;, existed);</b>
+<b class="nc">&nbsp;			final boolean written = Boolean.valueOf(req.getParameter(&quot;overwrite&quot;)) || !existed;</b>
+<b class="nc">&nbsp;			if (written) {</b>
+<b class="nc">&nbsp;				final boolean shared = !Boolean.valueOf(req.getParameter(&quot;save-private&quot;));</b>
+<b class="nc">&nbsp;				final QueryLanguage queryLanguage = QueryLanguage.valueOf(req.getParameter(QUERY_LN));</b>
+<b class="nc">&nbsp;				final String queryText = req.getParameter(QUERY);</b>
+<b class="nc">&nbsp;				final boolean infer = req.isParameterPresent(INFER) ? Boolean.valueOf(req.getParameter(INFER)) : false;</b>
+<b class="nc">&nbsp;				final int rowsPerPage = Integer.valueOf(req.getParameter(LIMIT));</b>
+<b class="nc">&nbsp;				if (existed) {</b>
+<b class="nc">&nbsp;					final IRI query = storage.selectSavedQuery(http, userName, queryName);</b>
+<b class="nc">&nbsp;					storage.updateQuery(query, userName, shared, queryLanguage, queryText, infer, rowsPerPage);</b>
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					storage.saveQuery(http, queryName, userName, shared, queryLanguage, queryText, infer, rowsPerPage);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			jsonObject.put(&quot;written&quot;, written);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final PrintWriter writer = new PrintWriter(new BufferedWriter(resp.getWriter()));</b>
+<b class="nc">&nbsp;		writer.write(mapper.writeValueAsString(jsonObject));</b>
+<b class="nc">&nbsp;		writer.flush();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getUserNameFromParameter(WorkbenchRequest req, String parameter) {
+<b class="nc">&nbsp;		String userName = req.getParameter(parameter);</b>
+<b class="nc">&nbsp;		if (null == userName) {</b>
+<b class="nc">&nbsp;			userName = &quot;&quot;;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return userName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setContentType(final WorkbenchRequest req, final HttpServletResponse resp) {
+<b class="nc">&nbsp;		String result = &quot;application/xml&quot;;</b>
+<b class="nc">&nbsp;		String ext = &quot;xml&quot;;</b>
+<b class="nc">&nbsp;		if (req.isParameterPresent(ACCEPT)) {</b>
+<b class="nc">&nbsp;			final String accept = req.getParameter(ACCEPT);</b>
+<b class="nc">&nbsp;			final Optional&lt;RDFFormat&gt; format = Rio.getWriterFormatForMIMEType(accept);</b>
+<b class="nc">&nbsp;			if (format.isPresent()) {</b>
+<b class="nc">&nbsp;				result = format.get().getDefaultMIMEType();</b>
+<b class="nc">&nbsp;				ext = format.get().getDefaultFileExtension();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				final Optional&lt;QueryResultFormat&gt; tupleFormat = QueryResultIO.getWriterFormatForMIMEType(accept);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (tupleFormat.isPresent()) {</b>
+<b class="nc">&nbsp;					result = tupleFormat.get().getDefaultMIMEType();</b>
+<b class="nc">&nbsp;					ext = tupleFormat.get().getDefaultFileExtension();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					final Optional&lt;QueryResultFormat&gt; booleanFormat = QueryResultIO</b>
+<b class="nc">&nbsp;							.getBooleanWriterFormatForMIMEType(accept);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (booleanFormat.isPresent()) {</b>
+<b class="nc">&nbsp;						result = booleanFormat.get().getDefaultMIMEType();</b>
+<b class="nc">&nbsp;						ext = booleanFormat.get().getDefaultFileExtension();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		resp.setContentType(result);</b>
+<b class="nc">&nbsp;		if (!result.equals(&quot;application/xml&quot;)) {</b>
+<b class="nc">&nbsp;			final String attachment = &quot;attachment; filename=query.&quot; + ext;</b>
+<b class="nc">&nbsp;			resp.setHeader(&quot;Content-disposition&quot;, attachment);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void service(final WorkbenchRequest req, final HttpServletResponse resp, final OutputStream out,
+&nbsp;			final String xslPath)
+&nbsp;			throws BadRequestException, RDF4JException, UnsupportedQueryResultFormatException, IOException {
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);</b>
+<b class="nc">&nbsp;			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;			for (Namespace ns : Iterations.asList(con.getNamespaces())) {</b>
+<b class="nc">&nbsp;				builder.prefix(ns.getPrefix(), ns.getName());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			String query = getQueryText(req);</b>
+<b class="nc">&nbsp;			if (query.isEmpty()) {</b>
+<b class="nc">&nbsp;				builder.transform(xslPath, &quot;query.xsl&quot;);</b>
+<b class="nc">&nbsp;				builder.start();</b>
+<b class="nc">&nbsp;				builder.link(Arrays.asList(INFO, &quot;namespaces&quot;));</b>
+<b class="nc">&nbsp;				builder.end();</b>
+&nbsp;			} else {
+&nbsp;				try {
+<b class="nc">&nbsp;					EVAL.extractQueryAndEvaluate(builder, resp, out, xslPath, con, query, req, this.cookies);</b>
+<b class="nc">&nbsp;				} catch (MalformedQueryException exc) {</b>
+<b class="nc">&nbsp;					throw new BadRequestException(exc.getMessage(), exc);</b>
+<b class="nc">&nbsp;				} catch (HTTPQueryEvaluationException exc) {</b>
+<b class="nc">&nbsp;					if (exc.getCause() instanceof MalformedQueryException) {</b>
+<b class="nc">&nbsp;						throw new BadRequestException(exc.getCause().getMessage(), exc);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					throw exc;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param req for looking at the request parameters
+&nbsp;	 * @return the query text, if it can somehow be retrieved from request parameters, otherwise an empty string
+&nbsp;	 * @throws BadRequestException if a problem occurs grabbing the request from storage
+&nbsp;	 * @throws RDF4JException      if a problem occurs grabbing the request from storage
+&nbsp;	 */
+&nbsp;	protected String getQueryText(WorkbenchRequest req) throws BadRequestException, RDF4JException {
+&nbsp;		String result;
+<b class="nc">&nbsp;		if (req.isParameterPresent(QUERY)) {</b>
+<b class="nc">&nbsp;			String query = req.getParameter(QUERY);</b>
+<b class="nc">&nbsp;			if (req.isParameterPresent(REF)) {</b>
+<b class="nc">&nbsp;				String ref = req.getParameter(REF);</b>
+<b class="nc">&nbsp;				if (&quot;text&quot;.equals(ref)) {</b>
+<b class="nc">&nbsp;					result = query;</b>
+<b class="nc">&nbsp;				} else if (&quot;hash&quot;.equals(ref)) {</b>
+<b class="nc">&nbsp;					result = queryCache.get(query);</b>
+<b class="nc">&nbsp;					if (null == result) {</b>
+<b class="nc">&nbsp;						result = &quot;&quot;;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (&quot;id&quot;.equals(ref)) {</b>
+<b class="nc">&nbsp;					result = storage.getQueryText((HTTPRepository) repository, getUserNameFromParameter(req, &quot;owner&quot;),</b>
+&nbsp;							query);
+&nbsp;				} else {
+&nbsp;					// if ref not recognized assume request meant &quot;text&quot;
+<b class="nc">&nbsp;					result = query;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				result = query;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			result = &quot;&quot;;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean canReadSavedQuery(WorkbenchRequest req) throws BadRequestException, RDF4JException {
+<b class="nc">&nbsp;		if (req.isParameterPresent(REF)) {</b>
+<b class="nc">&nbsp;			return &quot;id&quot;.equals(req.getParameter(REF))</b>
+<b class="nc">&nbsp;					? storage.canRead(</b>
+<b class="nc">&nbsp;							storage.selectSavedQuery((HTTPRepository) repository,</b>
+<b class="nc">&nbsp;									getUserNameFromParameter(req, &quot;owner&quot;), req.getParameter(QUERY)),</b>
+<b class="nc">&nbsp;							getUserNameFromParameter(req, SERVER_USER))</b>
+<b class="nc">&nbsp;					: true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new BadRequestException(&quot;Expected &#39;ref&#39; parameter in request.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,310 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Federate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: Federate (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Federate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/59)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Deque;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedList;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepositoryConfigBuilder;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;
+&nbsp;/**
+&nbsp; * Implements the &#39;federate&#39; command for the RDF4J Console.
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; */
+&nbsp;public class Federate extends ConsoleCommand {
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;federate&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Federate existing repositories&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return PrintHelp.USAGE</b>
+&nbsp;				+ &quot;federate  &lt;fedID&gt; &lt;repoID_1&gt; &lt;repoID_2&gt; [&lt;repoID_n&gt;]*\n&quot;
+&nbsp;				+ &quot;  &lt;fedId&gt;                  The id to assign the federated repository.\n&quot;
+&nbsp;				+ &quot;  &lt;repoID1&gt; &lt;repoID2&gt;      The id&#39;s of at least 2 repositories to federate.\n&quot;
+&nbsp;				+ &quot;  [&lt;repoID_n&gt;]*            The id&#39;s of 0 or mare additional repositories to federate.\n\n&quot;
+&nbsp;				+ &quot;You will be prompted to enter a description for the federated repository as well.&quot;;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 */
+&nbsp;	public Federate(ConsoleIO consoleIO, ConsoleState state) {
+<b class="nc">&nbsp;		super(consoleIO, state);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Executes a &#39;federate&#39; command for the RDF4J Console.
+&nbsp;	 *
+&nbsp;	 * @param parameters the expectations for the tokens in this array are fully documented in {@link PrintHelp} .
+&nbsp;	 * @throws java.io.IOException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void execute(String... parameters) throws IOException {
+<b class="nc">&nbsp;		if (parameters.length &lt; 4) {</b>
+<b class="nc">&nbsp;			writeln(getHelpLong());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			LinkedList&lt;String&gt; plist = new LinkedList&lt;&gt;(Arrays.asList(parameters));</b>
+<b class="nc">&nbsp;			plist.remove(); // &quot;federate&quot;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (distinctValues(plist)) {</b>
+<b class="nc">&nbsp;				String fedID = plist.pop();</b>
+<b class="nc">&nbsp;				federate(fedID, plist);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				writeError(&quot;Duplicate repository id&#39;s specified.&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if all values are distinct
+&nbsp;	 *
+&nbsp;	 * @param plist
+&nbsp;	 * @return true if all values are distinct
+&nbsp;	 */
+&nbsp;	private boolean distinctValues(Deque&lt;String&gt; plist) {
+<b class="nc">&nbsp;		return plist.size() == new HashSet&lt;&gt;(plist).size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add one or more repositories to a repository federation
+&nbsp;	 *
+&nbsp;	 * @param fedID
+&nbsp;	 * @param memberIDs list of member
+&nbsp;	 */
+&nbsp;	private void federate(String fedID, Deque&lt;String&gt; memberIDs) {
+<b class="nc">&nbsp;		if (LOGGER.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logCallDetails(fedID, memberIDs);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		RepositoryManager manager = state.getManager();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (manager.hasRepositoryConfig(fedID)) {</b>
+<b class="nc">&nbsp;				writeError(fedID + &quot; already exists.&quot;);</b>
+<b class="nc">&nbsp;			} else if (validateMembers(manager, memberIDs)) {</b>
+<b class="nc">&nbsp;				String description = consoleIO.readln(&quot;Federation Description (optional): &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;				FedXRepositoryConfig federationConfig = FedXRepositoryConfigBuilder.create()</b>
+<b class="nc">&nbsp;						.withResolvableEndpoint(memberIDs)</b>
+<b class="nc">&nbsp;						.build();</b>
+&nbsp;
+<b class="nc">&nbsp;				RepositoryConfig config = new RepositoryConfig(fedID, federationConfig);</b>
+<b class="nc">&nbsp;				config.setTitle(description);</b>
+&nbsp;
+<b class="nc">&nbsp;				manager.addRepositoryConfig(config);</b>
+<b class="nc">&nbsp;				writeln(&quot;Federation created.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RepositoryConfigException | RepositoryException | MalformedURLException rce) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Federation failed&quot;, rce);</b>
+<b class="nc">&nbsp;		} catch (RDF4JException | IOException rce) {</b>
+<b class="nc">&nbsp;			writeError(&quot;I/O exception on federation&quot;, rce);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Validate members of a federation
+&nbsp;	 *
+&nbsp;	 * @param manager   repository manager
+&nbsp;	 * @param memberIDs IDs of the federated repositories
+&nbsp;	 * @return true when all members are present
+&nbsp;	 */
+&nbsp;	private boolean validateMembers(RepositoryManager manager, Deque&lt;String&gt; memberIDs) {
+<b class="nc">&nbsp;		boolean result = true;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			for (String memberID : memberIDs) {</b>
+<b class="nc">&nbsp;				if (!manager.hasRepositoryConfig(memberID)) {</b>
+<b class="nc">&nbsp;					result = false;</b>
+<b class="nc">&nbsp;					writeError(memberID + &quot; does not exist.&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | RepositoryConfigException re) {</b>
+<b class="nc">&nbsp;			writeError(re.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Log basic details about calls to federated repositories
+&nbsp;	 *
+&nbsp;	 * @param fedID
+&nbsp;	 * @param memberIDs
+&nbsp;	 */
+&nbsp;	private void logCallDetails(String fedID, Deque&lt;String&gt; memberIDs) {
+<b class="nc">&nbsp;		StringBuilder builder = new StringBuilder();</b>
+<b class="nc">&nbsp;		builder.append(&quot;Federate called with federation ID = &quot; + fedID + &quot;, and member ID&#39;s = &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String member : memberIDs) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;[&quot;).append(member).append(&quot;]&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		LOGGER.debug(builder.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the value of an optional string parameter or the default
+&nbsp;	 *
+&nbsp;	 * @param parameters   set of parameters
+&nbsp;	 * @param name         parameter name
+&nbsp;	 * @param defaultValue default string value
+&nbsp;	 * @return value or default
+&nbsp;	 */
+&nbsp;	private String getOptionalParamValue(Deque&lt;String&gt; parameters, String name, String defaultValue) {
+<b class="nc">&nbsp;		String result = defaultValue;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String parameter : parameters) {</b>
+<b class="nc">&nbsp;			if (parameter.length() &gt;= name.length() &amp;&amp; parameter.substring(0, name.length()).equalsIgnoreCase(name)) {</b>
+<b class="nc">&nbsp;				String[] parsed = parameter.split(&quot;=&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (parsed.length == 2 &amp;&amp; parsed[0].equalsIgnoreCase(name)) {</b>
+<b class="nc">&nbsp;					result = parsed[1].toLowerCase();</b>
+<b class="nc">&nbsp;					parameters.remove(parameter);</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

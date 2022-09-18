@@ -1,0 +1,209 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RemoveServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.commands</a>
+</div>
+
+<h1>Coverage Summary for Class: RemoveServlet (org.eclipse.rdf4j.workbench.commands)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RemoveServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.commands;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public class RemoveServlet extends TransformationServlet {</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(RemoveServlet.class);</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void doPost(WorkbenchRequest req, HttpServletResponse resp, String xslPath)
+&nbsp;			throws IOException, RepositoryException, QueryResultHandlerException {
+<b class="nc">&nbsp;		String objectParameter = req.getParameter(&quot;obj&quot;);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;				Resource subj = req.getResource(&quot;subj&quot;);</b>
+<b class="nc">&nbsp;				IRI pred = req.getURI(&quot;pred&quot;);</b>
+<b class="nc">&nbsp;				Value obj = req.getValue(&quot;obj&quot;);</b>
+<b class="nc">&nbsp;				if (subj == null &amp;&amp; pred == null &amp;&amp; obj == null &amp;&amp; !req.isParameterPresent(CONTEXT)) {</b>
+<b class="nc">&nbsp;					throw new BadRequestException(&quot;No values&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				remove(con, subj, pred, obj, req);</b>
+&nbsp;				// HACK: HTML sends \r\n, but SAX strips out the \r, try both ways
+<b class="nc">&nbsp;				if (obj instanceof Literal &amp;&amp; obj.stringValue().contains(&quot;\r\n&quot;)) {</b>
+<b class="nc">&nbsp;					obj = Protocol.decodeValue(objectParameter.replace(&quot;\r\n&quot;, &quot;\n&quot;), con.getValueFactory());</b>
+<b class="nc">&nbsp;					remove(con, subj, pred, obj, req);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (ClassCastException exc) {</b>
+<b class="nc">&nbsp;				throw new BadRequestException(exc.getMessage(), exc);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			resp.sendRedirect(&quot;summary&quot;);</b>
+<b class="nc">&nbsp;		} catch (BadRequestException exc) {</b>
+<b class="nc">&nbsp;			logger.warn(exc.toString(), exc);</b>
+<b class="nc">&nbsp;			TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;			builder.transform(xslPath, &quot;remove.xsl&quot;);</b>
+<b class="nc">&nbsp;			builder.start(&quot;error-message&quot;, &quot;subj&quot;, &quot;pred&quot;, &quot;obj&quot;, CONTEXT);</b>
+<b class="nc">&nbsp;			builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;			builder.result(exc.getMessage(), req.getParameter(&quot;subj&quot;), req.getParameter(&quot;pred&quot;), objectParameter,</b>
+<b class="nc">&nbsp;					req.getParameter(CONTEXT));</b>
+<b class="nc">&nbsp;			builder.end();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void remove(RepositoryConnection con, Resource subj, IRI pred, Value obj, WorkbenchRequest req)
+&nbsp;			throws BadRequestException, RepositoryException {
+<b class="nc">&nbsp;		if (req.isParameterPresent(CONTEXT)) {</b>
+<b class="nc">&nbsp;			Resource ctx = req.getResource(CONTEXT);</b>
+<b class="nc">&nbsp;			if (subj == null &amp;&amp; pred == null &amp;&amp; obj == null) {</b>
+<b class="nc">&nbsp;				con.clear(ctx);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				con.remove(subj, pred, obj, ctx);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			con.remove(subj, pred, obj);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void service(TupleResultBuilder builder, String xslPath)
+&nbsp;			throws RepositoryException, QueryResultHandlerException {
+<b class="nc">&nbsp;		builder.transform(xslPath, &quot;remove.xsl&quot;);</b>
+<b class="nc">&nbsp;		builder.start();</b>
+<b class="nc">&nbsp;		builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;		builder.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

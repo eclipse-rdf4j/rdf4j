@@ -1,0 +1,480 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AppConfiguration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.app</a>
+</div>
+
+<h1>Coverage Summary for Class: AppConfiguration (org.eclipse.rdf4j.common.app)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AppConfiguration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.app;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.file.Paths;
+&nbsp;import java.util.Properties;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.RDF4J;
+&nbsp;import org.eclipse.rdf4j.common.app.config.Configuration;
+&nbsp;import org.eclipse.rdf4j.common.app.logging.LogConfiguration;
+&nbsp;import org.eclipse.rdf4j.common.app.net.ProxySettings;
+&nbsp;import org.eclipse.rdf4j.common.app.util.ConfigurationUtil;
+&nbsp;import org.eclipse.rdf4j.common.platform.PlatformFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class AppConfiguration implements Configuration {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final String APP_CONFIG_FILE = &quot;application.properties&quot;;
+&nbsp;	private static final String DEFAULT_PREFIX = &quot;RDF4J&quot;;
+&nbsp;	private static final String DEFAULT_LOGGING = &quot;org.eclipse.rdf4j.common.app.logging.logback.LogbackConfiguration&quot;;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private String applicationId;
+&nbsp;	private String longName;
+&nbsp;	private String fullName;
+&nbsp;	private AppVersion version;
+&nbsp;
+&nbsp;	private String[] commandLineArgs;
+&nbsp;
+&nbsp;	private String dataDirName;
+&nbsp;	private File dataDir;
+&nbsp;
+&nbsp;	private LogConfiguration loggingConfiguration;
+&nbsp;	private ProxySettings proxySettings;
+&nbsp;	private Properties properties;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new, uninitialized application configuration.
+&nbsp;	 */
+&nbsp;	public AppConfiguration() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the application configuration.
+&nbsp;	 *
+&nbsp;	 * @param applicationId the ID of the application
+&nbsp;	 */
+&nbsp;	public AppConfiguration(final String applicationId) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		setApplicationId(applicationId);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the application configuration.
+&nbsp;	 *
+&nbsp;	 * @param applicationId the ID of the application
+&nbsp;	 * @param version       the application&#39;s version
+&nbsp;	 */
+&nbsp;	public AppConfiguration(final String applicationId, final AppVersion version) {
+<b class="nc">&nbsp;		this(applicationId);</b>
+<b class="nc">&nbsp;		setVersion(version);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the application configuration.
+&nbsp;	 *
+&nbsp;	 * @param applicationId the ID of the application
+&nbsp;	 * @param longName      the long name of the application
+&nbsp;	 */
+&nbsp;	public AppConfiguration(final String applicationId, final String longName) {
+<b class="nc">&nbsp;		this(applicationId);</b>
+<b class="nc">&nbsp;		setLongName(longName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the application configuration.
+&nbsp;	 *
+&nbsp;	 * @param applicationId the ID of the application
+&nbsp;	 * @param longName      the long name of the application
+&nbsp;	 * @param version       the application&#39;s version
+&nbsp;	 */
+&nbsp;	public AppConfiguration(final String applicationId, final String longName, final AppVersion version) {
+<b class="nc">&nbsp;		this(applicationId, version);</b>
+<b class="nc">&nbsp;		setLongName(longName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 ----------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void load() throws IOException {
+&nbsp;		// load from resource
+<b class="nc">&nbsp;		properties = ConfigurationUtil.loadConfigurationProperties(APP_CONFIG_FILE, null);</b>
+&nbsp;		// load from properties file
+<b class="nc">&nbsp;		File f = Paths.get(getDataDir().toString(), Configuration.DIR, APP_CONFIG_FILE).toFile();</b>
+<b class="nc">&nbsp;		properties = ConfigurationUtil.loadConfigurationProperties(f, properties);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void save() throws IOException {
+<b class="nc">&nbsp;		if (loggingConfiguration != null) {</b>
+<b class="nc">&nbsp;			loggingConfiguration.save();</b>
+&nbsp;		}
+&nbsp;		// save to properties file
+<b class="nc">&nbsp;		if (properties != null) {</b>
+<b class="nc">&nbsp;			File f = Paths.get(getDataDir().toString(), Configuration.DIR, APP_CONFIG_FILE).toFile();</b>
+<b class="nc">&nbsp;			ConfigurationUtil.saveConfigurationProperties(properties, f, false);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		proxySettings.save();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws IOException {
+<b class="nc">&nbsp;		this.init(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize configuration and proxy settings, optionally load (logback) logging
+&nbsp;	 *
+&nbsp;	 * @param loadLogConfig load logging configuration
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void init(final boolean loadLogConfig) throws IOException {
+<b class="nc">&nbsp;		if (longName == null) {</b>
+<b class="nc">&nbsp;			setLongName(DEFAULT_PREFIX + &quot; &quot; + applicationId);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		setFullName();</b>
+<b class="nc">&nbsp;		configureDataDir();</b>
+<b class="nc">&nbsp;		load();</b>
+<b class="nc">&nbsp;		if (loadLogConfig) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				loggingConfiguration = loadLogConfiguration();</b>
+<b class="nc">&nbsp;				loggingConfiguration.setBaseDir(getDataDir());</b>
+<b class="nc">&nbsp;				loggingConfiguration.setAppConfiguration(this);</b>
+<b class="nc">&nbsp;				loggingConfiguration.init();</b>
+<b class="nc">&nbsp;			} catch (ClassNotFoundException | InstantiationException | IllegalAccessException e) {</b>
+<b class="nc">&nbsp;				e.printStackTrace();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		proxySettings = new ProxySettings(getDataDir());</b>
+<b class="nc">&nbsp;		proxySettings.init();</b>
+<b class="nc">&nbsp;		save();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() throws IOException {
+<b class="nc">&nbsp;		loggingConfiguration.destroy();</b>
+&nbsp;		// proxySettings.destroy();
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the name of the application (e.g. &quot;AutoFocus&quot; or &quot;Metadata Server&quot;).
+&nbsp;	 *
+&nbsp;	 * @return the name of the application
+&nbsp;	 */
+&nbsp;	public String getApplicationId() {
+<b class="nc">&nbsp;		return applicationId;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the application ID string
+&nbsp;	 *
+&nbsp;	 * @param applicationId string
+&nbsp;	 */
+&nbsp;	public final void setApplicationId(final String applicationId) {
+<b class="nc">&nbsp;		this.applicationId = applicationId;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the name of the data directory
+&nbsp;	 *
+&nbsp;	 * @param dataDirName
+&nbsp;	 */
+&nbsp;	public void setDataDirName(final String dataDirName) {
+<b class="nc">&nbsp;		this.dataDirName = dataDirName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the long name of the application (e.g. &quot;Aduna AutoFocus&quot; or &quot;OpenRDF Sesame Server&quot;).
+&nbsp;	 *
+&nbsp;	 * @return the long name of the application
+&nbsp;	 */
+&nbsp;	public String getLongName() {
+<b class="nc">&nbsp;		return longName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the long name of the application.
+&nbsp;	 *
+&nbsp;	 * @param longName the new name
+&nbsp;	 */
+&nbsp;	public final void setLongName(final String longName) {
+<b class="nc">&nbsp;		this.longName = longName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the full name of the application, which consists of the long name and the version number (e.g. &quot;Aduna
+&nbsp;	 * AutoFocus 4.0-beta1&quot; or &quot;OpenRDF Sesame Webclient 2.0&quot;)
+&nbsp;	 *
+&nbsp;	 * @return the full name of the application
+&nbsp;	 */
+&nbsp;	public String getFullName() {
+<b class="nc">&nbsp;		return fullName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set full name based upon long name and version
+&nbsp;	 */
+&nbsp;	private void setFullName() {
+<b class="nc">&nbsp;		this.fullName = longName;</b>
+<b class="nc">&nbsp;		if (version != null) {</b>
+<b class="nc">&nbsp;			fullName = fullName + &quot; &quot; + version.toString();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the version of the application.
+&nbsp;	 *
+&nbsp;	 * @return the version of the application
+&nbsp;	 */
+&nbsp;	public AppVersion getVersion() {
+<b class="nc">&nbsp;		if (version == null) {</b>
+<b class="nc">&nbsp;			version = AppVersion.parse(RDF4J.getVersion());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return version;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the version of the application.
+&nbsp;	 *
+&nbsp;	 * @param version the new version
+&nbsp;	 */
+&nbsp;	public final void setVersion(final AppVersion version) {
+<b class="nc">&nbsp;		this.version = version;</b>
+<b class="nc">&nbsp;		this.fullName = longName + &quot; &quot; + version.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the command line arguments of the application.
+&nbsp;	 *
+&nbsp;	 * @return A String array, as (typically) specified to the main method.
+&nbsp;	 */
+&nbsp;	public String[] getCommandLineArgs() {
+<b class="nc">&nbsp;		return (String[]) commandLineArgs.clone();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the command line arguments specified to the application.
+&nbsp;	 *
+&nbsp;	 * @param args A String array containing the arguments as specified to the main method.
+&nbsp;	 */
+&nbsp;	public void setCommandLineArgs(final String[] args) {
+<b class="nc">&nbsp;		this.commandLineArgs = (String[]) args.clone();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the data directory as File
+&nbsp;	 *
+&nbsp;	 * @return data directory
+&nbsp;	 */
+&nbsp;	public File getDataDir() {
+<b class="nc">&nbsp;		return dataDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get logging configuration
+&nbsp;	 *
+&nbsp;	 * @return log configuration
+&nbsp;	 */
+&nbsp;	public LogConfiguration getLogConfiguration() {
+<b class="nc">&nbsp;		return loggingConfiguration;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get proxy settings
+&nbsp;	 *
+&nbsp;	 * @return proxy settings
+&nbsp;	 */
+&nbsp;	public ProxySettings getProxySettings() {
+<b class="nc">&nbsp;		return proxySettings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set proxy settings
+&nbsp;	 *
+&nbsp;	 * @param proxySettings proxy settings
+&nbsp;	 */
+&nbsp;	public void setProxySettings(final ProxySettings proxySettings) {
+<b class="nc">&nbsp;		this.proxySettings = proxySettings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configure the data dir. Determination of the data dir might be deferred to Platform.
+&nbsp;	 */
+&nbsp;	private void configureDataDir() {
+<b class="nc">&nbsp;		if (dataDirName != null) {</b>
+<b class="nc">&nbsp;			dataDirName = dataDirName.trim();</b>
+<b class="nc">&nbsp;			if (!(&quot;&quot;.equals(dataDirName))) {</b>
+<b class="nc">&nbsp;				final File dataDirCandidate = new File(dataDirName);</b>
+<b class="nc">&nbsp;				dataDirCandidate.mkdirs();</b>
+&nbsp;				// change data directory if the previous code was successful
+<b class="nc">&nbsp;				dataDir = (dataDirCandidate.canRead() &amp;&amp; dataDirCandidate.canWrite()) ? dataDirCandidate : dataDir;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (dataDir == null) {</b>
+<b class="nc">&nbsp;			dataDir = PlatformFactory.getPlatform().getApplicationDataDir(applicationId);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load and instantiate the logging configuration.
+&nbsp;	 *
+&nbsp;	 * @return the logging configuration
+&nbsp;	 * @throws ClassNotFoundException
+&nbsp;	 * @throws IllegalAccessException
+&nbsp;	 * @throws InstantiationException
+&nbsp;	 */
+&nbsp;	private LogConfiguration loadLogConfiguration()
+&nbsp;			throws ClassNotFoundException, InstantiationException, IllegalAccessException {
+<b class="nc">&nbsp;		String classname = this.properties.getProperty(&quot;feature.logging.impl&quot;);</b>
+<b class="nc">&nbsp;		if (classname == null) {</b>
+<b class="nc">&nbsp;			classname = DEFAULT_LOGGING;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final Class&lt;?&gt; logImplClass = Class.forName(classname);</b>
+<b class="nc">&nbsp;		final Object logImpl = logImplClass.newInstance();</b>
+<b class="nc">&nbsp;		if (logImpl instanceof LogConfiguration) {</b>
+<b class="nc">&nbsp;			return (LogConfiguration) logImpl;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new InstantiationException(classname + &quot; is not valid LogConfiguration instance!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the properties
+&nbsp;	 *
+&nbsp;	 * @return Returns the properties.
+&nbsp;	 */
+&nbsp;	public Properties getProperties() {
+<b class="nc">&nbsp;		return properties;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

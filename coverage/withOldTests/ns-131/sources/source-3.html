@@ -1,0 +1,1276 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractLuceneSailTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.testsuite.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractLuceneSailTest (org.eclipse.testsuite.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractLuceneSailTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/202)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/570)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">AbstractLuceneSailTest$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/208)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/581)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/**
+&nbsp; * Copyright (c) 2016 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; */
+&nbsp;package org.eclipse.testsuite.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.MATCHES;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.PROPERTY;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.QUERY;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SCORE;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.LuceneSailSchema.SNIPPET;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;import static org.junit.Assert.assertFalse;
+&nbsp;import static org.junit.Assert.assertNotNull;
+&nbsp;import static org.junit.Assert.assertTrue;
+&nbsp;import static org.junit.Assert.fail;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Random;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.CountDownLatch;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSail;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.LuceneSailSchema;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.Rule;
+&nbsp;import org.junit.Test;
+&nbsp;import org.junit.rules.Timeout;
+&nbsp;
+<b class="nc">&nbsp;public abstract class AbstractLuceneSailTest {</b>
+&nbsp;
+<b class="nc">&nbsp;	@Rule</b>
+&nbsp;	public Timeout timeout = new Timeout(10, TimeUnit.MINUTES);
+&nbsp;
+<b class="nc">&nbsp;	protected static final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+&nbsp;	public static final String QUERY_STRING;
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_1 = vf.createIRI(&quot;urn:subject1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_2 = vf.createIRI(&quot;urn:subject2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_3 = vf.createIRI(&quot;urn:subject3&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_4 = vf.createIRI(&quot;urn:subject4&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI SUBJECT_5 = vf.createIRI(&quot;urn:subject5&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_1 = vf.createIRI(&quot;urn:context1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_2 = vf.createIRI(&quot;urn:context2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI CONTEXT_3 = vf.createIRI(&quot;urn:context3&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI PREDICATE_1 = vf.createIRI(&quot;urn:predicate1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI PREDICATE_2 = vf.createIRI(&quot;urn:predicate2&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final IRI PREDICATE_3 = vf.createIRI(&quot;urn:predicate3&quot;);</b>
+&nbsp;
+&nbsp;	protected LuceneSail sail;
+&nbsp;
+&nbsp;	protected Repository repository;
+&nbsp;
+<b class="nc">&nbsp;	private final Random random = new Random(43252333);</b>
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		buffer.append(&quot;SELECT ?Subject ?Score\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;WHERE { ?Subject &lt;&quot; + MATCHES + &quot;&gt; [\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;                              &lt;&quot; + QUERY + &quot;&gt; ?Query; \n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;                              &lt;&quot; + SCORE + &quot;&gt; ?Score ].}&quot;);</b>
+<b class="nc">&nbsp;		QUERY_STRING = buffer.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract void configure(LuceneSail sail) throws IOException;
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+&nbsp;		// set logging, uncomment this to get better logging for debugging
+&nbsp;		// org.apache.log4j.BasicConfigurator.configure();
+&nbsp;
+&nbsp;		// setup a LuceneSail
+<b class="nc">&nbsp;		MemoryStore memoryStore = new MemoryStore();</b>
+&nbsp;		// enable lock tracking
+<b class="nc">&nbsp;		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(true);</b>
+<b class="nc">&nbsp;		sail = new LuceneSail();</b>
+<b class="nc">&nbsp;		configure(sail);</b>
+<b class="nc">&nbsp;		sail.setBaseSail(memoryStore);</b>
+&nbsp;
+&nbsp;		// create a Repository wrapping the LuceneSail
+<b class="nc">&nbsp;		repository = new SailRepository(sail);</b>
+&nbsp;
+&nbsp;		// add some statements to it
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.begin();</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral(&quot;one&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral(&quot;five&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, PREDICATE_2, vf.createLiteral(&quot;two&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_2, PREDICATE_1, vf.createLiteral(&quot;one&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_2, PREDICATE_2, vf.createLiteral(&quot;three&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral(&quot;four&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, PREDICATE_2, vf.createLiteral(&quot;one&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, PREDICATE_3, SUBJECT_1);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_3, PREDICATE_3, SUBJECT_2);</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws IOException, RepositoryException {
+<b class="nc">&nbsp;		if (repository != null) {</b>
+<b class="nc">&nbsp;			repository.shutDown();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		org.eclipse.rdf4j.common.concurrent.locks.Properties.setLockTrackingEnabled(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testTriplesStored() throws Exception {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// are the triples stored in the underlying sail?
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_1, PREDICATE_1, vf.createLiteral(&quot;one&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_1, PREDICATE_1, vf.createLiteral(&quot;five&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_1, PREDICATE_2, vf.createLiteral(&quot;two&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_2, PREDICATE_1, vf.createLiteral(&quot;one&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_2, PREDICATE_2, vf.createLiteral(&quot;three&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, PREDICATE_1, vf.createLiteral(&quot;four&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, PREDICATE_2, vf.createLiteral(&quot;one&quot;), false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, PREDICATE_3, SUBJECT_1, false));</b>
+<b class="nc">&nbsp;			assertTrue(connection.hasStatement(SUBJECT_3, PREDICATE_3, SUBJECT_2, false));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testRegularQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query for all subjects with a given term
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QUERY_STRING);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;Query&quot;, vf.createLiteral(&quot;one&quot;));</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				ArrayList&lt;IRI&gt; uris = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;				BindingSet bindings;
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				bindings = result.next();</b>
+<b class="nc">&nbsp;				uris.add((IRI) bindings.getValue(&quot;Subject&quot;));</b>
+<b class="nc">&nbsp;				assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				bindings = result.next();</b>
+<b class="nc">&nbsp;				uris.add((IRI) bindings.getValue(&quot;Subject&quot;));</b>
+<b class="nc">&nbsp;				assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				bindings = result.next();</b>
+<b class="nc">&nbsp;				uris.add((IRI) bindings.getValue(&quot;Subject&quot;));</b>
+<b class="nc">&nbsp;				assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertFalse(result.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(uris.contains(SUBJECT_1));</b>
+<b class="nc">&nbsp;				assertTrue(uris.contains(SUBJECT_2));</b>
+<b class="nc">&nbsp;				assertTrue(uris.contains(SUBJECT_3));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testComplexQueryOne() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+&nbsp;		// prepare the query
+<b class="nc">&nbsp;		StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		buffer.append(&quot;SELECT ?Resource ?Matching ?Score &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;WHERE { ?Resource &lt;&quot; + PREDICATE_3 + &quot;&gt; ?Matching. &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot; ?Matching &lt;&quot; + MATCHES + &quot;&gt; [ &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot; &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot; &lt;&quot; + SCORE + &quot;&gt; ?Score ]. } &quot;);</b>
+<b class="nc">&nbsp;		String q = buffer.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query for all subjects with a given term
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(q);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				List&lt;String&gt; results = new ArrayList&lt;&gt;();</b>
+&nbsp;				BindingSet bindings;
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				bindings = result.next();</b>
+<b class="nc">&nbsp;				results.add(&quot;&lt;&quot; + (IRI) bindings.getValue(&quot;Resource&quot;) + &quot;&gt;, &quot; + &quot;&lt;&quot;</b>
+<b class="nc">&nbsp;						+ (IRI) bindings.getValue(&quot;Matching&quot;) + &quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;				assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				bindings = result.next();</b>
+<b class="nc">&nbsp;				results.add(&quot;&lt;&quot; + (IRI) bindings.getValue(&quot;Resource&quot;) + &quot;&gt;, &quot; + &quot;&lt;&quot;</b>
+<b class="nc">&nbsp;						+ (IRI) bindings.getValue(&quot;Matching&quot;) + &quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;				assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertFalse(result.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(results.contains(&quot;&lt;&quot; + SUBJECT_3 + &quot;&gt;, &lt;&quot; + SUBJECT_1 + &quot;&gt;&quot;));</b>
+<b class="nc">&nbsp;				assertTrue(results.contains(&quot;&lt;&quot; + SUBJECT_3 + &quot;&gt;, &lt;&quot; + SUBJECT_2 + &quot;&gt;&quot;));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testComplexQueryTwo() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+&nbsp;		// prepare the query
+<b class="nc">&nbsp;		StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		buffer.append(&quot;SELECT ?Resource ?Matching ?Score &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;WHERE { ?Resource &lt;&quot; + PREDICATE_3 + &quot;&gt; ?Matching. &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot; ?Matching &lt;&quot; + MATCHES + &quot;&gt; [ &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot; &lt;&quot; + QUERY + &quot;&gt; \&quot;two\&quot;; &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot; &lt;&quot; + SCORE + &quot;&gt; ?Score ]. } &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String q = buffer.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query for all subjects with a given term
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(q);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				BindingSet bindings = result.next();</b>
+<b class="nc">&nbsp;				assertEquals(SUBJECT_3, (IRI) bindings.getValue(&quot;Resource&quot;));</b>
+<b class="nc">&nbsp;				assertEquals(SUBJECT_1, (IRI) bindings.getValue(&quot;Matching&quot;));</b>
+<b class="nc">&nbsp;				assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;				assertFalse(result.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMultipleLuceneQueries()
+&nbsp;			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+&nbsp;		// prepare the query
+<b class="nc">&nbsp;		String[] queries = new String[] {</b>
+&nbsp;				&quot;SELECT ?Resource1 ?Resource2 ?R1Score ?R2Score \n&quot;
+&nbsp;						+ &quot;WHERE {\n&quot;
+&nbsp;						+ &quot;  ?Resource1 &lt;&quot; + PREDICATE_3 + &quot;&gt; ?Resource2 ; \n&quot;
+&nbsp;						+ &quot;             &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                                  &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                                  &lt;&quot; + SCORE + &quot;&gt; ?R1Score ]. \n&quot;
+&nbsp;						+ &quot;  ?Resource2 &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                                  &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                                  &lt;&quot; + SCORE + &quot;&gt; ?R2Score ]. } &quot;,
+&nbsp;
+&nbsp;				&quot;SELECT ?Resource1 ?Resource3 ?R1Score ?R3Score \n&quot;
+&nbsp;						+ &quot;WHERE {\n&quot;
+&nbsp;						+ &quot;  ?Resource2 ?p21 ?Resource1 . \n&quot;
+&nbsp;						+ &quot;  ?Resource2 ?p23 ?Resource3 . \n&quot;
+&nbsp;						+ &quot;  ?Resource1 &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                                 &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                                 &lt;&quot; + SCORE + &quot;&gt; ?R1Score ]. \n&quot;
+&nbsp;						+ &quot;  ?Resource3 &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                                 &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                                 &lt;&quot; + SCORE + &quot;&gt; ?R3Score ] .&quot;
+&nbsp;						+ &quot; FILTER(?Resource1 != ?Resource3)\n}&quot;,
+&nbsp;
+&nbsp;				&quot;SELECT ?Resource1 ?Resource3 ?R1Score ?R3Score \n&quot;
+&nbsp;						+ &quot;WHERE { \n&quot;
+&nbsp;						+ &quot;  ?Resource2 ?p21 ?Resource1; \n&quot;
+&nbsp;						+ &quot;             ?p23 ?Resource3 . \n&quot;
+&nbsp;						+ &quot;  ?Resource1 &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                           &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                           &lt;&quot; + PROPERTY + &quot;&gt; &lt;&quot; + PREDICATE_1 + &quot;&gt;; \n&quot;
+&nbsp;						+ &quot;                           &lt;&quot; + SCORE + &quot;&gt; ?R1Score ].\n&quot;
+&nbsp;						+ &quot;  ?Resource3 &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                           &lt;&quot; + QUERY + &quot;&gt; \&quot;two\&quot;; \n&quot;
+&nbsp;						+ &quot;                           &lt;&quot; + PROPERTY + &quot;&gt; &lt;&quot; + PREDICATE_2 + &quot;&gt;; \n&quot;
+&nbsp;						+ &quot;                           &lt;&quot; + SCORE + &quot;&gt; ?R3Score ].}&quot;,
+&nbsp;				&quot;SELECT ?Resource1 ?Resource2 ?R1Score ?R2Score \n&quot;
+&nbsp;						+ &quot;WHERE { \n&quot;
+&nbsp;						+ &quot;   ?Resource1 &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + PROPERTY + &quot;&gt; &lt;&quot; + PREDICATE_1 + &quot;&gt;; \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + SCORE + &quot;&gt; ?R1Score ].\n&quot;
+&nbsp;						+ &quot;   ?Resource2 &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                             &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                             &lt;&quot; + PROPERTY + &quot;&gt; &lt;&quot; + PREDICATE_2 + &quot;&gt;; \n&quot;
+&nbsp;						+ &quot;                             &lt;&quot; + SCORE + &quot;&gt; ?R2Score ].}&quot; };
+&nbsp;
+<b class="nc">&nbsp;		ArrayList&lt;List&lt;Map&lt;String, String&gt;&gt;&gt; results = new ArrayList&lt;&gt;();</b>
+&nbsp;		ArrayList&lt;Map&lt;String, String&gt;&gt; resultSet;
+&nbsp;		Map&lt;String, String&gt; result;
+&nbsp;
+&nbsp;		// create a new result set
+<b class="nc">&nbsp;		resultSet = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// one possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_3.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource2&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R2Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// another possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_3.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource2&quot;, SUBJECT_2.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R2Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// add the results of for the first query
+<b class="nc">&nbsp;		results.add(resultSet);</b>
+&nbsp;
+&nbsp;		// create a new result set
+<b class="nc">&nbsp;		resultSet = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// one possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource3&quot;, SUBJECT_2.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R3Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// another possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_2.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource3&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R3Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// add the results of for the first query
+<b class="nc">&nbsp;		results.add(resultSet);</b>
+&nbsp;
+&nbsp;		// create a new result set
+<b class="nc">&nbsp;		resultSet = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// one possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_2.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource3&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R3Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// another possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource3&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R3Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// add the results of for the first query
+<b class="nc">&nbsp;		results.add(resultSet);</b>
+&nbsp;
+&nbsp;		// create a new result set
+<b class="nc">&nbsp;		resultSet = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// one possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource2&quot;, SUBJECT_3.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R2Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// another possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource1&quot;, SUBJECT_2.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R1Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource2&quot;, SUBJECT_3.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;R2Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// add the results of for the first query
+<b class="nc">&nbsp;		results.add(resultSet);</b>
+&nbsp;
+<b class="nc">&nbsp;		evaluate(queries, results);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void evaluate(String[] queries, ArrayList&lt;List&lt;Map&lt;String, String&gt;&gt;&gt; expectedResults)
+&nbsp;			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			for (int queryID = 0; queryID &lt; queries.length; queryID++) {</b>
+<b class="nc">&nbsp;				String sparql = queries[queryID];</b>
+<b class="nc">&nbsp;				List&lt;Map&lt;String, String&gt;&gt; expectedResultSet = expectedResults.get(queryID);</b>
+&nbsp;
+&nbsp;				// fire the query
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(sparql);</b>
+<b class="nc">&nbsp;				try (TupleQueryResult tqr = query.evaluate()) {</b>
+&nbsp;
+&nbsp;					// check the results
+<b class="nc">&nbsp;					int actualResults = 0;</b>
+<b class="nc">&nbsp;					Set&lt;Integer&gt; matched = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;					while (tqr.hasNext()) {</b>
+<b class="nc">&nbsp;						BindingSet bs = tqr.next();</b>
+<b class="nc">&nbsp;						actualResults++;</b>
+&nbsp;
+&nbsp;						boolean matches;
+<b class="nc">&nbsp;						for (int resultSetID = 0; resultSetID &lt; expectedResultSet.size(); resultSetID++) {</b>
+&nbsp;							// ignore results that matched before
+<b class="nc">&nbsp;							if (matched.contains(resultSetID)) {</b>
+<b class="nc">&nbsp;								continue;</b>
+&nbsp;							}
+&nbsp;
+&nbsp;							// assume it matches
+<b class="nc">&nbsp;							matches = true;</b>
+&nbsp;
+&nbsp;							// get the result we compare with now
+<b class="nc">&nbsp;							Map&lt;String, String&gt; expectedResult = new HashMap&lt;&gt;(expectedResultSet.get(resultSetID));</b>
+&nbsp;
+&nbsp;							// get all var names
+<b class="nc">&nbsp;							Collection&lt;String&gt; vars = new ArrayList&lt;&gt;(expectedResult.keySet());</b>
+&nbsp;
+&nbsp;							// check if all actual results are expected
+<b class="nc">&nbsp;							for (String var : vars) {</b>
+<b class="nc">&nbsp;								String expectedVal = expectedResult.get(var);</b>
+<b class="nc">&nbsp;								Value actualVal = bs.getValue(var);</b>
+&nbsp;
+<b class="nc">&nbsp;								if (expectedVal == null) {</b>
+&nbsp;									// don&#39;t care about the actual value, as long as there is
+&nbsp;									// one
+<b class="nc">&nbsp;									if (actualVal == null) {</b>
+<b class="nc">&nbsp;										matches = false;</b>
+<b class="nc">&nbsp;										break;</b>
+&nbsp;									}
+&nbsp;								} else {
+&nbsp;									// compare the values
+<b class="nc">&nbsp;									if ((actualVal == null) || (expectedVal.compareTo(actualVal.stringValue()) != 0)) {</b>
+<b class="nc">&nbsp;										matches = false;</b>
+<b class="nc">&nbsp;										break;</b>
+&nbsp;									}
+&nbsp;								}
+&nbsp;
+&nbsp;								// remove the matched result so that we do not match it twice
+<b class="nc">&nbsp;								expectedResult.remove(var);</b>
+<b class="nc">&nbsp;							}</b>
+&nbsp;
+&nbsp;							// check if expected results were existing
+<b class="nc">&nbsp;							if (!expectedResult.isEmpty()) {</b>
+<b class="nc">&nbsp;								matches = false;</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							if (matches) {</b>
+<b class="nc">&nbsp;								matched.add(resultSetID);</b>
+<b class="nc">&nbsp;								break;</b>
+&nbsp;							}
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// the number of matched expected results must be equal to the number
+&nbsp;					// of actual results
+<b class="nc">&nbsp;					assertEquals(&quot;How many expected results were retrieved for query #&quot; + queryID + &quot;?&quot;,</b>
+<b class="nc">&nbsp;							expectedResultSet.size(), matched.size());</b>
+<b class="nc">&nbsp;					assertEquals(&quot;How many actual results were retrieved for query #&quot; + queryID + &quot;?&quot;,</b>
+<b class="nc">&nbsp;							expectedResultSet.size(), actualResults);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testPredicateLuceneQueries()
+&nbsp;			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+&nbsp;		// prepare the query
+<b class="nc">&nbsp;		String[] queries = new String[] {</b>
+&nbsp;				&quot;SELECT ?Resource ?Score ?Snippet \n&quot;
+&nbsp;						+ &quot;WHERE { \n&quot;
+&nbsp;						+ &quot;  ?Resource &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + SCORE + &quot;&gt; ?Score; \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + SNIPPET + &quot;&gt; ?Snippet ].}&quot;,
+&nbsp;				&quot;SELECT ?Resource ?Score ?Snippet \n&quot;
+&nbsp;						+ &quot;WHERE { \n&quot;
+&nbsp;						+ &quot;  ?Resource &lt;&quot; + MATCHES + &quot;&gt; [ \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + QUERY + &quot;&gt; \&quot;five\&quot;; \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + SCORE + &quot;&gt; ?Score; \n&quot;
+&nbsp;						+ &quot;                            &lt;&quot; + SNIPPET + &quot;&gt; ?Snippet ].}&quot; };
+&nbsp;
+<b class="nc">&nbsp;		ArrayList&lt;List&lt;Map&lt;String, String&gt;&gt;&gt; results = new ArrayList&lt;&gt;();</b>
+&nbsp;		ArrayList&lt;Map&lt;String, String&gt;&gt; resultSet;
+&nbsp;		Map&lt;String, String&gt; result;
+&nbsp;
+&nbsp;		// create a new result set
+<b class="nc">&nbsp;		resultSet = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// one possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Snippet&quot;, &quot;&lt;B&gt;one&lt;/B&gt;&quot;);</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// another possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource&quot;, SUBJECT_2.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Snippet&quot;, &quot;&lt;B&gt;one&lt;/B&gt;&quot;);</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// another possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource&quot;, SUBJECT_3.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Snippet&quot;, &quot;&lt;B&gt;one&lt;/B&gt;&quot;);</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// add the results of for the first query
+<b class="nc">&nbsp;		results.add(resultSet);</b>
+&nbsp;
+&nbsp;		// create a new result set
+<b class="nc">&nbsp;		resultSet = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// one possible result
+<b class="nc">&nbsp;		result = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		result.put(&quot;Resource&quot;, SUBJECT_1.stringValue());</b>
+<b class="nc">&nbsp;		result.put(&quot;Score&quot;, null); // null means: ignore the value</b>
+<b class="nc">&nbsp;		result.put(&quot;Snippet&quot;, &quot;&lt;B&gt;five&lt;/B&gt;&quot;);</b>
+<b class="nc">&nbsp;		resultSet.add(result);</b>
+&nbsp;
+&nbsp;		// add the results of for the first query
+<b class="nc">&nbsp;		results.add(resultSet);</b>
+&nbsp;
+<b class="nc">&nbsp;		evaluate(queries, results);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSnippetQueries() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+&nbsp;		// prepare the query
+&nbsp;		// search for the term &quot;one&quot;, but only in predicate 1
+<b class="nc">&nbsp;		StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		buffer.append(&quot;SELECT ?Resource ?Score \n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;WHERE {\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;  ?Resource &lt;&quot; + MATCHES + &quot;&gt; [\n &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;    &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;; &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;    &lt;&quot; + PROPERTY + &quot;&gt; &lt;&quot; + PREDICATE_1 + &quot;&gt;; &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;    &lt;&quot; + SCORE + &quot;&gt; ?Score ].} &quot;);</b>
+<b class="nc">&nbsp;		String q = buffer.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire the query
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(q);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;				// check the results
+&nbsp;				BindingSet bindings;
+&nbsp;
+&nbsp;				// the first result is subject 1 and has a score
+<b class="nc">&nbsp;				int results = 0;</b>
+<b class="nc">&nbsp;				Set&lt;IRI&gt; expectedSubject = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;				expectedSubject.add(SUBJECT_1);</b>
+<b class="nc">&nbsp;				expectedSubject.add(SUBJECT_2);</b>
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					results++;</b>
+<b class="nc">&nbsp;					bindings = result.next();</b>
+&nbsp;
+&nbsp;					// the resource should be among the set of expected subjects, if so,
+&nbsp;					// remove it from the set
+<b class="nc">&nbsp;					assertTrue(expectedSubject.remove(bindings.getValue(&quot;Resource&quot;)));</b>
+&nbsp;
+&nbsp;					// there should be a score
+<b class="nc">&nbsp;					assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// there should have been only 2 results
+<b class="nc">&nbsp;				assertEquals(2, results);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test if the snippets do not accidentially come from the &quot;text&quot; field while we actually expect them to come from
+&nbsp;	 * the predicate field.
+&nbsp;	 */
+&nbsp;	@Test
+&nbsp;	public void testSnippetLimitedToPredicate()
+&nbsp;			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+&nbsp;		// more test-data
+<b class="nc">&nbsp;		try (RepositoryConnection myconnection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			myconnection.begin();</b>
+&nbsp;			// we use the string &#39;charly&#39; as test-case. the snippets should contain
+&nbsp;			// &quot;come&quot; and &quot;unicorn&quot;
+&nbsp;			// and &#39;poor&#39; should not be returned if we limit on predicate1
+&nbsp;			// and watch http://www.youtube.com/watch?v=Q5im0Ssyyus like 25mio others
+<b class="nc">&nbsp;			myconnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral(&quot;come charly lets go to candy mountain&quot;));</b>
+<b class="nc">&nbsp;			myconnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral(&quot;but the unicorn charly said to goaway&quot;));</b>
+<b class="nc">&nbsp;			myconnection.add(SUBJECT_1, PREDICATE_2, vf.createLiteral(&quot;there was poor charly without a kidney&quot;));</b>
+<b class="nc">&nbsp;			myconnection.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		{
+&nbsp;			// prepare the query
+&nbsp;			// search for the term &quot;charly&quot;, but only in predicate 1
+<b class="nc">&nbsp;			StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;			buffer.append(&quot;SELECT ?Resource ?Score ?Snippet \n&quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;WHERE { \n&quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;  ?Resource &lt;&quot; + MATCHES + &quot;&gt; [\n &quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;    &lt;&quot; + QUERY + &quot;&gt; \&quot;charly\&quot;; &quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;    &lt;&quot; + PROPERTY + &quot;&gt; &lt;&quot; + PREDICATE_1 + &quot;&gt;; &quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;    &lt;&quot; + SNIPPET + &quot;&gt; ?Snippet; &quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;    &lt;&quot; + SCORE + &quot;&gt; ?Score ]. } &quot;);</b>
+<b class="nc">&nbsp;			String q = buffer.toString();</b>
+&nbsp;
+&nbsp;			// fire the query
+<b class="nc">&nbsp;			try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(q);</b>
+<b class="nc">&nbsp;				try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;					// check the results
+&nbsp;					BindingSet bindings;
+&nbsp;
+&nbsp;					// the first result is subject 1 and has a score
+<b class="nc">&nbsp;					int results = 0;</b>
+<b class="nc">&nbsp;					Set&lt;String&gt; expectedSnippetPart = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;					expectedSnippetPart.add(&quot;come&quot;);</b>
+<b class="nc">&nbsp;					expectedSnippetPart.add(&quot;unicorn&quot;);</b>
+<b class="nc">&nbsp;					String notexpected = &quot;poor&quot;;</b>
+<b class="nc">&nbsp;					while (result.hasNext()) {</b>
+<b class="nc">&nbsp;						results++;</b>
+<b class="nc">&nbsp;						bindings = result.next();</b>
+&nbsp;
+&nbsp;						// the resource should be among the set of expected subjects, if so,
+&nbsp;						// remove it from the set
+<b class="nc">&nbsp;						String snippet = ((Literal) bindings.getValue(&quot;Snippet&quot;)).stringValue();</b>
+<b class="nc">&nbsp;						boolean foundexpected = false;</b>
+<b class="nc">&nbsp;						for (Iterator&lt;String&gt; i = expectedSnippetPart.iterator(); i.hasNext();) {</b>
+<b class="nc">&nbsp;							String expected = i.next();</b>
+<b class="nc">&nbsp;							if (snippet.contains(expected)) {</b>
+<b class="nc">&nbsp;								foundexpected = true;</b>
+<b class="nc">&nbsp;								i.remove();</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;						if (snippet.contains(notexpected)) {</b>
+<b class="nc">&nbsp;							fail(&quot;snippet &#39;&quot; + snippet + &quot;&#39; contained value &#39;&quot; + notexpected + &quot;&#39; from predicate &quot;</b>
+&nbsp;									+ PREDICATE_2);
+&nbsp;						}
+<b class="nc">&nbsp;						if (!foundexpected) {</b>
+<b class="nc">&nbsp;							fail(&quot;did not find any of the expected strings &quot; + expectedSnippetPart + &quot; in the snippet &quot;</b>
+&nbsp;									+ snippet);
+&nbsp;						}
+&nbsp;
+&nbsp;						// there should be a score
+<b class="nc">&nbsp;						assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// we found all
+<b class="nc">&nbsp;					assertTrue(&quot;These were expected but not found: &quot; + expectedSnippetPart,</b>
+<b class="nc">&nbsp;							expectedSnippetPart.isEmpty());</b>
+&nbsp;
+<b class="nc">&nbsp;					assertEquals(&quot;there should have been 2 results&quot;, 2, results);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;		/**
+&nbsp;		 * DO THE SAME, BUT WIHTOUT PROPERTY RESTRICTION, JUST TO CHECK
+&nbsp;		 */
+&nbsp;		{
+&nbsp;			// prepare the query
+&nbsp;			// search for the term &quot;charly&quot; in all predicates
+<b class="nc">&nbsp;			StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;			buffer.append(&quot;SELECT ?Resource ?Score ?Snippet \n&quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;WHERE { \n&quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;  ?Resource &lt;&quot; + MATCHES + &quot;&gt; [\n &quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;    &lt;&quot; + QUERY + &quot;&gt; \&quot;charly\&quot;; &quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;    &lt;&quot; + SNIPPET + &quot;&gt; ?Snippet; &quot;);</b>
+<b class="nc">&nbsp;			buffer.append(&quot;    &lt;&quot; + SCORE + &quot;&gt; ?Score ].} &quot;);</b>
+<b class="nc">&nbsp;			String q = buffer.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;			try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;				// fire the query
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(q);</b>
+<b class="nc">&nbsp;				try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;					// check the results
+&nbsp;					BindingSet bindings;
+&nbsp;
+&nbsp;					// the first result is subject 1 and has a score
+<b class="nc">&nbsp;					int results = 0;</b>
+<b class="nc">&nbsp;					Set&lt;String&gt; expectedSnippetPart = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;					expectedSnippetPart.add(&quot;come&quot;);</b>
+<b class="nc">&nbsp;					expectedSnippetPart.add(&quot;unicorn&quot;);</b>
+<b class="nc">&nbsp;					expectedSnippetPart.add(&quot;poor&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					while (result.hasNext()) {</b>
+<b class="nc">&nbsp;						results++;</b>
+<b class="nc">&nbsp;						bindings = result.next();</b>
+&nbsp;
+&nbsp;						// the resource should be among the set of expected subjects, if so,
+&nbsp;						// remove it from the set
+<b class="nc">&nbsp;						String snippet = ((Literal) bindings.getValue(&quot;Snippet&quot;)).stringValue();</b>
+<b class="nc">&nbsp;						boolean foundexpected = false;</b>
+<b class="nc">&nbsp;						for (Iterator&lt;String&gt; i = expectedSnippetPart.iterator(); i.hasNext();) {</b>
+<b class="nc">&nbsp;							String expected = i.next();</b>
+<b class="nc">&nbsp;							if (snippet.contains(expected)) {</b>
+<b class="nc">&nbsp;								foundexpected = true;</b>
+<b class="nc">&nbsp;								i.remove();</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;						if (!foundexpected) {</b>
+<b class="nc">&nbsp;							fail(&quot;did not find any of the expected strings &quot; + expectedSnippetPart + &quot; in the snippet &quot;</b>
+&nbsp;									+ snippet);
+&nbsp;						}
+&nbsp;
+&nbsp;						// there should be a score
+<b class="nc">&nbsp;						assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// we found all
+<b class="nc">&nbsp;					assertTrue(&quot;These were expected but not found: &quot; + expectedSnippetPart,</b>
+<b class="nc">&nbsp;							expectedSnippetPart.isEmpty());</b>
+&nbsp;
+<b class="nc">&nbsp;					assertEquals(&quot;there should have been 3 results&quot;, 3, results);</b>
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testGraphQuery() throws QueryEvaluationException, MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		IRI score = vf.createIRI(LuceneSailSchema.NAMESPACE + &quot;score&quot;);</b>
+<b class="nc">&nbsp;		StringBuilder query = new StringBuilder();</b>
+&nbsp;
+&nbsp;		// here we would expect two links from SUBJECT3 to SUBJECT1 and SUBJECT2
+&nbsp;		// and one link from SUBJECT3 to its score
+<b class="nc">&nbsp;		query.append(&quot;PREFIX lucenesail: &lt;&quot; + LuceneSailSchema.NAMESPACE + &quot;&gt; \n&quot;);</b>
+<b class="nc">&nbsp;		query.append(&quot;CONSTRUCT { \n&quot;);</b>
+<b class="nc">&nbsp;		query.append(&quot;    ?r &lt;&quot; + PREDICATE_3 + &quot;&gt; ?r2 ;\n&quot;);</b>
+<b class="nc">&nbsp;		query.append(&quot;       &lt;&quot; + score + &quot;&gt; ?s } \n&quot;);</b>
+<b class="nc">&nbsp;		query.append(&quot;WHERE { \n&quot;);</b>
+<b class="nc">&nbsp;		query.append(&quot;    ?r lucenesail:matches ?match. ?match lucenesail:query \&quot;four\&quot;; \n&quot;);</b>
+<b class="nc">&nbsp;		query.append(&quot;                                         lucenesail:score ?s. \n&quot;);</b>
+<b class="nc">&nbsp;		query.append(&quot;    ?r &lt;&quot; + PREDICATE_3 + &quot;&gt; ?r2. }\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		int r = 0;</b>
+<b class="nc">&nbsp;		int n = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			GraphQuery gq = connection.prepareGraphQuery(query.toString());</b>
+<b class="nc">&nbsp;			try (GraphQueryResult result = gq.evaluate()) {</b>
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					Statement statement = result.next();</b>
+<b class="nc">&nbsp;					n++;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (statement.getSubject().equals(SUBJECT_3) &amp;&amp; statement.getPredicate().equals(PREDICATE_3)</b>
+<b class="nc">&nbsp;							&amp;&amp; statement.getObject().equals(SUBJECT_1)) {</b>
+<b class="nc">&nbsp;						r |= 1;</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (statement.getSubject().equals(SUBJECT_3) &amp;&amp; statement.getPredicate().equals(PREDICATE_3)</b>
+<b class="nc">&nbsp;							&amp;&amp; statement.getObject().equals(SUBJECT_2)) {</b>
+<b class="nc">&nbsp;						r |= 2;</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (statement.getSubject().equals(SUBJECT_3) &amp;&amp; statement.getPredicate().equals(score)) {</b>
+<b class="nc">&nbsp;						r |= 4;</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				assertEquals(3, n);</b>
+<b class="nc">&nbsp;				assertEquals(7, r);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testQueryWithSpecifiedSubject()
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query with the subject pre-specified
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QUERY_STRING);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;Subject&quot;, SUBJECT_1);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;Query&quot;, vf.createLiteral(&quot;one&quot;));</b>
+<b class="nc">&nbsp;			TupleQueryResult result = query.evaluate();</b>
+&nbsp;
+&nbsp;			// check that this subject and only this subject is returned
+<b class="nc">&nbsp;			assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;			BindingSet bindings = result.next();</b>
+<b class="nc">&nbsp;			assertEquals(SUBJECT_1, (IRI) bindings.getValue(&quot;Subject&quot;));</b>
+<b class="nc">&nbsp;			assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+<b class="nc">&nbsp;			assertFalse(result.hasNext());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testUnionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		String queryStr = &quot;&quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;PREFIX search: &lt;http://www.openrdf.org/contrib/lucenesail#&gt; &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;PREFIX rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt; &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;SELECT DISTINCT ?result { &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;{ ?result search:matches ?match1 . &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;  ?match1 search:query &#39;one&#39; ; &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;          search:property &lt;urn:predicate1&gt; . }&quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot; UNION &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;{ ?result search:matches ?match2 . &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;  ?match2 search:query &#39;one&#39; ; &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;          search:property &lt;urn:predicate2&gt; . } &quot;;</b>
+<b class="nc">&nbsp;		queryStr += &quot;} &quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query with the subject pre-specified
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(QueryLanguage.SPARQL, queryStr);</b>
+<b class="nc">&nbsp;			query.setBinding(&quot;result&quot;, SUBJECT_1);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;				// check that this subject and only this subject is returned
+<b class="nc">&nbsp;				BindingSet bs = result.next();</b>
+<b class="nc">&nbsp;				assertEquals(SUBJECT_1, bs.getValue(&quot;result&quot;));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testContextHandling() throws Exception {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.begin();</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral(&quot;sfourponecone&quot;), CONTEXT_1);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral(&quot;sfourptwocone&quot;), CONTEXT_1);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral(&quot;sfiveponecone&quot;), CONTEXT_1);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral(&quot;sfiveponectwo&quot;), CONTEXT_2);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_5, PREDICATE_2, vf.createLiteral(&quot;sfiveptwoctwo&quot;), CONTEXT_2);</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+&nbsp;
+&nbsp;			// test querying
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfourponecone&quot;, PREDICATE_1, SUBJECT_4);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfourptwocone&quot;, PREDICATE_2, SUBJECT_4);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveponecone&quot;, PREDICATE_1, SUBJECT_5);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveponectwo&quot;, PREDICATE_1, SUBJECT_5);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveptwoctwo&quot;, PREDICATE_2, SUBJECT_5);</b>
+&nbsp;
+&nbsp;			// blind test to see if this method works:
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;johannesgrenzfurthner&quot;);</b>
+&nbsp;
+&nbsp;			// remove a context
+<b class="nc">&nbsp;			connection.clear(CONTEXT_1);</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;sfourponecone&quot;);</b>
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;sfourptwocone&quot;);</b>
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;sfiveponecone&quot;);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveponectwo&quot;, PREDICATE_1, SUBJECT_5);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveptwoctwo&quot;, PREDICATE_2, SUBJECT_5);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testConcurrentReadingAndWriting() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.begin();</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral(&quot;sfourponecone&quot;), CONTEXT_1);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_2, PREDICATE_1, vf.createLiteral(&quot;sfourponecone&quot;), CONTEXT_1);</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+&nbsp;
+&nbsp;			{
+<b class="nc">&nbsp;				String queryString = &quot;SELECT ?Resource &quot; + &quot;WHERE { ?Resource &lt;&quot; + MATCHES + &quot;&gt; [ &quot; + &quot; &lt;&quot; + QUERY</b>
+&nbsp;						+ &quot;&gt; \&quot;sfourponecone\&quot;].} &quot;;
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(queryString);</b>
+<b class="nc">&nbsp;				TupleQueryResult result = query.evaluate();</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+&nbsp;				@SuppressWarnings(&quot;unused&quot;)
+<b class="nc">&nbsp;				BindingSet bindings = result.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral(&quot;sfourponecone&quot;), CONTEXT_1);</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				bindings = result.next();</b>
+<b class="nc">&nbsp;				result.close();</b>
+<b class="nc">&nbsp;				connection.commit();</b>
+&nbsp;			}
+&nbsp;			{
+<b class="nc">&nbsp;				String queryString = &quot;SELECT ?Resource &quot; + &quot;WHERE { ?Resource &lt;&quot; + MATCHES + &quot;&gt; [ &quot; + &quot; &lt;&quot; + QUERY</b>
+&nbsp;						+ &quot;&gt; \&quot;sfourponecone\&quot;].} &quot;;
+<b class="nc">&nbsp;				TupleQuery query = connection.prepareTupleQuery(queryString);</b>
+<b class="nc">&nbsp;				TupleQueryResult result = query.evaluate();</b>
+&nbsp;
+&nbsp;				// check the results
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+&nbsp;				@SuppressWarnings(&quot;unused&quot;)
+<b class="nc">&nbsp;				BindingSet bindings = result.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				connection.add(SUBJECT_3, PREDICATE_1, vf.createLiteral(&quot;blubbb&quot;), CONTEXT_1);</b>
+<b class="nc">&nbsp;				connection.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;				assertTrue(result.hasNext());</b>
+<b class="nc">&nbsp;				bindings = result.next();</b>
+<b class="nc">&nbsp;				result.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * we experienced problems with the NULL context and lucenesail in August 2008
+&nbsp;	 *
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	@Test
+&nbsp;	public void testNullContextHandling() throws Exception {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_4, PREDICATE_1, vf.createLiteral(&quot;sfourponecone&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_4, PREDICATE_2, vf.createLiteral(&quot;sfourptwocone&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral(&quot;sfiveponecone&quot;));</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral(&quot;sfiveponectwo&quot;), CONTEXT_2);</b>
+<b class="nc">&nbsp;			connection.add(SUBJECT_5, PREDICATE_2, vf.createLiteral(&quot;sfiveptwoctwo&quot;), CONTEXT_2);</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+&nbsp;
+&nbsp;			// test querying
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfourponecone&quot;, PREDICATE_1, SUBJECT_4);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfourptwocone&quot;, PREDICATE_2, SUBJECT_4);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveponecone&quot;, PREDICATE_1, SUBJECT_5);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveponectwo&quot;, PREDICATE_1, SUBJECT_5);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveptwoctwo&quot;, PREDICATE_2, SUBJECT_5);</b>
+&nbsp;			// blind test to see if this method works:
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;johannesgrenzfurthner&quot;);</b>
+&nbsp;			// remove a context
+<b class="nc">&nbsp;			connection.clear((Resource) null);</b>
+<b class="nc">&nbsp;			connection.commit();</b>
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;sfourponecone&quot;);</b>
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;sfourptwocone&quot;);</b>
+<b class="nc">&nbsp;			assertNoQueryResult(&quot;sfiveponecone&quot;);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveponectwo&quot;, PREDICATE_1, SUBJECT_5);</b>
+<b class="nc">&nbsp;			assertQueryResult(&quot;sfiveptwoctwo&quot;, PREDICATE_2, SUBJECT_5);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testFuzzyQuery() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+&nbsp;		// prepare the query
+&nbsp;		// search for the term &quot;one&quot; with 80% fuzzyness
+<b class="nc">&nbsp;		StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		buffer.append(&quot;SELECT ?Resource ?Score \n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;WHERE { \n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;  ?Resource &lt;&quot; + MATCHES + &quot;&gt; [\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;    &lt;&quot; + QUERY + &quot;&gt; \&quot;one~0.8\&quot;; &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;    &lt;&quot; + SCORE + &quot;&gt; ?Score ].} &quot;);</b>
+<b class="nc">&nbsp;		String q = buffer.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire the query
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(q);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the results
+&nbsp;				BindingSet bindings;
+&nbsp;
+&nbsp;				// the first result is subject 1 and has a score
+<b class="nc">&nbsp;				int results = 0;</b>
+<b class="nc">&nbsp;				Set&lt;IRI&gt; expectedSubject = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;				expectedSubject.add(SUBJECT_1);</b>
+<b class="nc">&nbsp;				expectedSubject.add(SUBJECT_2);</b>
+<b class="nc">&nbsp;				expectedSubject.add(SUBJECT_3);</b>
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					results++;</b>
+<b class="nc">&nbsp;					bindings = result.next();</b>
+&nbsp;
+&nbsp;					// the resource should be among the set of expected subjects, if so,
+&nbsp;					// remove it from the set
+<b class="nc">&nbsp;					assertTrue(expectedSubject.remove((IRI) bindings.getValue(&quot;Resource&quot;)));</b>
+&nbsp;
+&nbsp;					// there should be a score
+<b class="nc">&nbsp;					assertNotNull(bindings.getValue(&quot;Score&quot;));</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// there should have been 3 results
+<b class="nc">&nbsp;				assertEquals(3, results);</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testReindexing() throws Exception {
+<b class="nc">&nbsp;		sail.reindex();</b>
+<b class="nc">&nbsp;		testComplexQueryTwo();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testPropertyVar() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+<b class="nc">&nbsp;		StringBuilder buffer = new StringBuilder();</b>
+<b class="nc">&nbsp;		buffer.append(&quot;SELECT ?Resource ?Property \n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;WHERE {\n&quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;  ?Resource &lt;&quot; + MATCHES + &quot;&gt; [\n &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;    &lt;&quot; + QUERY + &quot;&gt; \&quot;one\&quot;;\n &quot;);</b>
+<b class="nc">&nbsp;		buffer.append(&quot;    &lt;&quot; + PROPERTY + &quot;&gt; ?Property ]. } &quot;);</b>
+<b class="nc">&nbsp;		String q = buffer.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire the query
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(q);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+<b class="nc">&nbsp;				int results = 0;</b>
+<b class="nc">&nbsp;				Map&lt;IRI, IRI&gt; expectedSubject = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				expectedSubject.put(SUBJECT_1, PREDICATE_1);</b>
+<b class="nc">&nbsp;				expectedSubject.put(SUBJECT_2, PREDICATE_1);</b>
+<b class="nc">&nbsp;				expectedSubject.put(SUBJECT_3, PREDICATE_2);</b>
+<b class="nc">&nbsp;				while (result.hasNext()) {</b>
+<b class="nc">&nbsp;					results++;</b>
+<b class="nc">&nbsp;					BindingSet bindings = result.next();</b>
+&nbsp;
+&nbsp;					// the resource should be among the set of expected subjects, if so,
+&nbsp;					// remove it from the set
+<b class="nc">&nbsp;					Value subject = bindings.getValue(&quot;Resource&quot;);</b>
+<b class="nc">&nbsp;					IRI expectedProperty = expectedSubject.remove(subject);</b>
+<b class="nc">&nbsp;					assertEquals(&quot;For subject &quot; + subject, expectedProperty, bindings.getValue(&quot;Property&quot;));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+&nbsp;				// there should have been 3 results
+<b class="nc">&nbsp;				assertEquals(3, results);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testMultithreadedAdd() throws InterruptedException {
+<b class="nc">&nbsp;		int numThreads = 3;</b>
+<b class="nc">&nbsp;		final CountDownLatch startLatch = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		final CountDownLatch endLatch = new CountDownLatch(numThreads);</b>
+<b class="nc">&nbsp;		final Set&lt;Throwable&gt; exceptions = ConcurrentHashMap.newKeySet();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; numThreads; i++) {</b>
+<b class="nc">&nbsp;			new Thread(new Runnable() {</b>
+&nbsp;
+<b class="nc">&nbsp;				private final long iterationCount = 10 + Math.round(random.nextDouble() * 100);</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void run() {
+<b class="nc">&nbsp;					try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;						startLatch.await();</b>
+<b class="nc">&nbsp;						for (long i = 0; i &lt; iterationCount; i++) {</b>
+<b class="nc">&nbsp;							con.add(vf.createIRI(&quot;ex:&quot; + i), vf.createIRI(&quot;ex:prop&quot; + i % 3), vf.createLiteral(i));</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} catch (Throwable e) {</b>
+<b class="nc">&nbsp;						exceptions.add(e);</b>
+<b class="nc">&nbsp;						throw new AssertionError(e);</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						endLatch.countDown();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}).start();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		startLatch.countDown();</b>
+<b class="nc">&nbsp;		endLatch.await();</b>
+<b class="nc">&nbsp;		for (Throwable e : exceptions) {</b>
+<b class="nc">&nbsp;			e.printStackTrace(System.err);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		assertEquals(&quot;Exceptions occurred during testMultithreadedAdd, see stacktraces above&quot;, 0, exceptions.size());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void assertQueryResult(String literal, IRI predicate, Resource resultUri) throws Exception {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query for all subjects with a given term
+<b class="nc">&nbsp;			String queryString = &quot;SELECT ?Resource WHERE { ?Resource &lt;&quot; + MATCHES + &quot;&gt; [ &quot; + &quot; &lt;&quot; + QUERY + &quot;&gt; \&quot;&quot;</b>
+&nbsp;					+ literal + &quot;\&quot; ]. } &quot;;
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(queryString);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;				// check the result
+<b class="nc">&nbsp;				assertTrue(&quot;query for literal &#39;&quot; + literal + &quot; did not return any results, expected was &quot; + resultUri,</b>
+<b class="nc">&nbsp;						result.hasNext());</b>
+<b class="nc">&nbsp;				BindingSet bindings = result.next();</b>
+<b class="nc">&nbsp;				assertEquals(&quot;query for literal &#39;&quot; + literal + &quot; did not return the expected resource&quot;, resultUri,</b>
+<b class="nc">&nbsp;						bindings.getValue(&quot;Resource&quot;));</b>
+<b class="nc">&nbsp;				assertFalse(result.hasNext());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void assertNoQueryResult(String literal) throws Exception {
+<b class="nc">&nbsp;		try (RepositoryConnection connection = repository.getConnection()) {</b>
+&nbsp;			// fire a query for all subjects with a given term
+<b class="nc">&nbsp;			String queryString = &quot;SELECT ?Resource WHERE { ?Resource &lt;&quot; + MATCHES + &quot;&gt; [ &quot; + &quot; &lt;&quot; + QUERY + &quot;&gt; \&quot;&quot;</b>
+&nbsp;					+ literal + &quot;\&quot; ]. } &quot;;
+<b class="nc">&nbsp;			TupleQuery query = connection.prepareTupleQuery(queryString);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult result = query.evaluate()) {</b>
+&nbsp;
+&nbsp;				// check the result
+<b class="nc">&nbsp;				assertFalse(&quot;query for literal &#39;&quot; + literal + &quot; did return results, which was not expected.&quot;,</b>
+<b class="nc">&nbsp;						result.hasNext());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

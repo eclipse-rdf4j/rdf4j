@@ -1,0 +1,524 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFParserHelper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFParserHelper (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFParserHelper</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    18.2%
+  </span>
+  <span class="absValue">
+    (2/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.2%
+  </span>
+  <span class="absValue">
+    (37/80)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    43%
+  </span>
+  <span class="absValue">
+    (43/100)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.util.LiteralUtilException;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.rio.DatatypeHandler;
+&nbsp;import org.eclipse.rdf4j.rio.LanguageHandler;
+&nbsp;import org.eclipse.rdf4j.rio.ParseErrorListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * Helper methods that may be used by {@link RDFParser} implementations.
+&nbsp; * &lt;p&gt;
+&nbsp; * This class contains reference implementations of the workflows for {@link ParseErrorListener},
+&nbsp; * {@link RDFParseException}, {@link ParserConfig}, {@link DatatypeHandler} and {@link LanguageHandler} related methods
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class RDFParserHelper {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a literal using the given parameters, including iterative verification and normalization by any
+&nbsp;	 * {@link DatatypeHandler} or {@link LanguageHandler} implementations that are found in the {@link ParserConfig}.
+&nbsp;	 *
+&nbsp;	 * @param label        The value for {@link Literal#getLabel()}, which may be iteratively normalized.
+&nbsp;	 * @param lang         If this is not null, and the datatype is either not null, or is equal to
+&nbsp;	 *                     {@link RDF#LANGSTRING}, then a language literal will be created.
+&nbsp;	 * @param datatype     If datatype is not null, and the datatype is not equal to {@link RDF#LANGSTRING} with a
+&nbsp;	 *                     non-null lang, then a datatype literal will be created.
+&nbsp;	 * @param parserConfig The source of parser settings, including the desired list of {@link DatatypeHandler} and
+&nbsp;	 *                     {@link LanguageHandler}s to use for verification and normalization of datatype and language
+&nbsp;	 *                     literals respectively.
+&nbsp;	 * @param errListener  The {@link ParseErrorListener} to use for signalling errors. This will be called if a setting
+&nbsp;	 *                     is enabled by setting it to true in the {@link ParserConfig}, after which the error may
+&nbsp;	 *                     trigger an {@link RDFParseException} if the setting is not present in
+&nbsp;	 *                     {@link ParserConfig#getNonFatalErrors()}.
+&nbsp;	 * @param valueFactory The {@link ValueFactory} to use for creating new {@link Literal}s using this method.
+&nbsp;	 * @return A {@link Literal} created based on the given parameters.
+&nbsp;	 * @throws RDFParseException If there was an error during the process that could not be recovered from, based on
+&nbsp;	 *                           settings in the given parser config.
+&nbsp;	 */
+&nbsp;	public static final Literal createLiteral(String label, String lang, IRI datatype, ParserConfig parserConfig,
+&nbsp;			ParseErrorListener errListener, ValueFactory valueFactory) throws RDFParseException {
+<b class="nc">&nbsp;		return createLiteral(label, lang, datatype, parserConfig, errListener, valueFactory, -1, -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a literal using the given parameters, including iterative verification and normalization by any
+&nbsp;	 * {@link DatatypeHandler} or {@link LanguageHandler} implementations that are found in the {@link ParserConfig}.
+&nbsp;	 *
+&nbsp;	 * @param label        The value for {@link Literal#getLabel()}, which may be iteratively normalized.
+&nbsp;	 * @param lang         If this is not null, and the datatype is either not null, or is equal to
+&nbsp;	 *                     {@link RDF#LANGSTRING}, then a language literal will be created.
+&nbsp;	 * @param datatype     If datatype is not null, and the datatype is not equal to {@link RDF#LANGSTRING} with a
+&nbsp;	 *                     non-null lang, then a datatype literal will be created.
+&nbsp;	 * @param parserConfig The source of parser settings, including the desired list of {@link DatatypeHandler} and
+&nbsp;	 *                     {@link LanguageHandler}s to use for verification and normalization of datatype and language
+&nbsp;	 *                     literals respectively.
+&nbsp;	 * @param errListener  The {@link ParseErrorListener} to use for signalling errors. This will be called if a setting
+&nbsp;	 *                     is enabled by setting it to true in the {@link ParserConfig}, after which the error may
+&nbsp;	 *                     trigger an {@link RDFParseException} if the setting is not present in
+&nbsp;	 *                     {@link ParserConfig#getNonFatalErrors()}.
+&nbsp;	 * @param valueFactory The {@link ValueFactory} to use for creating new {@link Literal}s using this method.
+&nbsp;	 * @param lineNo       Optional line number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                     {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                     {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param columnNo     Optional column number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                     {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                     {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @return A {@link Literal} created based on the given parameters.
+&nbsp;	 * @throws RDFParseException If there was an error during the process that could not be recovered from, based on
+&nbsp;	 *                           settings in the given parser config.
+&nbsp;	 */
+&nbsp;	public static Literal createLiteral(String label, String lang, IRI datatype, ParserConfig parserConfig,
+&nbsp;			ParseErrorListener errListener, ValueFactory valueFactory, long lineNo, long columnNo)
+&nbsp;			throws RDFParseException {
+<b class="pc">&nbsp;		if (label == null) {</b>
+<b class="nc">&nbsp;			throw new NullPointerException(&quot;Cannot create a literal using a null label&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Literal result = null;</b>
+<b class="fc">&nbsp;		String workingLabel = label;</b>
+<b class="fc">&nbsp;		Optional&lt;String&gt; workingLang = Optional.ofNullable(lang);</b>
+<b class="fc">&nbsp;		IRI workingDatatype = datatype;</b>
+&nbsp;
+&nbsp;		// In RDF-1.1 we must do lang check first as language literals will all
+&nbsp;		// have datatype RDF.LANGSTRING, but only language literals would have a
+&nbsp;		// non-null lang
+<b class="pc">&nbsp;		if (workingLang.isPresent() &amp;&amp; (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {</b>
+<b class="fc">&nbsp;			boolean recognisedLanguage = false;</b>
+<b class="fc">&nbsp;			for (LanguageHandler nextHandler : parserConfig.get(BasicParserSettings.LANGUAGE_HANDLERS)) {</b>
+<b class="pc">&nbsp;				if (nextHandler.isRecognizedLanguage(workingLang.get())) {</b>
+<b class="fc">&nbsp;					recognisedLanguage = true;</b>
+<b class="pc">&nbsp;					if (parserConfig.get(BasicParserSettings.VERIFY_LANGUAGE_TAGS)) {</b>
+&nbsp;						try {
+<b class="pc">&nbsp;							if (!nextHandler.verifyLanguage(workingLabel, workingLang.get())) {</b>
+<b class="nc">&nbsp;								reportError(&quot;&#39;&quot; + lang + &quot;&#39; is not a valid language tag &quot;, lineNo, columnNo,</b>
+&nbsp;										BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig, errListener);
+&nbsp;							}
+<b class="nc">&nbsp;						} catch (LiteralUtilException e) {</b>
+<b class="nc">&nbsp;							reportError(&quot;&#39;&quot; + label</b>
+&nbsp;									+ &quot; could not be verified by a language handler that recognised it. language was &quot;
+&nbsp;									+ lang, lineNo, columnNo, BasicParserSettings.VERIFY_LANGUAGE_TAGS, parserConfig,
+&nbsp;									errListener);
+<b class="fc">&nbsp;						}</b>
+&nbsp;					}
+<b class="pc">&nbsp;					if (parserConfig.get(BasicParserSettings.NORMALIZE_LANGUAGE_TAGS)) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							result = nextHandler.normalizeLanguage(workingLabel, workingLang.get(), valueFactory);</b>
+<b class="nc">&nbsp;							workingLabel = result.getLabel();</b>
+<b class="nc">&nbsp;							workingLang = result.getLanguage();</b>
+<b class="nc">&nbsp;							workingDatatype = result.getDatatype();</b>
+<b class="nc">&nbsp;						} catch (LiteralUtilException e) {</b>
+<b class="nc">&nbsp;							reportError(</b>
+&nbsp;									&quot;&#39;&quot; + label + &quot;&#39; did not have a valid value for language &quot; + lang + &quot;: &quot;
+<b class="nc">&nbsp;											+ e.getMessage() + &quot; and could not be normalised&quot;,</b>
+&nbsp;									lineNo, columnNo, BasicParserSettings.NORMALIZE_LANGUAGE_TAGS, parserConfig,
+&nbsp;									errListener);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;			if (!recognisedLanguage) {</b>
+<b class="nc">&nbsp;				reportError(&quot;&#39;&quot; + label</b>
+&nbsp;						+ &quot;&#39; was not recognised as a language literal, and could not be verified, with language &quot;
+&nbsp;						+ lang, lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, parserConfig,
+&nbsp;						errListener);
+&nbsp;			}
+<b class="fc">&nbsp;		} else if (workingDatatype != null) {</b>
+<b class="fc">&nbsp;			boolean recognisedDatatype = false;</b>
+<b class="fc">&nbsp;			for (DatatypeHandler nextHandler : parserConfig.get(BasicParserSettings.DATATYPE_HANDLERS)) {</b>
+<b class="fc">&nbsp;				if (nextHandler.isRecognizedDatatype(workingDatatype)) {</b>
+<b class="fc">&nbsp;					recognisedDatatype = true;</b>
+<b class="pc">&nbsp;					if (parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES)) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							if (!nextHandler.verifyDatatype(workingLabel, workingDatatype)) {</b>
+<b class="nc">&nbsp;								reportError(&quot;&#39;&quot; + label + &quot;&#39; is not a valid value for datatype &quot; + datatype, lineNo,</b>
+&nbsp;										columnNo, BasicParserSettings.VERIFY_DATATYPE_VALUES, parserConfig,
+&nbsp;										errListener);
+&nbsp;							}
+<b class="nc">&nbsp;						} catch (LiteralUtilException e) {</b>
+<b class="nc">&nbsp;							reportError(&quot;&#39;&quot; + label</b>
+&nbsp;									+ &quot; could not be verified by a datatype handler that recognised it. datatype was &quot;
+&nbsp;									+ datatype, lineNo, columnNo, BasicParserSettings.VERIFY_DATATYPE_VALUES,
+&nbsp;									parserConfig, errListener);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+<b class="pc">&nbsp;					if (parserConfig.get(BasicParserSettings.NORMALIZE_DATATYPE_VALUES)) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							result = nextHandler.normalizeDatatype(workingLabel, workingDatatype, valueFactory);</b>
+<b class="nc">&nbsp;							workingLabel = result.getLabel();</b>
+<b class="nc">&nbsp;							workingLang = result.getLanguage();</b>
+<b class="nc">&nbsp;							workingDatatype = result.getDatatype();</b>
+<b class="nc">&nbsp;						} catch (LiteralUtilException e) {</b>
+<b class="nc">&nbsp;							reportError(</b>
+&nbsp;									&quot;&#39;&quot; + label + &quot;&#39; is not a valid value for datatype &quot; + datatype + &quot;: &quot;
+<b class="nc">&nbsp;											+ e.getMessage() + &quot; and could not be normalised&quot;,</b>
+&nbsp;									lineNo, columnNo, BasicParserSettings.NORMALIZE_DATATYPE_VALUES, parserConfig,
+&nbsp;									errListener);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;			if (!recognisedDatatype) {</b>
+<b class="fc">&nbsp;				reportError(&quot;&#39;&quot; + label + &quot;&#39; was not recognised, and could not be verified, with datatype &quot; + datatype,</b>
+&nbsp;						lineNo, columnNo, BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, parserConfig, errListener);
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (result == null) {</b>
+&nbsp;			try {
+&nbsp;				// Removes datatype for langString datatype with no language tag when VERIFY_DATATYPE_VALUES is False.
+<b class="pc">&nbsp;				if ((workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))</b>
+<b class="pc">&nbsp;						&amp;&amp; (!workingLang.isPresent() || workingLang.get().isEmpty())</b>
+<b class="pc">&nbsp;						&amp;&amp; !parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES)) {</b>
+<b class="fc">&nbsp;					workingLang = Optional.ofNullable(null);</b>
+<b class="fc">&nbsp;					workingDatatype = null;</b>
+&nbsp;				}
+&nbsp;				// Backup for unnormalised language literal creation
+<b class="pc">&nbsp;				if (workingLang.isPresent() &amp;&amp; (workingDatatype == null || RDF.LANGSTRING.equals(workingDatatype))) {</b>
+<b class="fc">&nbsp;					result = valueFactory.createLiteral(workingLabel, workingLang.get().intern());</b>
+&nbsp;				}
+&nbsp;				// Backup for unnormalised datatype literal creation
+<b class="fc">&nbsp;				else if (workingDatatype != null) {</b>
+<b class="fc">&nbsp;					CoreDatatype coreDatatype = CoreDatatype.from(workingDatatype);</b>
+&nbsp;
+<b class="fc">&nbsp;					result = valueFactory.createLiteral(workingLabel,</b>
+<b class="fc">&nbsp;							coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : workingDatatype, coreDatatype);</b>
+&nbsp;
+<b class="fc">&nbsp;				} else {</b>
+<b class="fc">&nbsp;					result = valueFactory.createLiteral(workingLabel, CoreDatatype.XSD.STRING);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				reportFatalError(e, lineNo, columnNo, errListener);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @param parserConfig    The {@link ParserConfig} to use for determining if the error is first sent to the
+&nbsp;	 *                        ParseErrorListener, and whether it is then also non-fatal to avoid throwing an
+&nbsp;	 *                        {@link RDFParseException}.
+&nbsp;	 * @param errListener     The {@link ParseErrorListener} that will be sent messages about errors that are enabled.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	public static void reportError(String msg, RioSetting&lt;Boolean&gt; relevantSetting, ParserConfig parserConfig,
+&nbsp;			ParseErrorListener errListener) throws RDFParseException {
+<b class="nc">&nbsp;		reportError(msg, -1, -1, relevantSetting, parserConfig, errListener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param msg             The message to use for {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param lineNo          Optional line number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param columnNo        Optional column number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @param parserConfig    The {@link ParserConfig} to use for determining if the error is first sent to the
+&nbsp;	 *                        ParseErrorListener, and whether it is then also non-fatal to avoid throwing an
+&nbsp;	 *                        {@link RDFParseException}.
+&nbsp;	 * @param errListener     The {@link ParseErrorListener} that will be sent messages about errors that are enabled.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	public static void reportError(String msg, long lineNo, long columnNo, RioSetting&lt;Boolean&gt; relevantSetting,
+&nbsp;			ParserConfig parserConfig, ParseErrorListener errListener) throws RDFParseException {
+<b class="pc">&nbsp;		if (parserConfig.get(relevantSetting)) {</b>
+<b class="nc">&nbsp;			if (errListener != null) {</b>
+<b class="nc">&nbsp;				errListener.error(msg, lineNo, columnNo);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!parserConfig.isNonFatalError(relevantSetting)) {</b>
+<b class="nc">&nbsp;				throw new RDFParseException(msg, lineNo, columnNo);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports an error with associated line- and column number to the registered ParseErrorListener, if the given
+&nbsp;	 * setting has been set to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method also throws an {@link RDFParseException} when the given setting has been set to &lt;var&gt;true&lt;/var&gt; and
+&nbsp;	 * it is not a nonFatalError.
+&nbsp;	 *
+&nbsp;	 * @param e               The exception whose message to use for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param lineNo          Optional line number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param columnNo        Optional column number, should default to setting this as -1 if not known. Used for
+&nbsp;	 *                        {@link ParseErrorListener#error(String, long, long)} and for
+&nbsp;	 *                        {@link RDFParseException#RDFParseException(String, long, long)}.
+&nbsp;	 * @param relevantSetting The boolean setting that will be checked to determine if this is an issue that we need to
+&nbsp;	 *                        look at at all. If this setting is true, then the error listener will receive the error,
+&nbsp;	 *                        and if {@link ParserConfig#isNonFatalError(RioSetting)} returns true an exception will be
+&nbsp;	 *                        thrown.
+&nbsp;	 * @param parserConfig    The {@link ParserConfig} to use for determining if the error is first sent to the
+&nbsp;	 *                        ParseErrorListener, and whether it is then also non-fatal to avoid throwing an
+&nbsp;	 *                        {@link RDFParseException}.
+&nbsp;	 * @param errListener     The {@link ParseErrorListener} that will be sent messages about errors that are enabled.
+&nbsp;	 * @throws RDFParseException If {@link ParserConfig#get(RioSetting)} returns true, and
+&nbsp;	 *                           {@link ParserConfig#isNonFatalError(RioSetting)} returns true for the given setting.
+&nbsp;	 */
+&nbsp;	public static void reportError(Exception e, long lineNo, long columnNo, RioSetting&lt;Boolean&gt; relevantSetting,
+&nbsp;			ParserConfig parserConfig, ParseErrorListener errListener) throws RDFParseException {
+<b class="nc">&nbsp;		if (parserConfig.get(relevantSetting)) {</b>
+<b class="nc">&nbsp;			if (errListener != null) {</b>
+<b class="nc">&nbsp;				errListener.error(e.getMessage(), lineNo, columnNo);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!parserConfig.isNonFatalError(relevantSetting)) {</b>
+<b class="nc">&nbsp;				if (e instanceof RDFParseException) {</b>
+<b class="nc">&nbsp;					throw (RDFParseException) e;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new RDFParseException(e, lineNo, columnNo);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a &lt;var&gt;ParseException&lt;/var&gt;
+&nbsp;	 * afterwards. This method simply calls {@link #reportFatalError(String, long, long, ParseErrorListener)} supplying
+&nbsp;	 * &lt;var&gt;-1&lt;/var&gt; for the line- and column number.
+&nbsp;	 */
+&nbsp;	public static void reportFatalError(String msg, ParseErrorListener errListener) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(msg, -1, -1, errListener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
+&nbsp;	 * throws a &lt;var&gt;ParseException&lt;/var&gt; afterwards.
+&nbsp;	 */
+&nbsp;	public static void reportFatalError(String msg, long lineNo, long columnNo, ParseErrorListener errListener)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		if (errListener != null) {</b>
+<b class="nc">&nbsp;			errListener.fatalError(msg, lineNo, columnNo);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new RDFParseException(msg, lineNo, columnNo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error to the registered ParseErrorListener, if any, and throws a &lt;var&gt;ParseException&lt;/var&gt;
+&nbsp;	 * afterwards. An exception is made for the case where the supplied exception is a {@link RDFParseException}; in
+&nbsp;	 * that case the supplied exception is not wrapped in another ParseException and the error message is not reported
+&nbsp;	 * to the ParseErrorListener, assuming that it has already been reported when the original ParseException was
+&nbsp;	 * thrown.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method simply calls {@link #reportFatalError(Exception, long, long, ParseErrorListener)} supplying
+&nbsp;	 * &lt;var&gt;-1&lt;/var&gt; for the line- and column number.
+&nbsp;	 */
+&nbsp;	public static void reportFatalError(Exception e, ParseErrorListener errListener) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(e, -1, -1, errListener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
+&nbsp;	 * throws a &lt;var&gt;ParseException&lt;/var&gt; wrapped the supplied exception afterwards. An exception is made for the case
+&nbsp;	 * where the supplied exception is a {@link RDFParseException}; in that case the supplied exception is not wrapped
+&nbsp;	 * in another ParseException and the error message is not reported to the ParseErrorListener, assuming that it has
+&nbsp;	 * already been reported when the original ParseException was thrown.
+&nbsp;	 */
+&nbsp;	public static void reportFatalError(Exception e, long lineNo, long columnNo, ParseErrorListener errListener)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		if (e instanceof RDFParseException) {</b>
+<b class="nc">&nbsp;			throw (RDFParseException) e;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (errListener != null) {</b>
+<b class="nc">&nbsp;				errListener.fatalError(e.getMessage(), lineNo, columnNo);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			throw new RDFParseException(e, lineNo, columnNo);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a fatal error with associated line- and column number to the registered ParseErrorListener, if any, and
+&nbsp;	 * throws a &lt;var&gt;ParseException&lt;/var&gt; wrapped the supplied exception afterwards. An exception is made for the case
+&nbsp;	 * where the supplied exception is a {@link RDFParseException}; in that case the supplied exception is not wrapped
+&nbsp;	 * in another ParseException and the error message is not reported to the ParseErrorListener, assuming that it has
+&nbsp;	 * already been reported when the original ParseException was thrown.
+&nbsp;	 */
+&nbsp;	public static void reportFatalError(String message, Exception e, long lineNo, long columnNo,
+&nbsp;			ParseErrorListener errListener) throws RDFParseException {
+<b class="nc">&nbsp;		if (e instanceof RDFParseException) {</b>
+<b class="nc">&nbsp;			throw (RDFParseException) e;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (errListener != null) {</b>
+<b class="nc">&nbsp;				errListener.fatalError(message, lineNo, columnNo);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			throw new RDFParseException(message, e, lineNo, columnNo);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Protected constructor to prevent direct instantiation.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected RDFParserHelper() {</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

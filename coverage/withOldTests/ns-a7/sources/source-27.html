@@ -1,0 +1,273 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TimeLimitRDFHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: TimeLimitRDFHandler (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TimeLimitRDFHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TimeLimitRDFHandler$InterruptTask</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.util.Timer;
+&nbsp;import java.util.TimerTask;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public class TimeLimitRDFHandler extends RDFHandlerWrapper {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Timer timer = new Timer(&quot;TimeLimitRDFHandler&quot;, true);</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(getClass());</b>
+&nbsp;
+&nbsp;	private final InterruptTask interruptTask;
+&nbsp;
+<b class="nc">&nbsp;	private volatile boolean isInterrupted = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private final AtomicBoolean ended = new AtomicBoolean(false);</b>
+&nbsp;
+&nbsp;	public TimeLimitRDFHandler(RDFHandler rdfHandler, long timeLimit) {
+<b class="nc">&nbsp;		super(rdfHandler);</b>
+&nbsp;
+<b class="nc">&nbsp;		assert timeLimit &gt; 0 : &quot;time limit must be a positive number, is: &quot; + timeLimit;</b>
+&nbsp;
+<b class="nc">&nbsp;		interruptTask = new InterruptTask(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		timer.schedule(interruptTask, timeLimit);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isEnded() {
+<b class="nc">&nbsp;		return ended.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkInterrupted();</b>
+<b class="nc">&nbsp;		super.startRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkInterrupted();</b>
+<b class="nc">&nbsp;		if (ended.compareAndSet(false, true)) {</b>
+<b class="nc">&nbsp;			super.endRDF();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkInterrupted();</b>
+<b class="nc">&nbsp;		super.handleNamespace(prefix, uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkInterrupted();</b>
+<b class="nc">&nbsp;		super.handleStatement(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkInterrupted();</b>
+<b class="nc">&nbsp;		super.handleComment(comment);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void checkInterrupted() throws RDFHandlerException {
+<b class="nc">&nbsp;		if (isInterrupted) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(&quot;RDFHandler took too long&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void interrupt() {
+<b class="nc">&nbsp;		isInterrupted = true;</b>
+<b class="nc">&nbsp;		if (!isEnded()) {</b>
+&nbsp;			try {
+&nbsp;				// we call endRDF() in case impls have resources to close
+<b class="nc">&nbsp;				endRDF();</b>
+<b class="nc">&nbsp;			} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Failed to end RDF&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class InterruptTask extends TimerTask {
+&nbsp;
+&nbsp;		private final WeakReference&lt;TimeLimitRDFHandler&gt; handlerRef;
+&nbsp;
+<b class="nc">&nbsp;		InterruptTask(TimeLimitRDFHandler handler) {</b>
+<b class="nc">&nbsp;			this.handlerRef = new WeakReference&lt;&gt;(handler);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void run() {
+<b class="nc">&nbsp;			TimeLimitRDFHandler handler = handlerRef.get();</b>
+<b class="nc">&nbsp;			if (handler != null) {</b>
+<b class="nc">&nbsp;				handler.interrupt();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

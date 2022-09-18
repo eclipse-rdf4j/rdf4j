@@ -1,0 +1,229 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DeadLockTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.repository.optimistic</a>
+</div>
+
+<h1>Coverage Summary for Class: DeadLockTest (org.eclipse.rdf4j.testsuite.repository.optimistic)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DeadLockTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/53)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.repository.optimistic;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertNull;
+&nbsp;
+&nbsp;import java.util.concurrent.CountDownLatch;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.testsuite.repository.OptimisticIsolationTest;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.AfterClass;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.BeforeClass;
+&nbsp;import org.junit.Test;
+&nbsp;
+<b class="nc">&nbsp;public class DeadLockTest {</b>
+&nbsp;
+&nbsp;	@BeforeClass
+&nbsp;	public static void setUpClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterClass
+&nbsp;	public static void afterClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;false&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Repository repo;
+&nbsp;
+&nbsp;	private RepositoryConnection a;
+&nbsp;
+&nbsp;	private RepositoryConnection b;
+&nbsp;
+<b class="nc">&nbsp;	private final IsolationLevel level = IsolationLevels.SNAPSHOT_READ;</b>
+&nbsp;
+<b class="nc">&nbsp;	private final String NS = &quot;http://rdf.example.org/&quot;;</b>
+&nbsp;
+&nbsp;	private IRI PAINTER;
+&nbsp;
+&nbsp;	private IRI PICASSO;
+&nbsp;
+&nbsp;	private IRI REMBRANDT;
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		repo = OptimisticIsolationTest.getEmptyInitializedRepository(DeadLockTest.class);</b>
+<b class="nc">&nbsp;		ValueFactory uf = repo.getValueFactory();</b>
+<b class="nc">&nbsp;		PAINTER = uf.createIRI(NS, &quot;Painter&quot;);</b>
+<b class="nc">&nbsp;		PICASSO = uf.createIRI(NS, &quot;picasso&quot;);</b>
+<b class="nc">&nbsp;		REMBRANDT = uf.createIRI(NS, &quot;rembrandt&quot;);</b>
+<b class="nc">&nbsp;		a = repo.getConnection();</b>
+<b class="nc">&nbsp;		b = repo.getConnection();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws Exception {
+&nbsp;		try {
+<b class="nc">&nbsp;			a.close();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				b.close();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				repo.shutDown();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void test() throws Exception {
+<b class="nc">&nbsp;		final CountDownLatch start = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch end = new CountDownLatch(2);</b>
+<b class="nc">&nbsp;		final CountDownLatch commit = new CountDownLatch(1);</b>
+<b class="nc">&nbsp;		final Exception e1 = new Exception();</b>
+<b class="nc">&nbsp;		new Thread(() -&gt; {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				a.begin(level);</b>
+<b class="nc">&nbsp;				a.add(PICASSO, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;				commit.await();</b>
+<b class="nc">&nbsp;				a.commit();</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				e1.initCause(e);</b>
+<b class="nc">&nbsp;				a.rollback();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				end.countDown();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}).start();</b>
+<b class="nc">&nbsp;		final Exception e2 = new Exception();</b>
+<b class="nc">&nbsp;		new Thread(() -&gt; {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				start.countDown();</b>
+<b class="nc">&nbsp;				b.begin(level);</b>
+<b class="nc">&nbsp;				b.add(REMBRANDT, RDF.TYPE, PAINTER);</b>
+<b class="nc">&nbsp;				commit.await();</b>
+<b class="nc">&nbsp;				b.commit();</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				e2.initCause(e);</b>
+<b class="nc">&nbsp;				b.rollback();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				end.countDown();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}).start();</b>
+<b class="nc">&nbsp;		start.await();</b>
+<b class="nc">&nbsp;		commit.countDown();</b>
+<b class="nc">&nbsp;		Thread.sleep(500);</b>
+<b class="nc">&nbsp;		end.await();</b>
+<b class="nc">&nbsp;		assertNull(e1.getCause());</b>
+<b class="nc">&nbsp;		assertNull(e2.getCause());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

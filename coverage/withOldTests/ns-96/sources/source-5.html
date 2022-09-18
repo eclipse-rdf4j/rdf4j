@@ -1,0 +1,1007 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HTTPRepositoryConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.http</a>
+</div>
+
+<h1>Coverage Summary for Class: HTTPRepositoryConnection (org.eclipse.rdf4j.repository.http)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HTTPRepositoryConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/147)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/327)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">HTTPRepositoryConnection$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/147)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/328)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.http;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.rio.RDFFormat.NTRIPLES;
+&nbsp;
+&nbsp;import java.io.ByteArrayInputStream;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.net.URL;
+&nbsp;import java.net.URLConnection;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol.Action;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.ClearNamespacesOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.ClearOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.RemoveNamespaceOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.RemoveStatementsOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.SPARQLUpdateOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.SetNamespaceOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SESAME;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;import org.eclipse.rdf4j.repository.UnknownTransactionStateException;
+&nbsp;import org.eclipse.rdf4j.repository.base.AbstractRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.http.helpers.HTTPRepositorySettings;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParserRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;
+&nbsp;/**
+&nbsp; * RepositoryConnection that communicates with a server using the HTTP protocol. Methods in this class may throw the
+&nbsp; * specific RepositoryException subclasses UnautorizedException and NotAllowedException, the semantics of which are
+&nbsp; * defined by the HTTP protocol.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Herko ter Horst
+&nbsp; * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
+&nbsp; * @see org.eclipse.rdf4j.http.protocol.NotAllowedException
+&nbsp; */
+&nbsp;class HTTPRepositoryConnection extends AbstractRepositoryConnection implements HttpClientDependent {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	private final List&lt;TransactionOperation&gt; txn = Collections.synchronizedList(new ArrayList&lt;&gt;());</b>
+&nbsp;
+&nbsp;	private final RDF4JProtocolSession client;
+&nbsp;
+&nbsp;	private boolean active;
+&nbsp;
+&nbsp;	private Model toAdd;
+&nbsp;
+&nbsp;	private Model toRemove;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public HTTPRepositoryConnection(HTTPRepository repository, RDF4JProtocolSession client) {
+<b class="nc">&nbsp;		super(repository);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.client = client;</b>
+&nbsp;
+&nbsp;		// parser used for locally processing input data to be sent to the server
+&nbsp;		// should be strict, and should preserve bnode ids.
+<b class="nc">&nbsp;		setParserConfig(new ParserConfig());</b>
+<b class="nc">&nbsp;		getParserConfig().set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);</b>
+<b class="nc">&nbsp;		getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);</b>
+<b class="nc">&nbsp;		getParserConfig().set(HTTPRepositorySettings.MAX_STATEMENT_BUFFER_SIZE,</b>
+<b class="nc">&nbsp;				HTTPRepositorySettings.MAX_STATEMENT_BUFFER_SIZE.getDefaultValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClient getHttpClient() {
+<b class="nc">&nbsp;		return client.getHttpClient();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient httpClient) {
+<b class="nc">&nbsp;		client.setHttpClient(httpClient);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setParserConfig(ParserConfig parserConfig) {
+<b class="nc">&nbsp;		super.setParserConfig(parserConfig);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HTTPRepository getRepository() {
+<b class="nc">&nbsp;		return (HTTPRepository) super.getRepository();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws RepositoryException {
+<b class="nc">&nbsp;		verifyIsOpen();</b>
+<b class="nc">&nbsp;		verifyNotTxnActive(&quot;Connection already has an active transaction&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			active = true;</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			client.beginTransaction(this.getIsolationLevel());</b>
+<b class="nc">&nbsp;			active = true;</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException | IllegalStateException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin(TransactionSetting... settings) {
+<b class="nc">&nbsp;		verifyIsOpen();</b>
+<b class="nc">&nbsp;		verifyNotTxnActive(&quot;Connection already has an active transaction&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			active = true;</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			client.beginTransaction(settings);</b>
+<b class="nc">&nbsp;			active = true;</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException | IllegalStateException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepares a {@Link Query} for evaluation on this repository. Note that the preferred way of preparing queries is
+&nbsp;	 * to use the more specific {@link #prepareTupleQuery(QueryLanguage, String, String)},
+&nbsp;	 * {@link #prepareBooleanQuery(QueryLanguage, String, String)}, or
+&nbsp;	 * {@link #prepareGraphQuery(QueryLanguage, String, String)} methods instead.
+&nbsp;	 *
+&nbsp;	 * @throws UnsupportedOperationException if the method is not supported for the supplied query language.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Query prepareQuery(QueryLanguage ql, String queryString, String baseURI) {
+<b class="nc">&nbsp;		if (QueryLanguage.SPARQL.equals(ql)) {</b>
+<b class="nc">&nbsp;			String strippedQuery = QueryParserUtil.removeSPARQLQueryProlog(queryString).toUpperCase();</b>
+<b class="nc">&nbsp;			if (strippedQuery.startsWith(&quot;SELECT&quot;)) {</b>
+<b class="nc">&nbsp;				return prepareTupleQuery(ql, queryString, baseURI);</b>
+<b class="nc">&nbsp;			} else if (strippedQuery.startsWith(&quot;ASK&quot;)) {</b>
+<b class="nc">&nbsp;				return prepareBooleanQuery(ql, queryString, baseURI);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return prepareGraphQuery(ql, queryString, baseURI);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;Operation not supported for query language &quot; + ql);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI) {
+<b class="nc">&nbsp;		return new HTTPTupleQuery(this, ql, queryString, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI) {
+<b class="nc">&nbsp;		return new HTTPGraphQuery(this, ql, queryString, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI) {
+<b class="nc">&nbsp;		return new HTTPBooleanQuery(this, ql, queryString, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Resource&gt; getContextIDs() throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			List&lt;Resource&gt; contextList = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			try (TupleQueryResult contextIDs = client.getContextIDs()) {</b>
+<b class="nc">&nbsp;				while (contextIDs.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = contextIDs.next();</b>
+<b class="nc">&nbsp;					Value context = bindingSet.getValue(&quot;contextID&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (context instanceof Resource) {</b>
+<b class="nc">&nbsp;						contextList.add((Resource) context);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return createRepositoryResult(contextList);</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Statement&gt; getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred,
+&nbsp;			Resource... contexts) throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			StatementCollector collector = new StatementCollector();</b>
+<b class="nc">&nbsp;			exportStatements(subj, pred, obj, includeInferred, collector, contexts);</b>
+<b class="nc">&nbsp;			return createRepositoryResult(collector.getStatements());</b>
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+&nbsp;			// found a bug in StatementCollector?
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void exportStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+&nbsp;			Resource... contexts) throws RDFHandlerException, RepositoryException {
+<b class="nc">&nbsp;		flushTransactionState(Action.GET);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			client.getStatements(subj, pred, obj, includeInferred, handler, contexts);</b>
+<b class="nc">&nbsp;		} catch (IOException | QueryInterruptedException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long size(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		flushTransactionState(Action.SIZE);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return client.size(contexts);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void prepare() throws RepositoryException {
+<b class="nc">&nbsp;		if (this.getRepository().getServerProtocolVersion() &lt; 12) {</b>
+&nbsp;			// Action.PREPARE is not supported in Servers using protocols older than version 12.
+<b class="nc">&nbsp;			logger.warn(&quot;Prepare operation not supported by server (requires protocol version 12)&quot;);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		flushTransactionState(Action.PREPARE);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			client.prepareTransaction();</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException | IllegalStateException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws RepositoryException {
+&nbsp;
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			synchronized (txn) {</b>
+<b class="nc">&nbsp;				if (txn.size() &gt; 0) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						client.sendTransaction(txn);</b>
+<b class="nc">&nbsp;						txn.clear();</b>
+<b class="nc">&nbsp;					} catch (IOException e) {</b>
+<b class="nc">&nbsp;						throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;				active = false;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		flushTransactionState(Action.COMMIT);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			client.commitTransaction();</b>
+<b class="nc">&nbsp;			active = false;</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException | IllegalStateException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws RepositoryException {
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			txn.clear();</b>
+<b class="nc">&nbsp;			active = false;</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		flushTransactionState(Action.ROLLBACK);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			client.rollbackTransaction();</b>
+<b class="nc">&nbsp;			active = false;</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException | IllegalStateException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (isActive()) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Rolling back transaction due to connection close&quot;, new Throwable());</b>
+<b class="nc">&nbsp;				rollback();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			super.close();</b>
+<b class="nc">&nbsp;			client.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+&nbsp;			// default baseURI to file
+<b class="nc">&nbsp;			baseURI = file.toURI().toString();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (dataFormat == null) {</b>
+<b class="nc">&nbsp;			dataFormat = Rio.getParserFormatForFileName(file.getName())</b>
+<b class="nc">&nbsp;					.orElseThrow(Rio.unsupportedFormat(file.getName()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (InputStream in = new FileInputStream(file)) {</b>
+<b class="nc">&nbsp;			add(in, baseURI, dataFormat, contexts);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = url.toExternalForm();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		URLConnection con = url.openConnection();</b>
+&nbsp;
+&nbsp;		// Set appropriate Accept headers
+<b class="nc">&nbsp;		if (dataFormat != null) {</b>
+<b class="nc">&nbsp;			for (String mimeType : dataFormat.getMIMETypes()) {</b>
+<b class="nc">&nbsp;				con.addRequestProperty(&quot;Accept&quot;, mimeType);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			Set&lt;RDFFormat&gt; rdfFormats = RDFParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;			List&lt;String&gt; acceptParams = RDFFormat.getAcceptParams(rdfFormats, true, null);</b>
+<b class="nc">&nbsp;			for (String acceptParam : acceptParams) {</b>
+<b class="nc">&nbsp;				con.addRequestProperty(&quot;Accept&quot;, acceptParam);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		InputStream in = con.getInputStream();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (dataFormat == null) {</b>
+&nbsp;			// Try to determine the data&#39;s MIME type
+<b class="nc">&nbsp;			String mimeType = con.getContentType();</b>
+<b class="nc">&nbsp;			int semiColonIdx = mimeType.indexOf(&#39;;&#39;);</b>
+<b class="nc">&nbsp;			if (semiColonIdx &gt;= 0) {</b>
+<b class="nc">&nbsp;				mimeType = mimeType.substring(0, semiColonIdx);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			dataFormat = Rio.getParserFormatForMIMEType(mimeType)</b>
+<b class="nc">&nbsp;					.orElse(Rio.getParserFormatForFileName(url.getPath()).orElseThrow(Rio.unsupportedFormat(mimeType)));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			add(in, baseURI, dataFormat, contexts);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			in.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			dataFormat = getBackwardCompatibleFormat(dataFormat);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!isActive()) {</b>
+&nbsp;				// Send bytes directly to the server
+<b class="nc">&nbsp;				client.upload(in, baseURI, dataFormat, false, false, contexts);</b>
+&nbsp;			} else {
+&nbsp;				// Parse files locally
+<b class="nc">&nbsp;				super.add(in, baseURI, dataFormat, contexts);</b>
+&nbsp;
+&nbsp;			}
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		flushTransactionState(Action.ADD);</b>
+&nbsp;		// Send bytes directly to the server
+<b class="nc">&nbsp;		client.upload(in, baseURI, dataFormat, false, false, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private RDFFormat getBackwardCompatibleFormat(RDFFormat format) {
+&nbsp;		// In Sesame 2.8, the default MIME-type for N-Triples changed. To stay
+&nbsp;		// backward compatible, we &#39;fake&#39; the
+&nbsp;		// default MIME-type back to the older value (text/plain) when running in
+&nbsp;		// compatibility mode.
+<b class="nc">&nbsp;		if (NTRIPLES.equals(format)) {</b>
+&nbsp;			// create a new format constant with identical properties as the
+&nbsp;			// N-Triples format, just with a different
+&nbsp;			// default MIME-type.
+<b class="nc">&nbsp;			return new RDFFormat(NTRIPLES.getName(), List.of(&quot;text/plain&quot;), NTRIPLES.getCharset(),</b>
+<b class="nc">&nbsp;					NTRIPLES.getFileExtensions(), NTRIPLES.supportsNamespaces(), NTRIPLES.supportsContexts(),</b>
+<b class="nc">&nbsp;					NTRIPLES.supportsRDFStar());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return format;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+&nbsp;
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			dataFormat = getBackwardCompatibleFormat(dataFormat);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!isActive()) {</b>
+&nbsp;				// Send bytes directly to the server
+<b class="nc">&nbsp;				client.upload(reader, baseURI, dataFormat, false, false, contexts);</b>
+&nbsp;			} else {
+&nbsp;				// Parse files locally
+<b class="nc">&nbsp;				super.add(reader, baseURI, dataFormat, contexts);</b>
+&nbsp;
+&nbsp;			}
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		flushTransactionState(Action.ADD);</b>
+<b class="nc">&nbsp;		client.upload(reader, baseURI, dataFormat, false, false, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (!isActive()) {</b>
+&nbsp;			// operation is not part of a transaction - just send directly
+<b class="nc">&nbsp;			Objects.requireNonNull(contexts,</b>
+&nbsp;					&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+&nbsp;
+<b class="nc">&nbsp;			final Model m = new LinkedHashModel();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (contexts.length == 0) {</b>
+&nbsp;				// if no context is specified in the method call, statement&#39;s own
+&nbsp;				// context (if any) is used.
+<b class="nc">&nbsp;				m.add(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				m.add(st.getSubject(), st.getPredicate(), st.getObject(), contexts);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			addModel(m);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			super.add(st, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Resource subject, IRI predicate, Value object, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		if (!isActive()) {</b>
+<b class="nc">&nbsp;			if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;adding statement directly: {} {} {} {}&quot;, subject, predicate, object, contexts);</b>
+&nbsp;			}
+&nbsp;			// operation is not part of a transaction - just send directly
+<b class="nc">&nbsp;			Objects.requireNonNull(contexts,</b>
+&nbsp;					&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+<b class="nc">&nbsp;			Model m = new LinkedHashModel();</b>
+<b class="nc">&nbsp;			m.add(subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;			addModel(m);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;adding statement in txn: {} {} {} {}&quot;, new Object[] { subject, predicate, object, contexts });</b>
+<b class="nc">&nbsp;			super.add(subject, predicate, object, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	// This is currently disabled because the implementation of removeData in RDF4JProtocolSession
+&nbsp;	// relies on an active transaction. See https://github.com/eclipse/rdf4j/issues/3336
+&nbsp;	/*
+&nbsp;	 * @Override public void remove(Resource subject, URI predicate, Value object, Resource... contexts) throws
+&nbsp;	 * RepositoryException { if (!isActive()) { // operation is not part of a transaction - just send directly
+&nbsp;	 * OpenRDFUtil.verifyContextNotNull(contexts); if (subject == null) { subject = SESAME.WILDCARD; } if (predicate ==
+&nbsp;	 * null) { predicate = SESAME.WILDCARD; } if (object == null) { object = SESAME.WILDCARD; } final Model m = new
+&nbsp;	 * LinkedHashModel(); m.add(subject, predicate, object, contexts); removeModel(m); } else { super.remove(subject,
+&nbsp;	 * predicate, object, contexts); } }
+&nbsp;	 */
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			txn.add(new AddStatementOperation(subject, predicate, object, contexts));</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		flushTransactionState(Protocol.Action.ADD);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (toAdd == null) {</b>
+<b class="nc">&nbsp;			toAdd = new LinkedHashModel();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		toAdd.add(subject, predicate, object, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void addModel(Model m) throws RepositoryException {
+&nbsp;		// TODO we should dynamically pick a format from the available writers
+&nbsp;		// perhaps?
+<b class="nc">&nbsp;		RDFFormat format = RDFFormat.BINARY;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			ByteArrayOutputStream out = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;			Rio.write(m, out, format);</b>
+<b class="nc">&nbsp;			ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;			client.addData(in, null, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;error while writing statement&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (RDFParseException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void removeModel(Model m) throws RepositoryException {
+<b class="nc">&nbsp;		RDFFormat format = RDFFormat.BINARY;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			ByteArrayOutputStream out = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;			Rio.write(m, out, format);</b>
+<b class="nc">&nbsp;			ByteArrayInputStream in = new ByteArrayInputStream(out.toByteArray());</b>
+<b class="nc">&nbsp;			client.removeData(in, null, format);</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;error while writing statement&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (RDFParseException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void flushTransactionState(Action action) throws RepositoryException {
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+&nbsp;			// no need to flush, using old-style transactions.
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (isActive()) {</b>
+<b class="nc">&nbsp;			int maxBufferSize = getParserConfig().get(HTTPRepositorySettings.MAX_STATEMENT_BUFFER_SIZE);</b>
+<b class="nc">&nbsp;			switch (action) {</b>
+&nbsp;			case ADD:
+<b class="nc">&nbsp;				if (toRemove != null) {</b>
+<b class="nc">&nbsp;					removeModel(toRemove);</b>
+<b class="nc">&nbsp;					toRemove = null;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (toAdd != null &amp;&amp; maxBufferSize &lt;= toAdd.size()) {</b>
+<b class="nc">&nbsp;					addModel(toAdd);</b>
+<b class="nc">&nbsp;					toAdd = null;</b>
+&nbsp;				}
+&nbsp;				break;
+&nbsp;			case DELETE:
+<b class="nc">&nbsp;				if (toAdd != null) {</b>
+<b class="nc">&nbsp;					addModel(toAdd);</b>
+<b class="nc">&nbsp;					toAdd = null;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (toRemove != null &amp;&amp; maxBufferSize &lt;= toRemove.size()) {</b>
+<b class="nc">&nbsp;					removeModel(toRemove);</b>
+<b class="nc">&nbsp;					toRemove = null;</b>
+&nbsp;				}
+&nbsp;				break;
+&nbsp;			case GET:
+&nbsp;			case UPDATE:
+&nbsp;			case COMMIT:
+&nbsp;			case PREPARE:
+&nbsp;			case QUERY:
+&nbsp;			case SIZE:
+<b class="nc">&nbsp;				if (toAdd != null) {</b>
+<b class="nc">&nbsp;					addModel(toAdd);</b>
+<b class="nc">&nbsp;					toAdd = null;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (toRemove != null) {</b>
+<b class="nc">&nbsp;					removeModel(toRemove);</b>
+<b class="nc">&nbsp;					toRemove = null;</b>
+&nbsp;				}
+&nbsp;				break;
+&nbsp;			case ROLLBACK:
+<b class="nc">&nbsp;				toAdd = null;</b>
+<b class="nc">&nbsp;				toRemove = null;</b>
+&nbsp;				break;
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			txn.add(new RemoveStatementsOperation(subject, predicate, object, contexts));</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		flushTransactionState(Protocol.Action.DELETE);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (toRemove == null) {</b>
+<b class="nc">&nbsp;			toRemove = new LinkedHashModel();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (subject == null) {</b>
+<b class="nc">&nbsp;			subject = SESAME.WILDCARD;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (predicate == null) {</b>
+<b class="nc">&nbsp;			predicate = SESAME.WILDCARD;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (object == null) {</b>
+<b class="nc">&nbsp;			object = SESAME.WILDCARD;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (contexts.length == 0) {</b>
+<b class="nc">&nbsp;			toRemove.add(subject, predicate, object);</b>
+<b class="nc">&nbsp;		} else if (contexts.length == 1) {</b>
+<b class="nc">&nbsp;			toRemove.add(subject, predicate, object, contexts[0] == null ? RDF4J.NIL : contexts[0]);</b>
+&nbsp;		} else {
+&nbsp;			// We shouldn&#39;t modify the array of contexts that is passed to this method, so we need to mak a copy isntead
+<b class="nc">&nbsp;			Resource[] contextsCopy = Arrays.copyOf(contexts, contexts.length);</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; contextsCopy.length; i++) {</b>
+<b class="nc">&nbsp;				if (contextsCopy[i] == null) {</b>
+<b class="nc">&nbsp;					contextsCopy[i] = RDF4J.NIL;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			toRemove.add(subject, predicate, object, contextsCopy);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		boolean localTransaction = startLocalTransaction();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			txn.add(new ClearOperation(contexts));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			remove(null, null, null, contexts);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		conditionalCommit(localTransaction);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeNamespace(String prefix) throws RepositoryException {
+<b class="nc">&nbsp;		if (prefix == null) {</b>
+<b class="nc">&nbsp;			throw new NullPointerException(&quot;prefix must not be null&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean localTransaction = startLocalTransaction();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;				txn.add(new RemoveNamespaceOperation(prefix));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				client.removeNamespacePrefix(prefix);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			conditionalCommit(localTransaction);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+&nbsp;			// TODO if rollback throws an exception too, the original ioexception
+&nbsp;			// is silently ignored. Should we throw the rollback exception or the
+&nbsp;			// original exception (and/or should we log one of the exceptions?)
+<b class="nc">&nbsp;			conditionalRollback(localTransaction);</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearNamespaces() throws RepositoryException {
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			boolean localTransaction = startLocalTransaction();</b>
+<b class="nc">&nbsp;			txn.add(new ClearNamespacesOperation());</b>
+<b class="nc">&nbsp;			conditionalCommit(localTransaction);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			client.clearNamespaces();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(String prefix, String name) throws RepositoryException {
+<b class="nc">&nbsp;		if (prefix == null) {</b>
+<b class="nc">&nbsp;			throw new NullPointerException(&quot;prefix must not be null&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (name == null) {</b>
+<b class="nc">&nbsp;			throw new NullPointerException(&quot;name must not be null&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (this.getRepository().useCompatibleMode()) {</b>
+<b class="nc">&nbsp;			boolean localTransaction = startLocalTransaction();</b>
+<b class="nc">&nbsp;			txn.add(new SetNamespaceOperation(prefix, name));</b>
+<b class="nc">&nbsp;			conditionalCommit(localTransaction);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			client.setNamespacePrefix(prefix, name);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryResult&lt;Namespace&gt; getNamespaces() throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			List&lt;Namespace&gt; namespaceList = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			try (TupleQueryResult namespaces = client.getNamespaces()) {</b>
+<b class="nc">&nbsp;				while (namespaces.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = namespaces.next();</b>
+<b class="nc">&nbsp;					Value prefix = bindingSet.getValue(&quot;prefix&quot;);</b>
+<b class="nc">&nbsp;					Value namespace = bindingSet.getValue(&quot;namespace&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (prefix instanceof Literal &amp;&amp; namespace instanceof Literal) {</b>
+<b class="nc">&nbsp;						String prefixStr = ((Literal) prefix).getLabel();</b>
+<b class="nc">&nbsp;						String namespaceStr = ((Literal) namespace).getLabel();</b>
+<b class="nc">&nbsp;						namespaceList.add(new SimpleNamespace(prefixStr, namespaceStr));</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return createRepositoryResult(namespaceList);</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getNamespace(String prefix) throws RepositoryException {
+<b class="nc">&nbsp;		if (prefix == null) {</b>
+<b class="nc">&nbsp;			throw new NullPointerException(&quot;prefix must not be null&quot;);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			return client.getNamespace(prefix);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void scheduleUpdate(HTTPUpdate update) {
+<b class="nc">&nbsp;		SPARQLUpdateOperation op = new SPARQLUpdateOperation();</b>
+<b class="nc">&nbsp;		op.setUpdateString(update.getQueryString());</b>
+<b class="nc">&nbsp;		op.setBaseURI(update.getBaseURI());</b>
+<b class="nc">&nbsp;		op.setBindings(update.getBindingsArray());</b>
+<b class="nc">&nbsp;		op.setIncludeInferred(update.getIncludeInferred());</b>
+<b class="nc">&nbsp;		op.setDataset(update.getDataset());</b>
+<b class="nc">&nbsp;		txn.add(op);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a RepositoryResult for the supplied element set.
+&nbsp;	 */
+&nbsp;	protected &lt;E&gt; RepositoryResult&lt;E&gt; createRepositoryResult(Iterable&lt;? extends E&gt; elements) {
+<b class="nc">&nbsp;		return new RepositoryResult&lt;&gt;(new CloseableIteratorIteration&lt;&gt;(elements.iterator()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
+&nbsp;			throws RepositoryException, MalformedQueryException {
+<b class="nc">&nbsp;		return new HTTPUpdate(this, ql, update, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that the connection is open, throws a {@link StoreException} if it isn&#39;t.
+&nbsp;	 */
+&nbsp;	protected void verifyIsOpen() throws RepositoryException {
+<b class="nc">&nbsp;		if (!isOpen()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;Connection has been closed&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that the connection has an active transaction, throws a {@link StoreException} if it hasn&#39;t.
+&nbsp;	 */
+&nbsp;	protected void verifyTxnActive() throws RepositoryException {
+<b class="nc">&nbsp;		if (!isActive()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;Connection does not have an active transaction&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that the connection does not have an active transaction, throws a {@link RepositoryException} if it has.
+&nbsp;	 */
+&nbsp;	protected void verifyNotTxnActive(String msg) throws RepositoryException {
+<b class="nc">&nbsp;		if (isActive()) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(msg);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isActive() throws UnknownTransactionStateException, RepositoryException {
+<b class="nc">&nbsp;		return active;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	protected RDF4JProtocolSession getSesameSession() {
+<b class="nc">&nbsp;		return client;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

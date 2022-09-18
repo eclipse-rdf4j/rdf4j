@@ -1,0 +1,521 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDF4JTemplate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.support</a>
+</div>
+
+<h1>Coverage Summary for Class: RDF4JTemplate (org.eclipse.rdf4j.spring.support)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDF4JTemplate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/130)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.support;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.spring.util.TypeMappingUtils.toIri;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.StringWriter;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Supplier;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationException;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.Expressions;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.query.ModifyQuery;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.query.Queries;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfValue;
+&nbsp;import org.eclipse.rdf4j.spring.dao.exception.RDF4JDaoException;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.UpdateWithModelBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.GraphQueryEvaluationBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
+&nbsp;import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.util.TypeMappingUtils;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.beans.factory.annotation.Autowired;
+&nbsp;import org.springframework.core.io.ResourceLoader;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; * @author Gabriel Pickl
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;public class RDF4JTemplate {
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;	private final RepositoryConnectionFactory repositoryConnectionFactory;
+&nbsp;	private final OperationInstantiator operationInstantiator;
+&nbsp;	private final ResourceLoader resourceLoader;
+&nbsp;	private final UUIDSource uuidSource;
+&nbsp;
+&nbsp;	public RDF4JTemplate(
+&nbsp;			@Autowired RepositoryConnectionFactory repositoryConnectionFactory,
+&nbsp;			@Autowired OperationInstantiator operationInstantiator,
+&nbsp;			@Autowired ResourceLoader resourceLoader,
+<b class="nc">&nbsp;			@Autowired(required = false) UUIDSource uuidSource) {</b>
+<b class="nc">&nbsp;		this.repositoryConnectionFactory = repositoryConnectionFactory;</b>
+<b class="nc">&nbsp;		this.operationInstantiator = operationInstantiator;</b>
+<b class="nc">&nbsp;		this.resourceLoader = resourceLoader;</b>
+<b class="nc">&nbsp;		if (uuidSource == null) {</b>
+<b class="nc">&nbsp;			this.uuidSource = new DefaultUUIDSource();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.uuidSource = uuidSource;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void consumeConnection(final Consumer&lt;RepositoryConnection&gt; fun) {
+<b class="nc">&nbsp;		RepositoryConnection con = getRepositoryConnection();</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(</b>
+&nbsp;					&quot;using connection {} of type {}&quot;,
+<b class="nc">&nbsp;					con.hashCode(),</b>
+<b class="nc">&nbsp;					con.getClass().getSimpleName());</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			fun.accept(con);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logIfShaclValidationFailure(e);</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public &lt;T&gt; T applyToConnection(final Function&lt;RepositoryConnection, T&gt; fun) {
+<b class="nc">&nbsp;		RepositoryConnection con = getRepositoryConnection();</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(</b>
+&nbsp;					&quot;using connection {} of type {}&quot;,
+<b class="nc">&nbsp;					con.hashCode(),</b>
+<b class="nc">&nbsp;					con.getClass().getSimpleName());</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			return fun.apply(con);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logIfShaclValidationFailure(e);</b>
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Bypassing any caches, generates a new Update from the specified SPARQL string and returns a Builder for its
+&nbsp;	 * execution. Should be avoided in favor of one of the methods that apply caching unless the update is not reusable.
+&nbsp;	 */
+&nbsp;	public UpdateExecutionBuilder update(String updateString) {
+<b class="nc">&nbsp;		return applyToConnection(</b>
+<b class="nc">&nbsp;				con -&gt; new UpdateExecutionBuilder(</b>
+<b class="nc">&nbsp;						operationInstantiator.getUpdate(con, updateString), this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Uses a cached {@link Update} if one is available under the specified &lt;code&gt;operationName
+&nbsp;	 * &lt;/code&gt; for the {@link RepositoryConnection} that is used, otherwise the query string is obtained from the
+&nbsp;	 * specified supplier, a new Update is instantiated and cached for future calls to this method.
+&nbsp;	 *
+&nbsp;	 * Note: this call is equivalent to {@link #update(String)} if operation caching is disabled.
+&nbsp;	 *
+&nbsp;	 * @param owner                the class of the client requesting the update, used to generate a cache key in
+&nbsp;	 *                             combination with the operation name
+&nbsp;	 * @param operationName        name of the operation that, within the scope of the client, identifies the update
+&nbsp;	 * @param updateStringSupplier supplies the sparql of the update if needed
+&nbsp;	 */
+&nbsp;	public UpdateExecutionBuilder update(
+&nbsp;			Class&lt;?&gt; owner, String operationName, Supplier&lt;String&gt; updateStringSupplier) {
+<b class="nc">&nbsp;		return applyToConnection(</b>
+<b class="nc">&nbsp;				con -&gt; new UpdateExecutionBuilder(</b>
+<b class="nc">&nbsp;						operationInstantiator.getUpdate(</b>
+&nbsp;								con, owner, operationName, updateStringSupplier),
+&nbsp;						this));
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the update from the specified resource and provides it through a {@link Supplier &lt;String&gt;} in
+&nbsp;	 * {@link #update(Class, String, Supplier)}, using the &lt;code&gt;resourceName
+&nbsp;	 * &lt;/code&gt; as the &lt;code&gt;operationName&lt;/code&gt;.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public UpdateExecutionBuilder updateFromResource(Class&lt;?&gt; owner, String resourceName) {
+<b class="nc">&nbsp;		return update(</b>
+&nbsp;				owner,
+&nbsp;				resourceName,
+<b class="nc">&nbsp;				() -&gt; getStringSupplierFromResourceContent(resourceName).get());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Uses the provided {@link NamedSparqlSupplier} for calling {@link #update(Class, String, Supplier)}.
+&nbsp;	 */
+&nbsp;	public UpdateExecutionBuilder update(Class&lt;?&gt; owner, NamedSparqlSupplier namedSparqlSupplier) {
+<b class="nc">&nbsp;		return update(</b>
+<b class="nc">&nbsp;				owner, namedSparqlSupplier.getName(), namedSparqlSupplier.getSparqlSupplier());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateExecutionBuilder updateWithoutCachingStatement(String updateString) {
+<b class="nc">&nbsp;		return applyToConnection(</b>
+<b class="nc">&nbsp;				con -&gt; new UpdateExecutionBuilder(con.prepareUpdate(updateString), this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder updateWithBuilder() {
+<b class="nc">&nbsp;		return new UpdateWithModelBuilder(getRepositoryConnection());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Bypassing any caches, generates a new TupleQuery from the specified SPARQL string and returns a Builder for its
+&nbsp;	 * evaluation. Should be avoided in favor of one of the methods that apply caching unless the query is not reusable.
+&nbsp;	 */
+&nbsp;	public TupleQueryEvaluationBuilder tupleQuery(String queryString) {
+<b class="nc">&nbsp;		return new TupleQueryEvaluationBuilder(</b>
+<b class="nc">&nbsp;				applyToConnection(con -&gt; operationInstantiator.getTupleQuery(con, queryString)),</b>
+&nbsp;				this);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Uses a cached {@link TupleQuery} if one is available under the specified &lt;code&gt;operationName
+&nbsp;	 * &lt;/code&gt; for the {@link RepositoryConnection} that is used, otherwise the query string is obtained from the
+&nbsp;	 * specified supplier, a new TupleQuery is instantiated and cached for future calls to this method.
+&nbsp;	 */
+&nbsp;	public TupleQueryEvaluationBuilder tupleQuery(
+&nbsp;			Class&lt;?&gt; owner, String operationName, Supplier&lt;String&gt; queryStringSupplier) {
+<b class="nc">&nbsp;		return new TupleQueryEvaluationBuilder(</b>
+<b class="nc">&nbsp;				applyToConnection(</b>
+<b class="nc">&nbsp;						con -&gt; operationInstantiator.getTupleQuery(</b>
+&nbsp;								con, owner, operationName, queryStringSupplier)),
+&nbsp;				this);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the query from the specified resource and provides it through a {@link Supplier &lt;String&gt;} in
+&nbsp;	 * {@link #tupleQuery(Class, String, Supplier)}, using the &lt;code&gt;
+&nbsp;	 * resourceName&lt;/code&gt; as the &lt;code&gt;operationName&lt;/code&gt;.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public TupleQueryEvaluationBuilder tupleQueryFromResource(Class&lt;?&gt; owner, String resourceName) {
+<b class="nc">&nbsp;		return tupleQuery(</b>
+&nbsp;				owner,
+&nbsp;				resourceName,
+<b class="nc">&nbsp;				() -&gt; getStringSupplierFromResourceContent(resourceName).get());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Uses the provided {@link NamedSparqlSupplier} for calling {@link #tupleQuery(Class, String, Supplier)}.
+&nbsp;	 */
+&nbsp;	public TupleQueryEvaluationBuilder tupleQuery(
+&nbsp;			Class&lt;?&gt; owner, NamedSparqlSupplier namedSparqlSupplier) {
+<b class="nc">&nbsp;		return tupleQuery(</b>
+<b class="nc">&nbsp;				owner, namedSparqlSupplier.getName(), namedSparqlSupplier.getSparqlSupplier());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Bypassing any caches, generates a new GraphQuery from the specified SPARQL string and returns a Builder for its
+&nbsp;	 * evaluation. Should be avoided in favor of one of the methods that apply caching unless the query is not reusable.
+&nbsp;	 */
+&nbsp;	public GraphQueryEvaluationBuilder graphQuery(String graphQueryString) {
+<b class="nc">&nbsp;		return new GraphQueryEvaluationBuilder(</b>
+<b class="nc">&nbsp;				applyToConnection(</b>
+<b class="nc">&nbsp;						con -&gt; operationInstantiator.getGraphQuery(con, graphQueryString)),</b>
+&nbsp;				this);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Uses a cached {@link GraphQuery} if one is available under the specified &lt;code&gt;operationName
+&nbsp;	 * &lt;/code&gt; for the {@link RepositoryConnection} that is used, otherwise the query string is obtained from the
+&nbsp;	 * specified supplier, a new GraphQuery is instantiated and cached for future calls to this method.
+&nbsp;	 */
+&nbsp;	public GraphQueryEvaluationBuilder graphQuery(
+&nbsp;			Class&lt;?&gt; owner, String operationName, Supplier&lt;String&gt; queryStringSupplier) {
+<b class="nc">&nbsp;		return new GraphQueryEvaluationBuilder(</b>
+<b class="nc">&nbsp;				applyToConnection(</b>
+<b class="nc">&nbsp;						con -&gt; operationInstantiator.getGraphQuery(</b>
+&nbsp;								con, owner, operationName, queryStringSupplier)),
+&nbsp;				this);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the query from the specified resource and provides it through a {@link Supplier &lt;String&gt;} in
+&nbsp;	 * {@link #graphQuery(Class, String, Supplier)}, using the &lt;code&gt;
+&nbsp;	 * resourceName&lt;/code&gt; as the &lt;code&gt;operationName&lt;/code&gt;.
+&nbsp;	 */
+&nbsp;	public GraphQueryEvaluationBuilder graphQueryFromResource(Class&lt;?&gt; owner, String resourceName) {
+<b class="nc">&nbsp;		return graphQuery(</b>
+&nbsp;				owner,
+&nbsp;				resourceName,
+<b class="nc">&nbsp;				() -&gt; getStringSupplierFromResourceContent(resourceName).get());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Uses the provided {@link NamedSparqlSupplier} for calling {@link #graphQuery(Class, String, Supplier)}.
+&nbsp;	 */
+&nbsp;	public GraphQueryEvaluationBuilder graphQuery(
+&nbsp;			Class&lt;?&gt; owner, NamedSparqlSupplier namedSparqlSupplier) {
+<b class="nc">&nbsp;		return graphQuery(</b>
+<b class="nc">&nbsp;				owner, namedSparqlSupplier.getName(), namedSparqlSupplier.getSparqlSupplier());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void deleteTriplesWithSubject(IRI id) {
+<b class="nc">&nbsp;		consumeConnection(</b>
+&nbsp;				con -&gt; {
+<b class="nc">&nbsp;					con.remove(id, null, null);</b>
+&nbsp;				});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Deletes the specified resource: all triples are deleted in which &lt;code&gt;id&lt;/code&gt; is the subject or the object.
+&nbsp;	 *
+&nbsp;	 * @param id
+&nbsp;	 */
+&nbsp;	public void delete(IRI id) {
+<b class="nc">&nbsp;		consumeConnection(</b>
+&nbsp;				con -&gt; {
+<b class="nc">&nbsp;					con.remove(id, null, null);</b>
+<b class="nc">&nbsp;					con.remove((Resource) null, null, id);</b>
+&nbsp;				});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Deletes the specified resource and all resources &lt;code&gt;R&lt;/code&gt; reached via any of the specified property paths.
+&nbsp;	 *
+&nbsp;	 * Deletion means that all triples are removed in which &lt;code&gt;start&lt;/code&gt; or any resource in &lt;code&gt;R&lt;/code&gt; are the
+&nbsp;	 * subject or the object.
+&nbsp;	 *
+&nbsp;	 * @param start         the initial resource to be deleted
+&nbsp;	 * @param propertyPaths paths by which to reach more resources to be deleted.
+&nbsp;	 */
+&nbsp;	public void delete(IRI start, List&lt;PropertyPath&gt; propertyPaths) {
+<b class="nc">&nbsp;		List&lt;Variable&gt; targets = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		int i = 0;</b>
+<b class="nc">&nbsp;		Variable sp = SparqlBuilder.var(&quot;sp&quot;);</b>
+<b class="nc">&nbsp;		Variable so = SparqlBuilder.var(&quot;so&quot;);</b>
+<b class="nc">&nbsp;		Variable is = SparqlBuilder.var(&quot;is&quot;);</b>
+<b class="nc">&nbsp;		Variable ip = SparqlBuilder.var(&quot;ip&quot;);</b>
+<b class="nc">&nbsp;		ModifyQuery q = Queries.MODIFY()</b>
+<b class="nc">&nbsp;				.delete(toIri(start).has(sp, so), is.has(ip, start))</b>
+<b class="nc">&nbsp;				.where(toIri(start).has(sp, so).optional(), is.has(ip, start).optional());</b>
+<b class="nc">&nbsp;		for (PropertyPath p : propertyPaths) {</b>
+<b class="nc">&nbsp;			i++;</b>
+<b class="nc">&nbsp;			Variable target = SparqlBuilder.var(&quot;target_&quot; + i);</b>
+<b class="nc">&nbsp;			Variable p1 = SparqlBuilder.var(&quot;p1_&quot; + i);</b>
+<b class="nc">&nbsp;			Variable o1 = SparqlBuilder.var(&quot;o2_&quot; + i);</b>
+<b class="nc">&nbsp;			Variable p2 = SparqlBuilder.var(&quot;p2_&quot; + i);</b>
+<b class="nc">&nbsp;			Variable s2 = SparqlBuilder.var(&quot;s2_&quot; + i);</b>
+<b class="nc">&nbsp;			q.delete(target.has(p1, o1), s2.has(p2, target))</b>
+<b class="nc">&nbsp;					.where(toIri(start).has(p, target).optional(), target.has(p1, o1).optional(),</b>
+<b class="nc">&nbsp;							s2.has(p2, target).optional());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		update(q.getQueryString()).execute();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void associate(
+&nbsp;			IRI fromResource,
+&nbsp;			IRI property,
+&nbsp;			Collection&lt;IRI&gt; toResources,
+&nbsp;			boolean deleteOtherOutgoing,
+&nbsp;			boolean deleteOtherIcoming) {
+<b class="nc">&nbsp;		Variable from = SparqlBuilder.var(&quot;fromResource&quot;);</b>
+<b class="nc">&nbsp;		Variable to = SparqlBuilder.var(&quot;toResource&quot;);</b>
+<b class="nc">&nbsp;		if (deleteOtherOutgoing) {</b>
+<b class="nc">&nbsp;			String query = Queries.MODIFY()</b>
+<b class="nc">&nbsp;					.delete(from.has(property, to))</b>
+<b class="nc">&nbsp;					.where(from.has(property, to))</b>
+<b class="nc">&nbsp;					.getQueryString();</b>
+<b class="nc">&nbsp;			update(query).withBinding(from, fromResource).execute();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (deleteOtherIcoming) {</b>
+<b class="nc">&nbsp;			String query = Queries.MODIFY()</b>
+<b class="nc">&nbsp;					.delete(from.has(property, to))</b>
+<b class="nc">&nbsp;					.where(</b>
+<b class="nc">&nbsp;							from.has(property, to)</b>
+<b class="nc">&nbsp;									.filter(</b>
+<b class="nc">&nbsp;											Expressions.in(</b>
+&nbsp;													to,
+<b class="nc">&nbsp;													toResources.stream()</b>
+<b class="nc">&nbsp;															.map(TypeMappingUtils::toIri)</b>
+<b class="nc">&nbsp;															.collect(Collectors.toList())</b>
+<b class="nc">&nbsp;															.toArray(</b>
+&nbsp;																	new RdfValue[toResources
+<b class="nc">&nbsp;																			.size()]))))</b>
+<b class="nc">&nbsp;					.getQueryString();</b>
+<b class="nc">&nbsp;			update(query).execute();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		String query = Queries.INSERT_DATA(</b>
+<b class="nc">&nbsp;				toResources.stream()</b>
+<b class="nc">&nbsp;						.map(e -&gt; toIri(fromResource).has(property, e))</b>
+<b class="nc">&nbsp;						.collect(Collectors.toList())</b>
+<b class="nc">&nbsp;						.toArray(new TriplePattern[toResources.size()]))</b>
+<b class="nc">&nbsp;				.getQueryString();</b>
+<b class="nc">&nbsp;		updateWithoutCachingStatement(query).execute();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link Supplier &lt;String&gt;} that returns the String content of the specified resource (as obtained by a
+&nbsp;	 * {@link ResourceLoader}). The resource&#39;s content is read once when this method is called (revealing any problem
+&nbsp;	 * reading the resource early on.
+&nbsp;	 */
+&nbsp;	public Supplier&lt;String&gt; getStringSupplierFromResourceContent(String resourceName) {
+<b class="nc">&nbsp;		Objects.requireNonNull(resourceName);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			org.springframework.core.io.Resource res = resourceLoader.getResource(resourceName);</b>
+<b class="nc">&nbsp;			String contentAsString = new String(res.getInputStream().readAllBytes());</b>
+<b class="nc">&nbsp;			return () -&gt; contentAsString;</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDF4JDaoException(</b>
+<b class="nc">&nbsp;					String.format(&quot;Cannot read String from resource %s&quot;, resourceName));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private RepositoryConnection getRepositoryConnection() {
+<b class="nc">&nbsp;		return repositoryConnectionFactory.getConnection();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void logIfShaclValidationFailure(Throwable t) {
+<b class="nc">&nbsp;		Throwable cause = t.getCause();</b>
+<b class="nc">&nbsp;		if (cause instanceof ShaclSailValidationException) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;SHACL Validation failed!&quot;);</b>
+<b class="nc">&nbsp;			Model report = ((ShaclSailValidationException) cause).validationReportAsModel();</b>
+<b class="nc">&nbsp;			StringWriter out = new StringWriter();</b>
+<b class="nc">&nbsp;			Rio.write(report, out, RDFFormat.TURTLE);</b>
+<b class="nc">&nbsp;			logger.error(&quot;Validation report:\n{}&quot;, out.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a UUID IRI (schema: &#39;urn:uuid&#39;). Actual implementation depends on the {@link #uuidSource} that has been
+&nbsp;	 * configured. See {@link UUIDSource} and {@link org.eclipse.rdf4j.spring.uuidsource} for details.
+&nbsp;	 */
+&nbsp;	public IRI getNewUUID() {
+<b class="nc">&nbsp;		return uuidSource.nextUUID();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,272 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemStatement</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: MemStatement (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemStatement</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    69.2%
+  </span>
+  <span class="absValue">
+    (9/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    96.7%
+  </span>
+  <span class="absValue">
+    (29/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (24/36)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;import java.lang.reflect.Field;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.impl.GenericStatement;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A MemStatement is a Statement which contains context information and a flag indicating whether the statement is
+&nbsp; * explicit or inferred.
+&nbsp; */
+&nbsp;public class MemStatement extends GenericStatement&lt;MemResource, MemIRI, MemValue&gt; {
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MemStatement.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -3073275483628334134L;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether or not this statement has been added explicitly or that it has been inferred.
+&nbsp;	 */
+&nbsp;	private final boolean explicit;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifies the snapshot in which this statement was introduced.
+&nbsp;	 */
+&nbsp;	private final int sinceSnapshot;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifies the snapshot in which this statement was revoked, defaults to {@link Integer#MAX_VALUE}.
+&nbsp;	 */
+<b class="fc">&nbsp;	@SuppressWarnings(&quot;FieldMayBeFinal&quot;)</b>
+&nbsp;	private volatile int tillSnapshot = Integer.MAX_VALUE;
+&nbsp;	private static final VarHandle TILL_SNAPSHOT;
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			TILL_SNAPSHOT = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;					.in(MemStatement.class)</b>
+<b class="fc">&nbsp;					.findVarHandle(MemStatement.class, &quot;tillSnapshot&quot;, int.class);</b>
+<b class="nc">&nbsp;		} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new MemStatement with the supplied subject, predicate, object and context and marks it as &#39;explicit&#39;.
+&nbsp;	 */
+&nbsp;	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context,
+&nbsp;			int sinceSnapshot) {
+<b class="nc">&nbsp;		this(subject, predicate, object, context, true, sinceSnapshot);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new MemStatement with the supplied subject, predicate, object and context. The value of the
+&nbsp;	 * &lt;var&gt;explicit&lt;/var&gt; parameter determines if this statement is marked as &#39;explicit&#39; or not.
+&nbsp;	 */
+&nbsp;	public MemStatement(MemResource subject, MemIRI predicate, MemValue object, MemResource context, boolean explicit,
+&nbsp;			int sinceSnapshot) {
+<b class="fc">&nbsp;		super(subject, predicate, object, context);</b>
+<b class="fc">&nbsp;		this.explicit = explicit;</b>
+<b class="fc">&nbsp;		this.sinceSnapshot = sinceSnapshot;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getSinceSnapshot() {
+<b class="nc">&nbsp;		return sinceSnapshot;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setTillSnapshot(int snapshot) {
+<b class="fc">&nbsp;		TILL_SNAPSHOT.setRelease(this, snapshot);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getTillSnapshot() {
+<b class="nc">&nbsp;		return (int) TILL_SNAPSHOT.getAcquire(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isInSnapshot(int snapshot) {
+<b class="pc">&nbsp;		return snapshot &gt;= sinceSnapshot &amp;&amp; snapshot &lt; ((int) TILL_SNAPSHOT.getAcquire(this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(since = &quot;4.0.0&quot;, forRemoval = true)
+&nbsp;	public void setExplicit(boolean explicit) {
+<b class="nc">&nbsp;		logger.warn(</b>
+&nbsp;				&quot;The explicit field has been set to final for improved performance. Java reflection will be used &quot; +
+&nbsp;						&quot;to modify it. Take note that the MemorySailStore will not detect this change and may &quot; +
+&nbsp;						&quot;assume that it doesn&#39;t have any inferred statements!&quot;);
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Field explicitField = MemStatement.class.getDeclaredField(&quot;explicit&quot;);</b>
+<b class="nc">&nbsp;			explicitField.setAccessible(true);</b>
+<b class="nc">&nbsp;			explicitField.set(this, explicit);</b>
+<b class="nc">&nbsp;		} catch (NoSuchFieldException | IllegalAccessException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isExplicit() {
+<b class="fc">&nbsp;		return explicit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Lets this statement add itself to the appropriate statement lists of its subject, predicate, object and context.
+&nbsp;	 * The transaction status will be set to new.
+&nbsp;	 */
+&nbsp;	public void addToComponentLists() throws InterruptedException {
+<b class="fc">&nbsp;		getSubject().addSubjectStatement(this);</b>
+<b class="fc">&nbsp;		getPredicate().addPredicateStatement(this);</b>
+<b class="fc">&nbsp;		getObject().addObjectStatement(this);</b>
+<b class="fc">&nbsp;		MemResource context = getContext();</b>
+<b class="fc">&nbsp;		if (context != null) {</b>
+<b class="fc">&nbsp;			context.addContextStatement(this);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean matchesSPO(MemResource subject, MemIRI predicate, MemValue object) {
+<b class="fc">&nbsp;		return (object == null || object == this.object) &amp;&amp; (subject == null || subject == this.subject) &amp;&amp;</b>
+&nbsp;				(predicate == null || predicate == this.predicate);
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean matchesContext(MemResource[] memContexts) {
+<b class="fc">&nbsp;		for (MemResource context : memContexts) {</b>
+<b class="fc">&nbsp;			if (context == this.context) {</b>
+<b class="fc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean exactMatch(MemResource subject, MemIRI predicate, MemValue object, MemResource context) {
+<b class="fc">&nbsp;		return this.subject == subject &amp;&amp; this.predicate == predicate &amp;&amp; this.object == object</b>
+&nbsp;				&amp;&amp; this.context == context;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

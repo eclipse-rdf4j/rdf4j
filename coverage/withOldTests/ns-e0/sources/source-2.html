@@ -1,0 +1,258 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValidationResultIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.results.lazy</a>
+</div>
+
+<h1>Coverage Summary for Class: ValidationResultIterator (org.eclipse.rdf4j.sail.shacl.results.lazy)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValidationResultIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.results.lazy;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+&nbsp;
+&nbsp;@InternalUseOnly
+&nbsp;public class ValidationResultIterator implements Iterator&lt;ValidationResult&gt; {
+&nbsp;
+&nbsp;	private final long limit;
+<b class="nc">&nbsp;	private long counter = 0;</b>
+<b class="nc">&nbsp;	private boolean conforms = true;</b>
+<b class="nc">&nbsp;	private boolean truncated = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private Iterator&lt;ValidationResult&gt; next = Collections.emptyIterator();</b>
+&nbsp;	private CloseableIteration&lt;? extends ValidationTuple, SailException&gt; tupleIterator;
+&nbsp;
+&nbsp;	public ValidationResultIterator(CloseableIteration&lt;? extends ValidationTuple, SailException&gt; tupleIterator,
+<b class="nc">&nbsp;			long limit) {</b>
+<b class="nc">&nbsp;		this.limit = limit;</b>
+<b class="nc">&nbsp;		this.tupleIterator = tupleIterator;</b>
+<b class="nc">&nbsp;		getTuples();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void calculateNext() {
+<b class="nc">&nbsp;		if (tupleIterator.hasNext()) {</b>
+<b class="nc">&nbsp;			conforms = false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (next.hasNext()) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (tupleIterator.hasNext()) {</b>
+<b class="nc">&nbsp;			if (limit &lt; 0 || counter &lt; limit) {</b>
+<b class="nc">&nbsp;				ValidationTuple invalidTuple = tupleIterator.next();</b>
+&nbsp;
+&nbsp;				Set&lt;ValidationTuple&gt; invalidTuples;
+&nbsp;
+<b class="nc">&nbsp;				if (!invalidTuple.getCompressedTuples().isEmpty()) {</b>
+<b class="nc">&nbsp;					invalidTuples = invalidTuple.getCompressedTuples();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					invalidTuples = Collections.singleton(invalidTuple);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				Set&lt;ValidationResult&gt; validationResultsRet = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;				for (ValidationTuple tuple : invalidTuples) {</b>
+<b class="nc">&nbsp;					List&lt;ValidationResult&gt; validationResults = tuple.getValidationResult();</b>
+&nbsp;
+<b class="nc">&nbsp;					ValidationResult validationResult1 = validationResults.get(validationResults.size() - 1);</b>
+<b class="nc">&nbsp;					validationResultsRet.add(validationResult1);</b>
+&nbsp;
+&nbsp;//					ValidationResult parent = null;
+&nbsp;//
+&nbsp;//					// we iterate in reverse order to get the most recent validation result first
+&nbsp;//					for (int i = validationResults.size() - 1; i &gt;= 0; i--) {
+&nbsp;//						ValidationResult validationResult = validationResults.get(i);
+&nbsp;//						if (parent == null) {
+&nbsp;//							parent = validationResult;
+&nbsp;//							validationResultsRet.add(parent);
+&nbsp;//						} else {
+&nbsp;//							parent.setDetail(validationResult);
+&nbsp;//							parent = validationResult;
+&nbsp;//						}
+&nbsp;//					}
+&nbsp;
+<b class="nc">&nbsp;					counter++;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				next = validationResultsRet.iterator();</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (limit &gt;= 0 &amp;&amp; counter &gt;= limit &amp;&amp; tupleIterator.hasNext()) {</b>
+<b class="nc">&nbsp;				truncated = true;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ValidationTuple&gt; getTuples() {
+<b class="nc">&nbsp;		List&lt;ValidationTuple&gt; actualList = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		long localCounter = 0;</b>
+<b class="nc">&nbsp;		while (tupleIterator.hasNext() &amp;&amp; (limit &lt; 0 || localCounter++ &lt; limit + 1)) {</b>
+<b class="nc">&nbsp;			actualList.add(tupleIterator.next());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		tupleIterator = new CloseableIteratorIteration&lt;&gt;(actualList.iterator());</b>
+<b class="nc">&nbsp;		return Collections.unmodifiableList(actualList);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean conforms() {
+<b class="nc">&nbsp;		calculateNext();</b>
+<b class="nc">&nbsp;		return conforms;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isTruncated() {
+<b class="nc">&nbsp;		return truncated;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() {
+<b class="nc">&nbsp;		calculateNext();</b>
+<b class="nc">&nbsp;		return next.hasNext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationResult next() {
+<b class="nc">&nbsp;		calculateNext();</b>
+<b class="nc">&nbsp;		if (!next.hasNext()) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return next.next();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

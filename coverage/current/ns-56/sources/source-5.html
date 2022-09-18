@@ -1,0 +1,303 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TransactionStartController</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: TransactionStartController (org.eclipse.rdf4j.http.server.repository.transaction)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TransactionStartController</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/71)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.transaction;
+&nbsp;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_CREATED;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.ExecutionException;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSettingRegistry;
+&nbsp;import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.server.ClientHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.ServerHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.context.ApplicationContextException;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.mvc.AbstractController;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles requests for transaction creation on a repository.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class TransactionStartController extends AbstractController {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;	private String externalUrl;
+&nbsp;
+<b class="nc">&nbsp;	public TransactionStartController() throws ApplicationContextException {</b>
+<b class="nc">&nbsp;		setSupportedMethods(METHOD_POST);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws Exception {
+&nbsp;		ModelAndView result;
+&nbsp;
+<b class="nc">&nbsp;		Repository repository = RepositoryInterceptor.getRepository(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		String reqMethod = request.getMethod();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (METHOD_POST.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;POST transaction start&quot;);</b>
+<b class="nc">&nbsp;			result = startTransaction(repository, request, response);</b>
+<b class="nc">&nbsp;			logger.info(&quot;transaction started&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,</b>
+&nbsp;					&quot;Method not allowed: &quot; + reqMethod);
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	ArrayList&lt;TransactionSetting&gt; getIsolationLevel(HttpServletRequest request) {
+&nbsp;		// process legacy isolation level param for backward compatibility with older clients
+&nbsp;
+<b class="nc">&nbsp;		ArrayList&lt;TransactionSetting&gt; transactionSettings = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);</b>
+<b class="nc">&nbsp;		if (isolationLevelString != null) {</b>
+&nbsp;
+<b class="nc">&nbsp;			for (IsolationLevel standardLevel : IsolationLevels.values()) {</b>
+<b class="nc">&nbsp;				if (standardLevel.getValue().equals(isolationLevelString)) {</b>
+<b class="nc">&nbsp;					transactionSettings.add(IsolationLevels.valueOf(isolationLevelString));</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (transactionSettings.isEmpty())</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unknown isolation-level setting &quot; + isolationLevelString);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return transactionSettings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	ArrayList&lt;TransactionSetting&gt; getTransactionSettings(HttpServletRequest request) {
+<b class="nc">&nbsp;		ArrayList&lt;TransactionSetting&gt; transactionSettings = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		request.getParameterMap().forEach((k, v) -&gt; {</b>
+<b class="nc">&nbsp;			if (k.startsWith(Protocol.TRANSACTION_SETTINGS_PREFIX)) {</b>
+<b class="nc">&nbsp;				String settingsName = k.replace(Protocol.TRANSACTION_SETTINGS_PREFIX, &quot;&quot;);</b>
+&nbsp;
+&nbsp;				// FIXME we should make the isolation level an SPI impl as well so that it will work with
+&nbsp;				// non-standard isolation levels
+<b class="nc">&nbsp;				if (settingsName.equals(IsolationLevels.NONE.getName())) {</b>
+<b class="nc">&nbsp;					transactionSettings.add(IsolationLevels.valueOf(v[0]));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					TransactionSettingRegistry.getInstance()</b>
+<b class="nc">&nbsp;							.get(settingsName)</b>
+<b class="nc">&nbsp;							.flatMap(factory -&gt; factory.getTransactionSetting(v[0]))</b>
+<b class="nc">&nbsp;							.ifPresent(transactionSettings::add);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		return transactionSettings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Transaction createTransaction(Repository repository) throws ExecutionException, InterruptedException {
+<b class="nc">&nbsp;		return new Transaction(repository);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView startTransaction(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		ArrayList&lt;TransactionSetting&gt; transactionSettings = getIsolationLevel(request);</b>
+<b class="nc">&nbsp;		transactionSettings.addAll(getTransactionSettings(request));</b>
+&nbsp;
+<b class="nc">&nbsp;		Transaction txn = null;</b>
+<b class="nc">&nbsp;		boolean allGood = false;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			txn = createTransaction(repository);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (transactionSettings.isEmpty()) {</b>
+<b class="nc">&nbsp;				txn.begin();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				txn.begin(transactionSettings.toArray(new TransactionSetting[0]));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			UUID txnId = txn.getID();</b>
+&nbsp;
+<b class="nc">&nbsp;			model.put(SimpleResponseView.SC_KEY, SC_CREATED);</b>
+<b class="nc">&nbsp;			final StringBuffer txnURL = getUrlBasePath(request);</b>
+<b class="nc">&nbsp;			txnURL.append(&quot;/&quot; + txnId.toString());</b>
+<b class="nc">&nbsp;			Map&lt;String, String&gt; customHeaders = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			customHeaders.put(&quot;Location&quot;, txnURL.toString());</b>
+<b class="nc">&nbsp;			model.put(SimpleResponseView.CUSTOM_HEADERS_KEY, customHeaders);</b>
+&nbsp;
+<b class="nc">&nbsp;			ModelAndView result = new ModelAndView(SimpleResponseView.getInstance(), model);</b>
+<b class="nc">&nbsp;			ActiveTransactionRegistry.INSTANCE.register(txn);</b>
+<b class="nc">&nbsp;			allGood = true;</b>
+<b class="nc">&nbsp;			return result;</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | InterruptedException | ExecutionException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Transaction start error: &quot; + e.getMessage(), e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (!allGood) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					txn.close();</b>
+<b class="nc">&nbsp;				} catch (InterruptedException | ExecutionException e) {</b>
+<b class="nc">&nbsp;					throw new ServerHTTPException(&quot;Transaction start error: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private StringBuffer getUrlBasePath(final HttpServletRequest request) {
+<b class="nc">&nbsp;		if (externalUrl == null) {</b>
+<b class="nc">&nbsp;			return request.getRequestURL();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final StringBuffer url = new StringBuffer();</b>
+<b class="nc">&nbsp;		if (externalUrl.endsWith(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;			url.append(externalUrl, 0, externalUrl.length() - 1);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			url.append(externalUrl);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		url.append(request.getRequestURI());</b>
+<b class="nc">&nbsp;		return url;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setExternalUrl(final String externalUrl) {
+<b class="nc">&nbsp;		this.externalUrl = externalUrl;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

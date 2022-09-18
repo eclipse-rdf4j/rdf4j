@@ -1,0 +1,208 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractQueryResultWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractQueryResultWriter (org.eclipse.rdf4j.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractQueryResultWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.Sink;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link QueryResultWriter}s offering common functionality for query result writers.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+<b class="nc">&nbsp;public abstract class AbstractQueryResultWriter implements QueryResultWriter, Sink {</b>
+&nbsp;
+<b class="nc">&nbsp;	private WriterConfig writerConfig = new WriterConfig();</b>
+&nbsp;
+&nbsp;	private boolean encodeRDFStar;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setWriterConfig(WriterConfig config) {
+<b class="nc">&nbsp;		this.writerConfig = config;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public WriterConfig getWriterConfig() {
+<b class="nc">&nbsp;		return this.writerConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		return Arrays.asList(BasicWriterSettings.ENCODE_RDF_STAR, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FileFormat getFileFormat() {
+<b class="nc">&nbsp;		return getQueryResultFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startQueryResult(List&lt;String&gt; bindingNames) throws TupleQueryResultHandlerException {
+&nbsp;		// Formats without native RDF-star support obey the ENCODE_RDF_STAR setting and may encode RDF-star triples to
+&nbsp;		// IRIs
+<b class="nc">&nbsp;		encodeRDFStar = this instanceof TupleQueryResultWriter</b>
+<b class="nc">&nbsp;				&amp;&amp; !((TupleQueryResultWriter) this).getTupleQueryResultFormat().supportsRDFStar()</b>
+<b class="nc">&nbsp;				&amp;&amp; getWriterConfig().get(BasicWriterSettings.ENCODE_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		if (encodeRDFStar) {</b>
+<b class="nc">&nbsp;			handleSolutionImpl(new ValueMappingBindingSet(bindingSet, RDFStarUtil::toRDFEncodedValue));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			handleSolutionImpl(bindingSet);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Extending classes must implement this method instead of overriding {@link #handleSolution(BindingSet)} in order
+&nbsp;	 * to benefit from automatic handling of RDF-star encoding.
+&nbsp;	 *
+&nbsp;	 * @param bindings the solution to handle
+&nbsp;	 * @throws TupleQueryResultHandlerException
+&nbsp;	 *
+&nbsp;	 * @implNote this temporary implementation throws an {@link UnsupportedOperationException} and is only provided for
+&nbsp;	 *           backward compatility.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	protected void handleSolutionImpl(BindingSet bindings) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean xsdStringToPlainLiteral() {
+<b class="nc">&nbsp;		return getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

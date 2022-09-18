@@ -1,0 +1,181 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLBooleanJSONWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.sparqljson</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLBooleanJSONWriter (org.eclipse.rdf4j.query.resultio.sparqljson)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLBooleanJSONWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.sparqljson;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Writer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
+&nbsp;
+&nbsp;/**
+&nbsp; * A BooleanQueryResultWriter that writes query results in the
+&nbsp; * &lt;a href=&quot;http://www.w3.org/TR/rdf-sparql-json-res/&quot;&gt;SPARQL Query Results JSON Format&lt;/a&gt;.
+&nbsp; */
+&nbsp;public class SPARQLBooleanJSONWriter extends AbstractSPARQLJSONWriter implements BooleanQueryResultWriter {
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public SPARQLBooleanJSONWriter(OutputStream out) {
+<b class="nc">&nbsp;		super(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SPARQLBooleanJSONWriter(Writer writer) {
+<b class="nc">&nbsp;		super(writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final BooleanQueryResultFormat getBooleanQueryResultFormat() {
+<b class="nc">&nbsp;		return BooleanQueryResultFormat.JSON;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final BooleanQueryResultFormat getQueryResultFormat() {
+<b class="nc">&nbsp;		return getBooleanQueryResultFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void write(boolean value) throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			handleBoolean(value);</b>
+<b class="nc">&nbsp;		} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof IOException) {</b>
+<b class="nc">&nbsp;				throw (IOException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IOException(e);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

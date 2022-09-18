@@ -1,0 +1,125 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Namespace</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model</a>
+</div>
+
+<h1>Coverage Summary for Class: Namespace (org.eclipse.rdf4j.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">Namespace</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;
+&nbsp;/**
+&nbsp; * A namespace, consisting of a namespace name and a prefix that has been assigned to it.
+&nbsp; *
+&nbsp; * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+&nbsp; *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+&nbsp; *           specs.
+&nbsp; */
+&nbsp;public interface Namespace extends Serializable, Comparable&lt;Namespace&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the prefix of the current namespace. The default namespace is represented by an empty prefix string.
+&nbsp;	 *
+&nbsp;	 * @return prefix of namespace, or an empty string in case of the default namespace.
+&nbsp;	 */
+&nbsp;	String getPrefix();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the name of the current namespace (i.e. its IRI).
+&nbsp;	 *
+&nbsp;	 * @return name of namespace
+&nbsp;	 */
+&nbsp;	String getName();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares this namespace to another object.
+&nbsp;	 *
+&nbsp;	 * @param o The object to compare this namespace to
+&nbsp;	 *
+&nbsp;	 * @return {@code true} if the other object is an instance of {@code Namespace} and their {@linkplain #getPrefix()
+&nbsp;	 *         prefixes} and {@linkplain #getName() names} are equal, {@code false} otherwise.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	boolean equals(Object o);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the hash code of this namespace.
+&nbsp;	 *
+&nbsp;	 * @return a hash code for this namespace computed as {@link java.util.Objects#hash Objects.hash}(
+&nbsp;	 *         {@link #getPrefix()}, {@link #getName()})
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	int hashCode();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

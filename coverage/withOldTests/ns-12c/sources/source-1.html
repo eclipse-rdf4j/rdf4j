@@ -1,0 +1,230 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractRepositoryServlet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.base</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractRepositoryServlet (org.eclipse.rdf4j.workbench.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractRepositoryServlet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.base;
+&nbsp;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;
+&nbsp;import javax.naming.InitialContext;
+&nbsp;import javax.naming.NamingException;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.http.HTTPRepository;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.workbench.RepositoryServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+&nbsp;
+<b class="nc">&nbsp;public abstract class AbstractRepositoryServlet extends AbstractServlet implements RepositoryServlet {</b>
+&nbsp;
+&nbsp;	public static final String REPOSITORY_PARAM = &quot;repository&quot;;
+&nbsp;
+&nbsp;	public static final String MANAGER_PARAM = &quot;repository-manager&quot;;
+&nbsp;
+&nbsp;	protected RepositoryManager manager;
+&nbsp;
+&nbsp;	protected RepositoryInfo info;
+&nbsp;
+&nbsp;	protected Repository repository;
+&nbsp;
+&nbsp;	protected ValueFactory vf;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setRepositoryManager(RepositoryManager manager) {
+<b class="nc">&nbsp;		this.manager = manager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setRepositoryInfo(RepositoryInfo info) {
+<b class="nc">&nbsp;		this.info = info;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setRepository(Repository repository) {
+<b class="nc">&nbsp;		if (repository == null) {</b>
+<b class="nc">&nbsp;			this.vf = SimpleValueFactory.getInstance();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.repository = repository;</b>
+<b class="nc">&nbsp;			this.vf = repository.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (this.repository instanceof HTTPRepository) {</b>
+<b class="nc">&nbsp;				((HTTPRepository) this.repository).setPreferredRDFFormat(RDFFormat.BINARY);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init(ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		super.init(config);</b>
+<b class="nc">&nbsp;		if (repository == null) {</b>
+<b class="nc">&nbsp;			if (config.getInitParameter(REPOSITORY_PARAM) != null) {</b>
+<b class="nc">&nbsp;				setRepository((Repository) lookup(config, REPOSITORY_PARAM));</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (manager == null) {</b>
+<b class="nc">&nbsp;			if (config.getInitParameter(MANAGER_PARAM) == null) {</b>
+<b class="nc">&nbsp;				throw new MissingInitParameterException(MANAGER_PARAM);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			manager = (RepositoryManager) lookup(config, MANAGER_PARAM);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (info == null) {</b>
+<b class="nc">&nbsp;			info = new RepositoryInfo();</b>
+<b class="nc">&nbsp;			info.setId(config.getInitParameter(&quot;id&quot;));</b>
+<b class="nc">&nbsp;			info.setDescription(config.getInitParameter(&quot;description&quot;));</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (repository == null) {</b>
+<b class="nc">&nbsp;					info.setReadable(false);</b>
+<b class="nc">&nbsp;					info.setWritable(false);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					info.setReadable(true);</b>
+<b class="nc">&nbsp;					info.setWritable(repository.isWritable());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String location = config.getInitParameter(&quot;location&quot;);</b>
+<b class="nc">&nbsp;				if (location != null &amp;&amp; location.trim().length() &gt; 0) {</b>
+<b class="nc">&nbsp;					info.setLocation(new URL(location));</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (MalformedURLException | RepositoryException e) {</b>
+<b class="nc">&nbsp;				throw new ServletException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Object lookup(ServletConfig config, String name) throws ServletException {
+<b class="nc">&nbsp;		String param = config.getInitParameter(name);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			InitialContext ctx = new InitialContext();</b>
+<b class="nc">&nbsp;			return ctx.lookup(param);</b>
+<b class="nc">&nbsp;		} catch (NamingException e) {</b>
+<b class="nc">&nbsp;			throw new ServletException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

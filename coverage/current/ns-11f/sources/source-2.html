@@ -1,0 +1,212 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NegativeParserTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: NegativeParserTest (org.eclipse.rdf4j.testsuite.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NegativeParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.rio;
+&nbsp;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import junit.framework.TestCase;
+&nbsp;
+&nbsp;public class NegativeParserTest extends TestCase {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;	private final String inputURL;
+&nbsp;
+&nbsp;	private final String baseURL;
+&nbsp;
+&nbsp;	private final RDFParser targetParser;
+&nbsp;
+&nbsp;	protected IRI testUri;
+&nbsp;
+&nbsp;	protected FailureMode failureMode;
+&nbsp;
+&nbsp;	protected boolean didIgnoreFailure;
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(NegativeParserTest.class);</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public NegativeParserTest(IRI testUri, String caseURI, String inputURL, String baseURL, RDFParser targetParser,
+&nbsp;			FailureMode failureMode) throws MalformedURLException {
+<b class="nc">&nbsp;		super(caseURI);</b>
+<b class="nc">&nbsp;		this.testUri = testUri;</b>
+<b class="nc">&nbsp;		this.inputURL = inputURL;</b>
+<b class="nc">&nbsp;		this.baseURL = baseURL;</b>
+<b class="nc">&nbsp;		this.targetParser = targetParser;</b>
+<b class="nc">&nbsp;		this.failureMode = failureMode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void runTest() {
+<b class="nc">&nbsp;		ParseErrorCollector el = new ParseErrorCollector();</b>
+&nbsp;		try {
+&nbsp;			// Try parsing the input; this should result in an error being
+&nbsp;			// reported.
+&nbsp;			// targetParser.setDatatypeHandling(RDFParser.DatatypeHandling.IGNORE);
+&nbsp;
+<b class="nc">&nbsp;			targetParser.setRDFHandler(new StatementCollector());</b>
+&nbsp;
+<b class="nc">&nbsp;			InputStream in = this.getClass().getResourceAsStream(inputURL);</b>
+<b class="nc">&nbsp;			assertNotNull(&quot;Test resource was not found: inputURL=&quot; + inputURL, in);</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;test: &quot; + inputURL);</b>
+&nbsp;
+<b class="nc">&nbsp;			targetParser.setParseErrorListener(el);</b>
+&nbsp;
+<b class="nc">&nbsp;			targetParser.parse(in, baseURL);</b>
+<b class="nc">&nbsp;			in.close();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (failureMode.ignoreFailure()) {</b>
+<b class="nc">&nbsp;				this.didIgnoreFailure = true;</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Ignoring Negative Parser Test that does not report an expected error: &quot; + inputURL);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				this.didIgnoreFailure = false;</b>
+<b class="nc">&nbsp;				fail(&quot;Parser parses erroneous data without reporting errors&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RDFParseException e) {</b>
+&nbsp;			// This is expected as the input file is incorrect RDF
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			fail(&quot;Error: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;} // end inner class NegativeParserTest
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,235 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExternalFilterByQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: ExternalFilterByQuery (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ExternalFilterByQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStoreConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Håvard Ottestad
+&nbsp; */
+<b class="nc">&nbsp;public class ExternalFilterByQuery extends FilterPlanNode {</b>
+&nbsp;
+<b class="nc">&nbsp;	static private final Logger logger = LoggerFactory.getLogger(ExternalFilterByQuery.class);</b>
+&nbsp;
+&nbsp;	private final SailConnection connection;
+&nbsp;	private final TupleExpr query;
+&nbsp;	private final Dataset dataset;
+&nbsp;	private final StatementMatcher.Variable queryVariable;
+&nbsp;	private final Function&lt;ValidationTuple, Value&gt; filterOn;
+&nbsp;	private final String queryString;
+&nbsp;
+&nbsp;	public ExternalFilterByQuery(SailConnection connection, Resource[] dataGraph, PlanNode parent,
+&nbsp;			String queryFragment,
+&nbsp;			StatementMatcher.Variable queryVariable,
+&nbsp;			Function&lt;ValidationTuple, Value&gt; filterOn) {
+<b class="nc">&nbsp;		super(parent);</b>
+<b class="nc">&nbsp;		this.connection = connection;</b>
+<b class="nc">&nbsp;		assert this.connection != null;</b>
+<b class="nc">&nbsp;		this.queryVariable = queryVariable;</b>
+<b class="nc">&nbsp;		this.filterOn = filterOn;</b>
+&nbsp;
+<b class="nc">&nbsp;		queryFragment = &quot;SELECT ?&quot; + queryVariable.getName() + &quot; WHERE {\n&quot; + queryFragment + &quot;\n}&quot;;</b>
+<b class="nc">&nbsp;		this.queryString = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			this.query = SparqlQueryParserCache.get(queryFragment);</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Malformed query:\n{}&quot;, queryFragment);</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	boolean checkTuple(ValidationTuple t) {
+&nbsp;
+<b class="nc">&nbsp;		Value value = filterOn.apply(t);</b>
+<b class="nc">&nbsp;		SingletonBindingSet bindings = new SingletonBindingSet(queryVariable.getName(), value);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (var bindingSet = connection.evaluate(query, dataset, bindings, false)) {</b>
+<b class="nc">&nbsp;			return bindingSet.hasNext();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;ExternalFilterByQuery{&quot; +</b>
+<b class="nc">&nbsp;				&quot;, queryString=&quot; + queryString.replace(&quot;\n&quot;, &quot;\t&quot;) +</b>
+<b class="nc">&nbsp;				&quot;, queryVariable=&#39;&quot; + queryVariable.toString().replace(&quot;\n&quot;, &quot;  &quot;) + &#39;\&#39;&#39; +</b>
+&nbsp;				&#39;}&#39;;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!super.equals(o)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		ExternalFilterByQuery that = (ExternalFilterByQuery) o;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (connection instanceof MemoryStoreConnection &amp;&amp; that.connection instanceof MemoryStoreConnection) {</b>
+<b class="nc">&nbsp;			return ((MemoryStoreConnection) connection).getSail()</b>
+<b class="nc">&nbsp;					.equals(((MemoryStoreConnection) that.connection).getSail()) &amp;&amp;</b>
+<b class="nc">&nbsp;					Objects.equals(dataset, that.dataset)</b>
+<b class="nc">&nbsp;					&amp;&amp; queryVariable.equals(that.queryVariable) &amp;&amp; filterOn.equals(that.filterOn)</b>
+<b class="nc">&nbsp;					&amp;&amp; queryString.equals(that.queryString);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return Objects.equals(connection, that.connection) &amp;&amp; queryVariable.equals(that.queryVariable)</b>
+<b class="nc">&nbsp;				&amp;&amp; Objects.equals(dataset, that.dataset)</b>
+<b class="nc">&nbsp;				&amp;&amp; filterOn.equals(that.filterOn) &amp;&amp; queryString.equals(that.queryString);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		if (connection instanceof MemoryStoreConnection) {</b>
+<b class="nc">&nbsp;			return Objects.hash(super.hashCode(), ((MemoryStoreConnection) connection).getSail(), queryVariable,</b>
+&nbsp;					filterOn, dataset, queryString);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return Objects.hash(super.hashCode(), connection, queryVariable, filterOn, dataset, queryString);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,215 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailRepositoryConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sail.config</a>
+</div>
+
+<h1>Coverage Summary for Class: SailRepositoryConfig (org.eclipse.rdf4j.repository.sail.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailRepositoryConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.4%
+  </span>
+  <span class="absValue">
+    (4/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    16.7%
+  </span>
+  <span class="absValue">
+    (5/30)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sail.config;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.NAMESPACE;
+&nbsp;import static org.eclipse.rdf4j.repository.sail.config.SailRepositorySchema.SAILIMPL;
+&nbsp;import static org.eclipse.rdf4j.sail.config.SailConfigSchema.SAILTYPE;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailConfigException;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailFactory;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailImplConfig;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailRegistry;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class SailRepositoryConfig extends AbstractRepositoryImplConfig {
+&nbsp;
+&nbsp;	private SailImplConfig sailImplConfig;
+&nbsp;
+&nbsp;	public SailRepositoryConfig() {
+<b class="fc">&nbsp;		super(SailRepositoryFactory.REPOSITORY_TYPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SailRepositoryConfig(SailImplConfig sailImplConfig) {
+<b class="fc">&nbsp;		this();</b>
+<b class="fc">&nbsp;		setSailImplConfig(sailImplConfig);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SailImplConfig getSailImplConfig() {
+<b class="fc">&nbsp;		return sailImplConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setSailImplConfig(SailImplConfig sailImplConfig) {
+<b class="fc">&nbsp;		this.sailImplConfig = sailImplConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void validate() throws RepositoryConfigException {
+<b class="nc">&nbsp;		super.validate();</b>
+<b class="nc">&nbsp;		if (sailImplConfig == null) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(&quot;No Sail implementation specified for Sail repository&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			sailImplConfig.validate();</b>
+<b class="nc">&nbsp;		} catch (SailConfigException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model model) {
+<b class="nc">&nbsp;		Resource repImplNode = super.export(model);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (sailImplConfig != null) {</b>
+<b class="nc">&nbsp;			model.setNamespace(&quot;sr&quot;, NAMESPACE);</b>
+<b class="nc">&nbsp;			Resource sailImplNode = sailImplConfig.export(model);</b>
+<b class="nc">&nbsp;			model.add(repImplNode, SAILIMPL, sailImplNode);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return repImplNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model model, Resource repImplNode) throws RepositoryConfigException {
+&nbsp;		try {
+<b class="nc">&nbsp;			Optional&lt;Resource&gt; sailImplNode = Models.objectResource(model.getStatements(repImplNode, SAILIMPL, null));</b>
+<b class="nc">&nbsp;			if (sailImplNode.isPresent()) {</b>
+<b class="nc">&nbsp;				Models.objectLiteral(model.getStatements(sailImplNode.get(), SAILTYPE, null)).ifPresent(typeLit -&gt; {</b>
+<b class="nc">&nbsp;					SailFactory factory = SailRegistry.getInstance()</b>
+<b class="nc">&nbsp;							.get(typeLit.getLabel())</b>
+<b class="nc">&nbsp;							.orElseThrow(() -&gt; new RepositoryConfigException(</b>
+<b class="nc">&nbsp;									&quot;Unsupported Sail type: &quot; + typeLit.getLabel()));</b>
+&nbsp;
+<b class="nc">&nbsp;					sailImplConfig = factory.getConfig();</b>
+<b class="nc">&nbsp;					sailImplConfig.parse(model, sailImplNode.get());</b>
+&nbsp;				});
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (ModelException | SailConfigException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

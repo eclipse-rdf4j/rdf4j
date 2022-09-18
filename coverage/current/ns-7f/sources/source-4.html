@@ -1,0 +1,470 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BinaryQueryResultWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.binary</a>
+</div>
+
+<h1>Coverage Summary for Class: BinaryQueryResultWriter (org.eclipse.rdf4j.query.resultio.binary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BinaryQueryResultWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/116)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.binary;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.BNODE_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.DATATYPE_LITERAL_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.EMPTY_ROW_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.ERROR_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.FORMAT_VERSION;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.LANG_LITERAL_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.MAGIC_NUMBER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.MALFORMED_QUERY_ERROR;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.NAMESPACE_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.NULL_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.PLAIN_LITERAL_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.QNAME_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.QUERY_EVALUATION_ERROR;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.REPEAT_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.TABLE_END_RECORD_MARKER;
+&nbsp;import static org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultConstants.TRIPLE_RECORD_MARKER;
+&nbsp;
+&nbsp;import java.io.DataOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.nio.CharBuffer;
+&nbsp;import java.nio.charset.CharsetEncoder;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteSink;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.impl.ListBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * Writer for the binary tuple result format. The format is explained in {@link BinaryQueryResultConstants}.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class BinaryQueryResultWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, ByteSink {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The output stream to write the results table to.
+&nbsp;	 */
+&nbsp;	private final DataOutputStream out;
+&nbsp;
+<b class="nc">&nbsp;	private final CharsetEncoder charsetEncoder = StandardCharsets.UTF_8.newEncoder();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Map containing the namespace IDs (Integer objects) that have been defined in the document, stored using the
+&nbsp;	 * concerning namespace (Strings).
+&nbsp;	 */
+<b class="nc">&nbsp;	private final Map&lt;String, Integer&gt; namespaceTable = new HashMap&lt;&gt;(32);</b>
+&nbsp;
+&nbsp;	private int nextNamespaceID;
+&nbsp;
+&nbsp;	private BindingSet previousBindings;
+&nbsp;
+&nbsp;	private List&lt;String&gt; bindingNames;
+&nbsp;
+<b class="nc">&nbsp;	private boolean documentStarted = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	protected boolean tupleVariablesFound = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	public BinaryQueryResultWriter(OutputStream out) {</b>
+<b class="nc">&nbsp;		this.out = new DataOutputStream(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public OutputStream getOutputStream() {
+<b class="nc">&nbsp;		return out;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public final TupleQueryResultFormat getTupleQueryResultFormat() {
+<b class="nc">&nbsp;		return TupleQueryResultFormat.BINARY;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final TupleQueryResultFormat getQueryResultFormat() {
+<b class="nc">&nbsp;		return getTupleQueryResultFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		return Collections.emptyList();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startDocument() throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		documentStarted = true;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			out.write(MAGIC_NUMBER);</b>
+<b class="nc">&nbsp;			out.writeInt(FORMAT_VERSION);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startQueryResult(List&lt;String&gt; bindingNames) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		super.startQueryResult(bindingNames);</b>
+&nbsp;
+<b class="nc">&nbsp;		tupleVariablesFound = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!documentStarted) {</b>
+<b class="nc">&nbsp;			startDocument();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Copy supplied column headers list and make it unmodifiable
+<b class="nc">&nbsp;		bindingNames = new ArrayList&lt;&gt;(bindingNames);</b>
+<b class="nc">&nbsp;		this.bindingNames = Collections.unmodifiableList(bindingNames);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			out.writeInt(this.bindingNames.size());</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String bindingName : this.bindingNames) {</b>
+<b class="nc">&nbsp;				writeString(bindingName);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;Value&gt; nullTuple = Collections.nCopies(this.bindingNames.size(), (Value) null);</b>
+<b class="nc">&nbsp;			previousBindings = new ListBindingSet(this.bindingNames, nullTuple);</b>
+<b class="nc">&nbsp;			nextNamespaceID = 0;</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endQueryResult() throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		if (!tupleVariablesFound) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Could not end query result as startQueryResult was not called first.&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			out.writeByte(TABLE_END_RECORD_MARKER);</b>
+<b class="nc">&nbsp;			endDocument();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		if (!tupleVariablesFound) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Must call startQueryResult before handleSolution&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (bindingSet.size() == 0) {</b>
+<b class="nc">&nbsp;				writeEmptyRow();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				for (String bindingName : bindingNames) {</b>
+<b class="nc">&nbsp;					Value value = bindingSet.getValue(bindingName);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (value == null) {</b>
+<b class="nc">&nbsp;						writeNull();</b>
+<b class="nc">&nbsp;					} else if (value.equals(previousBindings.getValue(bindingName))) {</b>
+<b class="nc">&nbsp;						writeRepeat();</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						writeValue(value);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				previousBindings = bindingSet;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeNull() throws IOException {
+<b class="nc">&nbsp;		out.writeByte(NULL_RECORD_MARKER);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeRepeat() throws IOException {
+<b class="nc">&nbsp;		out.writeByte(REPEAT_RECORD_MARKER);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeValue(Value value) throws IOException {
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			writeQName((IRI) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			writeBNode((BNode) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			writeLiteral((Literal) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Triple) {</b>
+<b class="nc">&nbsp;			writeTriple((Triple) value);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(&quot;Unknown Value object type: &quot; + value.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeEmptyRow() throws IOException {
+<b class="nc">&nbsp;		out.writeByte(EMPTY_ROW_RECORD_MARKER);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
+&nbsp;		// Binary format does not support explicit setting of namespace prefixes.
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	private void writeQName(IRI uri) throws IOException {
+&nbsp;		// Check if the URI has a new namespace
+<b class="nc">&nbsp;		String namespace = uri.getNamespace();</b>
+&nbsp;
+<b class="nc">&nbsp;		Integer nsID = namespaceTable.get(namespace);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (nsID == null) {</b>
+&nbsp;			// Generate a ID for this new namespace
+<b class="nc">&nbsp;			nsID = writeNamespace(namespace);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		out.writeByte(QNAME_RECORD_MARKER);</b>
+<b class="nc">&nbsp;		out.writeInt(nsID.intValue());</b>
+<b class="nc">&nbsp;		writeString(uri.getLocalName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeBNode(BNode bnode) throws IOException {
+<b class="nc">&nbsp;		out.writeByte(BNODE_RECORD_MARKER);</b>
+<b class="nc">&nbsp;		writeString(bnode.getID());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeLiteral(Literal literal) throws IOException {
+<b class="nc">&nbsp;		String label = literal.getLabel();</b>
+<b class="nc">&nbsp;		IRI datatype = literal.getDatatype();</b>
+&nbsp;
+&nbsp;		int marker;
+&nbsp;
+<b class="nc">&nbsp;		if (Literals.isLanguageLiteral(literal)) {</b>
+<b class="nc">&nbsp;			marker = LANG_LITERAL_RECORD_MARKER;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			String namespace = datatype.getNamespace();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!namespaceTable.containsKey(namespace)) {</b>
+&nbsp;				// Assign an ID to this new namespace
+<b class="nc">&nbsp;				writeNamespace(namespace);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			marker = DATATYPE_LITERAL_RECORD_MARKER;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		out.writeByte(marker);</b>
+<b class="nc">&nbsp;		writeString(label);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (Literals.isLanguageLiteral(literal)) {</b>
+<b class="nc">&nbsp;			writeString(literal.getLanguage().get());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeQName(datatype);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeTriple(Triple triple) throws IOException {
+<b class="nc">&nbsp;		out.writeByte(TRIPLE_RECORD_MARKER);</b>
+<b class="nc">&nbsp;		writeValue(triple.getSubject());</b>
+<b class="nc">&nbsp;		writeValue(triple.getPredicate());</b>
+<b class="nc">&nbsp;		writeValue(triple.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes an error msg to the stream.
+&nbsp;	 *
+&nbsp;	 * @param errType The error type.
+&nbsp;	 * @param msg     The error message.
+&nbsp;	 * @throws IOException When the error could not be written to the stream.
+&nbsp;	 */
+&nbsp;	public void error(QueryErrorType errType, String msg) throws IOException {
+<b class="nc">&nbsp;		out.writeByte(ERROR_RECORD_MARKER);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (errType == QueryErrorType.MALFORMED_QUERY_ERROR) {</b>
+<b class="nc">&nbsp;			out.writeByte(MALFORMED_QUERY_ERROR);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			out.writeByte(QUERY_EVALUATION_ERROR);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writeString(msg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Integer writeNamespace(String namespace) throws IOException {
+<b class="nc">&nbsp;		out.writeByte(NAMESPACE_RECORD_MARKER);</b>
+<b class="nc">&nbsp;		out.writeInt(nextNamespaceID);</b>
+<b class="nc">&nbsp;		writeString(namespace);</b>
+&nbsp;
+<b class="nc">&nbsp;		Integer result = new Integer(nextNamespaceID);</b>
+<b class="nc">&nbsp;		namespaceTable.put(namespace, result);</b>
+&nbsp;
+<b class="nc">&nbsp;		nextNamespaceID++;</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeString(String s) throws IOException {
+<b class="nc">&nbsp;		ByteBuffer byteBuf = charsetEncoder.encode(CharBuffer.wrap(s));</b>
+<b class="nc">&nbsp;		out.writeInt(byteBuf.remaining());</b>
+<b class="nc">&nbsp;		out.write(byteBuf.array(), 0, byteBuf.remaining());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException {
+&nbsp;		// Ignored by Binary Query Results format
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startHeader() throws QueryResultHandlerException {
+&nbsp;		// Ignored by Binary Query Results format
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleLinks(List&lt;String&gt; linkUrls) throws QueryResultHandlerException {
+&nbsp;		// Ignored by Binary Query Results format
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endHeader() throws QueryResultHandlerException {
+&nbsp;		// Ignored by Binary Query Results format
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	private void endDocument() throws IOException {
+<b class="nc">&nbsp;		out.flush();</b>
+<b class="nc">&nbsp;		documentStarted = false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleBoolean(boolean value) throws QueryResultHandlerException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Cannot handle boolean results&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

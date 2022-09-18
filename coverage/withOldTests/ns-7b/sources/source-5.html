@@ -1,0 +1,390 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConstructorBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: ConstructorBuilder (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConstructorBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (4/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    52.5%
+  </span>
+  <span class="absValue">
+    (21/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    72.4%
+  </span>
+  <span class="absValue">
+    (42/58)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ConstructorBuilder$BasicPatternVerifier</td>
+<td class="coverageStat">
+  <span class="percent">
+    37.5%
+  </span>
+  <span class="absValue">
+    (3/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (2/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.2%
+  </span>
+  <span class="absValue">
+    (6/13)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    53.8%
+  </span>
+  <span class="absValue">
+    (7/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    52.3%
+  </span>
+  <span class="absValue">
+    (23/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.6%
+  </span>
+  <span class="absValue">
+    (48/71)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+&nbsp;
+&nbsp;/**
+&nbsp; *
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+<b class="fc">&nbsp;public class ConstructorBuilder {</b>
+&nbsp;
+&nbsp;	public TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean distinct, boolean reduced) {
+<b class="nc">&nbsp;		return buildConstructor(bodyExpr, constructExpr, true, distinct, reduced);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public TupleExpr buildConstructor(TupleExpr bodyExpr, boolean distinct, boolean reduced)
+&nbsp;			throws MalformedQueryException {
+&nbsp;		// check that bodyExpr contains _only_ a basic graph pattern.
+<b class="fc">&nbsp;		BasicPatternVerifier verifier = new BasicPatternVerifier();</b>
+<b class="fc">&nbsp;		bodyExpr.visit(verifier);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (!verifier.isBasicPattern()) {</b>
+<b class="nc">&nbsp;			throw new MalformedQueryException(</b>
+&nbsp;					&quot;can not use shorthand CONSTRUCT: graph pattern in WHERE clause is not a basic pattern.&quot;);
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return buildConstructor(bodyExpr, bodyExpr, false, distinct, reduced);</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class BasicPatternVerifier extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;		private boolean basicPattern = true;</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @param basicPattern The basicPattern to set.
+&nbsp;		 */
+&nbsp;		/**
+&nbsp;		 * @return Returns the basicPattern.
+&nbsp;		 */
+&nbsp;		public boolean isBasicPattern() {
+<b class="fc">&nbsp;			return basicPattern;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(LeftJoin node) {
+<b class="nc">&nbsp;			basicPattern = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter node) {
+<b class="nc">&nbsp;			basicPattern = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Extension node) {
+<b class="nc">&nbsp;			basicPattern = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Projection node) {
+<b class="nc">&nbsp;			basicPattern = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Union node) {
+<b class="nc">&nbsp;			basicPattern = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(StatementPattern node) {
+<b class="pc">&nbsp;			if (!Scope.DEFAULT_CONTEXTS.equals(node.getScope())) {</b>
+<b class="nc">&nbsp;				basicPattern = false;</b>
+<b class="pc">&nbsp;			} else if (node.getContextVar() != null) {</b>
+<b class="nc">&nbsp;				basicPattern = false;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				super.meet(node);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean explicitConstructor,
+&nbsp;			boolean distinct, boolean reduced) {
+<b class="fc">&nbsp;		TupleExpr result = bodyExpr;</b>
+&nbsp;
+&nbsp;		// Retrieve all StatementPattern&#39;s from the construct expression
+<b class="fc">&nbsp;		List&lt;StatementPattern&gt; statementPatterns = StatementPatternCollector.process(constructExpr);</b>
+&nbsp;
+<b class="fc">&nbsp;		Set&lt;Var&gt; constructVars = getConstructVars(statementPatterns);</b>
+&nbsp;
+&nbsp;		// Note: duplicate elimination is a two-step process. The first step
+&nbsp;		// removes duplicates from the set of constructor variables. After this
+&nbsp;		// step, any bnodes that need to be generated are added to each solution
+&nbsp;		// and these solutions are projected to subject-predicate-object bindings.
+&nbsp;		// Finally, the spo-bindings are again filtered for duplicates.
+<b class="pc">&nbsp;		if (distinct || reduced) {</b>
+&nbsp;			// Create projection that removes all bindings that are not used in the
+&nbsp;			// constructor
+<b class="nc">&nbsp;			ProjectionElemList projElemList = new ProjectionElemList();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Var var : constructVars) {</b>
+&nbsp;				// Ignore anonymous and constant vars, these will be handled after
+&nbsp;				// the distinct
+<b class="nc">&nbsp;				if (!var.isAnonymous() &amp;&amp; !var.hasValue()) {</b>
+<b class="nc">&nbsp;					projElemList.addElement(new ProjectionElem(var.getName()));</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			result = new Projection(result, projElemList);</b>
+&nbsp;
+&nbsp;			// Filter the duplicates from these projected bindings
+<b class="nc">&nbsp;			if (distinct) {</b>
+<b class="nc">&nbsp;				result = new Distinct(result);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				result = new Reduced(result);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Create BNodeGenerator&#39;s for all anonymous variables
+<b class="fc">&nbsp;		Map&lt;Var, ExtensionElem&gt; extElemMap = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (Var var : constructVars) {</b>
+<b class="pc">&nbsp;			if (var.isAnonymous() &amp;&amp; !extElemMap.containsKey(var)) {</b>
+<b class="fc">&nbsp;				ValueExpr valueExpr = null;</b>
+&nbsp;
+<b class="pc">&nbsp;				if (var.hasValue()) {</b>
+<b class="fc">&nbsp;					valueExpr = new ValueConstant(var.getValue());</b>
+<b class="nc">&nbsp;				} else if (explicitConstructor) {</b>
+&nbsp;					// only generate bnodes in case of an explicit constructor
+<b class="nc">&nbsp;					valueExpr = new BNodeGenerator();</b>
+&nbsp;				}
+&nbsp;
+<b class="pc">&nbsp;				if (valueExpr != null) {</b>
+<b class="fc">&nbsp;					extElemMap.put(var, new ExtensionElem(valueExpr, var.getName()));</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (!extElemMap.isEmpty()) {</b>
+<b class="fc">&nbsp;			result = new Extension(result, extElemMap.values());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Create a Projection for each StatementPattern in the constructor
+<b class="fc">&nbsp;		List&lt;ProjectionElemList&gt; projections = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (StatementPattern sp : statementPatterns) {</b>
+<b class="fc">&nbsp;			ProjectionElemList projElemList = new ProjectionElemList();</b>
+&nbsp;
+<b class="fc">&nbsp;			projElemList.addElement(new ProjectionElem(sp.getSubjectVar().getName(), &quot;subject&quot;));</b>
+<b class="fc">&nbsp;			projElemList.addElement(new ProjectionElem(sp.getPredicateVar().getName(), &quot;predicate&quot;));</b>
+<b class="fc">&nbsp;			projElemList.addElement(new ProjectionElem(sp.getObjectVar().getName(), &quot;object&quot;));</b>
+&nbsp;
+<b class="fc">&nbsp;			projections.add(projElemList);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (projections.size() == 1) {</b>
+<b class="fc">&nbsp;			result = new Projection(result, projections.get(0));</b>
+&nbsp;
+&nbsp;			// Note: no need to apply the second duplicate elimination step if
+&nbsp;			// there&#39;s just one projection
+<b class="pc">&nbsp;		} else if (projections.size() &gt; 1) {</b>
+<b class="fc">&nbsp;			result = new MultiProjection(result, projections);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (distinct) {</b>
+&nbsp;				// Add another distinct to filter duplicate statements
+<b class="nc">&nbsp;				result = new Distinct(result);</b>
+<b class="pc">&nbsp;			} else if (reduced) {</b>
+<b class="nc">&nbsp;				result = new Reduced(result);</b>
+&nbsp;			}
+&nbsp;		} else {
+&nbsp;			// Empty constructor
+<b class="nc">&nbsp;			result = new EmptySet();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject, predicate
+&nbsp;	 * and object variables from the supplied statement patterns, but ignores any context variables.
+&nbsp;	 */
+&nbsp;	private Set&lt;Var&gt; getConstructVars(Collection&lt;StatementPattern&gt; statementPatterns) {
+<b class="fc">&nbsp;		Set&lt;Var&gt; vars = new LinkedHashSet&lt;&gt;(statementPatterns.size() * 2);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (StatementPattern sp : statementPatterns) {</b>
+<b class="fc">&nbsp;			vars.add(sp.getSubjectVar());</b>
+<b class="fc">&nbsp;			vars.add(sp.getPredicateVar());</b>
+<b class="fc">&nbsp;			vars.add(sp.getObjectVar());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return vars;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

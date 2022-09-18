@@ -1,0 +1,213 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FilteringIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.extensiblestore</a>
+</div>
+
+<h1>Coverage Summary for Class: FilteringIteration (org.eclipse.rdf4j.sail.extensiblestore)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FilteringIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.extensiblestore;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+&nbsp;
+&nbsp;/**
+&nbsp; * A wrapper for an Iteration that filters the statements against a pattern similar to getStatements(Resource subject,
+&nbsp; * IRI predicate, Value object, Resource... context).
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;public class FilteringIteration&lt;E extends ExtensibleStatement, X extends Exception&gt; extends LookAheadIteration&lt;E, X&gt; {
+&nbsp;
+&nbsp;	private final CloseableIteration&lt;E, X&gt; wrappedIteration;
+&nbsp;	private final Resource subject;
+&nbsp;	private final IRI predicate;
+&nbsp;	private final Value object;
+&nbsp;	private final boolean inferred;
+&nbsp;	private final Resource[] context;
+&nbsp;
+&nbsp;	public FilteringIteration(CloseableIteration&lt;E, X&gt; wrappedIteration, Resource subject, IRI predicate, Value object,
+<b class="nc">&nbsp;			boolean inferred, Resource... context) {</b>
+<b class="nc">&nbsp;		this.wrappedIteration = wrappedIteration;</b>
+<b class="nc">&nbsp;		this.subject = subject;</b>
+<b class="nc">&nbsp;		this.predicate = predicate;</b>
+<b class="nc">&nbsp;		this.object = object;</b>
+<b class="nc">&nbsp;		this.inferred = inferred;</b>
+<b class="nc">&nbsp;		this.context = context;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected E getNextElement() throws X {
+&nbsp;
+<b class="nc">&nbsp;		while (wrappedIteration.hasNext()) {</b>
+<b class="nc">&nbsp;			E next = wrappedIteration.next();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (subject != null &amp;&amp; !next.getSubject().equals(subject)) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (predicate != null &amp;&amp; !next.getPredicate().equals(predicate)) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (object != null &amp;&amp; !next.getObject().equals(object)) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (context != null &amp;&amp; context.length &gt; 0</b>
+<b class="nc">&nbsp;					&amp;&amp; !containsContext(context, next.getContext())) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (next.isInferred() != inferred) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return next;</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws X {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			wrappedIteration.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean containsContext(Resource[] haystack, Resource needle) {
+<b class="nc">&nbsp;		for (Resource resource : haystack) {</b>
+<b class="nc">&nbsp;			if (resource == null &amp;&amp; needle == null) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (resource != null &amp;&amp; resource.equals(needle)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

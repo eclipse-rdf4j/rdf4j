@@ -1,0 +1,306 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLQueryBindingSet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sparql.query</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLQueryBindingSet (org.eclipse.rdf4j.repository.sparql.query)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLQueryBindingSet</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SPARQLQueryBindingSet$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sparql.query;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iterator.ConvertingIterator;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.AbstractBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleBinding;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the {@link BindingSet} interface that is used to evaluate query object models. This
+&nbsp; * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that the
+&nbsp; * Binding objects are created lazily. Note that this class is a fully equivalent copy of
+&nbsp; * {@link org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet}, and is only included here to avoid a circular
+&nbsp; * dependency between the algebra-evaluation module and the sparql-repository module.
+&nbsp; */
+<b class="nc">&nbsp;public class SPARQLQueryBindingSet extends AbstractBindingSet {</b>
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -2010715346095527301L;
+&nbsp;
+&nbsp;	private final Map&lt;String, Value&gt; bindings;
+&nbsp;
+&nbsp;	public SPARQLQueryBindingSet() {
+<b class="nc">&nbsp;		this(8);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public SPARQLQueryBindingSet(int capacity) {</b>
+&nbsp;		// Create bindings map with some extra space for new bindings and
+&nbsp;		// compensating for HashMap&#39;s load factor
+<b class="nc">&nbsp;		bindings = new HashMap&lt;&gt;(capacity * 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SPARQLQueryBindingSet(BindingSet bindingSet) {
+<b class="nc">&nbsp;		this(bindingSet.size());</b>
+<b class="nc">&nbsp;		addAll(bindingSet);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addAll(BindingSet bindingSet) {
+<b class="nc">&nbsp;		if (bindingSet instanceof SPARQLQueryBindingSet) {</b>
+<b class="nc">&nbsp;			bindings.putAll(((SPARQLQueryBindingSet) bindingSet).bindings);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (Binding binding : bindingSet) {</b>
+<b class="nc">&nbsp;				this.addBinding(binding);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds a new binding to the binding set. The binding&#39;s name must not already be part of this binding set.
+&nbsp;	 *
+&nbsp;	 * @param binding The binding to add this this BindingSet.
+&nbsp;	 */
+&nbsp;	public void addBinding(Binding binding) {
+<b class="nc">&nbsp;		addBinding(binding.getName(), binding.getValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds a new binding to the binding set. The binding&#39;s name must not already be part of this binding set.
+&nbsp;	 *
+&nbsp;	 * @param name  The binding&#39;s name, must not be bound in this binding set already.
+&nbsp;	 * @param value The binding&#39;s value.
+&nbsp;	 */
+&nbsp;	public void addBinding(String name, Value value) {
+<b class="nc">&nbsp;		assert !bindings.containsKey(name) : &quot;variable already bound: &quot; + name;</b>
+<b class="nc">&nbsp;		setBinding(name, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setBinding(Binding binding) {
+<b class="nc">&nbsp;		setBinding(binding.getName(), binding.getValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setBinding(String name, Value value) {
+<b class="nc">&nbsp;		bindings.put(name, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removeBinding(String name) {
+<b class="nc">&nbsp;		bindings.remove(name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removeAll(Collection&lt;String&gt; bindingNames) {
+<b class="nc">&nbsp;		bindings.keySet().removeAll(bindingNames);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void retainAll(Collection&lt;String&gt; bindingNames) {
+<b class="nc">&nbsp;		bindings.keySet().retainAll(bindingNames);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="nc">&nbsp;		return bindings.keySet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Value getValue(String bindingName) {
+<b class="nc">&nbsp;		return bindings.get(bindingName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Binding getBinding(String bindingName) {
+<b class="nc">&nbsp;		Value value = getValue(bindingName);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			return new SimpleBinding(bindingName, value);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasBinding(String bindingName) {
+<b class="nc">&nbsp;		return bindings.containsKey(bindingName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;Binding&gt; iterator() {
+<b class="nc">&nbsp;		Iterator&lt;Map.Entry&lt;String, Value&gt;&gt; entries = bindings.entrySet().iterator();</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ConvertingIterator&lt;&gt;(entries) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected Binding convert(Map.Entry&lt;String, Value&gt; entry) {
+<b class="nc">&nbsp;				return new SimpleBinding(entry.getKey(), entry.getValue());</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int size() {
+<b class="nc">&nbsp;		return bindings.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="nc">&nbsp;		if (other instanceof SPARQLQueryBindingSet) {</b>
+<b class="nc">&nbsp;			return bindings.equals(((SPARQLQueryBindingSet) other).bindings);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return super.equals(other);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

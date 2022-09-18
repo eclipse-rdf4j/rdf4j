@@ -1,0 +1,180 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXRepositoryConfigBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXRepositoryConfigBuilder (org.eclipse.rdf4j.federated.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXRepositoryConfigBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.repository;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.util.Vocabulary.FEDX;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.TreeModel;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;
+&nbsp;/**
+&nbsp; * Builder for {@link FedXRepositoryConfig}
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class FedXRepositoryConfigBuilder {
+&nbsp;
+&nbsp;	public static FedXRepositoryConfigBuilder create() {
+<b class="nc">&nbsp;		return new FedXRepositoryConfigBuilder();</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private final Model members = new TreeModel();</b>
+&nbsp;
+<b class="nc">&nbsp;	private FedXRepositoryConfigBuilder() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXRepositoryConfigBuilder withResolvableEndpoint(String memberId) {
+<b class="nc">&nbsp;		ValueFactory vf = SimpleValueFactory.getInstance();</b>
+<b class="nc">&nbsp;		members.add(vf.createIRI(FEDX.NAMESPACE, memberId), FEDX.STORE, vf.createLiteral(&quot;ResolvableRepository&quot;));</b>
+<b class="nc">&nbsp;		members.add(vf.createIRI(FEDX.NAMESPACE, memberId), FEDX.REPOSITORY_NAME, vf.createLiteral(memberId));</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXRepositoryConfigBuilder withResolvableEndpoint(Collection&lt;String&gt; memberIds) {
+<b class="nc">&nbsp;		memberIds.stream().forEach(memberId -&gt; withResolvableEndpoint(memberId));</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXRepositoryConfigBuilder withMembers(Collection&lt;Statement&gt; members) {
+<b class="nc">&nbsp;		this.members.addAll(members);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Build the {@link FedXRepositoryConfig} that can be used in the {@link RepositoryConfig}.
+&nbsp;	 *
+&nbsp;	 * @return the {@link FedXRepositoryConfig}
+&nbsp;	 */
+&nbsp;	public FedXRepositoryConfig build() {
+<b class="nc">&nbsp;		FedXRepositoryConfig config = new FedXRepositoryConfig();</b>
+<b class="nc">&nbsp;		config.setMembers(members);</b>
+<b class="nc">&nbsp;		return config;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Build the {@link RepositoryConfig}
+&nbsp;	 *
+&nbsp;	 * @param repositoryId    the repository identifier
+&nbsp;	 * @param repositoryTitle the repository title
+&nbsp;	 * @return the {@link RepositoryConfig} (incorporating {@link FedXRepositoryConfig})
+&nbsp;	 */
+&nbsp;	public RepositoryConfig build(String repositoryId, String repositoryTitle) {
+<b class="nc">&nbsp;		return new RepositoryConfig(repositoryId, repositoryTitle, build());</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

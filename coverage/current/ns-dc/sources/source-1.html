@@ -1,0 +1,314 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractBulkJoinPlanNode</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractBulkJoinPlanNode (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractBulkJoinPlanNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">AbstractBulkJoinPlanNode$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.SparqlQueryParserCache;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
+&nbsp;
+&nbsp;public abstract class AbstractBulkJoinPlanNode implements PlanNode {
+&nbsp;
+&nbsp;	public static final String BINDING_NAME = &quot;a&quot;;
+&nbsp;	protected static final int BULK_SIZE = 1000;
+&nbsp;	private StackTraceElement[] stackTrace;
+&nbsp;	protected Function&lt;BindingSet, ValidationTuple&gt; mapper;
+&nbsp;	ValidationExecutionLogger validationExecutionLogger;
+&nbsp;
+<b class="nc">&nbsp;	public AbstractBulkJoinPlanNode() {</b>
+&nbsp;//		this.stackTrace = Thread.currentThread().getStackTrace();
+&nbsp;	}
+&nbsp;
+&nbsp;	TupleExpr parseQuery(String query) {
+&nbsp;
+&nbsp;		// #VALUES_INJECTION_POINT# is an annotation in the query where there is a &quot;new scope&quot; due to the bottom up
+&nbsp;		// semantics of SPARQL but where we don&#39;t actually want a new scope.
+<b class="nc">&nbsp;		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, &quot;\nVALUES (?a) {}\n&quot;);</b>
+<b class="nc">&nbsp;		String completeQuery = &quot;select * where {\nVALUES (?a) {}\n&quot; + query + &quot;\n}&quot;;</b>
+<b class="nc">&nbsp;		return SparqlQueryParserCache.get(completeQuery);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void runQuery(ArrayDeque&lt;ValidationTuple&gt; left, ArrayDeque&lt;ValidationTuple&gt; right, SailConnection connection,
+&nbsp;			TupleExpr parsedQuery, Dataset dataset, Resource[] dataGraph, boolean skipBasedOnPreviousConnection,
+&nbsp;			SailConnection previousStateConnection) {
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; newBindindingSet = buildBindingSets(left, connection, skipBasedOnPreviousConnection,</b>
+&nbsp;				previousStateConnection, dataGraph);
+&nbsp;
+<b class="nc">&nbsp;		if (!newBindindingSet.isEmpty()) {</b>
+<b class="nc">&nbsp;			updateQuery(parsedQuery, newBindindingSet);</b>
+<b class="nc">&nbsp;			executeQuery(right, connection, dataset, parsedQuery);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void executeQuery(ArrayDeque&lt;ValidationTuple&gt; right, SailConnection connection,
+&nbsp;			Dataset dataset, TupleExpr parsedQuery) {
+&nbsp;
+&nbsp;//		System.out.println(stackTrace[3].getClassName());
+<b class="nc">&nbsp;		try (Stream&lt;? extends BindingSet&gt; stream = connection</b>
+<b class="nc">&nbsp;				.evaluate(parsedQuery, dataset, EmptyBindingSet.getInstance(), true)</b>
+<b class="nc">&nbsp;				.stream()) {</b>
+<b class="nc">&nbsp;			stream</b>
+<b class="nc">&nbsp;					.map(mapper)</b>
+<b class="nc">&nbsp;					.sorted(ValidationTuple::compareActiveTarget)</b>
+<b class="nc">&nbsp;					.forEachOrdered(right::addFirst);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void updateQuery(TupleExpr parsedQuery, List&lt;BindingSet&gt; newBindindingSet) {
+<b class="nc">&nbsp;		parsedQuery</b>
+<b class="nc">&nbsp;				.visit(new AbstractSimpleQueryModelVisitor&lt;&gt;(false) {</b>
+&nbsp;					@Override
+&nbsp;					public void meet(BindingSetAssignment node) {
+<b class="nc">&nbsp;						Set&lt;String&gt; bindingNames = node.getBindingNames();</b>
+<b class="nc">&nbsp;						if (bindingNames.size() == 1 &amp;&amp; bindingNames.contains(BINDING_NAME)) {</b>
+<b class="nc">&nbsp;							node.setBindingSets(newBindindingSet);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						super.meet(node);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				});
+&nbsp;	}
+&nbsp;
+&nbsp;	private List&lt;BindingSet&gt; buildBindingSets(ArrayDeque&lt;ValidationTuple&gt; left, SailConnection connection,
+&nbsp;			boolean skipBasedOnPreviousConnection, SailConnection previousStateConnection, Resource[] dataGraph) {
+<b class="nc">&nbsp;		return left.stream()</b>
+&nbsp;
+<b class="nc">&nbsp;				.filter(tuple -&gt; {</b>
+<b class="nc">&nbsp;					if (!skipBasedOnPreviousConnection) {</b>
+<b class="nc">&nbsp;						return true;</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					boolean hasStatement;
+&nbsp;
+<b class="nc">&nbsp;					if (!(tuple.getActiveTarget().isResource())) {</b>
+<b class="nc">&nbsp;						hasStatement = previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(),</b>
+&nbsp;								true, dataGraph);
+&nbsp;
+&nbsp;					} else {
+<b class="nc">&nbsp;						hasStatement = previousStateConnection.hasStatement(((Resource) tuple.getActiveTarget()),</b>
+&nbsp;								null, null, true, dataGraph) ||
+<b class="nc">&nbsp;								previousStateConnection.hasStatement(null, null, tuple.getActiveTarget(), true,</b>
+&nbsp;										dataGraph);
+&nbsp;
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (!hasStatement &amp;&amp; validationExecutionLogger.isEnabled()) {</b>
+<b class="nc">&nbsp;						validationExecutionLogger.log(depth(),</b>
+<b class="nc">&nbsp;								this.getClass().getSimpleName() + &quot;:IgnoredDueToPreviousStateConnection&quot;, tuple, this,</b>
+<b class="nc">&nbsp;								getId(), null);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return hasStatement;</b>
+&nbsp;
+&nbsp;				})
+<b class="nc">&nbsp;				.map(ValidationTuple::getActiveTarget)</b>
+<b class="nc">&nbsp;				.map(r -&gt; new SingletonBindingSet(BINDING_NAME, r))</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean producesSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean requiresSorted() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		AbstractBulkJoinPlanNode that = (AbstractBulkJoinPlanNode) o;</b>
+<b class="nc">&nbsp;		return mapper.equals(that.mapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(mapper);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,597 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValidationTuple</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
+</div>
+
+<h1>Coverage Summary for Class: ValidationTuple (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValidationTuple</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/140)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/207)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+<b class="nc">&nbsp;public class ValidationTuple {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ValidationTuple.class);</b>
+<b class="nc">&nbsp;	private static final ValueComparator valueComparator = new ValueComparator();</b>
+&nbsp;
+&nbsp;	// all fields should be immutable
+&nbsp;	private final Value[] chain;
+&nbsp;	private final ConstraintComponent.Scope scope;
+&nbsp;	private final boolean propertyShapeScopeWithValue;
+&nbsp;	private final List&lt;ValidationResult&gt; validationResults;
+&nbsp;	private final Set&lt;ValidationTuple&gt; compressedTuples;
+&nbsp;
+&nbsp;	private final Resource[] contexts;
+&nbsp;
+&nbsp;	public ValidationTuple(BindingSet bindingSet, String[] variables, ConstraintComponent.Scope scope,
+&nbsp;			boolean hasValue, Resource[] contexts) {
+<b class="nc">&nbsp;		this(bindingSet, Arrays.asList(variables), scope, hasValue, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple(BindingSet bindingSet, List&lt;String&gt; variables, ConstraintComponent.Scope scope,
+<b class="nc">&nbsp;			boolean hasValue, Resource[] contexts) {</b>
+&nbsp;
+<b class="nc">&nbsp;		chain = new Value[variables.size()];</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; variables.size(); i++) {</b>
+<b class="nc">&nbsp;			chain[i] = bindingSet.getValue(variables.get(i));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.propertyShapeScopeWithValue = hasValue;</b>
+<b class="nc">&nbsp;		this.validationResults = List.of();</b>
+<b class="nc">&nbsp;		this.compressedTuples = Set.of();</b>
+<b class="nc">&nbsp;		this.contexts = contexts;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public ValidationTuple(List&lt;Value&gt; chain, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {</b>
+<b class="nc">&nbsp;		this.chain = chain.toArray(new Value[0]);</b>
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.propertyShapeScopeWithValue = hasValue;</b>
+<b class="nc">&nbsp;		this.validationResults = List.of();</b>
+<b class="nc">&nbsp;		this.compressedTuples = Set.of();</b>
+<b class="nc">&nbsp;		this.contexts = contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// We will assume that the provided chain will not be mutated elsewhere.
+<b class="nc">&nbsp;	public ValidationTuple(Value[] chain, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {</b>
+<b class="nc">&nbsp;		this.chain = chain;</b>
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.propertyShapeScopeWithValue = hasValue;</b>
+<b class="nc">&nbsp;		this.validationResults = List.of();</b>
+<b class="nc">&nbsp;		this.compressedTuples = Set.of();</b>
+<b class="nc">&nbsp;		this.contexts = contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource context) {
+<b class="nc">&nbsp;		this(a, c, scope, hasValue, new Resource[] { context });</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public ValidationTuple(Value a, Value c, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {</b>
+<b class="nc">&nbsp;		chain = new Value[] { a, c };</b>
+&nbsp;
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.propertyShapeScopeWithValue = hasValue;</b>
+<b class="nc">&nbsp;		this.validationResults = List.of();</b>
+<b class="nc">&nbsp;		this.compressedTuples = Set.of();</b>
+<b class="nc">&nbsp;		this.contexts = contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue, Resource context) {
+<b class="nc">&nbsp;		this(subject, scope, hasValue, new Resource[] { context });</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public ValidationTuple(Value subject, ConstraintComponent.Scope scope, boolean hasValue, Resource[] contexts) {</b>
+<b class="nc">&nbsp;		chain = new Value[] { subject };</b>
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.propertyShapeScopeWithValue = hasValue;</b>
+<b class="nc">&nbsp;		this.validationResults = List.of();</b>
+<b class="nc">&nbsp;		this.compressedTuples = Set.of();</b>
+<b class="nc">&nbsp;		this.contexts = contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ValidationTuple(List&lt;ValidationResult&gt; validationResults, Value[] chain,
+&nbsp;			ConstraintComponent.Scope scope, boolean propertyShapeScopeWithValue,
+<b class="nc">&nbsp;			Set&lt;ValidationTuple&gt; compressedTuples, Resource[] contexts) {</b>
+<b class="nc">&nbsp;		this.validationResults = Collections.unmodifiableList(validationResults);</b>
+<b class="nc">&nbsp;		this.chain = chain;</b>
+<b class="nc">&nbsp;		this.scope = scope;</b>
+<b class="nc">&nbsp;		this.propertyShapeScopeWithValue = propertyShapeScopeWithValue;</b>
+<b class="nc">&nbsp;		this.compressedTuples = compressedTuples.isEmpty() ? Set.of() : Collections.unmodifiableSet(compressedTuples);</b>
+<b class="nc">&nbsp;		this.contexts = contexts;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public ValidationTuple(ValidationTuple tuple, Set&lt;ValidationTuple&gt; compressedTuples) {</b>
+<b class="nc">&nbsp;		this.validationResults = tuple.validationResults;</b>
+<b class="nc">&nbsp;		this.chain = tuple.chain;</b>
+<b class="nc">&nbsp;		this.scope = tuple.scope;</b>
+<b class="nc">&nbsp;		this.propertyShapeScopeWithValue = tuple.propertyShapeScopeWithValue;</b>
+<b class="nc">&nbsp;		this.compressedTuples = compressedTuples.isEmpty() ? Set.of() : Collections.unmodifiableSet(compressedTuples);</b>
+<b class="nc">&nbsp;		this.contexts = tuple.contexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean sameTargetAs(ValidationTuple other) {
+&nbsp;
+<b class="nc">&nbsp;		Value current = getActiveTarget();</b>
+<b class="nc">&nbsp;		Value currentRight = other.getActiveTarget();</b>
+&nbsp;
+<b class="nc">&nbsp;		return current.equals(currentRight);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasValue() {
+<b class="nc">&nbsp;		assert scope != null;</b>
+<b class="nc">&nbsp;		return propertyShapeScopeWithValue || scope == ConstraintComponent.Scope.nodeShape;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value getValue() {
+<b class="nc">&nbsp;		assert scope != null;</b>
+<b class="nc">&nbsp;		if (hasValue()) {</b>
+<b class="nc">&nbsp;			return chain[(chain.length - 1)];</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ConstraintComponent.Scope getScope() {
+<b class="nc">&nbsp;		return scope;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int compareActiveTarget(ValidationTuple other) {
+&nbsp;
+<b class="nc">&nbsp;		Value left = getActiveTarget();</b>
+<b class="nc">&nbsp;		Value right = other.getActiveTarget();</b>
+&nbsp;
+<b class="nc">&nbsp;		return valueComparator.compare(left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int compareFullTarget(ValidationTuple other) {
+&nbsp;
+<b class="nc">&nbsp;		int min = Math.min(getFullChainSize(false), other.getFullChainSize(false));</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Value&gt; targetChain = getTargetChain(false);</b>
+<b class="nc">&nbsp;		List&lt;Value&gt; otherTargetChain = other.getTargetChain(false);</b>
+&nbsp;
+<b class="nc">&nbsp;		Iterator&lt;Value&gt; iterator = targetChain.iterator();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; min; i++) {</b>
+<b class="nc">&nbsp;			Value value = iterator.next();</b>
+<b class="nc">&nbsp;			int compare = valueComparator.compare(value, otherTargetChain.get(i));</b>
+<b class="nc">&nbsp;			if (compare != 0) {</b>
+<b class="nc">&nbsp;				return compare;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return Integer.compare(getFullChainSize(true), other.getFullChainSize(true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ValidationResult&gt; getValidationResult() {
+<b class="nc">&nbsp;		return validationResults;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple addValidationResult(Function&lt;ValidationTuple, ValidationResult&gt; validationResult) {
+&nbsp;		List&lt;ValidationResult&gt; validationResults;
+<b class="nc">&nbsp;		if (!this.validationResults.isEmpty()) {</b>
+<b class="nc">&nbsp;			validationResults = new ArrayList&lt;&gt;(this.validationResults);</b>
+<b class="nc">&nbsp;			validationResults.add(validationResult.apply(this));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			validationResults = Collections.singletonList(validationResult.apply(this));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;ValidationTuple&gt; compressedTuples = enrichCompressedTuples(t -&gt; t.addValidationResult(validationResult));</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ValidationTuple(validationResults, chain, scope, propertyShapeScopeWithValue, compressedTuples,</b>
+&nbsp;				contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value getActiveTarget() {
+<b class="nc">&nbsp;		assert scope != null;</b>
+<b class="nc">&nbsp;		if (!propertyShapeScopeWithValue || scope != ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			return chain[chain.length - 1];</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		assert chain.length &gt;= 2;</b>
+&nbsp;
+<b class="nc">&nbsp;		return chain[chain.length - 2];</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;ValidationTuple{&quot; +</b>
+<b class="nc">&nbsp;				&quot;chain=&quot; + Arrays.toString(chain) +</b>
+&nbsp;				&quot;, scope=&quot; + scope +
+&nbsp;				&quot;, propertyShapeScopeWithValue=&quot; + propertyShapeScopeWithValue +
+&nbsp;//			&quot;, validationResults=&quot; + validationResults +
+<b class="nc">&nbsp;				&quot;, compressedTuples=&quot; + Arrays.toString(compressedTuples.toArray()) +</b>
+&nbsp;				&#39;}&#39;;
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ValidationTuple&gt; shiftToNodeShape() {
+<b class="nc">&nbsp;		assert scope == ConstraintComponent.Scope.propertyShape;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (compressedTuples.isEmpty()) {</b>
+&nbsp;			Value[] chain;
+<b class="nc">&nbsp;			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;</b>
+<b class="nc">&nbsp;			ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (this.propertyShapeScopeWithValue) {</b>
+<b class="nc">&nbsp;				propertyShapeScopeWithValue = false;</b>
+<b class="nc">&nbsp;				chain = Arrays.copyOf(this.chain, this.chain.length - 1);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				chain = this.chain;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return Collections</b>
+<b class="nc">&nbsp;					.singletonList(new ValidationTuple(this.validationResults, chain, scope,</b>
+<b class="nc">&nbsp;							propertyShapeScopeWithValue, Set.of(), contexts));</b>
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			return this.compressedTuples.stream()</b>
+<b class="nc">&nbsp;					.map(t -&gt; {</b>
+<b class="nc">&nbsp;						List&lt;Value&gt; chain = Arrays.asList(t.chain);</b>
+&nbsp;
+<b class="nc">&nbsp;						boolean propertyShapeScopeWithValue = t.propertyShapeScopeWithValue;</b>
+<b class="nc">&nbsp;						ConstraintComponent.Scope scope = ConstraintComponent.Scope.nodeShape;</b>
+&nbsp;
+<b class="nc">&nbsp;						if (this.propertyShapeScopeWithValue) {</b>
+<b class="nc">&nbsp;							propertyShapeScopeWithValue = false;</b>
+<b class="nc">&nbsp;							chain = chain.subList(0, chain.size() - 1);</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						return new ValidationTuple(t.validationResults, chain.toArray(new Value[0]), scope,</b>
+&nbsp;								propertyShapeScopeWithValue,
+<b class="nc">&nbsp;								Set.of(), t.contexts);</b>
+&nbsp;
+&nbsp;					})
+<b class="nc">&nbsp;					.collect(Collectors.toList());</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ValidationTuple&gt; shiftToPropertyShapeScope() {
+<b class="nc">&nbsp;		assert scope == ConstraintComponent.Scope.nodeShape;</b>
+<b class="nc">&nbsp;		assert chain.length &gt;= 2;</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean propertyShapeScopeWithValue = true;</b>
+<b class="nc">&nbsp;		ConstraintComponent.Scope scope = ConstraintComponent.Scope.propertyShape;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!compressedTuples.isEmpty()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			return compressedTuples.stream()</b>
+<b class="nc">&nbsp;					.map(t -&gt; new ValidationTuple(t.validationResults, t.chain, scope, propertyShapeScopeWithValue,</b>
+<b class="nc">&nbsp;							Set.of(), t.contexts))</b>
+<b class="nc">&nbsp;					.collect(Collectors.toList());</b>
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			return Collections.singletonList(</b>
+&nbsp;					new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue,
+<b class="nc">&nbsp;							Set.of(), contexts));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getFullChainSize(boolean includePropertyShapeValue) {
+<b class="nc">&nbsp;		if (!includePropertyShapeValue &amp;&amp; propertyShapeScopeWithValue) {</b>
+<b class="nc">&nbsp;			return chain.length - 1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return chain.length;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This is only the target part. For property shape scope it will not include the value.
+&nbsp;	 *
+&nbsp;	 * @param includePropertyShapeValues
+&nbsp;	 */
+&nbsp;	public List&lt;Value&gt; getTargetChain(boolean includePropertyShapeValues) {
+&nbsp;
+<b class="nc">&nbsp;		if (scope == ConstraintComponent.Scope.propertyShape &amp;&amp; hasValue() &amp;&amp; !includePropertyShapeValues) {</b>
+<b class="nc">&nbsp;			return Collections.unmodifiableList(Arrays.asList(chain).subList(0, chain.length - 1));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return Collections.unmodifiableList(Arrays.asList(chain));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple setValue(Value value) {
+<b class="nc">&nbsp;		if (value.equals(getValue())) {</b>
+<b class="nc">&nbsp;			return this;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		assert scope == ConstraintComponent.Scope.propertyShape : &quot;Can&#39;t set value on NodeShape scoped ValidationTuple because it will also change the target!&quot;;</b>
+&nbsp;
+&nbsp;		Value[] chain;
+&nbsp;
+<b class="nc">&nbsp;		if (propertyShapeScopeWithValue) {</b>
+&nbsp;			// we will replace the last value, so we just need a copy because the chain should be immutable
+<b class="nc">&nbsp;			chain = Arrays.copyOf(this.chain, this.chain.length);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			chain = Arrays.copyOf(this.chain, this.chain.length + 1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		chain[chain.length - 1] = value;</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;ValidationTuple&gt; compressedTuples = enrichCompressedTuples(t -&gt; t.setValue(value));</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ValidationTuple(this.validationResults, chain, scope, true, compressedTuples, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Set&lt;ValidationTuple&gt; enrichCompressedTuples(
+&nbsp;			Function&lt;ValidationTuple, ValidationTuple&gt; validationTupleValidationTupleFunction) {
+<b class="nc">&nbsp;		if (compressedTuples.isEmpty()) {</b>
+<b class="nc">&nbsp;			return compressedTuples;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return this.compressedTuples.stream()</b>
+<b class="nc">&nbsp;				.map(validationTupleValidationTupleFunction)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public int compareValue(ValidationTuple other) {
+<b class="nc">&nbsp;		Value left = getValue();</b>
+<b class="nc">&nbsp;		Value right = other.getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;		return valueComparator.compare(left, right);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple trimToTarget() {
+<b class="nc">&nbsp;		if (scope == ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			if (propertyShapeScopeWithValue) {</b>
+&nbsp;
+<b class="nc">&nbsp;				Value[] chain = Arrays.copyOf(this.chain, this.chain.length - 1);</b>
+&nbsp;
+<b class="nc">&nbsp;				Set&lt;ValidationTuple&gt; compressedTuples = enrichCompressedTuples(ValidationTuple::trimToTarget);</b>
+&nbsp;
+<b class="nc">&nbsp;				return new ValidationTuple(validationResults, chain, scope, false, compressedTuples, contexts);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ValidationTuple&gt; pop() {
+&nbsp;
+<b class="nc">&nbsp;		if (compressedTuples.isEmpty()) {</b>
+&nbsp;
+&nbsp;			Value[] chain;
+&nbsp;
+<b class="nc">&nbsp;			boolean propertyShapeScopeWithValue = this.propertyShapeScopeWithValue;</b>
+<b class="nc">&nbsp;			if (getScope() == ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;				if (hasValue()) {</b>
+<b class="nc">&nbsp;					assert this.chain.length &gt; 1 : &quot;Attempting to pop chain will not leave any elements on the chain! &quot;</b>
+&nbsp;							+ this;
+<b class="nc">&nbsp;					chain = Arrays.copyOf(this.chain, this.chain.length - 1);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					propertyShapeScopeWithValue = true;</b>
+<b class="nc">&nbsp;					chain = this.chain;</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				assert this.chain.length &gt; 1 : &quot;Attempting to pop chain will not leave any elements on the chain! &quot;</b>
+&nbsp;						+ this;
+<b class="nc">&nbsp;				chain = Arrays.copyOf(this.chain, this.chain.length - 1);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return Collections.singletonList(</b>
+&nbsp;					new ValidationTuple(this.validationResults, chain, scope, propertyShapeScopeWithValue,
+<b class="nc">&nbsp;							Set.of(), contexts));</b>
+&nbsp;		} else {
+&nbsp;
+<b class="nc">&nbsp;			return compressedTuples.stream().flatMap(t1 -&gt; {</b>
+<b class="nc">&nbsp;				return t1.pop()</b>
+<b class="nc">&nbsp;						.stream()</b>
+<b class="nc">&nbsp;						.map(t -&gt; new ValidationTuple(t.validationResults, t.chain, t.scope,</b>
+&nbsp;								t.propertyShapeScopeWithValue, t.compressedTuples, t.contexts));
+<b class="nc">&nbsp;			}).collect(Collectors.toList());</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;ValidationTuple&gt; getCompressedTuples() {
+<b class="nc">&nbsp;		return compressedTuples;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		ValidationTuple that = (ValidationTuple) o;</b>
+<b class="nc">&nbsp;		return propertyShapeScopeWithValue == that.propertyShapeScopeWithValue &amp;&amp; Arrays.equals(chain, that.chain)</b>
+<b class="nc">&nbsp;				&amp;&amp; scope == that.scope &amp;&amp; validationResults.equals(that.validationResults)</b>
+<b class="nc">&nbsp;				&amp;&amp; compressedTuples.equals(that.compressedTuples);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(Arrays.hashCode(chain), scope, propertyShapeScopeWithValue, validationResults,</b>
+&nbsp;				compressedTuples);
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationTuple join(ValidationTuple right) {
+&nbsp;
+&nbsp;		Set&lt;ValidationTuple&gt; compressedTuples;
+<b class="nc">&nbsp;		if (this.compressedTuples.isEmpty()) {</b>
+<b class="nc">&nbsp;			compressedTuples = right.getCompressedTuples();</b>
+<b class="nc">&nbsp;		} else if (right.compressedTuples.isEmpty()) {</b>
+<b class="nc">&nbsp;			compressedTuples = this.compressedTuples;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			compressedTuples = new HashSet&lt;&gt;(this.compressedTuples);</b>
+<b class="nc">&nbsp;			compressedTuples.addAll(right.getCompressedTuples());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		Resource[] contexts;
+&nbsp;
+<b class="nc">&nbsp;		if (this.contexts != right.contexts) {</b>
+<b class="nc">&nbsp;			assert this.contexts != null;</b>
+<b class="nc">&nbsp;			assert right.contexts != null;</b>
+<b class="nc">&nbsp;			if (this.contexts.length == 1 &amp;&amp; right.contexts.length == 1</b>
+&nbsp;					&amp;&amp; this.contexts[0] == right.contexts[0]) {
+<b class="nc">&nbsp;				contexts = this.contexts;</b>
+<b class="nc">&nbsp;			} else if (this.contexts.length &gt; 0 &amp;&amp; right.contexts.length &gt; 0) {</b>
+<b class="nc">&nbsp;				contexts = Arrays.copyOf(this.contexts, this.contexts.length + right.contexts.length);</b>
+<b class="nc">&nbsp;				System.arraycopy(right.contexts, 0, contexts, this.contexts.length, right.contexts.length);</b>
+<b class="nc">&nbsp;			} else if (right.contexts.length &gt; 0) {</b>
+&nbsp;				// this.contexts must be an empty array
+<b class="nc">&nbsp;				contexts = right.contexts;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				contexts = this.contexts;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			contexts = this.contexts;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ValidationTuple validationTuple = new ValidationTuple(validationResults, chain, scope,</b>
+&nbsp;				propertyShapeScopeWithValue, compressedTuples, contexts);
+<b class="nc">&nbsp;		if (scope == ConstraintComponent.Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			validationTuple = validationTuple.setValue(right.getValue());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return validationTuple;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource[] getContexts() {
+<b class="nc">&nbsp;		return contexts;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

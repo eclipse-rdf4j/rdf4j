@@ -1,0 +1,131 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ParallelExecutor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.concurrent</a>
+</div>
+
+<h1>Coverage Summary for Class: ParallelExecutor (org.eclipse.rdf4j.federated.evaluation.concurrent)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">ParallelExecutor</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.concurrent;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.UnionExecutorBase;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface for any parallel cursor, i.e. result iterations. Implementations can act as control for scheduler
+&nbsp; * implementations, e.g. {@link ControlledWorkerScheduler}. The common use case is to pass results from the scheduler to
+&nbsp; * the controlling result iteration.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; * @see JoinExecutorBase
+&nbsp; * @see UnionExecutorBase
+&nbsp; */
+&nbsp;public interface ParallelExecutor&lt;T&gt; extends Runnable {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handle the result appropriately, e.g. add it to the result iteration. Take care for synchronization in a
+&nbsp;	 * multithreaded environment
+&nbsp;	 *
+&nbsp;	 * @param res
+&nbsp;	 */
+&nbsp;	void addResult(CloseableIteration&lt;T, QueryEvaluationException&gt; res);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Toss some exception to the controlling instance
+&nbsp;	 *
+&nbsp;	 * @param e
+&nbsp;	 */
+&nbsp;	void toss(Exception e);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Inform the controlling instance that some job is done from a different thread. In most cases this is a no-op.
+&nbsp;	 */
+&nbsp;	void done();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return true if this executor is finished or aborted
+&nbsp;	 *
+&nbsp;	 * @return whether the execution is finished
+&nbsp;	 */
+&nbsp;	boolean isFinished();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the query info of the associated query
+&nbsp;	 *
+&nbsp;	 * @return the query info
+&nbsp;	 */
+&nbsp;	QueryInfo getQueryInfo();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

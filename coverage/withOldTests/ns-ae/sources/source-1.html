@@ -1,0 +1,566 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFJSONParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.rdfjson</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFJSONParser (org.eclipse.rdf4j.rio.rdfjson)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFJSONParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/124)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/217)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.rdfjson;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.JSONSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.RDFJSONParserSettings;
+&nbsp;
+&nbsp;import com.fasterxml.jackson.core.JsonFactory;
+&nbsp;import com.fasterxml.jackson.core.JsonGenerator;
+&nbsp;import com.fasterxml.jackson.core.JsonLocation;
+&nbsp;import com.fasterxml.jackson.core.JsonParseException;
+&nbsp;import com.fasterxml.jackson.core.JsonParser;
+&nbsp;import com.fasterxml.jackson.core.JsonToken;
+&nbsp;
+&nbsp;/**
+&nbsp; * {@link RDFParser} implementation for the RDF/JSON format
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class RDFJSONParser extends AbstractRDFParser {
+&nbsp;
+&nbsp;	private final RDFFormat actualFormat;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a parser using {@link RDFFormat#RDFJSON} to identify the parser.
+&nbsp;	 */
+&nbsp;	public RDFJSONParser() {
+<b class="nc">&nbsp;		this(RDFFormat.RDFJSON);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a parser using the given RDFFormat to self identify.
+&nbsp;	 *
+&nbsp;	 * @param actualFormat
+&nbsp;	 */
+<b class="nc">&nbsp;	public RDFJSONParser(final RDFFormat actualFormat) {</b>
+<b class="nc">&nbsp;		this.actualFormat = actualFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return this.actualFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(final InputStream inputStream, final String baseUri)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		JsonParser jp = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		clear();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (this.rdfHandler != null) {</b>
+<b class="nc">&nbsp;				this.rdfHandler.startRDF();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			jp = configureNewJsonFactory().createParser(inputStream);</b>
+<b class="nc">&nbsp;			rdfJsonToHandlerInternal(this.rdfHandler, this.valueFactory, jp);</b>
+<b class="nc">&nbsp;		} catch (final IOException e) {</b>
+<b class="nc">&nbsp;			if (jp != null) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Found IOException during parsing&quot;, e, jp.getCurrentLocation());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				reportFatalError(e);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			clear();</b>
+<b class="nc">&nbsp;			if (jp != null) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					jp.close();</b>
+<b class="nc">&nbsp;				} catch (final IOException e) {</b>
+<b class="nc">&nbsp;					reportFatalError(&quot;Found exception while closing JSON parser&quot;, e, jp.getCurrentLocation());</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (this.rdfHandler != null) {</b>
+<b class="nc">&nbsp;			this.rdfHandler.endRDF();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a literal, using the current value, language, and datatype, and additionally using the given
+&nbsp;	 * {@link JsonLocation} to provide information about the line and column numbers in the event of a warning, error or
+&nbsp;	 * exception being generated by the creation of the literal.
+&nbsp;	 *
+&nbsp;	 * @param label           the literal&#39;s lexical label
+&nbsp;	 * @param language        the literal&#39;s language tag. Can be null.
+&nbsp;	 * @param datatype        the literal&#39;s datatype. Can be null.
+&nbsp;	 * @param currentLocation the current JsonLocation. May not be null.
+&nbsp;	 * @return the created {@link Literal} object.
+&nbsp;	 * @throws RDFParseException
+&nbsp;	 */
+&nbsp;	protected Literal createLiteral(String label, String language, IRI datatype, JsonLocation currentLocation)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		return createLiteral(label, language, datatype, currentLocation.getLineNr(), currentLocation.getColumnNr());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void reportError(String msg, Exception e, JsonLocation location, RioSetting&lt;Boolean&gt; setting)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		reportError(msg, e, location.getLineNr(), location.getColumnNr(), setting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void reportError(String msg, JsonLocation location, RioSetting&lt;Boolean&gt; setting)
+&nbsp;			throws RDFParseException {
+<b class="nc">&nbsp;		reportError(msg, location.getLineNr(), location.getColumnNr(), setting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void reportFatalError(String msg, Exception e, JsonLocation location) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(msg, e, location.getLineNr(), location.getColumnNr());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void reportFatalError(String msg, JsonLocation location) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(msg, location.getLineNr(), location.getColumnNr());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(final Reader reader, final String baseUri)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		JsonParser jp = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		clear();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (this.rdfHandler != null) {</b>
+<b class="nc">&nbsp;				this.rdfHandler.startRDF();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			jp = configureNewJsonFactory().createParser(reader);</b>
+<b class="nc">&nbsp;			rdfJsonToHandlerInternal(rdfHandler, valueFactory, jp);</b>
+<b class="nc">&nbsp;		} catch (final IOException e) {</b>
+<b class="nc">&nbsp;			if (jp != null) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Found IOException during parsing&quot;, e, jp.getCurrentLocation());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				reportFatalError(e);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			clear();</b>
+<b class="nc">&nbsp;			if (jp != null) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					jp.close();</b>
+<b class="nc">&nbsp;				} catch (final IOException e) {</b>
+<b class="nc">&nbsp;					reportFatalError(&quot;Found exception while closing JSON parser&quot;, e, jp.getCurrentLocation());</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;			rdfHandler.endRDF();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void rdfJsonToHandlerInternal(final RDFHandler handler, final ValueFactory vf, final JsonParser jp)
+&nbsp;			throws IOException, JsonParseException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		if (jp.nextToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;			reportFatalError(&quot;Expected RDF/JSON document to start with an Object&quot;, jp.getCurrentLocation());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+<b class="nc">&nbsp;			final String subjStr = jp.getCurrentName();</b>
+&nbsp;			Resource subject;
+&nbsp;
+<b class="nc">&nbsp;			subject = subjStr.startsWith(&quot;_:&quot;) ? createNode(subjStr.substring(2)) : vf.createIRI(subjStr);</b>
+<b class="nc">&nbsp;			if (jp.nextToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Expected subject value to start with an Object&quot;, jp.getCurrentLocation());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean foundPredicate = false;</b>
+<b class="nc">&nbsp;			while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+<b class="nc">&nbsp;				final String predStr = jp.getCurrentName();</b>
+&nbsp;
+<b class="nc">&nbsp;				final IRI predicate = vf.createIRI(predStr);</b>
+<b class="nc">&nbsp;				foundPredicate = true;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (jp.nextToken() != JsonToken.START_ARRAY) {</b>
+<b class="nc">&nbsp;					reportFatalError(&quot;Expected predicate value to start with an array&quot;, jp.getCurrentLocation());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				boolean foundObject = false;</b>
+&nbsp;
+<b class="nc">&nbsp;				while (jp.nextToken() != JsonToken.END_ARRAY) {</b>
+<b class="nc">&nbsp;					if (jp.getCurrentToken() != JsonToken.START_OBJECT) {</b>
+<b class="nc">&nbsp;						reportFatalError(&quot;Expected object value to start with an Object: subject=&lt;&quot; + subjStr</b>
+<b class="nc">&nbsp;								+ &quot;&gt; predicate=&lt;&quot; + predStr + &quot;&gt;&quot;, jp.getCurrentLocation());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					String nextValue = null;</b>
+<b class="nc">&nbsp;					String nextType = null;</b>
+<b class="nc">&nbsp;					String nextDatatype = null;</b>
+<b class="nc">&nbsp;					String nextLanguage = null;</b>
+<b class="nc">&nbsp;					final Set&lt;String&gt; nextContexts = new HashSet&lt;&gt;(2);</b>
+&nbsp;
+<b class="nc">&nbsp;					while (jp.nextToken() != JsonToken.END_OBJECT) {</b>
+<b class="nc">&nbsp;						final String fieldName = jp.getCurrentName();</b>
+<b class="nc">&nbsp;						if (RDFJSONUtility.VALUE.equals(fieldName)) {</b>
+<b class="nc">&nbsp;							if (nextValue != null) {</b>
+<b class="nc">&nbsp;								reportError(</b>
+&nbsp;										&quot;Multiple values found for a single object: subject=&quot; + subjStr + &quot; predicate=&quot;
+&nbsp;												+ predStr,
+<b class="nc">&nbsp;										jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_VALUES);</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							jp.nextToken();</b>
+&nbsp;
+<b class="nc">&nbsp;							nextValue = jp.getText();</b>
+<b class="nc">&nbsp;						} else if (RDFJSONUtility.TYPE.equals(fieldName)) {</b>
+<b class="nc">&nbsp;							if (nextType != null) {</b>
+<b class="nc">&nbsp;								reportError(</b>
+&nbsp;										&quot;Multiple types found for a single object: subject=&quot; + subjStr + &quot; predicate=&quot;
+&nbsp;												+ predStr,
+<b class="nc">&nbsp;										jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_TYPES);</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							jp.nextToken();</b>
+&nbsp;
+<b class="nc">&nbsp;							nextType = jp.getText();</b>
+<b class="nc">&nbsp;						} else if (RDFJSONUtility.LANG.equals(fieldName)) {</b>
+<b class="nc">&nbsp;							if (nextLanguage != null) {</b>
+<b class="nc">&nbsp;								reportError(</b>
+&nbsp;										&quot;Multiple languages found for a single object: subject=&quot; + subjStr
+&nbsp;												+ &quot; predicate=&quot; + predStr,
+<b class="nc">&nbsp;										jp.getCurrentLocation(),</b>
+&nbsp;										RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_LANGUAGES);
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							jp.nextToken();</b>
+&nbsp;
+<b class="nc">&nbsp;							nextLanguage = jp.getText();</b>
+<b class="nc">&nbsp;						} else if (RDFJSONUtility.DATATYPE.equals(fieldName)) {</b>
+<b class="nc">&nbsp;							if (nextDatatype != null) {</b>
+<b class="nc">&nbsp;								reportError(</b>
+&nbsp;										&quot;Multiple datatypes found for a single object: subject=&quot; + subjStr
+&nbsp;												+ &quot; predicate=&quot; + predStr,
+<b class="nc">&nbsp;										jp.getCurrentLocation(),</b>
+&nbsp;										RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_DATATYPES);
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							jp.nextToken();</b>
+&nbsp;
+<b class="nc">&nbsp;							nextDatatype = jp.getText();</b>
+<b class="nc">&nbsp;						} else if (RDFJSONUtility.GRAPHS.equals(fieldName)) {</b>
+<b class="nc">&nbsp;							if (jp.nextToken() != JsonToken.START_ARRAY) {</b>
+<b class="nc">&nbsp;								reportError(&quot;Expected graphs to start with an array&quot;, jp.getCurrentLocation(),</b>
+&nbsp;										RDFJSONParserSettings.SUPPORT_GRAPHS_EXTENSION);
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							while (jp.nextToken() != JsonToken.END_ARRAY) {</b>
+<b class="nc">&nbsp;								final String nextGraph = jp.getText();</b>
+<b class="nc">&nbsp;								nextContexts.add(nextGraph);</b>
+<b class="nc">&nbsp;							}</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							reportError(</b>
+&nbsp;									&quot;Unrecognised JSON field name for object: subject=&quot; + subjStr + &quot; predicate=&quot;
+&nbsp;											+ predStr + &quot; fieldname=&quot; + fieldName,
+<b class="nc">&nbsp;									jp.getCurrentLocation(), RDFJSONParserSettings.FAIL_ON_UNKNOWN_PROPERTY);</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;					Value object = null;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (nextType == null) {</b>
+<b class="nc">&nbsp;						reportFatalError(&quot;No type for object: subject=&quot; + subjStr + &quot; predicate=&quot; + predStr,</b>
+<b class="nc">&nbsp;								jp.getCurrentLocation());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (nextValue == null) {</b>
+<b class="nc">&nbsp;						reportFatalError(&quot;No value for object: subject=&quot; + subjStr + &quot; predicate=&quot; + predStr,</b>
+<b class="nc">&nbsp;								jp.getCurrentLocation());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (RDFJSONUtility.LITERAL.equals(nextType)) {</b>
+<b class="nc">&nbsp;						if (nextLanguage != null) {</b>
+<b class="nc">&nbsp;							object = this.createLiteral(nextValue, nextLanguage, null, jp.getCurrentLocation());</b>
+<b class="nc">&nbsp;						} else if (nextDatatype != null) {</b>
+<b class="nc">&nbsp;							object = this.createLiteral(nextValue, null, this.createURI(nextDatatype),</b>
+<b class="nc">&nbsp;									jp.getCurrentLocation());</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							object = this.createLiteral(nextValue, null, null, jp.getCurrentLocation());</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} else if (RDFJSONUtility.BNODE.equals(nextType)) {</b>
+<b class="nc">&nbsp;						if (nextLanguage != null) {</b>
+<b class="nc">&nbsp;							reportFatalError(&quot;Language was attached to a blank node object: subject=&quot; + subjStr</b>
+<b class="nc">&nbsp;									+ &quot; predicate=&quot; + predStr, jp.getCurrentLocation());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (nextDatatype != null) {</b>
+<b class="nc">&nbsp;							reportFatalError(&quot;Datatype was attached to a blank node object: subject=&quot; + subjStr</b>
+<b class="nc">&nbsp;									+ &quot; predicate=&quot; + predStr, jp.getCurrentLocation());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						object = createNode(nextValue.substring(2));</b>
+<b class="nc">&nbsp;					} else if (RDFJSONUtility.URI.equals(nextType)) {</b>
+<b class="nc">&nbsp;						if (nextLanguage != null) {</b>
+<b class="nc">&nbsp;							reportFatalError(&quot;Language was attached to a uri object: subject=&quot; + subjStr + &quot; predicate=&quot;</b>
+<b class="nc">&nbsp;									+ predStr, jp.getCurrentLocation());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (nextDatatype != null) {</b>
+<b class="nc">&nbsp;							reportFatalError(&quot;Datatype was attached to a uri object: subject=&quot; + subjStr + &quot; predicate=&quot;</b>
+<b class="nc">&nbsp;									+ predStr, jp.getCurrentLocation());</b>
+&nbsp;						}
+<b class="nc">&nbsp;						object = vf.createIRI(nextValue);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					foundObject = true;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (!nextContexts.isEmpty()) {</b>
+<b class="nc">&nbsp;						for (final String nextContext : nextContexts) {</b>
+&nbsp;							final Resource context;
+&nbsp;
+<b class="nc">&nbsp;							if (nextContext.equals(RDFJSONUtility.NULL)) {</b>
+<b class="nc">&nbsp;								context = null;</b>
+<b class="nc">&nbsp;							} else if (nextContext.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;								context = createNode(nextContext.substring(2));</b>
+&nbsp;							} else {
+<b class="nc">&nbsp;								context = vf.createIRI(nextContext);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							Statement st = vf.createStatement(subject, predicate, object, context);</b>
+<b class="nc">&nbsp;							if (handler != null) {</b>
+<b class="nc">&nbsp;								handler.handleStatement(st);</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						Statement st = vf.createStatement(subject, predicate, object);</b>
+<b class="nc">&nbsp;						if (handler != null) {</b>
+<b class="nc">&nbsp;							handler.handleStatement(st);</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				if (!foundObject) {</b>
+<b class="nc">&nbsp;					reportFatalError(&quot;No object for predicate: subject=&quot; + subjStr + &quot; predicate=&quot; + predStr,</b>
+<b class="nc">&nbsp;							jp.getCurrentLocation());</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!foundPredicate) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;No predicate for object: subject=&quot; + subjStr, jp.getCurrentLocation());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Collection&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_DATATYPES);</b>
+<b class="nc">&nbsp;		result.add(RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_LANGUAGES);</b>
+<b class="nc">&nbsp;		result.add(RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_TYPES);</b>
+<b class="nc">&nbsp;		result.add(RDFJSONParserSettings.FAIL_ON_MULTIPLE_OBJECT_VALUES);</b>
+<b class="nc">&nbsp;		result.add(RDFJSONParserSettings.FAIL_ON_UNKNOWN_PROPERTY);</b>
+<b class="nc">&nbsp;		result.add(RDFJSONParserSettings.SUPPORT_GRAPHS_EXTENSION);</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_COMMENTS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_SINGLE_QUOTES);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_YAML_COMMENTS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_TRAILING_COMMA);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.INCLUDE_SOURCE_IN_LOCATION);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.STRICT_DUPLICATE_DETECTION);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
+&nbsp;	 *
+&nbsp;	 * @return A newly configured JsonFactory based on the currently enabled settings
+&nbsp;	 */
+&nbsp;	private JsonFactory configureNewJsonFactory() {
+<b class="nc">&nbsp;		final JsonFactory nextJsonFactory = new JsonFactory();</b>
+&nbsp;		// Disable features that may work for most JSON where the field names are
+&nbsp;		// in limited supply,
+&nbsp;		// but does not work for RDF/JSON where a wide range of URIs are used for
+&nbsp;		// subjects and predicates
+<b class="nc">&nbsp;		nextJsonFactory.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);</b>
+<b class="nc">&nbsp;		nextJsonFactory.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);</b>
+<b class="nc">&nbsp;		nextJsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_COMMENTS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_COMMENTS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_SINGLE_QUOTES));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_YAML_COMMENTS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.ALLOW_TRAILING_COMMA));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getParserConfig().isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,</b>
+<b class="nc">&nbsp;					getParserConfig().get(JSONSettings.STRICT_DUPLICATE_DETECTION));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return nextJsonFactory;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

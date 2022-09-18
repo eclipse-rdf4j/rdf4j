@@ -1,0 +1,863 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValueStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: ValueStore (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValueStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/127)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/236)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.WritePrefReadWriteLockManager;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.model.NativeBNode;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.model.NativeIRI;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.model.NativeLiteral;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.model.NativeResource;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
+&nbsp;
+&nbsp;/**
+&nbsp; * File-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; *
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class ValueStore extends SimpleValueFactory {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default value cache size.
+&nbsp;	 */
+&nbsp;	public static final int VALUE_CACHE_SIZE = 512;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default value id cache size.
+&nbsp;	 */
+&nbsp;	public static final int VALUE_ID_CACHE_SIZE = 128;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default namespace cache size.
+&nbsp;	 */
+&nbsp;	public static final int NAMESPACE_CACHE_SIZE = 64;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default namespace id cache size.
+&nbsp;	 */
+&nbsp;	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
+&nbsp;
+&nbsp;	private static final String FILENAME_PREFIX = &quot;values&quot;;
+&nbsp;
+&nbsp;	private static final byte URI_VALUE = 0x1; // 0000 0001
+&nbsp;
+&nbsp;	private static final byte BNODE_VALUE = 0x2; // 0000 0010
+&nbsp;
+&nbsp;	private static final byte LITERAL_VALUE = 0x3; // 0000 0011
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Used to do the actual storage of values, once they&#39;re translated to byte arrays.
+&nbsp;	 */
+&nbsp;	private final DataStore dataStore;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Lock manager used to prevent the removal of values over multiple method calls. Note that values can still be
+&nbsp;	 * added when read locks are active.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final ReadWriteLockManager lockManager = new WritePrefReadWriteLockManager();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An object that indicates the revision of the value store, which is used to check if cached value IDs are still
+&nbsp;	 * valid. In order to be valid, the ValueStoreRevision object of a NativeValue needs to be equal to this object.
+&nbsp;	 */
+&nbsp;	private volatile ValueStoreRevision revision;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A simple cache containing the [VALUE_CACHE_SIZE] most-recently used values stored by their ID.
+&nbsp;	 */
+&nbsp;	private final ConcurrentCache&lt;Integer, NativeValue&gt; valueCache;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
+&nbsp;	 */
+&nbsp;	private final ConcurrentCache&lt;NativeValue, Integer&gt; valueIDCache;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used namespaces stored by their ID.
+&nbsp;	 */
+&nbsp;	private final ConcurrentCache&lt;Integer, String&gt; namespaceCache;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A simple cache containing the [NAMESPACE_ID_CACHE_SIZE] most-recently used namespace-IDs stored by their
+&nbsp;	 * namespace.
+&nbsp;	 */
+&nbsp;	private final ConcurrentCache&lt;String, Integer&gt; namespaceIDCache;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public ValueStore(File dataDir) throws IOException {
+<b class="nc">&nbsp;		this(dataDir, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValueStore(File dataDir, boolean forceSync) throws IOException {
+<b class="nc">&nbsp;		this(dataDir, forceSync, VALUE_CACHE_SIZE, VALUE_ID_CACHE_SIZE, NAMESPACE_CACHE_SIZE, NAMESPACE_ID_CACHE_SIZE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValueStore(File dataDir, boolean forceSync, int valueCacheSize, int valueIDCacheSize, int namespaceCacheSize,
+&nbsp;			int namespaceIDCacheSize) throws IOException {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync);</b>
+&nbsp;
+<b class="nc">&nbsp;		valueCache = new ConcurrentCache&lt;&gt;(valueCacheSize);</b>
+<b class="nc">&nbsp;		valueIDCache = new ConcurrentCache&lt;&gt;(valueIDCacheSize);</b>
+<b class="nc">&nbsp;		namespaceCache = new ConcurrentCache&lt;&gt;(namespaceCacheSize);</b>
+<b class="nc">&nbsp;		namespaceIDCache = new ConcurrentCache&lt;&gt;(namespaceIDCacheSize);</b>
+&nbsp;
+<b class="nc">&nbsp;		setNewRevision();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new revision object for this value store, invalidating any IDs cached in NativeValue objects that were
+&nbsp;	 * created by this value store.
+&nbsp;	 */
+&nbsp;	private void setNewRevision() {
+<b class="nc">&nbsp;		revision = new ValueStoreRevision(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValueStoreRevision getRevision() {
+<b class="nc">&nbsp;		return revision;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a read lock on this value store that can be used to prevent values from being removed while the lock is
+&nbsp;	 * active.
+&nbsp;	 */
+&nbsp;	public Lock getReadLock() throws InterruptedException {
+<b class="nc">&nbsp;		return lockManager.getReadLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the value for the specified ID.
+&nbsp;	 *
+&nbsp;	 * @param id A value ID.
+&nbsp;	 * @return The value for the ID, or &lt;var&gt;null&lt;/var&gt; no such value could be found.
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public NativeValue getValue(int id) throws IOException {
+&nbsp;		// Check value cache
+<b class="nc">&nbsp;		Integer cacheID = id;</b>
+<b class="nc">&nbsp;		NativeValue resultValue = valueCache.get(cacheID);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (resultValue == null) {</b>
+&nbsp;			// Value not in cache, fetch it from file
+<b class="nc">&nbsp;			byte[] data = dataStore.getData(id);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (data != null) {</b>
+<b class="nc">&nbsp;				resultValue = data2value(id, data);</b>
+&nbsp;
+&nbsp;				// Store value in cache
+<b class="nc">&nbsp;				valueCache.put(cacheID, resultValue);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return resultValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the ID for the specified value.
+&nbsp;	 *
+&nbsp;	 * @param value A value.
+&nbsp;	 * @return The ID for the specified value, or {@link NativeValue#UNKNOWN_ID} if no such ID could be found.
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public int getID(Value value) throws IOException {
+&nbsp;		// Try to get the internal ID from the value itself
+<b class="nc">&nbsp;		boolean isOwnValue = isOwnValue(value);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isOwnValue) {</b>
+<b class="nc">&nbsp;			NativeValue nativeValue = (NativeValue) value;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (revisionIsCurrent(nativeValue)) {</b>
+<b class="nc">&nbsp;				int id = nativeValue.getInternalID();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (id != NativeValue.UNKNOWN_ID) {</b>
+<b class="nc">&nbsp;					return id;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check cache
+<b class="nc">&nbsp;		Integer cachedID = valueIDCache.get(value);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (cachedID != null) {</b>
+<b class="nc">&nbsp;			int id = cachedID.intValue();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isOwnValue) {</b>
+&nbsp;				// Store id in value for fast access in any consecutive calls
+<b class="nc">&nbsp;				((NativeValue) value).setInternalID(id, revision);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return id;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// ID not cached, search in file
+<b class="nc">&nbsp;		byte[] data = value2data(value, false);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (data == null &amp;&amp; value instanceof Literal) {</b>
+<b class="nc">&nbsp;			data = literal2legacy((Literal) value);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (data != null) {</b>
+<b class="nc">&nbsp;			int id = dataStore.getID(data);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (id == NativeValue.UNKNOWN_ID &amp;&amp; value instanceof Literal) {</b>
+<b class="nc">&nbsp;				id = dataStore.getID(literal2legacy((Literal) value));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (id != NativeValue.UNKNOWN_ID) {</b>
+<b class="nc">&nbsp;				if (isOwnValue) {</b>
+&nbsp;					// Store id in value for fast access in any consecutive calls
+<b class="nc">&nbsp;					((NativeValue) value).setInternalID(id, revision);</b>
+&nbsp;				} else {
+&nbsp;					// Store id in cache
+<b class="nc">&nbsp;					NativeValue nv = getNativeValue(value);</b>
+<b class="nc">&nbsp;					nv.setInternalID(id, revision);</b>
+<b class="nc">&nbsp;					valueIDCache.put(nv, Integer.valueOf(id));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return id;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return NativeValue.UNKNOWN_ID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Stores the supplied value and returns the ID that has been assigned to it. In case the value was already present,
+&nbsp;	 * the value will not be stored again and the ID of the existing value is returned.
+&nbsp;	 *
+&nbsp;	 * @param value The Value to store.
+&nbsp;	 * @return The ID that has been assigned to the value.
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public int storeValue(Value value) throws IOException {
+&nbsp;		// Try to get the internal ID from the value itself
+<b class="nc">&nbsp;		boolean isOwnValue = isOwnValue(value);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isOwnValue) {</b>
+<b class="nc">&nbsp;			NativeValue nativeValue = (NativeValue) value;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (revisionIsCurrent(nativeValue)) {</b>
+&nbsp;				// Value&#39;s ID is still current
+<b class="nc">&nbsp;				int id = nativeValue.getInternalID();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (id != NativeValue.UNKNOWN_ID) {</b>
+<b class="nc">&nbsp;					return id;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// ID not stored in value itself, try the ID cache
+<b class="nc">&nbsp;		Integer cachedID = valueIDCache.get(value);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (cachedID != null) {</b>
+<b class="nc">&nbsp;			int id = cachedID.intValue();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isOwnValue) {</b>
+&nbsp;				// Store id in value for fast access in any consecutive calls
+<b class="nc">&nbsp;				((NativeValue) value).setInternalID(id, revision);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return id;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Unable to get internal ID in a cheap way, just store it in the data
+&nbsp;		// store which will handle duplicates
+<b class="nc">&nbsp;		byte[] valueData = value2data(value, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		int id = dataStore.storeData(valueData);</b>
+&nbsp;
+<b class="nc">&nbsp;		NativeValue nv = isOwnValue ? (NativeValue) value : getNativeValue(value);</b>
+&nbsp;
+&nbsp;		// Store id in value for fast access in any consecutive calls
+<b class="nc">&nbsp;		nv.setInternalID(id, revision);</b>
+&nbsp;
+&nbsp;		// Update cache
+<b class="nc">&nbsp;		valueIDCache.put(nv, id);</b>
+&nbsp;
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all values from the ValueStore.
+&nbsp;	 *
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public void clear() throws IOException {
+&nbsp;		try {
+<b class="nc">&nbsp;			Lock writeLock = lockManager.getWriteLock();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				dataStore.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;				valueCache.clear();</b>
+<b class="nc">&nbsp;				valueIDCache.clear();</b>
+<b class="nc">&nbsp;				namespaceCache.clear();</b>
+<b class="nc">&nbsp;				namespaceIDCache.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;				setNewRevision();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				writeLock.release();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			throw new IOException(&quot;Failed to acquire write lock&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Synchronizes any changes that are cached in memory to disk.
+&nbsp;	 *
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public void sync() throws IOException {
+<b class="nc">&nbsp;		dataStore.sync();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the ValueStore, releasing any file references, etc. Once closed, the ValueStore can no longer be used.
+&nbsp;	 *
+&nbsp;	 * @exception IOException If an I/O error occurred.
+&nbsp;	 */
+&nbsp;	public void close() throws IOException {
+<b class="nc">&nbsp;		dataStore.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks that every value has exactly one ID.
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void checkConsistency() throws SailException, IOException {
+<b class="nc">&nbsp;		int maxID = dataStore.getMaxID();</b>
+<b class="nc">&nbsp;		for (int id = 1; id &lt;= maxID; id++) {</b>
+<b class="nc">&nbsp;			byte[] data = dataStore.getData(id);</b>
+<b class="nc">&nbsp;			if (isNamespaceData(data)) {</b>
+<b class="nc">&nbsp;				String namespace = data2namespace(data);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					if (id == getNamespaceID(namespace, false)</b>
+<b class="nc">&nbsp;							&amp;&amp; java.net.URI.create(namespace + &quot;part&quot;).isAbsolute()) {</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+&nbsp;					// throw SailException
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				throw new SailException(</b>
+&nbsp;						&quot;Store must be manually exported and imported to fix namespaces like &quot; + namespace);
+&nbsp;			} else {
+<b class="nc">&nbsp;				Value value = this.data2value(id, data);</b>
+<b class="nc">&nbsp;				if (id != this.getID(copy(value))) {</b>
+<b class="nc">&nbsp;					throw new SailException(</b>
+&nbsp;							&quot;Store must be manually exported and imported to merge values like &quot; + value);
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Value copy(Value value) {
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			return createIRI(value.stringValue());</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal lit = (Literal) value;</b>
+<b class="nc">&nbsp;			if (Literals.isLanguageLiteral(lit)) {</b>
+<b class="nc">&nbsp;				return createLiteral(value.stringValue(), lit.getLanguage().orElse(null));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return createLiteral(value.stringValue(), lit.getDatatype());</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			return createBNode(value.stringValue());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the supplied Value object is a NativeValue object that has been created by this ValueStore.
+&nbsp;	 */
+&nbsp;	private boolean isOwnValue(Value value) {
+<b class="nc">&nbsp;		return value instanceof NativeValue &amp;&amp; ((NativeValue) value).getValueStoreRevision().getValueStore() == this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the revision of the supplied value object is still current.
+&nbsp;	 */
+&nbsp;	private boolean revisionIsCurrent(NativeValue value) {
+<b class="nc">&nbsp;		return revision.equals(value.getValueStoreRevision());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] value2data(Value value, boolean create) throws IOException {
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			return uri2data((IRI) value, create);</b>
+<b class="nc">&nbsp;		} else if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			return bnode2data((BNode) value, create);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			return literal2data((Literal) value, create);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;value parameter should be a URI, BNode or Literal&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] uri2data(IRI uri, boolean create) throws IOException {
+<b class="nc">&nbsp;		int nsID = getNamespaceID(uri.getNamespace(), create);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (nsID == -1) {</b>
+&nbsp;			// Unknown namespace means unknown URI
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Get local name in UTF-8
+<b class="nc">&nbsp;		byte[] localNameData = uri.getLocalName().getBytes(StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;		// Combine parts in a single byte array
+<b class="nc">&nbsp;		byte[] uriData = new byte[5 + localNameData.length];</b>
+<b class="nc">&nbsp;		uriData[0] = URI_VALUE;</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(nsID, uriData, 1);</b>
+<b class="nc">&nbsp;		ByteArrayUtil.put(localNameData, uriData, 5);</b>
+&nbsp;
+<b class="nc">&nbsp;		return uriData;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] bnode2data(BNode bNode, boolean create) throws IOException {
+<b class="nc">&nbsp;		byte[] idData = bNode.getID().getBytes(StandardCharsets.UTF_8);</b>
+&nbsp;
+<b class="nc">&nbsp;		byte[] bNodeData = new byte[1 + idData.length];</b>
+<b class="nc">&nbsp;		bNodeData[0] = BNODE_VALUE;</b>
+<b class="nc">&nbsp;		ByteArrayUtil.put(idData, bNodeData, 1);</b>
+&nbsp;
+<b class="nc">&nbsp;		return bNodeData;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] literal2data(Literal literal, boolean create) throws IOException {
+<b class="nc">&nbsp;		return literal2data(literal.getLabel(), literal.getLanguage(), literal.getDatatype(), create);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] literal2legacy(Literal literal) throws IOException {
+<b class="nc">&nbsp;		IRI dt = literal.getDatatype();</b>
+<b class="nc">&nbsp;		if (XSD.STRING.equals(dt) || RDF.LANGSTRING.equals(dt)) {</b>
+<b class="nc">&nbsp;			return literal2data(literal.getLabel(), literal.getLanguage(), null, false);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return literal2data(literal.getLabel(), literal.getLanguage(), dt, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private byte[] literal2data(String label, Optional&lt;String&gt; lang, IRI dt, boolean create)
+&nbsp;			throws IOException, UnsupportedEncodingException {
+&nbsp;		// Get datatype ID
+<b class="nc">&nbsp;		int datatypeID = NativeValue.UNKNOWN_ID;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (create) {</b>
+<b class="nc">&nbsp;			datatypeID = storeValue(dt);</b>
+<b class="nc">&nbsp;		} else if (dt != null) {</b>
+<b class="nc">&nbsp;			datatypeID = getID(dt);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (datatypeID == NativeValue.UNKNOWN_ID) {</b>
+&nbsp;				// Unknown datatype means unknown literal
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Get language tag in UTF-8
+<b class="nc">&nbsp;		byte[] langData = null;</b>
+<b class="nc">&nbsp;		int langDataLength = 0;</b>
+<b class="nc">&nbsp;		if (lang.isPresent()) {</b>
+<b class="nc">&nbsp;			langData = lang.get().getBytes(StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;			langDataLength = langData.length;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Get label in UTF-8
+<b class="nc">&nbsp;		byte[] labelData = label.getBytes(StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;		// Combine parts in a single byte array
+<b class="nc">&nbsp;		byte[] literalData = new byte[6 + langDataLength + labelData.length];</b>
+<b class="nc">&nbsp;		literalData[0] = LITERAL_VALUE;</b>
+<b class="nc">&nbsp;		ByteArrayUtil.putInt(datatypeID, literalData, 1);</b>
+<b class="nc">&nbsp;		literalData[5] = (byte) langDataLength;</b>
+<b class="nc">&nbsp;		if (langData != null) {</b>
+<b class="nc">&nbsp;			ByteArrayUtil.put(langData, literalData, 6);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		ByteArrayUtil.put(labelData, literalData, 6 + langDataLength);</b>
+&nbsp;
+<b class="nc">&nbsp;		return literalData;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isNamespaceData(byte[] data) {
+<b class="nc">&nbsp;		return data[0] != URI_VALUE &amp;&amp; data[0] != BNODE_VALUE &amp;&amp; data[0] != LITERAL_VALUE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private NativeValue data2value(int id, byte[] data) throws IOException {
+<b class="nc">&nbsp;		switch (data[0]) {</b>
+&nbsp;		case URI_VALUE:
+<b class="nc">&nbsp;			return data2uri(id, data);</b>
+&nbsp;		case BNODE_VALUE:
+<b class="nc">&nbsp;			return data2bnode(id, data);</b>
+&nbsp;		case LITERAL_VALUE:
+<b class="nc">&nbsp;			return data2literal(id, data);</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Namespaces cannot be converted into values: &quot; + data2namespace(data));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private NativeIRI data2uri(int id, byte[] data) throws IOException {
+<b class="nc">&nbsp;		int nsID = ByteArrayUtil.getInt(data, 1);</b>
+<b class="nc">&nbsp;		String namespace = getNamespace(nsID);</b>
+&nbsp;
+<b class="nc">&nbsp;		String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new NativeIRI(revision, namespace, localName, id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private NativeBNode data2bnode(int id, byte[] data) throws IOException {
+<b class="nc">&nbsp;		String nodeID = new String(data, 1, data.length - 1, StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;		return new NativeBNode(revision, nodeID, id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private NativeLiteral data2literal(int id, byte[] data) throws IOException {
+&nbsp;		// Get datatype
+<b class="nc">&nbsp;		int datatypeID = ByteArrayUtil.getInt(data, 1);</b>
+<b class="nc">&nbsp;		IRI datatype = null;</b>
+<b class="nc">&nbsp;		if (datatypeID != NativeValue.UNKNOWN_ID) {</b>
+<b class="nc">&nbsp;			datatype = (IRI) getValue(datatypeID);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Get language tag
+<b class="nc">&nbsp;		String lang = null;</b>
+<b class="nc">&nbsp;		int langLength = data[5];</b>
+<b class="nc">&nbsp;		if (langLength &gt; 0) {</b>
+<b class="nc">&nbsp;			lang = new String(data, 6, langLength, StandardCharsets.UTF_8);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Get label
+<b class="nc">&nbsp;		String label = new String(data, 6 + langLength, data.length - 6 - langLength, StandardCharsets.UTF_8);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (lang != null) {</b>
+<b class="nc">&nbsp;			return new NativeLiteral(revision, label, lang, id);</b>
+<b class="nc">&nbsp;		} else if (datatype != null) {</b>
+<b class="nc">&nbsp;			return new NativeLiteral(revision, label, datatype, id);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new NativeLiteral(revision, label, XSD.STRING, id);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private String data2namespace(byte[] data) throws UnsupportedEncodingException {
+<b class="nc">&nbsp;		return new String(data, StandardCharsets.UTF_8);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int getNamespaceID(String namespace, boolean create) throws IOException {
+<b class="nc">&nbsp;		Integer cacheID = namespaceIDCache.get(namespace);</b>
+<b class="nc">&nbsp;		if (cacheID != null) {</b>
+<b class="nc">&nbsp;			return cacheID;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		byte[] namespaceData = namespace.getBytes(StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;		int id;
+<b class="nc">&nbsp;		if (create) {</b>
+<b class="nc">&nbsp;			id = dataStore.storeData(namespaceData);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			id = dataStore.getID(namespaceData);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (id != -1) {</b>
+<b class="nc">&nbsp;			namespaceIDCache.put(namespace, id);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getNamespace(int id) throws IOException {
+<b class="nc">&nbsp;		Integer cacheID = id;</b>
+<b class="nc">&nbsp;		String namespace = namespaceCache.get(cacheID);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (namespace == null) {</b>
+<b class="nc">&nbsp;			byte[] namespaceData = dataStore.getData(id);</b>
+<b class="nc">&nbsp;			namespace = data2namespace(namespaceData);</b>
+&nbsp;
+<b class="nc">&nbsp;			namespaceCache.put(cacheID, namespace);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return namespace;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------------------------------*
+&nbsp;	 * Methods from interface ValueFactory *
+&nbsp;	 *-------------------------------------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public NativeIRI createIRI(String uri) {
+<b class="nc">&nbsp;		return new NativeIRI(revision, uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public NativeIRI createIRI(String namespace, String localName) {
+<b class="nc">&nbsp;		return new NativeIRI(revision, namespace, localName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public NativeBNode createBNode(String nodeID) {
+<b class="nc">&nbsp;		return new NativeBNode(revision, nodeID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public NativeLiteral createLiteral(String value) {
+<b class="nc">&nbsp;		return new NativeLiteral(revision, value, XSD.STRING);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public NativeLiteral createLiteral(String value, String language) {
+<b class="nc">&nbsp;		return new NativeLiteral(revision, value, language);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public NativeLiteral createLiteral(String value, IRI datatype) {
+<b class="nc">&nbsp;		return new NativeLiteral(revision, value, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*----------------------------------------------------------------------*
+&nbsp;	 * Methods for converting model objects to NativeStore-specific objects *
+&nbsp;	 *----------------------------------------------------------------------*/
+&nbsp;
+&nbsp;	public NativeValue getNativeValue(Value value) {
+<b class="nc">&nbsp;		if (value instanceof Resource) {</b>
+<b class="nc">&nbsp;			return getNativeResource((Resource) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			return getNativeLiteral((Literal) value);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown value type: &quot; + value.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public NativeResource getNativeResource(Resource resource) {
+<b class="nc">&nbsp;		if (resource instanceof IRI) {</b>
+<b class="nc">&nbsp;			return getNativeURI((IRI) resource);</b>
+<b class="nc">&nbsp;		} else if (resource instanceof BNode) {</b>
+<b class="nc">&nbsp;			return getNativeBNode((BNode) resource);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown resource type: &quot; + resource.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a NativeURI that is equal to the supplied URI. This method returns the supplied URI itself if it is
+&nbsp;	 * already a NativeURI that has been created by this ValueStore, which prevents unnecessary object creations.
+&nbsp;	 *
+&nbsp;	 * @return A NativeURI for the specified URI.
+&nbsp;	 */
+&nbsp;	public NativeIRI getNativeURI(IRI uri) {
+<b class="nc">&nbsp;		if (isOwnValue(uri)) {</b>
+<b class="nc">&nbsp;			return (NativeIRI) uri;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new NativeIRI(revision, uri.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a NativeBNode that is equal to the supplied bnode. This method returns the supplied bnode itself if it is
+&nbsp;	 * already a NativeBNode that has been created by this ValueStore, which prevents unnecessary object creations.
+&nbsp;	 *
+&nbsp;	 * @return A NativeBNode for the specified bnode.
+&nbsp;	 */
+&nbsp;	public NativeBNode getNativeBNode(BNode bnode) {
+<b class="nc">&nbsp;		if (isOwnValue(bnode)) {</b>
+<b class="nc">&nbsp;			return (NativeBNode) bnode;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new NativeBNode(revision, bnode.getID());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an NativeLiteral that is equal to the supplied literal. This method returns the supplied literal itself
+&nbsp;	 * if it is already a NativeLiteral that has been created by this ValueStore, which prevents unnecessary object
+&nbsp;	 * creations.
+&nbsp;	 *
+&nbsp;	 * @return A NativeLiteral for the specified literal.
+&nbsp;	 */
+&nbsp;	public NativeLiteral getNativeLiteral(Literal l) {
+<b class="nc">&nbsp;		if (isOwnValue(l)) {</b>
+<b class="nc">&nbsp;			return (NativeLiteral) l;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (Literals.isLanguageLiteral(l)) {</b>
+<b class="nc">&nbsp;			return new NativeLiteral(revision, l.getLabel(), l.getLanguage().get());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			NativeIRI datatype = getNativeURI(l.getDatatype());</b>
+<b class="nc">&nbsp;			return new NativeLiteral(revision, l.getLabel(), datatype);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------------*
+&nbsp;	 * Test/debug methods *
+&nbsp;	 *--------------------*/
+&nbsp;
+&nbsp;	public static void main(String[] args) throws Exception {
+<b class="nc">&nbsp;		File dataDir = new File(args[0]);</b>
+<b class="nc">&nbsp;		ValueStore valueStore = new ValueStore(dataDir);</b>
+&nbsp;
+<b class="nc">&nbsp;		int maxID = valueStore.dataStore.getMaxID();</b>
+<b class="nc">&nbsp;		for (int id = 1; id &lt;= maxID; id++) {</b>
+<b class="nc">&nbsp;			byte[] data = valueStore.dataStore.getData(id);</b>
+<b class="nc">&nbsp;			if (valueStore.isNamespaceData(data)) {</b>
+<b class="nc">&nbsp;				String ns = valueStore.data2namespace(data);</b>
+<b class="nc">&nbsp;				System.out.println(&quot;[&quot; + id + &quot;] &quot; + ns);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				Value value = valueStore.data2value(id, data);</b>
+<b class="nc">&nbsp;				System.out.println(&quot;[&quot; + id + &quot;] &quot; + value.toString());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

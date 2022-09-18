@@ -1,0 +1,2987 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TupleExprBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: TupleExprBuilder (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TupleExprBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    91.7%
+  </span>
+  <span class="absValue">
+    (121/132)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    69.5%
+  </span>
+  <span class="absValue">
+    (303/436)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.2%
+  </span>
+  <span class="absValue">
+    (864/1038)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TupleExprBuilder$AggregateCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    90.9%
+  </span>
+  <span class="absValue">
+    (10/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90%
+  </span>
+  <span class="absValue">
+    (18/20)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TupleExprBuilder$AggregateOperatorReplacer</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (5/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    52.4%
+  </span>
+  <span class="absValue">
+    (11/21)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TupleExprBuilder$GroupFinder</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TupleExprBuilder$PathSequenceContext</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TupleExprBuilder$SameTermCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TupleExprBuilder$VarCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TupleExprBuilder$VarReplacer</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (8/8)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    89.9%
+  </span>
+  <span class="absValue">
+    (151/168)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    69.7%
+  </span>
+  <span class="absValue">
+    (308/442)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.2%
+  </span>
+  <span class="absValue">
+    (919/1105)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FN;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Avg;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Coalesce;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Count;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Group;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupConcat;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LangMatches;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Max;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Min;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.OrderElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sample;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Slice;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sum;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TripleRef;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
+&nbsp;import org.eclipse.rdf4j.query.impl.ListBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAbs;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAnd;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAvg;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBNodeFunc;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingValue;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingsClause;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNode;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNodePropertyList;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBound;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCeil;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCoalesce;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCollection;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCompare;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConcat;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstTripleRef;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstruct;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstructQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTContains;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCount;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDatatype;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDay;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTEncodeForURI;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTExistsFunc;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFalse;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFloor;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphGraphPattern;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphPatternGroup;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupClause;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupConcat;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGroupCondition;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTHavingClause;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTHours;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRIFunc;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIf;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIn;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInfix;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInlineData;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsBlank;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsIRI;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLang;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLangMatches;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLimit;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLowerCase;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMD5;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMath;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMax;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMin;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMinusGraphPattern;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMinutes;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMonth;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNot;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNotExistsFunc;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNotIn;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNow;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNumericLiteral;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTObjectList;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOffset;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOptionalGraphPattern;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOr;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOrderClause;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOrderCondition;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathAlternative;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathElt;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathMod;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathOneInPropertySet;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathSequence;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPropertyList;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPropertyListPath;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQName;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRDFLiteral;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRand;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRegexExpression;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTReplace;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRound;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA1;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA224;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA256;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA384;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSHA512;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSTRUUID;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSameTerm;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSample;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSeconds;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelect;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelectQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStr;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrAfter;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrBefore;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrDt;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrEnds;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrLang;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrLen;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTStrStarts;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTString;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSubstr;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSum;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTimezone;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTripleRef;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTriplesSameSubjectPath;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTrue;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTz;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUUID;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnionGraphPattern;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpperCase;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTYear;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.SimpleNode;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SPARQL AST visitor implementation that creates a query algebra representation of the query.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class TupleExprBuilder extends AbstractASTVisitor {
+&nbsp;
+&nbsp;	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+<b class="fc">&nbsp;	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;);</b>
+<b class="fc">&nbsp;	private final static AtomicLong uniqueIdSuffix = new AtomicLong();</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	protected ValueFactory valueFactory;
+&nbsp;
+<b class="fc">&nbsp;	GraphPattern graphPattern = new GraphPattern();</b>
+&nbsp;
+&nbsp;	// private Map&lt;ValueConstant, Var&gt; mappedValueConstants = new
+&nbsp;	// HashMap&lt;ValueConstant, Var&gt;();
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="fc">&nbsp;	public TupleExprBuilder(ValueFactory valueFactory) {</b>
+<b class="fc">&nbsp;		this.valueFactory = valueFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the given valueExpr to a Var. If the supplied ValueExpr is a Var, the object itself will be returned. If it
+&nbsp;	 * is a ValueConstant, this method will check if an existing variable mapping exists and return that mapped
+&nbsp;	 * variable, otherwise it will create and store a new mapping.
+&nbsp;	 *
+&nbsp;	 * @param valueExpr
+&nbsp;	 * @return a Var for the given valueExpr.
+&nbsp;	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type.
+&nbsp;	 */
+&nbsp;	protected Var mapValueExprToVar(Object valueExpr) {
+<b class="fc">&nbsp;		if (valueExpr instanceof Var) {</b>
+&nbsp;			// Return a clone to prevent the Var object from being used in more than one place.
+<b class="fc">&nbsp;			return ((Var) valueExpr).clone();</b>
+<b class="pc">&nbsp;		} else if (valueExpr instanceof ValueConstant) {</b>
+<b class="fc">&nbsp;			return TupleExprs.createConstVar(((ValueConstant) valueExpr).getValue());</b>
+<b class="nc">&nbsp;		} else if (valueExpr instanceof TripleRef) {</b>
+&nbsp;			// Return a clone to prevent the Var object from being used in more than one place.
+<b class="nc">&nbsp;			return ((TripleRef) valueExpr).getExprVar().clone();</b>
+<b class="nc">&nbsp;		} else if (valueExpr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;valueExpr is null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;valueExpr is a: &quot; + valueExpr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the associated Value (if any) for the given valueExpr.
+&nbsp;	 *
+&nbsp;	 * @param valueExpr
+&nbsp;	 * @return the value of the given ValueExpr, or null if no value exists.
+&nbsp;	 * @throws IllegalArgumentException if the supplied ValueExpr is null or of an unexpected type.
+&nbsp;	 */
+&nbsp;	protected Value getValueForExpr(ValueExpr valueExpr) {
+<b class="pc">&nbsp;		if (valueExpr instanceof Var) {</b>
+<b class="nc">&nbsp;			return ((Var) valueExpr).getValue();</b>
+<b class="pc">&nbsp;		} else if (valueExpr instanceof ValueConstant) {</b>
+<b class="fc">&nbsp;			ValueConstant vc = (ValueConstant) valueExpr;</b>
+<b class="fc">&nbsp;			return vc.getValue();</b>
+<b class="nc">&nbsp;		} else if (valueExpr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;valueExpr is null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;valueExpr is a: &quot; + valueExpr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an anonymous Var with a unique, randomly generated, variable name.
+&nbsp;	 *
+&nbsp;	 * @return an anonymous Var with a unique, randomly generated, variable name
+&nbsp;	 */
+&nbsp;	protected Var createAnonVar() {
+&nbsp;		// dashes (&#39;-&#39;) in the generated UUID are replaced with underscores so
+&nbsp;		// the
+&nbsp;		// varname
+&nbsp;		// remains compatible with the SPARQL grammar. See SES-2310.
+<b class="fc">&nbsp;		return new Var(&quot;_anon_&quot; + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet(), true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private FunctionCall createFunctionCall(String uri, SimpleNode node, int minArgs, int maxArgs)
+&nbsp;			throws VisitorException {
+<b class="fc">&nbsp;		FunctionCall functionCall = new FunctionCall(uri);</b>
+&nbsp;
+<b class="fc">&nbsp;		int noOfArguments = node.jjtGetNumChildren();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (noOfArguments &gt; maxArgs || noOfArguments &lt; minArgs) {</b>
+<b class="nc">&nbsp;			throw new VisitorException(&quot;unexpected number of arguments (&quot; + noOfArguments + &quot;) for function &quot; + uri);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; noOfArguments; i++) {</b>
+<b class="fc">&nbsp;			Node argNode = node.jjtGetChild(i);</b>
+<b class="fc">&nbsp;			functionCall.addArg((ValueExpr) argNode.jjtAccept(this, null));</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return functionCall;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTQueryContainer node, Object data) throws VisitorException {
+&nbsp;
+&nbsp;		// Skip the prolog, any information it contains should already have been
+&nbsp;		// processed
+<b class="fc">&nbsp;		return (TupleExpr) node.getQuery().jjtAccept(this, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTSelectQuery node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		final GraphPattern parentGP = graphPattern;</b>
+&nbsp;
+&nbsp;		// Start with building the graph pattern
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+<b class="fc">&nbsp;		node.getWhereClause().jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		TupleExpr tupleExpr = graphPattern.buildTupleExpr();</b>
+&nbsp;
+&nbsp;		// Apply grouping
+<b class="fc">&nbsp;		Group group = null;</b>
+<b class="fc">&nbsp;		ASTGroupClause groupNode = node.getGroupClause();</b>
+<b class="fc">&nbsp;		if (groupNode != null) {</b>
+<b class="fc">&nbsp;			tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);</b>
+<b class="fc">&nbsp;			group = (Group) tupleExpr;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		final ASTHavingClause havingClause = node.getHavingClause();</b>
+<b class="fc">&nbsp;		if (havingClause != null) {</b>
+<b class="fc">&nbsp;			if (group == null) {</b>
+&nbsp;				// create implicit group
+<b class="fc">&nbsp;				group = new Group(tupleExpr);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Apply HAVING group filter condition
+<b class="fc">&nbsp;			tupleExpr = processHavingClause(havingClause, tupleExpr, group);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// process external VALUES clause
+<b class="fc">&nbsp;		final ASTBindingsClause bindingsClause = node.getBindingsClause();</b>
+<b class="fc">&nbsp;		if (bindingsClause != null) {</b>
+&nbsp;			// values clause should be treated as scoped to the where clause
+<b class="fc">&nbsp;			((VariableScopeChange) tupleExpr).setVariableScopeChange(false);</b>
+<b class="fc">&nbsp;			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		final ASTOrderClause orderClause = node.getOrderClause();</b>
+<b class="fc">&nbsp;		if (orderClause != null) {</b>
+<b class="fc">&nbsp;			if (group == null) {</b>
+&nbsp;				// create implicit group
+<b class="fc">&nbsp;				group = new Group(tupleExpr);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Apply result ordering
+<b class="fc">&nbsp;			tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Apply projection
+<b class="fc">&nbsp;		tupleExpr = (TupleExpr) node.getSelect().jjtAccept(this, tupleExpr);</b>
+&nbsp;
+&nbsp;		// Process limit and offset clauses
+<b class="fc">&nbsp;		ASTLimit limitNode = node.getLimit();</b>
+<b class="fc">&nbsp;		long limit = -1L;</b>
+<b class="fc">&nbsp;		if (limitNode != null) {</b>
+<b class="fc">&nbsp;			limit = (Long) limitNode.jjtAccept(this, null);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		ASTOffset offsetNode = node.getOffset();</b>
+<b class="fc">&nbsp;		long offset = -1L;</b>
+<b class="pc">&nbsp;		if (offsetNode != null) {</b>
+<b class="nc">&nbsp;			offset = (Long) offsetNode.jjtAccept(this, null);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (offset &gt;= 1L || limit &gt;= 0L) {</b>
+<b class="fc">&nbsp;			tupleExpr = new Slice(tupleExpr, offset, limit);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		parentGP.addRequiredTE(tupleExpr);</b>
+<b class="fc">&nbsp;		graphPattern = parentGP;</b>
+<b class="fc">&nbsp;		return tupleExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr processHavingClause(ASTHavingClause havingNode, TupleExpr tupleExpr, Group group)
+&nbsp;			throws VisitorException {
+<b class="fc">&nbsp;		if (havingNode != null) {</b>
+&nbsp;			// create an implicit group
+<b class="pc">&nbsp;			if (group == null) {</b>
+<b class="nc">&nbsp;				group = new Group(tupleExpr);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			ValueExpr expr = (ValueExpr) havingNode.jjtGetChild(0).jjtAccept(this, tupleExpr);</b>
+&nbsp;
+&nbsp;			// retrieve any aggregate operators from the expression.
+<b class="fc">&nbsp;			AggregateCollector collector = new AggregateCollector();</b>
+<b class="fc">&nbsp;			collector.meetOther(expr);</b>
+&nbsp;
+&nbsp;			// replace operator occurrences with an anonymous var, and alias it
+&nbsp;			// to the group
+<b class="fc">&nbsp;			Extension extension = new Extension();</b>
+<b class="fc">&nbsp;			for (AggregateOperator operator : collector.getOperators()) {</b>
+<b class="fc">&nbsp;				Var var = createAnonVar();</b>
+&nbsp;
+&nbsp;				// replace occurrence of the operator in the filter expression
+&nbsp;				// with the variable.
+<b class="fc">&nbsp;				AggregateOperatorReplacer replacer = new AggregateOperatorReplacer(operator, var);</b>
+<b class="fc">&nbsp;				replacer.meetOther(expr);</b>
+&nbsp;
+<b class="fc">&nbsp;				String alias = var.getName();</b>
+&nbsp;
+&nbsp;				// create an extension linking the operator to the variable
+&nbsp;				// name.
+<b class="fc">&nbsp;				ExtensionElem pe = new ExtensionElem(operator, alias);</b>
+<b class="fc">&nbsp;				extension.addElement(pe);</b>
+&nbsp;
+&nbsp;				// add the aggregate operator to the group.
+<b class="fc">&nbsp;				GroupElem ge = new GroupElem(alias, operator);</b>
+&nbsp;
+&nbsp;				// FIXME quite often the aggregate in the HAVING clause will be
+&nbsp;				// a duplicate of an aggregate in the projection. We could
+&nbsp;				// perhaps
+&nbsp;				// optimize for that, to avoid having to evaluate twice.
+<b class="fc">&nbsp;				group.addGroupElement(ge);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			extension.setArg(group);</b>
+<b class="fc">&nbsp;			tupleExpr = new Filter(extension, expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return tupleExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr processOrderClause(ASTOrderClause orderNode, TupleExpr tupleExpr, Group group)
+&nbsp;			throws VisitorException {
+<b class="fc">&nbsp;		if (orderNode != null) {</b>
+&nbsp;			@SuppressWarnings(&quot;unchecked&quot;)
+<b class="fc">&nbsp;			List&lt;OrderElem&gt; orderElements = (List&lt;OrderElem&gt;) orderNode.jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;			for (OrderElem orderElem : orderElements) {</b>
+&nbsp;				// retrieve any aggregate operators from the order element.
+<b class="fc">&nbsp;				AggregateCollector collector = new AggregateCollector();</b>
+<b class="fc">&nbsp;				collector.meet(orderElem);</b>
+&nbsp;
+<b class="fc">&nbsp;				Extension extension = new Extension();</b>
+&nbsp;
+<b class="fc">&nbsp;				for (AggregateOperator operator : collector.getOperators()) {</b>
+<b class="fc">&nbsp;					Var var = createAnonVar();</b>
+&nbsp;
+&nbsp;					// replace occurrence of the operator in the order condition
+&nbsp;					// with the variable.
+<b class="fc">&nbsp;					AggregateOperatorReplacer replacer = new AggregateOperatorReplacer(operator, var);</b>
+<b class="fc">&nbsp;					replacer.meet(orderElem);</b>
+&nbsp;
+&nbsp;					// create an extension linking the operator to the variable
+&nbsp;					// name.
+<b class="fc">&nbsp;					String alias = var.getName();</b>
+&nbsp;
+<b class="fc">&nbsp;					ExtensionElem pe = new ExtensionElem(operator, alias);</b>
+<b class="fc">&nbsp;					extension.addElement(pe);</b>
+&nbsp;
+&nbsp;					// add the aggregate operator to the group.
+<b class="fc">&nbsp;					GroupElem ge = new GroupElem(alias, operator);</b>
+<b class="fc">&nbsp;					group.addGroupElement(ge);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;
+<b class="fc">&nbsp;				if (!extension.getElements().isEmpty()) {</b>
+<b class="fc">&nbsp;					extension.setArg(tupleExpr);</b>
+<b class="fc">&nbsp;					tupleExpr = extension;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			tupleExpr = new Order(tupleExpr, orderElements);</b>
+&nbsp;
+&nbsp;		}
+<b class="fc">&nbsp;		return tupleExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTSelect node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		TupleExpr result = (TupleExpr) data;</b>
+&nbsp;
+<b class="fc">&nbsp;		final Order orderClause = result instanceof Order ? (Order) result : null;</b>
+&nbsp;
+<b class="fc">&nbsp;		Extension extension = new Extension();</b>
+&nbsp;
+<b class="fc">&nbsp;		ProjectionElemList projElemList = new ProjectionElemList();</b>
+&nbsp;
+<b class="fc">&nbsp;		GroupFinder groupFinder = new GroupFinder();</b>
+<b class="fc">&nbsp;		result.visit(groupFinder);</b>
+<b class="fc">&nbsp;		Group group = groupFinder.getGroup();</b>
+<b class="fc">&nbsp;		boolean existingGroup = group != null;</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;String&gt; aliasesInProjection = new ArrayList&lt;&gt;();</b>
+<b class="fc">&nbsp;		for (ASTProjectionElem projElemNode : node.getProjectionElemList()) {</b>
+&nbsp;
+<b class="fc">&nbsp;			Node child = projElemNode.jjtGetChild(0);</b>
+&nbsp;
+<b class="fc">&nbsp;			String alias = projElemNode.getAlias();</b>
+<b class="fc">&nbsp;			if (alias != null) {</b>
+&nbsp;				// aliased projection element
+<b class="pc">&nbsp;				if (aliasesInProjection.contains(alias)) {</b>
+<b class="nc">&nbsp;					throw new VisitorException(&quot;duplicate use of alias &#39;&quot; + alias + &quot;&#39; in projection.&quot;);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// check if alias is not previously used.
+<b class="pc">&nbsp;				if (result.getBindingNames().contains(alias)) {</b>
+<b class="nc">&nbsp;					throw new VisitorException(&quot;projection alias &#39;&quot; + alias + &quot;&#39; was previously used&quot;);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				aliasesInProjection.add(alias);</b>
+&nbsp;
+<b class="fc">&nbsp;				ValueExpr valueExpr = castToValueExpr(child.jjtAccept(this, null));</b>
+<b class="pc">&nbsp;				if (valueExpr == null) {</b>
+<b class="nc">&nbsp;					throw new VisitorException(&quot;Either TripleRef or Expression expected in projection.&quot;);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				ProjectionElem elem = new ProjectionElem(alias);</b>
+<b class="fc">&nbsp;				projElemList.addElement(elem);</b>
+&nbsp;
+<b class="fc">&nbsp;				AggregateCollector collector = new AggregateCollector();</b>
+<b class="fc">&nbsp;				valueExpr.visit(collector);</b>
+&nbsp;
+<b class="fc">&nbsp;				if (collector.getOperators().size() &gt; 0) {</b>
+<b class="fc">&nbsp;					elem.setAggregateOperatorInExpression(true);</b>
+<b class="fc">&nbsp;					for (AggregateOperator operator : collector.getOperators()) {</b>
+&nbsp;						// Apply implicit grouping if necessary
+<b class="fc">&nbsp;						if (group == null) {</b>
+<b class="fc">&nbsp;							group = new Group(result);</b>
+&nbsp;						}
+&nbsp;
+<b class="fc">&nbsp;						if (operator.equals(valueExpr)) {</b>
+<b class="fc">&nbsp;							group.addGroupElement(new GroupElem(alias, operator));</b>
+<b class="fc">&nbsp;							extension.setArg(group);</b>
+&nbsp;						} else {
+<b class="fc">&nbsp;							ValueExpr expr = (ValueExpr) operator.getParentNode();</b>
+&nbsp;
+<b class="fc">&nbsp;							Extension anonymousExtension = new Extension();</b>
+<b class="fc">&nbsp;							Var anonVar = createAnonVar();</b>
+<b class="fc">&nbsp;							expr.replaceChildNode(operator, anonVar);</b>
+<b class="fc">&nbsp;							anonymousExtension.addElement(new ExtensionElem(operator, anonVar.getName()));</b>
+&nbsp;
+<b class="fc">&nbsp;							anonymousExtension.setArg(result);</b>
+<b class="fc">&nbsp;							result = anonymousExtension;</b>
+<b class="fc">&nbsp;							group.addGroupElement(new GroupElem(anonVar.getName(), operator));</b>
+&nbsp;
+&nbsp;						}
+&nbsp;
+<b class="fc">&nbsp;						if (!existingGroup) {</b>
+<b class="fc">&nbsp;							result = group;</b>
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// SELECT expressions need to be captured as an extension, so that original and alias are
+&nbsp;				// available for the ORDER BY clause (which gets applied _before_ projection). See GH-4066
+&nbsp;				// and https://www.w3.org/TR/sparql11-query/#sparqlSolMod .
+<b class="fc">&nbsp;				ExtensionElem extElem = new ExtensionElem(valueExpr, alias);</b>
+<b class="fc">&nbsp;				extension.addElement(extElem);</b>
+<b class="fc">&nbsp;				elem.setSourceExpression(extElem);</b>
+<b class="pc">&nbsp;			} else if (child instanceof ASTVar) {</b>
+<b class="fc">&nbsp;				Var projVar = (Var) child.jjtAccept(this, null);</b>
+<b class="fc">&nbsp;				ProjectionElem elem = new ProjectionElem(projVar.getName());</b>
+<b class="fc">&nbsp;				projElemList.addElement(elem);</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;required alias for non-Var projection elements not found&quot;);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (!extension.getElements().isEmpty()) {</b>
+<b class="fc">&nbsp;			if (orderClause != null) {</b>
+&nbsp;				// Extensions produced by SELECT expressions should be nested inside the ORDER BY clause, to make sure
+&nbsp;				// sorting can work on the newly introduced variable. See SES-892 and SES-1809.
+<b class="fc">&nbsp;				TupleExpr arg = orderClause.getArg();</b>
+<b class="fc">&nbsp;				extension.setArg(arg);</b>
+<b class="fc">&nbsp;				orderClause.setArg(extension);</b>
+<b class="fc">&nbsp;				result = orderClause;</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				extension.setArg(result);</b>
+<b class="fc">&nbsp;				result = extension;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		result = new Projection(result, projElemList);</b>
+<b class="fc">&nbsp;		if (group != null) {</b>
+<b class="fc">&nbsp;			Set&lt;String&gt; groupNames = group.getBindingNames();</b>
+<b class="fc">&nbsp;			List&lt;ProjectionElem&gt; elements = projElemList.getElements();</b>
+&nbsp;
+<b class="fc">&nbsp;			for (ProjectionElem elem : elements) {</b>
+<b class="fc">&nbsp;				if (!elem.hasAggregateOperatorInExpression()) {</b>
+&nbsp;					// non-aggregate projection elem is only allowed to be a constant or a simple expression (see
+&nbsp;					// https://www.w3.org/TR/sparql11-query/#aggregateRestrictions)
+<b class="fc">&nbsp;					ExtensionElem extElem = elem.getSourceExpression();</b>
+<b class="pc">&nbsp;					if (extElem != null) {</b>
+<b class="nc">&nbsp;						ValueExpr expr = extElem.getExpr();</b>
+<b class="nc">&nbsp;						if (isIllegalCombinedWithGroupByExpression(expr, elements, groupNames)) {</b>
+<b class="nc">&nbsp;							throw new VisitorException(&quot;non-aggregate expression &#39;&quot; + expr</b>
+&nbsp;									+ &quot;&#39; not allowed in projection when using GROUP BY.&quot;);
+&nbsp;						}
+<b class="nc">&nbsp;					} else if (!groupNames.contains(elem.getName())) {</b>
+<b class="nc">&nbsp;						throw new VisitorException(&quot;variable &#39;&quot; + elem.getName()</b>
+&nbsp;								+ &quot;&#39; in projection not present in GROUP BY.&quot;);
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (node.isSubSelect()) {</b>
+&nbsp;			// set context var at the level of the projection. This allows us
+&nbsp;			// to distinguish named graphs selected in the
+&nbsp;			// outer query from named graphs selected as part of the sub-select.
+<b class="fc">&nbsp;			((Projection) result).setProjectionContext(graphPattern.getContextVar());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (node.isDistinct()) {</b>
+<b class="fc">&nbsp;			result = new Distinct(result);</b>
+<b class="pc">&nbsp;		} else if (node.isReduced()) {</b>
+<b class="nc">&nbsp;			result = new Reduced(result);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isIllegalCombinedWithGroupByExpression(ValueExpr expr, List&lt;ProjectionElem&gt; elements,
+&nbsp;			Set&lt;String&gt; groupNames) {
+<b class="nc">&nbsp;		if (expr instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		VarNameCollector varNameCollector = new VarNameCollector();</b>
+<b class="nc">&nbsp;		expr.visit(varNameCollector);</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = varNameCollector.getVarNames();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String varName : varNames) {</b>
+<b class="nc">&nbsp;			if (isIllegalCombinedWithGroupByExpression(varName, elements, groupNames)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isIllegalCombinedWithGroupByExpression(String varName, List&lt;ProjectionElem&gt; elements,
+&nbsp;			Set&lt;String&gt; groupNames) {
+<b class="nc">&nbsp;		if (groupNames.contains(varName)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		do {
+<b class="nc">&nbsp;			String prev = varName;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (ProjectionElem element : elements) {</b>
+<b class="nc">&nbsp;				if (element.getName().equals(varName)) {</b>
+<b class="nc">&nbsp;					if (element.hasAggregateOperatorInExpression()) {</b>
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						ExtensionElem sourceExpression = element.getSourceExpression();</b>
+<b class="nc">&nbsp;						if (sourceExpression != null) {</b>
+<b class="nc">&nbsp;							if (sourceExpression.getExpr() != null) {</b>
+<b class="nc">&nbsp;								return isIllegalCombinedWithGroupByExpression(sourceExpression.getExpr(), elements,</b>
+&nbsp;										groupNames);
+&nbsp;							}
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						varName = element.getName();</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// check if we didn&#39;t find a new element
+<b class="nc">&nbsp;			if (prev.equals(varName)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} while (!groupNames.contains(varName));</b>
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class GroupFinder extends AbstractQueryModelVisitor&lt;VisitorException&gt; {</b>
+&nbsp;
+&nbsp;		private Group group;
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Projection projection) {
+&nbsp;			// stop tree traversal on finding a projection: we do not wish to
+&nbsp;			// find
+&nbsp;			// the group in a sub-select.
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Group group) {
+<b class="fc">&nbsp;			this.group = group;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Group getGroup() {
+<b class="fc">&nbsp;			return group;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTConstructQuery node, Object data) throws VisitorException {
+&nbsp;		// Start with building the graph pattern
+<b class="fc">&nbsp;		graphPattern = new GraphPattern();</b>
+<b class="fc">&nbsp;		node.getWhereClause().jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		TupleExpr tupleExpr = graphPattern.buildTupleExpr();</b>
+&nbsp;
+&nbsp;		// Apply grouping
+<b class="fc">&nbsp;		ASTGroupClause groupNode = node.getGroupClause();</b>
+<b class="pc">&nbsp;		if (groupNode != null) {</b>
+&nbsp;
+<b class="nc">&nbsp;			tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		Group group;
+<b class="pc">&nbsp;		if (tupleExpr instanceof Group) {</b>
+<b class="nc">&nbsp;			group = (Group) tupleExpr;</b>
+&nbsp;		} else {
+&nbsp;			// create a new implicit group. Note that this group will only
+&nbsp;			// actually
+&nbsp;			// be used in the query model if the query has HAVING or ORDER BY
+&nbsp;			// clause
+<b class="fc">&nbsp;			group = new Group(tupleExpr);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Apply HAVING group filter condition
+<b class="fc">&nbsp;		tupleExpr = processHavingClause(node.getHavingClause(), tupleExpr, group);</b>
+&nbsp;
+&nbsp;		// process bindings clause
+<b class="fc">&nbsp;		ASTBindingsClause bindingsClause = node.getBindingsClause();</b>
+<b class="pc">&nbsp;		if (bindingsClause != null) {</b>
+<b class="nc">&nbsp;			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Apply result ordering
+<b class="fc">&nbsp;		tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, null);</b>
+&nbsp;
+&nbsp;		// process limit and offset clauses
+<b class="fc">&nbsp;		ASTLimit limitNode = node.getLimit();</b>
+<b class="fc">&nbsp;		long limit = -1L;</b>
+<b class="fc">&nbsp;		if (limitNode != null) {</b>
+<b class="fc">&nbsp;			limit = (Long) limitNode.jjtAccept(this, null);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		ASTOffset offsetNode = node.getOffset();</b>
+<b class="fc">&nbsp;		long offset = -1;</b>
+<b class="pc">&nbsp;		if (offsetNode != null) {</b>
+<b class="nc">&nbsp;			offset = (Long) offsetNode.jjtAccept(this, null);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (offset &gt;= 1 || limit &gt;= 0) {</b>
+<b class="fc">&nbsp;			tupleExpr = new Slice(tupleExpr, offset, limit);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Process construct clause
+<b class="fc">&nbsp;		ASTConstruct constructNode = node.getConstruct();</b>
+<b class="fc">&nbsp;		if (!constructNode.isWildcard()) {</b>
+<b class="fc">&nbsp;			tupleExpr = (TupleExpr) constructNode.jjtAccept(this, tupleExpr);</b>
+&nbsp;		} else {
+&nbsp;			// create construct clause from graph pattern.
+<b class="fc">&nbsp;			ConstructorBuilder cb = new ConstructorBuilder();</b>
+&nbsp;
+&nbsp;			// SPARQL does not allow distinct or reduced right now. Leaving
+&nbsp;			// functionality in construct builder for
+&nbsp;			// possible future use.
+&nbsp;			try {
+<b class="fc">&nbsp;				tupleExpr = cb.buildConstructor(tupleExpr, false, false);</b>
+<b class="nc">&nbsp;			} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;				throw new VisitorException(e.getMessage());</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return tupleExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTConstruct node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		TupleExpr result = (TupleExpr) data;</b>
+&nbsp;
+&nbsp;		// Collect construct triples
+<b class="fc">&nbsp;		graphPattern = new GraphPattern();</b>
+<b class="fc">&nbsp;		super.visit(node, null);</b>
+<b class="fc">&nbsp;		TupleExpr constructExpr = graphPattern.buildTupleExpr();</b>
+&nbsp;
+&nbsp;		// Retrieve TripleRefs from the head
+<b class="fc">&nbsp;		Map&lt;String, Object&gt; tripleRefs = TripleRefCollector.process(constructExpr);</b>
+&nbsp;
+&nbsp;		// Retrieve all StatementPatterns from the construct expression
+<b class="fc">&nbsp;		List&lt;StatementPattern&gt; statementPatterns = StatementPatternCollector.process(constructExpr);</b>
+&nbsp;
+<b class="fc">&nbsp;		SameTermCollector collector = new SameTermCollector();</b>
+<b class="fc">&nbsp;		constructExpr.visit(collector);</b>
+<b class="fc">&nbsp;		if (!collector.getCollectedSameTerms().isEmpty()) {</b>
+&nbsp;			// sameTerm filters in construct (this can happen when there&#39;s a
+&nbsp;			// cyclic path defined, see SES-1685 and SES-2104)
+&nbsp;
+&nbsp;			// we remove the sameTerm filters by simply replacing all mapped
+&nbsp;			// variable occurrences
+<b class="fc">&nbsp;			Set&lt;SameTerm&gt; sameTermConstraints = collector.getCollectedSameTerms();</b>
+<b class="fc">&nbsp;			statementPatterns = replaceSameTermVars(statementPatterns, sameTermConstraints);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Set&lt;Var&gt; constructVars = getConstructVars(statementPatterns);</b>
+&nbsp;
+<b class="fc">&nbsp;		VarCollector whereClauseVarCollector = new VarCollector();</b>
+<b class="fc">&nbsp;		result.visit(whereClauseVarCollector);</b>
+&nbsp;
+&nbsp;		// Create BNodeGenerators for all anonymous variables
+&nbsp;		// NB: preserve order for a deterministic output
+<b class="fc">&nbsp;		Map&lt;Var, ExtensionElem&gt; extElemMap = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (Var var : constructVars) {</b>
+<b class="pc">&nbsp;			if (var.isAnonymous() &amp;&amp; !extElemMap.containsKey(var)) {</b>
+&nbsp;				ValueExpr valueExpr;
+&nbsp;
+<b class="pc">&nbsp;				if (var.hasValue()) {</b>
+<b class="fc">&nbsp;					valueExpr = new ValueConstant(var.getValue());</b>
+<b class="nc">&nbsp;				} else if (tripleRefs.containsKey(var.getName())) {</b>
+<b class="nc">&nbsp;					valueExpr = castToValueExpr(tripleRefs.get(var.getName()));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					valueExpr = new BNodeGenerator();</b>
+&nbsp;				}
+<b class="fc">&nbsp;				extElemMap.put(var, new ExtensionElem(valueExpr, var.getName()));</b>
+<b class="fc">&nbsp;			} else if (!whereClauseVarCollector.collectedVars.contains(var)) {</b>
+&nbsp;				// non-anon var in construct clause not present in where clause
+<b class="pc">&nbsp;				if (!extElemMap.containsKey(var)) {</b>
+&nbsp;					// assign non-anonymous vars not present in where clause as
+&nbsp;					// extension elements. This is necessary to make external
+&nbsp;					// binding
+&nbsp;					// assingnment possible (see SES-996)
+<b class="fc">&nbsp;					extElemMap.put(var, new ExtensionElem(var.clone(), var.getName()));</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="pc">&nbsp;		if (!extElemMap.isEmpty()) {</b>
+<b class="fc">&nbsp;			result = new Extension(result, extElemMap.values());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Create a Projection for each StatementPattern in the constructor
+<b class="fc">&nbsp;		List&lt;ProjectionElemList&gt; projList = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (StatementPattern sp : statementPatterns) {</b>
+<b class="fc">&nbsp;			ProjectionElemList projElemList = new ProjectionElemList();</b>
+&nbsp;
+<b class="fc">&nbsp;			projElemList.addElement(new ProjectionElem(sp.getSubjectVar().getName(), &quot;subject&quot;));</b>
+<b class="fc">&nbsp;			projElemList.addElement(new ProjectionElem(sp.getPredicateVar().getName(), &quot;predicate&quot;));</b>
+<b class="fc">&nbsp;			projElemList.addElement(new ProjectionElem(sp.getObjectVar().getName(), &quot;object&quot;));</b>
+<b class="pc">&nbsp;			if (sp.getContextVar() != null) {</b>
+<b class="nc">&nbsp;				projElemList.addElement(new ProjectionElem(sp.getContextVar().getName(), &quot;context&quot;));</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			projList.add(projElemList);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (projList.size() == 1) {</b>
+<b class="fc">&nbsp;			result = new Projection(result, projList.get(0));</b>
+<b class="pc">&nbsp;		} else if (projList.size() &gt; 1) {</b>
+<b class="fc">&nbsp;			result = new MultiProjection(result, projList);</b>
+&nbsp;		} else {
+&nbsp;			// Empty constructor
+<b class="nc">&nbsp;			result = new EmptySet();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new Reduced(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the set of variables that are relevant for the constructor. This method accumulates all subject, predicate
+&nbsp;	 * and object variables from the supplied statement patterns, but ignores any context variables.
+&nbsp;	 */
+&nbsp;	private Set&lt;Var&gt; getConstructVars(Collection&lt;StatementPattern&gt; statementPatterns) {
+<b class="fc">&nbsp;		Set&lt;Var&gt; vars = new LinkedHashSet&lt;&gt;(statementPatterns.size() * 2);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (StatementPattern sp : statementPatterns) {</b>
+<b class="fc">&nbsp;			vars.add(sp.getSubjectVar());</b>
+<b class="fc">&nbsp;			vars.add(sp.getPredicateVar());</b>
+<b class="fc">&nbsp;			vars.add(sp.getObjectVar());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return vars;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private List&lt;StatementPattern&gt; replaceSameTermVars(List&lt;StatementPattern&gt; statementPatterns,
+&nbsp;			Set&lt;SameTerm&gt; sameTermConstraints) {
+<b class="pc">&nbsp;		if (sameTermConstraints != null) {</b>
+<b class="fc">&nbsp;			for (SameTerm st : sameTermConstraints) {</b>
+<b class="fc">&nbsp;				Var left = (Var) st.getLeftArg();</b>
+<b class="fc">&nbsp;				Var right = (Var) st.getRightArg();</b>
+<b class="fc">&nbsp;				for (StatementPattern sp : statementPatterns) {</b>
+<b class="fc">&nbsp;					Var subj = sp.getSubjectVar();</b>
+<b class="fc">&nbsp;					Var obj = sp.getObjectVar();</b>
+&nbsp;
+<b class="pc">&nbsp;					if (subj.equals(left) || subj.equals(right)) {</b>
+<b class="pc">&nbsp;						if (obj.equals(left) || obj.equals(right)) {</b>
+<b class="fc">&nbsp;							sp.setObjectVar(subj.clone());</b>
+&nbsp;						}
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return statementPatterns;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTDescribeQuery node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		TupleExpr tupleExpr = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		if (node.getWhereClause() != null) {</b>
+&nbsp;			// Start with building the graph pattern
+<b class="fc">&nbsp;			graphPattern = new GraphPattern();</b>
+<b class="fc">&nbsp;			node.getWhereClause().jjtAccept(this, null);</b>
+<b class="fc">&nbsp;			tupleExpr = graphPattern.buildTupleExpr();</b>
+&nbsp;
+&nbsp;			// Apply grouping
+<b class="fc">&nbsp;			Group group = null;</b>
+<b class="fc">&nbsp;			ASTGroupClause groupNode = node.getGroupClause();</b>
+<b class="pc">&nbsp;			if (groupNode != null) {</b>
+<b class="nc">&nbsp;				tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);</b>
+<b class="nc">&nbsp;				group = (Group) tupleExpr;</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (node.getHavingClause() != null) {</b>
+<b class="nc">&nbsp;				if (group == null) {</b>
+&nbsp;					// create implicit group
+<b class="nc">&nbsp;					group = new Group(tupleExpr);</b>
+&nbsp;				}
+&nbsp;				// Apply HAVING group filter condition
+<b class="nc">&nbsp;				tupleExpr = processHavingClause(node.getHavingClause(), tupleExpr, group);</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (node.getOrderClause() != null) {</b>
+<b class="nc">&nbsp;				if (group == null) {</b>
+&nbsp;					// create implicit group
+<b class="nc">&nbsp;					group = new Group(tupleExpr);</b>
+&nbsp;				}
+&nbsp;				// Apply result ordering
+<b class="nc">&nbsp;				tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Process limit and offset clauses
+<b class="fc">&nbsp;			ASTLimit limitNode = node.getLimit();</b>
+<b class="fc">&nbsp;			long limit = -1;</b>
+<b class="pc">&nbsp;			if (limitNode != null) {</b>
+<b class="nc">&nbsp;				limit = (Long) limitNode.jjtAccept(this, null);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			ASTOffset offsetNode = node.getOffset();</b>
+<b class="fc">&nbsp;			long offset = -1;</b>
+<b class="pc">&nbsp;			if (offsetNode != null) {</b>
+<b class="nc">&nbsp;				offset = (Long) offsetNode.jjtAccept(this, null);</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (offset &gt;= 1 || limit &gt;= 0) {</b>
+<b class="nc">&nbsp;				tupleExpr = new Slice(tupleExpr, offset, limit);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Process describe clause last
+<b class="fc">&nbsp;		return (TupleExpr) node.getDescribe().jjtAccept(this, tupleExpr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTDescribe node, Object data) throws VisitorException {
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr tupleExpr = (TupleExpr) data;</b>
+<b class="fc">&nbsp;		if (tupleExpr == null) {</b>
+<b class="fc">&nbsp;			tupleExpr = new SingletonSet();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Extension e = new Extension();</b>
+<b class="fc">&nbsp;		ProjectionElemList projectionElements = new ProjectionElemList();</b>
+<b class="fc">&nbsp;		for (int i = 0; i &lt; node.jjtGetNumChildren(); i++) {</b>
+<b class="fc">&nbsp;			ValueExpr resource = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (resource instanceof Var) {</b>
+<b class="fc">&nbsp;				projectionElements.addElement(new ProjectionElem(((Var) resource).getName()));</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				String alias = &quot;_describe_&quot; + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();</b>
+<b class="fc">&nbsp;				ExtensionElem elem = new ExtensionElem(resource, alias);</b>
+<b class="fc">&nbsp;				e.addElement(elem);</b>
+<b class="fc">&nbsp;				projectionElements.addElement(new ProjectionElem(alias));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (!e.getElements().isEmpty()) {</b>
+<b class="fc">&nbsp;			e.setArg(tupleExpr);</b>
+<b class="fc">&nbsp;			tupleExpr = e;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Projection p = new Projection(tupleExpr, projectionElements);</b>
+<b class="fc">&nbsp;		return new DescribeOperator(p);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTAskQuery node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		graphPattern = new GraphPattern();</b>
+&nbsp;
+<b class="fc">&nbsp;		super.visit(node, null);</b>
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr tupleExpr = graphPattern.buildTupleExpr();</b>
+<b class="fc">&nbsp;		tupleExpr = new Slice(tupleExpr, 0, 1);</b>
+&nbsp;
+&nbsp;		// Apply grouping
+<b class="fc">&nbsp;		Group group = null;</b>
+<b class="fc">&nbsp;		ASTGroupClause groupNode = node.getGroupClause();</b>
+<b class="pc">&nbsp;		if (groupNode != null) {</b>
+<b class="nc">&nbsp;			tupleExpr = (TupleExpr) groupNode.jjtAccept(this, tupleExpr);</b>
+<b class="nc">&nbsp;			group = (Group) tupleExpr;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		final ASTHavingClause havingClause = node.getHavingClause();</b>
+<b class="pc">&nbsp;		if (havingClause != null) {</b>
+<b class="nc">&nbsp;			if (group == null) {</b>
+&nbsp;				// create implicit group
+<b class="nc">&nbsp;				group = new Group(tupleExpr);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Apply HAVING group filter condition
+<b class="nc">&nbsp;			tupleExpr = processHavingClause(havingClause, tupleExpr, group);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// process bindings clause
+<b class="fc">&nbsp;		final ASTBindingsClause bindingsClause = node.getBindingsClause();</b>
+<b class="pc">&nbsp;		if (bindingsClause != null) {</b>
+<b class="nc">&nbsp;			tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		final ASTOrderClause orderClause = node.getOrderClause();</b>
+<b class="pc">&nbsp;		if (orderClause != null) {</b>
+<b class="nc">&nbsp;			if (group == null) {</b>
+&nbsp;				// create implicit group
+<b class="nc">&nbsp;				group = new Group(tupleExpr);</b>
+&nbsp;			}
+&nbsp;			// Apply result ordering
+<b class="nc">&nbsp;			tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return tupleExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected ValueExpr castToValueExpr(Object node) {
+<b class="pc">&nbsp;		if (node instanceof ValueExpr) {</b>
+<b class="fc">&nbsp;			return (ValueExpr) node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (node instanceof TripleRef) {</b>
+<b class="nc">&nbsp;			TripleRef t = (TripleRef) node;</b>
+<b class="nc">&nbsp;			return new ValueExprTripleRef(t.getExprVar().getName(), t.getSubjectVar().clone(),</b>
+<b class="nc">&nbsp;					t.getPredicateVar().clone(),</b>
+<b class="nc">&nbsp;					t.getObjectVar().clone());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;could not cast &quot; + node.getClass().getName() + &quot; to ValueExpr&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Group visit(ASTGroupClause node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		TupleExpr tupleExpr = (TupleExpr) data;</b>
+<b class="fc">&nbsp;		Group g = new Group(tupleExpr);</b>
+<b class="fc">&nbsp;		int childCount = node.jjtGetNumChildren();</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;String&gt; groupBindingNames = new ArrayList&lt;&gt;();</b>
+<b class="fc">&nbsp;		for (int i = 0; i &lt; childCount; i++) {</b>
+<b class="fc">&nbsp;			String name = (String) node.jjtGetChild(i).jjtAccept(this, g);</b>
+<b class="fc">&nbsp;			groupBindingNames.add(name);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		g.setGroupBindingNames(groupBindingNames);</b>
+&nbsp;
+<b class="fc">&nbsp;		return g;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String visit(ASTGroupCondition node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Group group = (Group) data;</b>
+<b class="fc">&nbsp;		TupleExpr arg = group.getArg();</b>
+&nbsp;
+&nbsp;		Extension extension;
+<b class="pc">&nbsp;		if (arg instanceof Extension) {</b>
+<b class="nc">&nbsp;			extension = (Extension) arg;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			extension = new Extension();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		String name;
+<b class="fc">&nbsp;		ValueExpr ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean aliased = false;</b>
+<b class="fc">&nbsp;		if (node.jjtGetNumChildren() &gt; 1) {</b>
+<b class="fc">&nbsp;			aliased = true;</b>
+<b class="fc">&nbsp;			Var v = (Var) node.jjtGetChild(1).jjtAccept(this, data);</b>
+<b class="fc">&nbsp;			name = v.getName();</b>
+<b class="fc">&nbsp;		} else {</b>
+<b class="fc">&nbsp;			if (ve instanceof Var) {</b>
+<b class="fc">&nbsp;				name = ((Var) ve).getName();</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				aliased = true;</b>
+<b class="fc">&nbsp;				Var v = createAnonVar();</b>
+<b class="fc">&nbsp;				name = v.getName();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (aliased) {</b>
+<b class="fc">&nbsp;			ExtensionElem elem = new ExtensionElem(ve, name);</b>
+<b class="fc">&nbsp;			extension.addElement(elem);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (extension.getElements().size() &gt; 0 &amp;&amp; !(arg instanceof Extension)) {</b>
+<b class="fc">&nbsp;			extension.setArg(arg);</b>
+<b class="fc">&nbsp;			group.setArg(extension);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return name;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;OrderElem&gt; visit(ASTOrderClause node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		int childCount = node.jjtGetNumChildren();</b>
+<b class="fc">&nbsp;		List&lt;OrderElem&gt; elements = new ArrayList&lt;&gt;(childCount);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; childCount; i++) {</b>
+<b class="fc">&nbsp;			elements.add((OrderElem) node.jjtGetChild(i).jjtAccept(this, null));</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return elements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public OrderElem visit(ASTOrderCondition node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr valueExpr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new OrderElem(valueExpr, node.isAscending());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Long visit(ASTLimit node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return node.getValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Long visit(ASTOffset node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		return node.getValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTGraphPatternGroup node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		GraphPattern parentGP = graphPattern;</b>
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean optionalPatternInGroup = false;</b>
+<b class="fc">&nbsp;		for (int i = 0; i &lt; node.jjtGetNumChildren(); i++) {</b>
+<b class="fc">&nbsp;			if (optionalPatternInGroup) {</b>
+&nbsp;				// building the LeftJoin and resetting the graphPattern.
+<b class="fc">&nbsp;				TupleExpr te = graphPattern.buildTupleExpr();</b>
+<b class="fc">&nbsp;				graphPattern = new GraphPattern(parentGP);</b>
+<b class="fc">&nbsp;				graphPattern.addRequiredTE(te);</b>
+<b class="fc">&nbsp;				optionalPatternInGroup = false;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			Node childNode = node.jjtGetChild(i);</b>
+<b class="fc">&nbsp;			data = childNode.jjtAccept(this, data);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (childNode instanceof ASTOptionalGraphPattern) {</b>
+<b class="fc">&nbsp;				optionalPatternInGroup = true;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr te = graphPattern.buildTupleExpr();</b>
+<b class="fc">&nbsp;		if (node.isScopeChange()) {</b>
+<b class="fc">&nbsp;			((VariableScopeChange) te).setVariableScopeChange(true);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		parentGP.addRequiredTE(te);</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = parentGP;</b>
+&nbsp;
+<b class="fc">&nbsp;		return te;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTServiceGraphPattern node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		GraphPattern parentGP = graphPattern;</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueExpr serviceRef = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+&nbsp;
+<b class="nc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+<b class="nc">&nbsp;		node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="nc">&nbsp;		TupleExpr serviceExpr = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (serviceExpr instanceof SingletonSet) {</b>
+<b class="nc">&nbsp;			return null; // do not add an empty service block</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String serviceExpressionString = node.getPatternString();</b>
+&nbsp;
+<b class="nc">&nbsp;		parentGP.addRequiredTE(new Service(mapValueExprToVar(serviceRef), serviceExpr, serviceExpressionString,</b>
+<b class="nc">&nbsp;				node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent()));</b>
+&nbsp;
+<b class="nc">&nbsp;		graphPattern = parentGP;</b>
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTOptionalGraphPattern node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		GraphPattern parentGP = graphPattern;</b>
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+&nbsp;
+<b class="fc">&nbsp;		super.visit(node, null);</b>
+&nbsp;
+&nbsp;		// remove filter conditions from graph pattern for inclusion as conditions in the OptionalTE
+<b class="fc">&nbsp;		List&lt;ValueExpr&gt; optionalConstraints = graphPattern.removeAllConstraints();</b>
+<b class="fc">&nbsp;		TupleExpr optional = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = parentGP;</b>
+<b class="fc">&nbsp;		graphPattern.addOptionalTE(optional, optionalConstraints);</b>
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTGraphGraphPattern node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Var oldContext = graphPattern.getContextVar();</b>
+<b class="fc">&nbsp;		Scope oldScope = graphPattern.getStatementPatternScope();</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueExpr newContext = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern.setContextVar(mapValueExprToVar(newContext));</b>
+<b class="fc">&nbsp;		graphPattern.setStatementPatternScope(Scope.NAMED_CONTEXTS);</b>
+&nbsp;
+<b class="fc">&nbsp;		node.jjtGetChild(1).jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern.setContextVar(oldContext);</b>
+<b class="fc">&nbsp;		graphPattern.setStatementPatternScope(oldScope);</b>
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTUnionGraphPattern node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		GraphPattern parentGP = graphPattern;</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+<b class="fc">&nbsp;		node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		TupleExpr leftArg = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+<b class="fc">&nbsp;		node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		TupleExpr rightArg = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		Union union = new Union(leftArg, rightArg);</b>
+<b class="fc">&nbsp;		union.setVariableScopeChange(true);</b>
+<b class="fc">&nbsp;		parentGP.addRequiredTE(union);</b>
+<b class="fc">&nbsp;		graphPattern = parentGP;</b>
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTMinusGraphPattern node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		GraphPattern parentGP = graphPattern;</b>
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr leftArg = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+<b class="fc">&nbsp;		node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		TupleExpr rightArg = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		parentGP = new GraphPattern();</b>
+<b class="fc">&nbsp;		parentGP.addRequiredTE(new Difference(leftArg, rightArg));</b>
+<b class="fc">&nbsp;		graphPattern = parentGP;</b>
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTPropertyList propListNode, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Var subjVar = mapValueExprToVar(data);</b>
+<b class="fc">&nbsp;		ValueExpr predicate = (ValueExpr) propListNode.getVerb().jjtAccept(this, null);</b>
+&nbsp;		@SuppressWarnings(&quot;unchecked&quot;)
+<b class="fc">&nbsp;		List&lt;ValueExpr&gt; objectList = (List&lt;ValueExpr&gt;) propListNode.getObjectList().jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;		Var predVar = mapValueExprToVar(predicate);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ValueExpr object : objectList) {</b>
+<b class="fc">&nbsp;			Var objVar = mapValueExprToVar(object);</b>
+<b class="fc">&nbsp;			graphPattern.addRequiredSP(subjVar.clone(), predVar.clone(), objVar);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		ASTPropertyList nextPropList = propListNode.getNextPropertyList();</b>
+<b class="pc">&nbsp;		if (nextPropList != null) {</b>
+<b class="nc">&nbsp;			nextPropList.jjtAccept(this, data);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return graphPattern.buildTupleExpr();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTPathAlternative pathAltNode, Object data) throws VisitorException {
+&nbsp;		// a path alternative consists of 1 or more PathSequence elements
+<b class="fc">&nbsp;		int altCount = pathAltNode.jjtGetNumChildren();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (altCount &gt; 1) {</b>
+<b class="fc">&nbsp;			Union union = new Union();</b>
+<b class="fc">&nbsp;			Union currentUnion = union;</b>
+<b class="fc">&nbsp;			for (int i = 0; i &lt; altCount - 1; i++) {</b>
+<b class="fc">&nbsp;				TupleExpr arg = (TupleExpr) pathAltNode.jjtGetChild(i).jjtAccept(this, data);</b>
+<b class="fc">&nbsp;				currentUnion.setLeftArg(arg);</b>
+<b class="fc">&nbsp;				if (i == altCount - 2) { // second-to-last item</b>
+<b class="fc">&nbsp;					arg = (TupleExpr) pathAltNode.jjtGetChild(i + 1).jjtAccept(this, data);</b>
+<b class="fc">&nbsp;					currentUnion.setRightArg(arg);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					Union newUnion = new Union();</b>
+<b class="fc">&nbsp;					currentUnion.setRightArg(newUnion);</b>
+<b class="fc">&nbsp;					currentUnion = newUnion;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// when using union to execute path expressions, the scope does not not change
+<b class="fc">&nbsp;			union.setVariableScopeChange(false);</b>
+<b class="fc">&nbsp;			return union;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return (TupleExpr) pathAltNode.jjtGetChild(0).jjtAccept(this, data);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PropertySetElem visit(ASTPathOneInPropertySet node, Object data) throws VisitorException {
+&nbsp;
+<b class="fc">&nbsp;		PropertySetElem result = new PropertySetElem();</b>
+<b class="fc">&nbsp;		result.setInverse(node.isInverse());</b>
+<b class="fc">&nbsp;		ValueConstant predicate = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, data);</b>
+<b class="fc">&nbsp;		result.setPredicate(predicate);</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ASTObjectList getObjectList(Node node) {
+<b class="pc">&nbsp;		if (node == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (node instanceof ASTPropertyListPath) {</b>
+<b class="fc">&nbsp;			return ((ASTPropertyListPath) node).getObjectList();</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return getObjectList(node.jjtGetParent());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTPathSequence pathSeqNode, Object data) throws VisitorException {
+&nbsp;		Var subjVar;
+&nbsp;		PathSequenceContext pathSequenceContext;
+<b class="fc">&nbsp;		Var parentEndVar = null;</b>
+<b class="fc">&nbsp;		if (data instanceof PathSequenceContext) {</b>
+&nbsp;			// nested path sequence
+<b class="fc">&nbsp;			pathSequenceContext = new PathSequenceContext((PathSequenceContext) data);</b>
+<b class="fc">&nbsp;			subjVar = pathSequenceContext.startVar;</b>
+<b class="fc">&nbsp;			parentEndVar = pathSequenceContext.endVar;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			pathSequenceContext = new PathSequenceContext();</b>
+<b class="fc">&nbsp;			subjVar = mapValueExprToVar(data);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		List&lt;ASTPathElt&gt; pathElements = pathSeqNode.getPathElements();</b>
+<b class="fc">&nbsp;		int pathLength = pathElements.size();</b>
+&nbsp;
+<b class="fc">&nbsp;		GraphPattern pathSequencePattern = new GraphPattern(graphPattern);</b>
+<b class="fc">&nbsp;		pathSequenceContext.scope = pathSequencePattern.getStatementPatternScope();</b>
+<b class="fc">&nbsp;		pathSequenceContext.contextVar = pathSequencePattern.getContextVar();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; pathLength; i++) {</b>
+<b class="fc">&nbsp;			ASTPathElt pathElement = pathElements.get(i);</b>
+&nbsp;
+<b class="fc">&nbsp;			pathSequenceContext.startVar = i == 0 ? subjVar : mapValueExprToVar(pathSequenceContext.endVar);</b>
+<b class="fc">&nbsp;			pathSequenceContext.endVar = createAnonVar();</b>
+&nbsp;
+<b class="fc">&nbsp;			TupleExpr elementExpresion = (TupleExpr) pathElement.jjtAccept(this, pathSequenceContext);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (i == pathLength - 1) { // last item in sequence</b>
+<b class="fc">&nbsp;				if (parentEndVar == null) { // not a nested sequence</b>
+&nbsp;					// replace last endVar occurrences with the actual (list of) object var(s)
+&nbsp;
+&nbsp;					// We handle this here instead of higher up in the tree visitor because here we have
+&nbsp;					// a reference to the &quot;temporary&quot; endVar that needs to be replaced.
+&nbsp;					@SuppressWarnings(&quot;unchecked&quot;)
+<b class="fc">&nbsp;					List&lt;ValueExpr&gt; objectList = (List&lt;ValueExpr&gt;) getObjectList(pathSeqNode).jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;					for (ValueExpr objectItem : objectList) {</b>
+<b class="fc">&nbsp;						Var objectVar = mapValueExprToVar(objectItem);</b>
+<b class="fc">&nbsp;						Var replacement = objectVar;</b>
+<b class="fc">&nbsp;						if (objectVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685</b>
+<b class="fc">&nbsp;							replacement = createAnonVar();</b>
+&nbsp;						}
+<b class="fc">&nbsp;						TupleExpr copy = elementExpresion.clone();</b>
+<b class="fc">&nbsp;						copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));</b>
+<b class="fc">&nbsp;						if (!replacement.equals(objectVar)) {</b>
+<b class="fc">&nbsp;							SameTerm condition = new SameTerm(objectVar, replacement);</b>
+<b class="fc">&nbsp;							pathSequencePattern.addConstraint(condition);</b>
+&nbsp;						}
+<b class="fc">&nbsp;						pathSequencePattern.addRequiredTE(copy);</b>
+<b class="fc">&nbsp;					}</b>
+<b class="fc">&nbsp;				} else {</b>
+&nbsp;					// nested sequence, replace endVar with parent endVar
+<b class="fc">&nbsp;					Var replacement = parentEndVar;</b>
+<b class="pc">&nbsp;					if (parentEndVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685</b>
+<b class="nc">&nbsp;						replacement = createAnonVar();</b>
+&nbsp;					}
+<b class="fc">&nbsp;					TupleExpr copy = elementExpresion.clone();</b>
+<b class="fc">&nbsp;					copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));</b>
+<b class="pc">&nbsp;					if (!replacement.equals(parentEndVar)) {</b>
+<b class="nc">&nbsp;						SameTerm condition = new SameTerm(parentEndVar, replacement);</b>
+<b class="nc">&nbsp;						pathSequencePattern.addConstraint(condition);</b>
+&nbsp;					}
+<b class="fc">&nbsp;					pathSequencePattern.addRequiredTE(copy);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				pathSequencePattern.addRequiredTE(elementExpresion);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return pathSequencePattern.buildTupleExpr();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTPathElt pathElement, Object data) throws VisitorException {
+<b class="fc">&nbsp;		final PathSequenceContext pathSequenceContext = (PathSequenceContext) data;</b>
+&nbsp;
+<b class="fc">&nbsp;		final Var startVar = pathElement.isInverse() ? pathSequenceContext.endVar : pathSequenceContext.startVar;</b>
+<b class="fc">&nbsp;		final Var endVar = pathElement.isInverse() ? pathSequenceContext.startVar : pathSequenceContext.endVar;</b>
+&nbsp;
+&nbsp;		TupleExpr pathElementExpression;
+<b class="fc">&nbsp;		if (pathElement.isNestedPath()) {</b>
+&nbsp;			// child is a new (nested) path alternative
+<b class="fc">&nbsp;			PathSequenceContext nestedContext = new PathSequenceContext(pathSequenceContext);</b>
+<b class="fc">&nbsp;			nestedContext.startVar = startVar;</b>
+<b class="fc">&nbsp;			nestedContext.endVar = endVar;</b>
+&nbsp;
+<b class="fc">&nbsp;			pathElementExpression = (TupleExpr) pathElement.jjtGetChild(0).jjtAccept(this, nestedContext);</b>
+<b class="fc">&nbsp;		} else if (pathElement.isNegatedPropertySet()) {</b>
+<b class="fc">&nbsp;			List&lt;PropertySetElem&gt; psElems = new ArrayList&lt;&gt;();</b>
+<b class="fc">&nbsp;			for (Node child : pathElement.jjtGetChildren()) {</b>
+<b class="fc">&nbsp;				if (child instanceof ASTPathMod) {</b>
+&nbsp;					// skip the modifier
+<b class="fc">&nbsp;					continue;</b>
+&nbsp;				}
+<b class="fc">&nbsp;				psElems.add((PropertySetElem) child.jjtAccept(this, pathSequenceContext));</b>
+&nbsp;			}
+<b class="fc">&nbsp;			pathElementExpression = createTupleExprForNegatedPropertySets(psElems, pathSequenceContext);</b>
+<b class="fc">&nbsp;		} else {</b>
+<b class="fc">&nbsp;			Var predVar = mapValueExprToVar(pathElement.jjtGetChild(0).jjtAccept(this, pathSequenceContext));</b>
+<b class="fc">&nbsp;			pathElementExpression = new StatementPattern(pathSequenceContext.scope, startVar.clone(), predVar,</b>
+<b class="fc">&nbsp;					endVar.clone(),</b>
+<b class="fc">&nbsp;					pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		final ASTPathMod pathMod = pathElement.getPathMod();</b>
+<b class="fc">&nbsp;		if (pathMod != null) {</b>
+<b class="fc">&nbsp;			long lowerBound = pathMod.getLowerBound();</b>
+<b class="fc">&nbsp;			long upperBound = pathMod.getUpperBound();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (upperBound == Long.MIN_VALUE) {</b>
+<b class="nc">&nbsp;				upperBound = lowerBound;</b>
+<b class="pc">&nbsp;			} else if (lowerBound == Long.MIN_VALUE) {</b>
+<b class="nc">&nbsp;				lowerBound = upperBound;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			pathElementExpression = handlePathModifiers(pathSequenceContext.scope, startVar, pathElementExpression,</b>
+<b class="fc">&nbsp;					endVar, pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null,</b>
+&nbsp;					lowerBound, upperBound);
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return pathElementExpression;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr createTupleExprForNegatedPropertySets(List&lt;PropertySetElem&gt; nps,
+&nbsp;			PathSequenceContext pathSequenceContext) {
+<b class="fc">&nbsp;		Var subjVar = pathSequenceContext.startVar;</b>
+<b class="fc">&nbsp;		Var predVar = createAnonVar();</b>
+<b class="fc">&nbsp;		Var endVar = pathSequenceContext.endVar;</b>
+&nbsp;
+<b class="fc">&nbsp;		ValueExpr filterCondition = null;</b>
+<b class="fc">&nbsp;		ValueExpr filterConditionInverse = null;</b>
+&nbsp;
+&nbsp;		// build (inverted) filter conditions for each negated path element.
+<b class="fc">&nbsp;		for (PropertySetElem elem : nps) {</b>
+<b class="fc">&nbsp;			ValueConstant predicate = elem.getPredicate();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (elem.isInverse()) {</b>
+<b class="fc">&nbsp;				Compare compare = new Compare(predVar.clone(), predicate, CompareOp.NE);</b>
+<b class="fc">&nbsp;				if (filterConditionInverse == null) {</b>
+<b class="fc">&nbsp;					filterConditionInverse = compare;</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					filterConditionInverse = new And(compare, filterConditionInverse);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				Compare compare = new Compare(predVar.clone(), predicate, CompareOp.NE);</b>
+<b class="fc">&nbsp;				if (filterCondition == null) {</b>
+<b class="fc">&nbsp;					filterCondition = compare;</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					filterCondition = new And(compare, filterCondition);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr patternMatch = new StatementPattern(pathSequenceContext.scope, subjVar.clone(), predVar.clone(),</b>
+<b class="fc">&nbsp;				endVar.clone(),</b>
+<b class="pc">&nbsp;				pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);</b>
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr patternMatchInverse = null;</b>
+&nbsp;
+&nbsp;		// build a inverse statement pattern if needed
+<b class="fc">&nbsp;		if (filterConditionInverse != null) {</b>
+<b class="fc">&nbsp;			patternMatchInverse = new StatementPattern(pathSequenceContext.scope, endVar.clone(), predVar.clone(),</b>
+<b class="fc">&nbsp;					subjVar.clone(),</b>
+<b class="pc">&nbsp;					pathSequenceContext.contextVar != null ? pathSequenceContext.contextVar.clone() : null);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr completeMatch = null;</b>
+&nbsp;
+<b class="pc">&nbsp;		if (filterCondition != null) {</b>
+<b class="fc">&nbsp;			completeMatch = new Filter(patternMatch, filterCondition);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (patternMatchInverse != null) {</b>
+<b class="pc">&nbsp;			if (completeMatch == null) {</b>
+<b class="nc">&nbsp;				completeMatch = new Filter(patternMatchInverse, filterConditionInverse);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				completeMatch = new Union(new Filter(patternMatchInverse, filterConditionInverse), completeMatch);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return completeMatch;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr handlePathModifiers(Scope scope, Var subjVar, TupleExpr te, Var endVar, Var contextVar,
+&nbsp;			long lowerBound, long upperBound) {
+&nbsp;
+&nbsp;		// * and + modifiers
+<b class="fc">&nbsp;		if (upperBound == Long.MAX_VALUE) {</b>
+&nbsp;			// upperbound is abitrary-length
+<b class="fc">&nbsp;			return new ArbitraryLengthPath(scope, subjVar.clone(), te, endVar.clone(),</b>
+<b class="fc">&nbsp;					contextVar != null ? contextVar.clone() : null,</b>
+&nbsp;					lowerBound);
+&nbsp;		}
+&nbsp;
+&nbsp;		// ? modifier
+<b class="pc">&nbsp;		if (lowerBound == 0L &amp;&amp; upperBound == 1L) {</b>
+<b class="fc">&nbsp;			final Union zeroOne = new Union();</b>
+<b class="fc">&nbsp;			zeroOne.setVariableScopeChange(false);</b>
+<b class="fc">&nbsp;			zeroOne.setLeftArg(new ZeroLengthPath(scope, subjVar.clone(), endVar.clone(),</b>
+<b class="pc">&nbsp;					contextVar != null ? contextVar.clone() : null));</b>
+<b class="fc">&nbsp;			zeroOne.setRightArg(te);</b>
+<b class="fc">&nbsp;			ProjectionElemList pelist = new ProjectionElemList();</b>
+<b class="fc">&nbsp;			for (String name : zeroOne.getAssuredBindingNames()) {</b>
+<b class="fc">&nbsp;				ProjectionElem pe = new ProjectionElem(name);</b>
+<b class="fc">&nbsp;				pelist.addElement(pe);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			return new Distinct(new Projection(zeroOne, pelist, false));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// nothing to modify
+<b class="nc">&nbsp;		return te;</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	protected class VarCollector extends AbstractQueryModelVisitor&lt;VisitorException&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;		private final Set&lt;Var&gt; collectedVars = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="fc">&nbsp;			collectedVars.add(var);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the collectedVars.
+&nbsp;		 */
+&nbsp;		public Set&lt;Var&gt; getCollectedVars() {
+<b class="fc">&nbsp;			return collectedVars;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	protected class SameTermCollector extends AbstractQueryModelVisitor&lt;VisitorException&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;		private final Set&lt;SameTerm&gt; collectedSameTerms = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(SameTerm st) {
+<b class="fc">&nbsp;			collectedSameTerms.add(st);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the collected SameTerms.
+&nbsp;		 */
+&nbsp;		public Set&lt;SameTerm&gt; getCollectedSameTerms() {
+<b class="fc">&nbsp;			return collectedSameTerms;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class VarReplacer extends AbstractQueryModelVisitor&lt;VisitorException&gt; {
+&nbsp;
+&nbsp;		private final Var toBeReplaced;
+&nbsp;
+&nbsp;		private final Var replacement;
+&nbsp;
+<b class="fc">&nbsp;		public VarReplacer(Var toBeReplaced, Var replacement) {</b>
+<b class="fc">&nbsp;			this.toBeReplaced = toBeReplaced;</b>
+<b class="fc">&nbsp;			this.replacement = replacement;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="fc">&nbsp;			if (toBeReplaced.equals(var)) {</b>
+<b class="fc">&nbsp;				QueryModelNode parent = var.getParentNode();</b>
+<b class="fc">&nbsp;				parent.replaceChildNode(var, replacement.clone());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(ProjectionElem node) throws VisitorException {
+<b class="fc">&nbsp;			if (node.getName().equals(toBeReplaced.getName())) {</b>
+<b class="fc">&nbsp;				node.setName(replacement.getName());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTPropertyListPath propListNode, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Object verbPath = propListNode.getVerb().jjtAccept(this, data);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (verbPath instanceof Var) {</b>
+&nbsp;
+&nbsp;			@SuppressWarnings(&quot;unchecked&quot;)
+<b class="fc">&nbsp;			List&lt;ValueExpr&gt; objectList = (List&lt;ValueExpr&gt;) propListNode.getObjectList().jjtAccept(this, null);</b>
+<b class="fc">&nbsp;			Var subjVar = mapValueExprToVar(data);</b>
+<b class="fc">&nbsp;			Var predVar = mapValueExprToVar(verbPath);</b>
+&nbsp;
+<b class="fc">&nbsp;			for (ValueExpr object : objectList) {</b>
+<b class="fc">&nbsp;				Var objVar = mapValueExprToVar(object);</b>
+<b class="fc">&nbsp;				graphPattern.addRequiredSP(subjVar.clone(), predVar.clone(), objVar);</b>
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		} else if (verbPath instanceof TupleExpr) {</b>
+<b class="fc">&nbsp;			graphPattern.addRequiredTE((TupleExpr) verbPath);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		ASTPropertyListPath nextPropList = propListNode.getNextPropertyList();</b>
+<b class="fc">&nbsp;		if (nextPropList != null) {</b>
+<b class="fc">&nbsp;			nextPropList.jjtAccept(this, data);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;ValueExpr&gt; visit(ASTObjectList node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		int childCount = node.jjtGetNumChildren();</b>
+<b class="fc">&nbsp;		List&lt;ValueExpr&gt; result = new ArrayList&lt;&gt;(childCount);</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; childCount; i++) {</b>
+<b class="fc">&nbsp;			Object obj = node.jjtGetChild(i).jjtAccept(this, null);</b>
+<b class="pc">&nbsp;			if (obj instanceof ValueExpr) {</b>
+<b class="fc">&nbsp;				result.add((ValueExpr) obj);</b>
+<b class="nc">&nbsp;			} else if (obj instanceof TripleRef) {</b>
+<b class="nc">&nbsp;				result.add(((TripleRef) obj).getExprVar());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Var visit(ASTBlankNodePropertyList node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Var bnodeVar = createAnonVar();</b>
+<b class="fc">&nbsp;		super.visit(node, bnodeVar);</b>
+<b class="fc">&nbsp;		return bnodeVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Var visit(ASTCollection node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		Var rootListVar = createAnonVar();</b>
+&nbsp;
+<b class="nc">&nbsp;		Var listVar = rootListVar;</b>
+&nbsp;
+<b class="nc">&nbsp;		int childCount = node.jjtGetNumChildren();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; childCount; i++) {</b>
+<b class="nc">&nbsp;			ValueExpr childValue = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);</b>
+&nbsp;
+<b class="nc">&nbsp;			graphPattern.addRequiredSP(listVar.clone(), TupleExprs.createConstVar(RDF.FIRST),</b>
+<b class="nc">&nbsp;					mapValueExprToVar(childValue));</b>
+&nbsp;
+&nbsp;			Var nextListVar;
+<b class="nc">&nbsp;			if (i == childCount - 1) {</b>
+<b class="nc">&nbsp;				nextListVar = TupleExprs.createConstVar(RDF.NIL);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				nextListVar = createAnonVar();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			graphPattern.addRequiredSP(listVar.clone(), TupleExprs.createConstVar(RDF.REST), nextListVar);</b>
+<b class="nc">&nbsp;			listVar = nextListVar;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return rootListVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTConstraint node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr valueExpr = (ValueExpr) super.visit(node, null);</b>
+<b class="fc">&nbsp;		graphPattern.addConstraint(valueExpr);</b>
+&nbsp;
+<b class="fc">&nbsp;		return valueExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Or visit(ASTOr node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new Or(leftArg, rightArg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTAnd node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new And(leftArg, rightArg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Not visit(ASTNot node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) super.visit(node, null);</b>
+<b class="fc">&nbsp;		return new Not(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Coalesce visit(ASTCoalesce node, Object data) throws VisitorException {
+&nbsp;
+<b class="fc">&nbsp;		Coalesce coalesce = new Coalesce();</b>
+<b class="fc">&nbsp;		int noOfArgs = node.jjtGetNumChildren();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; noOfArgs; i++) {</b>
+<b class="fc">&nbsp;			ValueExpr arg = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, data);</b>
+<b class="fc">&nbsp;			coalesce.addArgument(arg);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return coalesce;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Compare visit(ASTCompare node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new Compare(leftArg, rightArg, node.getOperator());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSubstr node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.SUBSTRING.stringValue(), node, 2, 3);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTConcat node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.CONCAT.stringValue(), node, 1, Integer.MAX_VALUE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTAbs node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.NUMERIC_ABS.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTCeil node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.NUMERIC_CEIL.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTContains node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.CONTAINS.stringValue(), node, 2, 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTFloor node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.NUMERIC_FLOOR.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTRound node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.NUMERIC_ROUND.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTRand node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;RAND&quot;, node, 0, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SameTerm visit(ASTSameTerm node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new SameTerm(leftArg, rightArg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Sample visit(ASTSample node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr ve = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, data);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new Sample(ve, node.isDistinct());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public MathExpr visit(ASTMath node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new MathExpr(leftArg, rightArg, node.getOperator());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTFunctionCall node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueConstant uriNode = (ValueConstant) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		IRI functionURI = (IRI) uriNode.getValue();</b>
+<b class="pc">&nbsp;		if (CustomAggregateFunctionRegistry.getInstance().has(functionURI.stringValue()) || node.isDistinct()) {</b>
+<b class="nc">&nbsp;			AggregateFunctionCall aggregateCall = new AggregateFunctionCall(functionURI.stringValue(),</b>
+<b class="nc">&nbsp;					node.isDistinct());</b>
+<b class="nc">&nbsp;			if (node.jjtGetNumChildren() &gt; 2) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Custom aggregate functions cannot have more than one argument&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Node argNode = node.jjtGetChild(1);</b>
+<b class="nc">&nbsp;			aggregateCall.setArg(castToValueExpr(argNode.jjtAccept(this, null)));</b>
+<b class="nc">&nbsp;			return aggregateCall;</b>
+&nbsp;		} else {
+<b class="pc">&nbsp;			if (node.isDistinct()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Custom function calls cannot apply distinct iteration to args&quot;);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			FunctionCall functionCall = new FunctionCall(functionURI.stringValue());</b>
+<b class="fc">&nbsp;			for (int i = 1; i &lt; node.jjtGetNumChildren(); i++) {</b>
+<b class="fc">&nbsp;				Node argNode = node.jjtGetChild(i);</b>
+<b class="fc">&nbsp;				functionCall.addArg(castToValueExpr(argNode.jjtAccept(this, null)));</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return functionCall;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTEncodeForURI node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.ENCODE_FOR_URI.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTStr node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, null));</b>
+<b class="fc">&nbsp;		return new Str(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTStrDt node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;STRDT&quot;, node, 2, 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTStrStarts node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.STARTS_WITH.stringValue(), node, 2, 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTStrEnds node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.ENDS_WITH.stringValue(), node, 2, 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTStrLen node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.STRING_LENGTH.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTStrAfter node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.SUBSTRING_AFTER.stringValue(), node, 2, 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTStrBefore node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.SUBSTRING_BEFORE.stringValue(), node, 2, 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTUpperCase node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.UPPER_CASE.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTLowerCase node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.LOWER_CASE.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTStrLang node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;STRLANG&quot;, node, 2, 2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTNow node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;NOW&quot;, node, 0, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTYear node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.YEAR_FROM_DATETIME.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTMonth node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.MONTH_FROM_DATETIME.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTDay node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.DAY_FROM_DATETIME.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTHours node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.HOURS_FROM_DATETIME.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTMinutes node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.MINUTES_FROM_DATETIME.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSeconds node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.SECONDS_FROM_DATETIME.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTTimezone node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.TIMEZONE_FROM_DATETIME.stringValue(), node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTTz node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;TZ&quot;, node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTMD5 node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;MD5&quot;, node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSHA1 node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;SHA1&quot;, node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSHA224 node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		throw new VisitorException(&quot;hash function SHA-224 is currently not supported&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSHA256 node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;SHA256&quot;, node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSHA384 node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		return createFunctionCall(&quot;SHA384&quot;, node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSHA512 node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;SHA512&quot;, node, 1, 1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTUUID node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;UUID&quot;, node, 0, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTSTRUUID node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(&quot;STRUUID&quot;, node, 0, 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRIFunction visit(ASTIRIFunc node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr expr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		IRIFunction fn = new IRIFunction(expr);</b>
+<b class="fc">&nbsp;		fn.setBaseURI(node.getBaseURI());</b>
+<b class="fc">&nbsp;		return fn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Lang visit(ASTLang node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new Lang(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Datatype visit(ASTDatatype node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new Datatype(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTLangMatches node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new LangMatches(leftArg, rightArg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSetAssignment visit(ASTInlineData node, Object data) throws VisitorException {
+&nbsp;
+<b class="fc">&nbsp;		BindingSetAssignment bsa = new BindingSetAssignment();</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;ASTVar&gt; varNodes = node.jjtGetChildren(ASTVar.class);</b>
+<b class="fc">&nbsp;		List&lt;Var&gt; vars = new ArrayList&lt;&gt;(varNodes.size());</b>
+&nbsp;
+&nbsp;		// preserve order in query
+<b class="fc">&nbsp;		Set&lt;String&gt; bindingNames = new LinkedHashSet&lt;&gt;(varNodes.size());</b>
+<b class="fc">&nbsp;		for (ASTVar varNode : varNodes) {</b>
+<b class="fc">&nbsp;			Var var = (Var) varNode.jjtAccept(this, data);</b>
+<b class="fc">&nbsp;			vars.add(var);</b>
+<b class="fc">&nbsp;			bindingNames.add(var.getName());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		bsa.setBindingNames(bindingNames);</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;ASTBindingSet&gt; bindingNodes = node.jjtGetChildren(ASTBindingSet.class);</b>
+<b class="fc">&nbsp;		List&lt;BindingSet&gt; bindingSets = new ArrayList&lt;&gt;(bindingNodes.size());</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ASTBindingSet bindingNode : bindingNodes) {</b>
+<b class="fc">&nbsp;			BindingSet bindingSet = (BindingSet) bindingNode.jjtAccept(this, vars);</b>
+<b class="fc">&nbsp;			bindingSets.add(bindingSet);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		bsa.setBindingSets(bindingSets);</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern.addRequiredTE(bsa);</b>
+<b class="fc">&nbsp;		return bsa;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSetAssignment visit(ASTBindingsClause node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		BindingSetAssignment bsa = new BindingSetAssignment();</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;ASTVar&gt; varNodes = node.jjtGetChildren(ASTVar.class);</b>
+<b class="fc">&nbsp;		List&lt;Var&gt; vars = new ArrayList&lt;&gt;(varNodes.size());</b>
+&nbsp;
+&nbsp;		// preserve order in query
+<b class="fc">&nbsp;		Set&lt;String&gt; bindingNames = new LinkedHashSet&lt;&gt;(varNodes.size());</b>
+<b class="fc">&nbsp;		for (ASTVar varNode : varNodes) {</b>
+<b class="fc">&nbsp;			Var var = (Var) varNode.jjtAccept(this, data);</b>
+<b class="fc">&nbsp;			vars.add(var);</b>
+<b class="fc">&nbsp;			bindingNames.add(var.getName());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		bsa.setBindingNames(bindingNames);</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;ASTBindingSet&gt; bindingNodes = node.jjtGetChildren(ASTBindingSet.class);</b>
+<b class="fc">&nbsp;		List&lt;BindingSet&gt; bindingSets = new ArrayList&lt;&gt;(bindingNodes.size());</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ASTBindingSet bindingNode : bindingNodes) {</b>
+<b class="fc">&nbsp;			BindingSet bindingSet = (BindingSet) bindingNode.jjtAccept(this, vars);</b>
+<b class="fc">&nbsp;			bindingSets.add(bindingSet);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		bsa.setBindingSets(bindingSets);</b>
+&nbsp;
+<b class="fc">&nbsp;		return bsa;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet visit(ASTBindingSet node, Object data) throws VisitorException {
+&nbsp;		@SuppressWarnings(&quot;unchecked&quot;)
+<b class="fc">&nbsp;		List&lt;Var&gt; vars = (List&lt;Var&gt;) data;</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;String&gt; names = new ArrayList&lt;&gt;(vars.size());</b>
+&nbsp;
+<b class="fc">&nbsp;		for (Var var : vars) {</b>
+<b class="fc">&nbsp;			names.add(var.getName());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		int numberOfBindingValues = node.jjtGetNumChildren();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (numberOfBindingValues != vars.size()) {</b>
+<b class="nc">&nbsp;			throw new VisitorException(&quot;number of values in bindingset does not match variables in BINDINGS clause&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Value[] values = new Value[numberOfBindingValues];</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; numberOfBindingValues; i++) {</b>
+<b class="fc">&nbsp;			ValueExpr ve = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;			if (ve != null) {</b>
+<b class="fc">&nbsp;				Value v = getValueForExpr(ve);</b>
+<b class="fc">&nbsp;				values[i] = v;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new ListBindingSet(names, values);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueExpr visit(ASTBindingValue node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		if (node.jjtGetNumChildren() &gt; 0) {</b>
+<b class="fc">&nbsp;			return (ValueExpr) node.jjtGetChild(0).jjtAccept(this, data);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueExpr visit(ASTBound node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Var var = (Var) node.getArg().jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new Bound(var);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IsURI visit(ASTIsIRI node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new IsURI(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IsBNode visit(ASTIsBlank node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new IsBNode(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IsLiteral visit(ASTIsLiteral node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new IsLiteral(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IsNumeric visit(ASTIsNumeric node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		return new IsNumeric(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTBNodeFunc node, Object data) throws VisitorException {
+&nbsp;
+<b class="fc">&nbsp;		BNodeGenerator generator = new BNodeGenerator();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (node.jjtGetNumChildren() &gt; 0) {</b>
+<b class="fc">&nbsp;			ValueExpr nodeIdExpr = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;			generator.setNodeIdExpr(nodeIdExpr);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return generator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTRegexExpression node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr pattern = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr flags = null;</b>
+<b class="fc">&nbsp;		if (node.jjtGetNumChildren() &gt; 2) {</b>
+<b class="fc">&nbsp;			flags = (ValueExpr) node.jjtGetChild(2).jjtAccept(this, null);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return new Regex(arg, pattern, flags);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FunctionCall visit(ASTReplace node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return createFunctionCall(FN.REPLACE.stringValue(), node, 3, 4);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Exists visit(ASTExistsFunc node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		GraphPattern parentGP = graphPattern;</b>
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+&nbsp;
+<b class="fc">&nbsp;		Exists e = new Exists();</b>
+<b class="fc">&nbsp;		node.jjtGetChild(0).jjtAccept(this, e);</b>
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr te = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		e.setSubQuery(te);</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = parentGP;</b>
+&nbsp;
+<b class="fc">&nbsp;		return e;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Not visit(ASTNotExistsFunc node, Object data) throws VisitorException {
+&nbsp;
+<b class="fc">&nbsp;		GraphPattern parentGP = graphPattern;</b>
+<b class="fc">&nbsp;		graphPattern = new GraphPattern(parentGP);</b>
+&nbsp;
+<b class="fc">&nbsp;		Exists e = new Exists();</b>
+<b class="fc">&nbsp;		node.jjtGetChild(0).jjtAccept(this, e);</b>
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr te = graphPattern.buildTupleExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		e.setSubQuery(te);</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = parentGP;</b>
+&nbsp;
+<b class="fc">&nbsp;		return new Not(e);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public If visit(ASTIf node, Object data) throws VisitorException {
+&nbsp;		If result;
+&nbsp;
+<b class="pc">&nbsp;		if (node.jjtGetNumChildren() &lt; 3) {</b>
+<b class="nc">&nbsp;			throw new VisitorException(&quot;IF construction missing required number of arguments&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		ValueExpr condition = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr resultExpr = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		ValueExpr alternative = (ValueExpr) node.jjtGetChild(2).jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;		result = new If(condition, resultExpr, alternative);</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueExpr visit(ASTInfix node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, data);</b>
+<b class="fc">&nbsp;		ValueExpr rightArg = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, leftArg);</b>
+&nbsp;
+<b class="fc">&nbsp;		return rightArg;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueExpr visit(ASTIn node, Object data) throws VisitorException {
+&nbsp;		ValueExpr result;
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) data;</b>
+<b class="fc">&nbsp;		int listItemCount = node.jjtGetNumChildren();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (listItemCount == 0) {</b>
+<b class="fc">&nbsp;			result = new ValueConstant(BooleanLiteral.FALSE);</b>
+<b class="pc">&nbsp;		} else if (listItemCount == 1) {</b>
+<b class="nc">&nbsp;			ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+<b class="nc">&nbsp;			result = new Compare(leftArg, arg, CompareOp.EQ);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="fc">&nbsp;			ListMemberOperator listMemberOperator = new ListMemberOperator();</b>
+<b class="fc">&nbsp;			listMemberOperator.addArgument(leftArg);</b>
+&nbsp;
+<b class="fc">&nbsp;			for (int i = 0; i &lt; listItemCount; i++) {</b>
+<b class="fc">&nbsp;				ValueExpr arg = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;				listMemberOperator.addArgument(arg);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			result = listMemberOperator;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueExpr visit(ASTNotIn node, Object data) throws VisitorException {
+&nbsp;		ValueExpr result;
+<b class="fc">&nbsp;		ValueExpr leftArg = (ValueExpr) data;</b>
+&nbsp;
+<b class="fc">&nbsp;		int listItemCount = node.jjtGetNumChildren();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (listItemCount == 0) {</b>
+<b class="fc">&nbsp;			result = new ValueConstant(BooleanLiteral.TRUE);</b>
+<b class="pc">&nbsp;		} else if (listItemCount == 1) {</b>
+<b class="nc">&nbsp;			ValueExpr arg = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);</b>
+&nbsp;
+<b class="nc">&nbsp;			result = new Compare(leftArg, arg, CompareOp.NE);</b>
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// create a set of conjunctive comparisons to represent the NOT IN
+&nbsp;			// operator: X NOT IN (a, b, c) -&gt; X != a &amp;&amp; X != b &amp;&amp; X != c.
+<b class="fc">&nbsp;			And and = new And();</b>
+<b class="fc">&nbsp;			And currentAnd = and;</b>
+<b class="fc">&nbsp;			for (int i = 0; i &lt; listItemCount - 1; i++) {</b>
+<b class="fc">&nbsp;				ValueExpr arg = (ValueExpr) node.jjtGetChild(i).jjtAccept(this, null);</b>
+&nbsp;
+<b class="fc">&nbsp;				currentAnd.setLeftArg(new Compare(leftArg.clone(), arg, CompareOp.NE));</b>
+&nbsp;
+<b class="fc">&nbsp;				if (i == listItemCount - 2) { // second-to-last item</b>
+<b class="fc">&nbsp;					arg = (ValueExpr) node.jjtGetChild(i + 1).jjtAccept(this, null);</b>
+<b class="fc">&nbsp;					currentAnd.setRightArg(new Compare(leftArg.clone(), arg, CompareOp.NE));</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					And newAnd = new And();</b>
+<b class="fc">&nbsp;					currentAnd.setRightArg(newAnd);</b>
+<b class="fc">&nbsp;					currentAnd = newAnd;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;			result = and;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Var visit(ASTVar node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Var var = new Var(node.getName());</b>
+<b class="fc">&nbsp;		var.setAnonymous(node.isAnonymous());</b>
+<b class="fc">&nbsp;		return var;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueConstant visit(ASTIRI node, Object data) throws VisitorException {
+&nbsp;		IRI uri;
+&nbsp;		try {
+<b class="fc">&nbsp;			uri = valueFactory.createIRI(node.getValue());</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+&nbsp;			// invalid URI
+<b class="nc">&nbsp;			throw new VisitorException(e.getMessage());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return new ValueConstant(uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTQName node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		throw new VisitorException(&quot;QNames must be resolved before building the query model&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTBind node, Object data) throws VisitorException {
+&nbsp;		// bind expression
+<b class="fc">&nbsp;		Object child0 = node.jjtGetChild(0).jjtAccept(this, data);</b>
+<b class="pc">&nbsp;		ValueExpr ve = child0 instanceof ValueExpr ? (ValueExpr) child0</b>
+<b class="nc">&nbsp;				: (child0 instanceof TripleRef) ? ((TripleRef) child0).getExprVar() : null;</b>
+<b class="pc">&nbsp;		if (ve == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unexpected expressin on bind&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// name to bind the expression outcome to
+<b class="fc">&nbsp;		Node aliasNode = node.jjtGetChild(1);</b>
+<b class="fc">&nbsp;		String alias = ((ASTVar) aliasNode).getName();</b>
+&nbsp;
+<b class="fc">&nbsp;		Extension extension = new Extension();</b>
+<b class="fc">&nbsp;		extension.addElement(new ExtensionElem(ve.clone(), alias));</b>
+&nbsp;
+&nbsp;		TupleExpr result;
+<b class="fc">&nbsp;		TupleExpr arg = graphPattern.buildTupleExpr();</b>
+&nbsp;
+&nbsp;		// check if alias is not previously used.
+<b class="pc">&nbsp;		if (arg.getBindingNames().contains(alias)) {</b>
+&nbsp;			// SES-2314 we need to doublecheck that the reused varname is not
+&nbsp;			// just
+&nbsp;			// for an anonymous var or a constant.
+<b class="nc">&nbsp;			VarCollector collector = new VarCollector();</b>
+<b class="nc">&nbsp;			arg.visit(collector);</b>
+<b class="nc">&nbsp;			for (Var v : collector.getCollectedVars()) {</b>
+<b class="nc">&nbsp;				if (alias.equals(v.getName())) {</b>
+<b class="nc">&nbsp;					if (!v.isConstant() &amp;&amp; !v.isAnonymous()) {</b>
+<b class="nc">&nbsp;						throw new VisitorException(String.format(&quot;BIND clause alias &#39;%s&#39; was previously used&quot;, alias));</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (arg instanceof Filter) {</b>
+<b class="fc">&nbsp;			result = arg;</b>
+&nbsp;			// we need to push down the extension so that filters can operate on
+&nbsp;			// the BIND expression.
+<b class="pc">&nbsp;			while (((Filter) arg).getArg() instanceof Filter) {</b>
+<b class="nc">&nbsp;				arg = ((Filter) arg).getArg();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			extension.setArg(((Filter) arg).getArg());</b>
+<b class="fc">&nbsp;			((Filter) arg).setArg(extension);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			extension.setArg(arg);</b>
+<b class="fc">&nbsp;			result = extension;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		GraphPattern replacementGP = new GraphPattern(graphPattern);</b>
+<b class="fc">&nbsp;		replacementGP.addRequiredTE(result);</b>
+&nbsp;
+<b class="fc">&nbsp;		graphPattern = replacementGP;</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTBlankNode node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		throw new VisitorException(&quot;Blank nodes must be replaced with variables before building the query model&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueConstant visit(ASTRDFLiteral node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		String label = (String) node.getLabel().jjtAccept(this, null);</b>
+<b class="fc">&nbsp;		String lang = node.getLang();</b>
+<b class="fc">&nbsp;		ASTIRI datatypeNode = node.getDatatype();</b>
+&nbsp;
+&nbsp;		Literal literal;
+<b class="fc">&nbsp;		if (datatypeNode != null) {</b>
+&nbsp;			IRI datatype;
+&nbsp;			try {
+<b class="fc">&nbsp;				datatype = valueFactory.createIRI(datatypeNode.getValue());</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+&nbsp;				// invalid URI
+<b class="nc">&nbsp;				throw new VisitorException(e.getMessage());</b>
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;			literal = valueFactory.createLiteral(label, datatype);</b>
+<b class="fc">&nbsp;		} else if (lang != null) {</b>
+<b class="fc">&nbsp;			literal = valueFactory.createLiteral(label, lang);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			literal = valueFactory.createLiteral(label);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new ValueConstant(literal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueConstant visit(ASTNumericLiteral node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		Literal literal = valueFactory.createLiteral(node.getValue(), node.getDatatype());</b>
+<b class="fc">&nbsp;		return new ValueConstant(literal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueConstant visit(ASTTrue node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return new ValueConstant(valueFactory.createLiteral(true));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueConstant visit(ASTFalse node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return new ValueConstant(valueFactory.createLiteral(false));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String visit(ASTString node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return node.getValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTCount node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr ve = null;</b>
+<b class="fc">&nbsp;		if (node.jjtGetNumChildren() &gt; 0) {</b>
+<b class="fc">&nbsp;			ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return new Count(ve, node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTGroupConcat node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));</b>
+&nbsp;
+<b class="fc">&nbsp;		GroupConcat gc = new GroupConcat(ve, node.isDistinct());</b>
+&nbsp;
+<b class="fc">&nbsp;		if (node.jjtGetNumChildren() &gt; 1) {</b>
+<b class="fc">&nbsp;			ValueExpr separator = (ValueExpr) node.jjtGetChild(1).jjtAccept(this, data);</b>
+<b class="fc">&nbsp;			gc.setSeparator(separator);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return gc;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTMax node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));</b>
+&nbsp;
+<b class="fc">&nbsp;		return new Max(ve, node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTMin node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));</b>
+&nbsp;
+<b class="fc">&nbsp;		return new Min(ve, node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTSum node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));</b>
+&nbsp;
+<b class="fc">&nbsp;		return new Sum(ve, node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTAvg node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		ValueExpr ve = castToValueExpr(node.jjtGetChild(0).jjtAccept(this, data));</b>
+&nbsp;
+<b class="fc">&nbsp;		return new Avg(ve, node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	static class AggregateCollector extends AbstractQueryModelVisitor&lt;VisitorException&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;		private final Collection&lt;AggregateOperator&gt; operators = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		public Collection&lt;AggregateOperator&gt; getOperators() {
+<b class="fc">&nbsp;			return operators;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Avg node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Count node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(GroupConcat node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Max node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Min node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Sample node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Sum node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(AggregateFunctionCall node) throws VisitorException {
+<b class="nc">&nbsp;			super.meet(node);</b>
+<b class="nc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void meetAggregate(AggregateOperator node) {
+<b class="fc">&nbsp;			operators.add(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	static class AggregateOperatorReplacer extends AbstractQueryModelVisitor&lt;VisitorException&gt; {
+&nbsp;
+&nbsp;		private final Var replacement;
+&nbsp;
+&nbsp;		private final AggregateOperator operator;
+&nbsp;
+<b class="fc">&nbsp;		public AggregateOperatorReplacer(AggregateOperator operator, Var replacement) {</b>
+<b class="fc">&nbsp;			this.operator = operator;</b>
+<b class="fc">&nbsp;			this.replacement = replacement;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Avg node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Count node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(GroupConcat node) throws VisitorException {
+<b class="nc">&nbsp;			super.meet(node);</b>
+<b class="nc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Max node) throws VisitorException {
+<b class="nc">&nbsp;			super.meet(node);</b>
+<b class="nc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Min node) throws VisitorException {
+<b class="nc">&nbsp;			super.meet(node);</b>
+<b class="nc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Sample node) throws VisitorException {
+<b class="nc">&nbsp;			super.meet(node);</b>
+<b class="nc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Sum node) throws VisitorException {
+<b class="fc">&nbsp;			super.meet(node);</b>
+<b class="fc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(AggregateFunctionCall node) throws VisitorException {
+<b class="nc">&nbsp;			super.meet(node);</b>
+<b class="nc">&nbsp;			meetAggregate(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void meetAggregate(AggregateOperator node) {
+<b class="pc">&nbsp;			if (node.equals(operator)) {</b>
+<b class="fc">&nbsp;				node.getParentNode().replaceChildNode(node, replacement.clone());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleExpr visit(ASTTripleRef node, Object data) throws VisitorException {
+<b class="nc">&nbsp;		TripleRef ret = new TripleRef();</b>
+<b class="nc">&nbsp;		ret.setSubjectVar(mapValueExprToVar(node.getSubj().jjtAccept(this, ret)));</b>
+<b class="nc">&nbsp;		ret.setPredicateVar(mapValueExprToVar(node.getPred().jjtAccept(this, ret)));</b>
+<b class="nc">&nbsp;		ret.setObjectVar(mapValueExprToVar(node.getObj().jjtAccept(this, ret)));</b>
+<b class="nc">&nbsp;		ret.setExprVar(createAnonVar());</b>
+<b class="nc">&nbsp;		graphPattern.addRequiredTE(ret);</b>
+&nbsp;
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object visit(ASTTriplesSameSubjectPath node, Object data) throws VisitorException {
+<b class="fc">&nbsp;		return super.visit(node, data);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueConstant visit(ASTConstTripleRef node, Object data) throws VisitorException {
+&nbsp;		Triple triple;
+<b class="nc">&nbsp;		Resource subject = (Resource) ((ValueConstant) node.getSubj().jjtAccept(this, data)).getValue();</b>
+<b class="nc">&nbsp;		IRI predicate = (IRI) ((ValueConstant) node.getPred().jjtAccept(this, data)).getValue();</b>
+<b class="nc">&nbsp;		Value object = ((ValueConstant) node.getObj().jjtAccept(this, data)).getValue();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			triple = valueFactory.createTriple(subject, predicate, object);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+&nbsp;			// invalid URI
+<b class="nc">&nbsp;			throw new VisitorException(e.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ValueConstant(triple);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Internal class for keeping track of contextual information relevant for path sequence processing: current scope,
+&nbsp;	 * context, start and end variable of the path expression. Passed through to visitor methods via the
+&nbsp;	 * &lt;code&gt;data&lt;/code&gt; input parameter.
+&nbsp;	 *
+&nbsp;	 * @author Jeen Broekstra
+&nbsp;	 */
+&nbsp;	private static class PathSequenceContext {
+&nbsp;
+&nbsp;		public Scope scope;
+&nbsp;		public Var contextVar;
+&nbsp;		public Var startVar;
+&nbsp;		public Var endVar;
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Create a new {@link PathSequenceContext} that is a copy of the supplied &lt;code&gt;pathSequenceContext&lt;/code&gt;.
+&nbsp;		 *
+&nbsp;		 * @param pathSequenceContext the {@link PathSequenceContext} to copy.
+&nbsp;		 */
+<b class="fc">&nbsp;		public PathSequenceContext(PathSequenceContext pathSequenceContext) {</b>
+<b class="fc">&nbsp;			this.scope = pathSequenceContext.scope;</b>
+<b class="fc">&nbsp;			this.contextVar = pathSequenceContext.contextVar;</b>
+<b class="fc">&nbsp;			this.startVar = pathSequenceContext.startVar;</b>
+<b class="fc">&nbsp;			this.endVar = pathSequenceContext.endVar;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		public PathSequenceContext() {</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

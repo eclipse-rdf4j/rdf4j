@@ -1,0 +1,755 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > VCARD4</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: VCARD4 (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">VCARD4</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/148)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/**
+&nbsp; * Copyright (c) 2017 Eclipse RDF4J contributors, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; */
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the vCard Ontology.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/2014/NOTE-vcard-rdf-20140522/&quot;&gt;vCard Ontology&lt;/a&gt;
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/2006/vcard/ns.ttl&quot;&gt;vCard OWL file&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class VCARD4 {</b>
+&nbsp;	/**
+&nbsp;	 * The VCARD4 namespace: http://www.w3.org/2006/vcard/ns#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/2006/vcard/ns#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the namespace: &quot;vcard&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;vcard&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** vcard:Acquaintance */
+&nbsp;	public static final IRI ACQUAINTANCE;
+&nbsp;
+&nbsp;	/** vcard:Address */
+&nbsp;	public static final IRI ADDRESS;
+&nbsp;
+&nbsp;	/** vcard:Agent */
+&nbsp;	public static final IRI AGENT;
+&nbsp;
+&nbsp;	/** vcard:BBS */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI BBS;
+&nbsp;
+&nbsp;	/** vcard:Car */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI CAR;
+&nbsp;
+&nbsp;	/** vcard:Cell */
+&nbsp;	public static final IRI CELL;
+&nbsp;
+&nbsp;	/** vcard:Child */
+&nbsp;	public static final IRI CHILD;
+&nbsp;
+&nbsp;	/** vcard:Colleague */
+&nbsp;	public static final IRI COLLEAGUE;
+&nbsp;
+&nbsp;	/** vcard:Contact */
+&nbsp;	public static final IRI CONTACT;
+&nbsp;
+&nbsp;	/** vcard:Coresident */
+&nbsp;	public static final IRI CORESIDENT;
+&nbsp;
+&nbsp;	/** vcard:Coworker */
+&nbsp;	public static final IRI COWORKER;
+&nbsp;
+&nbsp;	/** vcard:Crush */
+&nbsp;	public static final IRI CRUSH;
+&nbsp;
+&nbsp;	/** vcard:Date */
+&nbsp;	public static final IRI DATE;
+&nbsp;
+&nbsp;	/** vcard:Dom */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI DOM;
+&nbsp;
+&nbsp;	/** vcard:Email */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI EMAIL;
+&nbsp;
+&nbsp;	/** vcard:Emergency */
+&nbsp;	public static final IRI EMERGENCY;
+&nbsp;
+&nbsp;	/** vcard:Fax */
+&nbsp;	public static final IRI FAX;
+&nbsp;
+&nbsp;	/** vcard:Female */
+&nbsp;	public static final IRI FEMALE;
+&nbsp;
+&nbsp;	/** vcard:Friend */
+&nbsp;	public static final IRI FRIEND;
+&nbsp;
+&nbsp;	/** vcard:Gender */
+&nbsp;	public static final IRI GENDER;
+&nbsp;
+&nbsp;	/** vcard:Group */
+&nbsp;	public static final IRI GROUP;
+&nbsp;
+&nbsp;	/** vcard:Home */
+&nbsp;	public static final IRI HOME;
+&nbsp;
+&nbsp;	/** vcard:ISDN */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI ISDN;
+&nbsp;
+&nbsp;	/** vcard:Individual */
+&nbsp;	public static final IRI INDIVIDUAL;
+&nbsp;
+&nbsp;	/** vcard:Internet */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI INTERNET;
+&nbsp;
+&nbsp;	/** vcard:Intl */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI INTL;
+&nbsp;
+&nbsp;	/** vcard:Kin */
+&nbsp;	public static final IRI KIN;
+&nbsp;
+&nbsp;	/** vcard:Kind */
+&nbsp;	public static final IRI KIND;
+&nbsp;
+&nbsp;	/** vcard:Label */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LABEL;
+&nbsp;
+&nbsp;	/** vcard:Location */
+&nbsp;	public static final IRI LOCATION;
+&nbsp;
+&nbsp;	/** vcard:Male */
+&nbsp;	public static final IRI MALE;
+&nbsp;
+&nbsp;	/** vcard:Me */
+&nbsp;	public static final IRI ME;
+&nbsp;
+&nbsp;	/** vcard:Met */
+&nbsp;	public static final IRI MET;
+&nbsp;
+&nbsp;	/** vcard:Modem */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI MODEM;
+&nbsp;
+&nbsp;	/** vcard:Msg */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI MSG;
+&nbsp;
+&nbsp;	/** vcard:Muse */
+&nbsp;	public static final IRI MUSE;
+&nbsp;
+&nbsp;	/** vcard:Name */
+&nbsp;	public static final IRI NAME;
+&nbsp;
+&nbsp;	/** vcard:Neighbor */
+&nbsp;	public static final IRI NEIGHBOR;
+&nbsp;
+&nbsp;	/** vcard:None */
+&nbsp;	public static final IRI NONE;
+&nbsp;
+&nbsp;	/** vcard:Organization */
+&nbsp;	public static final IRI ORGANIZATION;
+&nbsp;
+&nbsp;	/** vcard:Other */
+&nbsp;	public static final IRI OTHER;
+&nbsp;
+&nbsp;	/** vcard:PCS */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PCS;
+&nbsp;
+&nbsp;	/** vcard:Pager */
+&nbsp;	public static final IRI PAGER;
+&nbsp;
+&nbsp;	/** vcard:Parcel */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PARCEL;
+&nbsp;
+&nbsp;	/** vcard:Parent */
+&nbsp;	public static final IRI PARENT;
+&nbsp;
+&nbsp;	/** vcard:Postal */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI POSTAL;
+&nbsp;
+&nbsp;	/** vcard:Pref */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PREF;
+&nbsp;
+&nbsp;	/** vcard:RelatedType */
+&nbsp;	public static final IRI RELATED_TYPE;
+&nbsp;
+&nbsp;	/** vcard:Sibling */
+&nbsp;	public static final IRI SIBLING;
+&nbsp;
+&nbsp;	/** vcard:Spouse */
+&nbsp;	public static final IRI SPOUSE;
+&nbsp;
+&nbsp;	/** vcard:Sweetheart */
+&nbsp;	public static final IRI SWEETHEART;
+&nbsp;
+&nbsp;	/** vcard:Tel */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI TEL;
+&nbsp;
+&nbsp;	/** vcard:TelephoneType */
+&nbsp;	public static final IRI TELEPHONE_TYPE;
+&nbsp;
+&nbsp;	/** vcard:Text */
+&nbsp;	public static final IRI TEXT;
+&nbsp;
+&nbsp;	/** vcard:TextPhone */
+&nbsp;	public static final IRI TEXT_PHONE;
+&nbsp;
+&nbsp;	/** vcard:Type */
+&nbsp;	public static final IRI TYPE;
+&nbsp;
+&nbsp;	/** vcard:Unknown */
+&nbsp;	public static final IRI UNKNOWN;
+&nbsp;
+&nbsp;	/** vcard:VCard */
+&nbsp;	public static final IRI VCARD;
+&nbsp;
+&nbsp;	/** vcard:Video */
+&nbsp;	public static final IRI VIDEO;
+&nbsp;
+&nbsp;	/** vcard:Voice */
+&nbsp;	public static final IRI VOICE;
+&nbsp;
+&nbsp;	/** vcard:Work */
+&nbsp;	public static final IRI WORK;
+&nbsp;
+&nbsp;	/** vcard:X400 */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI X400;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** vcard:additional-name */
+&nbsp;	public static final IRI ADDITIONAL_NAME;
+&nbsp;
+&nbsp;	/** vcard:adr */
+&nbsp;	public static final IRI ADR;
+&nbsp;
+&nbsp;	/** vcard:agent */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI AGENT_PROP;
+&nbsp;
+&nbsp;	/** vcard:anniversary */
+&nbsp;	public static final IRI ANNIVERSARY;
+&nbsp;
+&nbsp;	/** vcard:bday */
+&nbsp;	public static final IRI BDAY;
+&nbsp;
+&nbsp;	/** vcard:category */
+&nbsp;	public static final IRI CATEGORY;
+&nbsp;
+&nbsp;	/** vcard:class */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI CLASS;
+&nbsp;
+&nbsp;	/** vcard:country-name */
+&nbsp;	public static final IRI COUNTRY_NAME;
+&nbsp;
+&nbsp;	/** vcard:email */
+&nbsp;	public static final IRI EMAIL_PROP;
+&nbsp;
+&nbsp;	/** vcard:extended-address */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI EXTENDED_ADDRESS;
+&nbsp;
+&nbsp;	/** vcard:family-name */
+&nbsp;	public static final IRI FAMILY_NAME;
+&nbsp;
+&nbsp;	/** vcard:fn */
+&nbsp;	public static final IRI FN;
+&nbsp;
+&nbsp;	/** vcard:geo */
+&nbsp;	public static final IRI GEO;
+&nbsp;
+&nbsp;	/** vcard:given-name */
+&nbsp;	public static final IRI GIVEN_NAME;
+&nbsp;
+&nbsp;	/** vcard:hasAdditionalName */
+&nbsp;	public static final IRI HAS_ADDITIONAL_NAME;
+&nbsp;
+&nbsp;	/** vcard:hasAddress */
+&nbsp;	public static final IRI HAS_ADDRESS;
+&nbsp;
+&nbsp;	/** vcard:hasCalendarBusy */
+&nbsp;	public static final IRI HAS_CALENDAR_BUSY;
+&nbsp;
+&nbsp;	/** vcard:hasCalendarLink */
+&nbsp;	public static final IRI HAS_CALENDAR_LINK;
+&nbsp;
+&nbsp;	/** vcard:hasCalendarRequest */
+&nbsp;	public static final IRI HAS_CALENDAR_REQUEST;
+&nbsp;
+&nbsp;	/** vcard:hasCategory */
+&nbsp;	public static final IRI HAS_CATEGORY;
+&nbsp;
+&nbsp;	/** vcard:hasCountryName */
+&nbsp;	public static final IRI HAS_COUNTRY_NAME;
+&nbsp;
+&nbsp;	/** vcard:hasEmail */
+&nbsp;	public static final IRI HAS_EMAIL;
+&nbsp;
+&nbsp;	/** vcard:hasFN */
+&nbsp;	public static final IRI HAS_FN;
+&nbsp;
+&nbsp;	/** vcard:hasFamilyName */
+&nbsp;	public static final IRI HAS_FAMILY_NAME;
+&nbsp;
+&nbsp;	/** vcard:hasGender */
+&nbsp;	public static final IRI HAS_GENDER;
+&nbsp;
+&nbsp;	/** vcard:hasGeo */
+&nbsp;	public static final IRI HAS_GEO;
+&nbsp;
+&nbsp;	/** vcard:hasGivenName */
+&nbsp;	public static final IRI HAS_GIVEN_NAME;
+&nbsp;
+&nbsp;	/** vcard:hasHonorificPrefix */
+&nbsp;	public static final IRI HAS_HONORIFIC_PREFIX;
+&nbsp;
+&nbsp;	/** vcard:hasHonorificSuffix */
+&nbsp;	public static final IRI HAS_HONORIFIC_SUFFIX;
+&nbsp;
+&nbsp;	/** vcard:hasInstantMessage */
+&nbsp;	public static final IRI HAS_INSTANT_MESSAGE;
+&nbsp;
+&nbsp;	/** vcard:hasKey */
+&nbsp;	public static final IRI HAS_KEY;
+&nbsp;
+&nbsp;	/** vcard:hasLanguage */
+&nbsp;	public static final IRI HAS_LANGUAGE;
+&nbsp;
+&nbsp;	/** vcard:hasLocality */
+&nbsp;	public static final IRI HAS_LOCALITY;
+&nbsp;
+&nbsp;	/** vcard:hasLogo */
+&nbsp;	public static final IRI HAS_LOGO;
+&nbsp;
+&nbsp;	/** vcard:hasMember */
+&nbsp;	public static final IRI HAS_MEMBER;
+&nbsp;
+&nbsp;	/** vcard:hasName */
+&nbsp;	public static final IRI HAS_NAME;
+&nbsp;
+&nbsp;	/** vcard:hasNickname */
+&nbsp;	public static final IRI HAS_NICKNAME;
+&nbsp;
+&nbsp;	/** vcard:hasNote */
+&nbsp;	public static final IRI HAS_NOTE;
+&nbsp;
+&nbsp;	/** vcard:hasOrganizationName */
+&nbsp;	public static final IRI HAS_ORGANIZATION_NAME;
+&nbsp;
+&nbsp;	/** vcard:hasOrganizationUnit */
+&nbsp;	public static final IRI HAS_ORGANIZATION_UNIT;
+&nbsp;
+&nbsp;	/** vcard:hasPhoto */
+&nbsp;	public static final IRI HAS_PHOTO;
+&nbsp;
+&nbsp;	/** vcard:hasPostalCode */
+&nbsp;	public static final IRI HAS_POSTAL_CODE;
+&nbsp;
+&nbsp;	/** vcard:hasRegion */
+&nbsp;	public static final IRI HAS_REGION;
+&nbsp;
+&nbsp;	/** vcard:hasRelated */
+&nbsp;	public static final IRI HAS_RELATED;
+&nbsp;
+&nbsp;	/** vcard:hasRole */
+&nbsp;	public static final IRI HAS_ROLE;
+&nbsp;
+&nbsp;	/** vcard:hasSound */
+&nbsp;	public static final IRI HAS_SOUND;
+&nbsp;
+&nbsp;	/** vcard:hasSource */
+&nbsp;	public static final IRI HAS_SOURCE;
+&nbsp;
+&nbsp;	/** vcard:hasStreetAddress */
+&nbsp;	public static final IRI HAS_STREET_ADDRESS;
+&nbsp;
+&nbsp;	/** vcard:hasTelephone */
+&nbsp;	public static final IRI HAS_TELEPHONE;
+&nbsp;
+&nbsp;	/** vcard:hasTitle */
+&nbsp;	public static final IRI HAS_TITLE;
+&nbsp;
+&nbsp;	/** vcard:hasUID */
+&nbsp;	public static final IRI HAS_UID;
+&nbsp;
+&nbsp;	/** vcard:hasURL */
+&nbsp;	public static final IRI HAS_URL;
+&nbsp;
+&nbsp;	/** vcard:hasValue */
+&nbsp;	public static final IRI HAS_VALUE;
+&nbsp;
+&nbsp;	/** vcard:honorific-prefix */
+&nbsp;	public static final IRI HONORIFIC_PREFIX;
+&nbsp;
+&nbsp;	/** vcard:honorific-suffix */
+&nbsp;	public static final IRI HONORIFIC_SUFFIX;
+&nbsp;
+&nbsp;	/** vcard:key */
+&nbsp;	public static final IRI KEY;
+&nbsp;
+&nbsp;	/** vcard:label */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LABEL_PROP;
+&nbsp;
+&nbsp;	/** vcard:language */
+&nbsp;	public static final IRI LANGUAGE;
+&nbsp;
+&nbsp;	/** vcard:latitude */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LATITUDE;
+&nbsp;
+&nbsp;	/** vcard:locality */
+&nbsp;	public static final IRI LOCALITY;
+&nbsp;
+&nbsp;	/** vcard:logo */
+&nbsp;	public static final IRI LOGO;
+&nbsp;
+&nbsp;	/** vcard:longitude */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI LONGITUDE;
+&nbsp;
+&nbsp;	/** vcard:mailer */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI MAILER;
+&nbsp;
+&nbsp;	/** vcard:n */
+&nbsp;	public static final IRI N;
+&nbsp;
+&nbsp;	/** vcard:nickname */
+&nbsp;	public static final IRI NICKNAME;
+&nbsp;
+&nbsp;	/** vcard:note */
+&nbsp;	public static final IRI NOTE;
+&nbsp;
+&nbsp;	/** vcard:org */
+&nbsp;	public static final IRI ORG;
+&nbsp;
+&nbsp;	/** vcard:organization-name */
+&nbsp;	public static final IRI ORGANIZATION_NAME;
+&nbsp;
+&nbsp;	/** vcard:organization-unit */
+&nbsp;	public static final IRI ORGANIZATION_UNIT;
+&nbsp;
+&nbsp;	/** vcard:photo */
+&nbsp;	public static final IRI PHOTO;
+&nbsp;
+&nbsp;	/** vcard:post-office-box */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI POST_OFFICE_BOX;
+&nbsp;
+&nbsp;	/** vcard:postal-code */
+&nbsp;	public static final IRI POSTAL_CODE;
+&nbsp;
+&nbsp;	/** vcard:prodid */
+&nbsp;	public static final IRI PRODID;
+&nbsp;
+&nbsp;	/** vcard:region */
+&nbsp;	public static final IRI REGION;
+&nbsp;
+&nbsp;	/** vcard:rev */
+&nbsp;	public static final IRI REV;
+&nbsp;
+&nbsp;	/** vcard:role */
+&nbsp;	public static final IRI ROLE;
+&nbsp;
+&nbsp;	/** vcard:sort-string */
+&nbsp;	public static final IRI SORT_STRING;
+&nbsp;
+&nbsp;	/** vcard:sound */
+&nbsp;	public static final IRI SOUND;
+&nbsp;
+&nbsp;	/** vcard:street-address */
+&nbsp;	public static final IRI STREET_ADDRESS;
+&nbsp;
+&nbsp;	/** vcard:tel */
+&nbsp;	public static final IRI TEL_PROP;
+&nbsp;
+&nbsp;	/** vcard:title */
+&nbsp;	public static final IRI TITLE;
+&nbsp;
+&nbsp;	/** vcard:tz */
+&nbsp;	public static final IRI TZ;
+&nbsp;
+&nbsp;	/** vcard:url */
+&nbsp;	public static final IRI URL;
+&nbsp;
+&nbsp;	/** vcard:value */
+&nbsp;	public static final IRI VALUE;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		ACQUAINTANCE = Vocabularies.createIRI(NAMESPACE, &quot;Acquaintance&quot;);</b>
+<b class="nc">&nbsp;		ADDRESS = Vocabularies.createIRI(NAMESPACE, &quot;Address&quot;);</b>
+<b class="nc">&nbsp;		AGENT = Vocabularies.createIRI(NAMESPACE, &quot;Agent&quot;);</b>
+<b class="nc">&nbsp;		BBS = Vocabularies.createIRI(NAMESPACE, &quot;BBS&quot;);</b>
+<b class="nc">&nbsp;		CAR = Vocabularies.createIRI(NAMESPACE, &quot;Car&quot;);</b>
+<b class="nc">&nbsp;		CELL = Vocabularies.createIRI(NAMESPACE, &quot;Cell&quot;);</b>
+<b class="nc">&nbsp;		CHILD = Vocabularies.createIRI(NAMESPACE, &quot;Child&quot;);</b>
+<b class="nc">&nbsp;		COLLEAGUE = Vocabularies.createIRI(NAMESPACE, &quot;Colleague&quot;);</b>
+<b class="nc">&nbsp;		CONTACT = Vocabularies.createIRI(NAMESPACE, &quot;Contact&quot;);</b>
+<b class="nc">&nbsp;		CORESIDENT = Vocabularies.createIRI(NAMESPACE, &quot;Coresident&quot;);</b>
+<b class="nc">&nbsp;		COWORKER = Vocabularies.createIRI(NAMESPACE, &quot;Coworker&quot;);</b>
+<b class="nc">&nbsp;		CRUSH = Vocabularies.createIRI(NAMESPACE, &quot;Crush&quot;);</b>
+<b class="nc">&nbsp;		DATE = Vocabularies.createIRI(NAMESPACE, &quot;Date&quot;);</b>
+<b class="nc">&nbsp;		DOM = Vocabularies.createIRI(NAMESPACE, &quot;Dom&quot;);</b>
+<b class="nc">&nbsp;		EMAIL = Vocabularies.createIRI(NAMESPACE, &quot;Email&quot;);</b>
+<b class="nc">&nbsp;		EMERGENCY = Vocabularies.createIRI(NAMESPACE, &quot;Emergency&quot;);</b>
+<b class="nc">&nbsp;		FAX = Vocabularies.createIRI(NAMESPACE, &quot;Fax&quot;);</b>
+<b class="nc">&nbsp;		FEMALE = Vocabularies.createIRI(NAMESPACE, &quot;Female&quot;);</b>
+<b class="nc">&nbsp;		FRIEND = Vocabularies.createIRI(NAMESPACE, &quot;Friend&quot;);</b>
+<b class="nc">&nbsp;		GENDER = Vocabularies.createIRI(NAMESPACE, &quot;Gender&quot;);</b>
+<b class="nc">&nbsp;		GROUP = Vocabularies.createIRI(NAMESPACE, &quot;Group&quot;);</b>
+<b class="nc">&nbsp;		HOME = Vocabularies.createIRI(NAMESPACE, &quot;Home&quot;);</b>
+<b class="nc">&nbsp;		ISDN = Vocabularies.createIRI(NAMESPACE, &quot;ISDN&quot;);</b>
+<b class="nc">&nbsp;		INDIVIDUAL = Vocabularies.createIRI(NAMESPACE, &quot;Individual&quot;);</b>
+<b class="nc">&nbsp;		INTERNET = Vocabularies.createIRI(NAMESPACE, &quot;Internet&quot;);</b>
+<b class="nc">&nbsp;		INTL = Vocabularies.createIRI(NAMESPACE, &quot;Intl&quot;);</b>
+<b class="nc">&nbsp;		KIN = Vocabularies.createIRI(NAMESPACE, &quot;Kin&quot;);</b>
+<b class="nc">&nbsp;		KIND = Vocabularies.createIRI(NAMESPACE, &quot;Kind&quot;);</b>
+<b class="nc">&nbsp;		LABEL = Vocabularies.createIRI(NAMESPACE, &quot;Label&quot;);</b>
+<b class="nc">&nbsp;		LOCATION = Vocabularies.createIRI(NAMESPACE, &quot;Location&quot;);</b>
+<b class="nc">&nbsp;		MALE = Vocabularies.createIRI(NAMESPACE, &quot;Male&quot;);</b>
+<b class="nc">&nbsp;		ME = Vocabularies.createIRI(NAMESPACE, &quot;Me&quot;);</b>
+<b class="nc">&nbsp;		MET = Vocabularies.createIRI(NAMESPACE, &quot;Met&quot;);</b>
+<b class="nc">&nbsp;		MODEM = Vocabularies.createIRI(NAMESPACE, &quot;Modem&quot;);</b>
+<b class="nc">&nbsp;		MSG = Vocabularies.createIRI(NAMESPACE, &quot;Msg&quot;);</b>
+<b class="nc">&nbsp;		MUSE = Vocabularies.createIRI(NAMESPACE, &quot;Muse&quot;);</b>
+<b class="nc">&nbsp;		NAME = Vocabularies.createIRI(NAMESPACE, &quot;Name&quot;);</b>
+<b class="nc">&nbsp;		NEIGHBOR = Vocabularies.createIRI(NAMESPACE, &quot;Neighbor&quot;);</b>
+<b class="nc">&nbsp;		NONE = Vocabularies.createIRI(NAMESPACE, &quot;None&quot;);</b>
+<b class="nc">&nbsp;		ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;Organization&quot;);</b>
+<b class="nc">&nbsp;		OTHER = Vocabularies.createIRI(NAMESPACE, &quot;Other&quot;);</b>
+<b class="nc">&nbsp;		PCS = Vocabularies.createIRI(NAMESPACE, &quot;PCS&quot;);</b>
+<b class="nc">&nbsp;		PAGER = Vocabularies.createIRI(NAMESPACE, &quot;Pager&quot;);</b>
+<b class="nc">&nbsp;		PARCEL = Vocabularies.createIRI(NAMESPACE, &quot;Parcel&quot;);</b>
+<b class="nc">&nbsp;		PARENT = Vocabularies.createIRI(NAMESPACE, &quot;Parent&quot;);</b>
+<b class="nc">&nbsp;		POSTAL = Vocabularies.createIRI(NAMESPACE, &quot;Postal&quot;);</b>
+<b class="nc">&nbsp;		PREF = Vocabularies.createIRI(NAMESPACE, &quot;Pref&quot;);</b>
+<b class="nc">&nbsp;		RELATED_TYPE = Vocabularies.createIRI(NAMESPACE, &quot;RelatedType&quot;);</b>
+<b class="nc">&nbsp;		SIBLING = Vocabularies.createIRI(NAMESPACE, &quot;Sibling&quot;);</b>
+<b class="nc">&nbsp;		SPOUSE = Vocabularies.createIRI(NAMESPACE, &quot;Spouse&quot;);</b>
+<b class="nc">&nbsp;		SWEETHEART = Vocabularies.createIRI(NAMESPACE, &quot;Sweetheart&quot;);</b>
+<b class="nc">&nbsp;		TEL = Vocabularies.createIRI(NAMESPACE, &quot;Tel&quot;);</b>
+<b class="nc">&nbsp;		TELEPHONE_TYPE = Vocabularies.createIRI(NAMESPACE, &quot;TelephoneType&quot;);</b>
+<b class="nc">&nbsp;		TEXT = Vocabularies.createIRI(NAMESPACE, &quot;Text&quot;);</b>
+<b class="nc">&nbsp;		TEXT_PHONE = Vocabularies.createIRI(NAMESPACE, &quot;TextPhone&quot;);</b>
+<b class="nc">&nbsp;		TYPE = Vocabularies.createIRI(NAMESPACE, &quot;Type&quot;);</b>
+<b class="nc">&nbsp;		UNKNOWN = Vocabularies.createIRI(NAMESPACE, &quot;Unknown&quot;);</b>
+<b class="nc">&nbsp;		VCARD = Vocabularies.createIRI(NAMESPACE, &quot;VCard&quot;);</b>
+<b class="nc">&nbsp;		VIDEO = Vocabularies.createIRI(NAMESPACE, &quot;Video&quot;);</b>
+<b class="nc">&nbsp;		VOICE = Vocabularies.createIRI(NAMESPACE, &quot;Voice&quot;);</b>
+<b class="nc">&nbsp;		WORK = Vocabularies.createIRI(NAMESPACE, &quot;Work&quot;);</b>
+<b class="nc">&nbsp;		X400 = Vocabularies.createIRI(NAMESPACE, &quot;X400&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ADDITIONAL_NAME = Vocabularies.createIRI(NAMESPACE, &quot;additional-name&quot;);</b>
+<b class="nc">&nbsp;		ADR = Vocabularies.createIRI(NAMESPACE, &quot;adr&quot;);</b>
+<b class="nc">&nbsp;		AGENT_PROP = Vocabularies.createIRI(NAMESPACE, &quot;agent&quot;);</b>
+<b class="nc">&nbsp;		ANNIVERSARY = Vocabularies.createIRI(NAMESPACE, &quot;anniversary&quot;);</b>
+<b class="nc">&nbsp;		BDAY = Vocabularies.createIRI(NAMESPACE, &quot;bday&quot;);</b>
+<b class="nc">&nbsp;		CATEGORY = Vocabularies.createIRI(NAMESPACE, &quot;category&quot;);</b>
+<b class="nc">&nbsp;		CLASS = Vocabularies.createIRI(NAMESPACE, &quot;class&quot;);</b>
+<b class="nc">&nbsp;		COUNTRY_NAME = Vocabularies.createIRI(NAMESPACE, &quot;country-name&quot;);</b>
+<b class="nc">&nbsp;		EMAIL_PROP = Vocabularies.createIRI(NAMESPACE, &quot;email&quot;);</b>
+<b class="nc">&nbsp;		EXTENDED_ADDRESS = Vocabularies.createIRI(NAMESPACE, &quot;extended-address&quot;);</b>
+<b class="nc">&nbsp;		FAMILY_NAME = Vocabularies.createIRI(NAMESPACE, &quot;family-name&quot;);</b>
+<b class="nc">&nbsp;		FN = Vocabularies.createIRI(NAMESPACE, &quot;fn&quot;);</b>
+<b class="nc">&nbsp;		GEO = Vocabularies.createIRI(NAMESPACE, &quot;geo&quot;);</b>
+<b class="nc">&nbsp;		GIVEN_NAME = Vocabularies.createIRI(NAMESPACE, &quot;given-name&quot;);</b>
+<b class="nc">&nbsp;		HAS_ADDITIONAL_NAME = Vocabularies.createIRI(NAMESPACE, &quot;hasAdditionalName&quot;);</b>
+<b class="nc">&nbsp;		HAS_ADDRESS = Vocabularies.createIRI(NAMESPACE, &quot;hasAddress&quot;);</b>
+<b class="nc">&nbsp;		HAS_CALENDAR_BUSY = Vocabularies.createIRI(NAMESPACE, &quot;hasCalendarBusy&quot;);</b>
+<b class="nc">&nbsp;		HAS_CALENDAR_LINK = Vocabularies.createIRI(NAMESPACE, &quot;hasCalendarLink&quot;);</b>
+<b class="nc">&nbsp;		HAS_CALENDAR_REQUEST = Vocabularies.createIRI(NAMESPACE, &quot;hasCalendarRequest&quot;);</b>
+<b class="nc">&nbsp;		HAS_CATEGORY = Vocabularies.createIRI(NAMESPACE, &quot;hasCategory&quot;);</b>
+<b class="nc">&nbsp;		HAS_COUNTRY_NAME = Vocabularies.createIRI(NAMESPACE, &quot;hasCountryName&quot;);</b>
+<b class="nc">&nbsp;		HAS_EMAIL = Vocabularies.createIRI(NAMESPACE, &quot;hasEmail&quot;);</b>
+<b class="nc">&nbsp;		HAS_FN = Vocabularies.createIRI(NAMESPACE, &quot;hasFN&quot;);</b>
+<b class="nc">&nbsp;		HAS_FAMILY_NAME = Vocabularies.createIRI(NAMESPACE, &quot;hasFamilyName&quot;);</b>
+<b class="nc">&nbsp;		HAS_GENDER = Vocabularies.createIRI(NAMESPACE, &quot;hasGender&quot;);</b>
+<b class="nc">&nbsp;		HAS_GEO = Vocabularies.createIRI(NAMESPACE, &quot;hasGeo&quot;);</b>
+<b class="nc">&nbsp;		HAS_GIVEN_NAME = Vocabularies.createIRI(NAMESPACE, &quot;hasGivenName&quot;);</b>
+<b class="nc">&nbsp;		HAS_HONORIFIC_PREFIX = Vocabularies.createIRI(NAMESPACE, &quot;hasHonorificPrefix&quot;);</b>
+<b class="nc">&nbsp;		HAS_HONORIFIC_SUFFIX = Vocabularies.createIRI(NAMESPACE, &quot;hasHonorificSuffix&quot;);</b>
+<b class="nc">&nbsp;		HAS_INSTANT_MESSAGE = Vocabularies.createIRI(NAMESPACE, &quot;hasInstantMessage&quot;);</b>
+<b class="nc">&nbsp;		HAS_KEY = Vocabularies.createIRI(NAMESPACE, &quot;hasKey&quot;);</b>
+<b class="nc">&nbsp;		HAS_LANGUAGE = Vocabularies.createIRI(NAMESPACE, &quot;hasLanguage&quot;);</b>
+<b class="nc">&nbsp;		HAS_LOCALITY = Vocabularies.createIRI(NAMESPACE, &quot;hasLocality&quot;);</b>
+<b class="nc">&nbsp;		HAS_LOGO = Vocabularies.createIRI(NAMESPACE, &quot;hasLogo&quot;);</b>
+<b class="nc">&nbsp;		HAS_MEMBER = Vocabularies.createIRI(NAMESPACE, &quot;hasMember&quot;);</b>
+<b class="nc">&nbsp;		HAS_NAME = Vocabularies.createIRI(NAMESPACE, &quot;hasName&quot;);</b>
+<b class="nc">&nbsp;		HAS_NICKNAME = Vocabularies.createIRI(NAMESPACE, &quot;hasNickname&quot;);</b>
+<b class="nc">&nbsp;		HAS_NOTE = Vocabularies.createIRI(NAMESPACE, &quot;hasNote&quot;);</b>
+<b class="nc">&nbsp;		HAS_ORGANIZATION_NAME = Vocabularies.createIRI(NAMESPACE, &quot;hasOrganizationName&quot;);</b>
+<b class="nc">&nbsp;		HAS_ORGANIZATION_UNIT = Vocabularies.createIRI(NAMESPACE, &quot;hasOrganizationUnit&quot;);</b>
+<b class="nc">&nbsp;		HAS_PHOTO = Vocabularies.createIRI(NAMESPACE, &quot;hasPhoto&quot;);</b>
+<b class="nc">&nbsp;		HAS_POSTAL_CODE = Vocabularies.createIRI(NAMESPACE, &quot;hasPostalCode&quot;);</b>
+<b class="nc">&nbsp;		HAS_REGION = Vocabularies.createIRI(NAMESPACE, &quot;hasRegion&quot;);</b>
+<b class="nc">&nbsp;		HAS_RELATED = Vocabularies.createIRI(NAMESPACE, &quot;hasRelated&quot;);</b>
+<b class="nc">&nbsp;		HAS_ROLE = Vocabularies.createIRI(NAMESPACE, &quot;hasRole&quot;);</b>
+<b class="nc">&nbsp;		HAS_SOUND = Vocabularies.createIRI(NAMESPACE, &quot;hasSound&quot;);</b>
+<b class="nc">&nbsp;		HAS_SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;hasSource&quot;);</b>
+<b class="nc">&nbsp;		HAS_STREET_ADDRESS = Vocabularies.createIRI(NAMESPACE, &quot;hasStreetAddress&quot;);</b>
+<b class="nc">&nbsp;		HAS_TELEPHONE = Vocabularies.createIRI(NAMESPACE, &quot;hasTelephone&quot;);</b>
+<b class="nc">&nbsp;		HAS_TITLE = Vocabularies.createIRI(NAMESPACE, &quot;hasTitle&quot;);</b>
+<b class="nc">&nbsp;		HAS_UID = Vocabularies.createIRI(NAMESPACE, &quot;hasUID&quot;);</b>
+<b class="nc">&nbsp;		HAS_URL = Vocabularies.createIRI(NAMESPACE, &quot;hasURL&quot;);</b>
+<b class="nc">&nbsp;		HAS_VALUE = Vocabularies.createIRI(NAMESPACE, &quot;hasValue&quot;);</b>
+<b class="nc">&nbsp;		HONORIFIC_PREFIX = Vocabularies.createIRI(NAMESPACE, &quot;honorific-prefix&quot;);</b>
+<b class="nc">&nbsp;		HONORIFIC_SUFFIX = Vocabularies.createIRI(NAMESPACE, &quot;honorific-suffix&quot;);</b>
+<b class="nc">&nbsp;		KEY = Vocabularies.createIRI(NAMESPACE, &quot;key&quot;);</b>
+<b class="nc">&nbsp;		LABEL_PROP = Vocabularies.createIRI(NAMESPACE, &quot;label&quot;);</b>
+<b class="nc">&nbsp;		LANGUAGE = Vocabularies.createIRI(NAMESPACE, &quot;language&quot;);</b>
+<b class="nc">&nbsp;		LATITUDE = Vocabularies.createIRI(NAMESPACE, &quot;latitude&quot;);</b>
+<b class="nc">&nbsp;		LOCALITY = Vocabularies.createIRI(NAMESPACE, &quot;locality&quot;);</b>
+<b class="nc">&nbsp;		LOGO = Vocabularies.createIRI(NAMESPACE, &quot;logo&quot;);</b>
+<b class="nc">&nbsp;		LONGITUDE = Vocabularies.createIRI(NAMESPACE, &quot;longitude&quot;);</b>
+<b class="nc">&nbsp;		MAILER = Vocabularies.createIRI(NAMESPACE, &quot;mailer&quot;);</b>
+<b class="nc">&nbsp;		N = Vocabularies.createIRI(NAMESPACE, &quot;n&quot;);</b>
+<b class="nc">&nbsp;		NICKNAME = Vocabularies.createIRI(NAMESPACE, &quot;nickname&quot;);</b>
+<b class="nc">&nbsp;		NOTE = Vocabularies.createIRI(NAMESPACE, &quot;note&quot;);</b>
+<b class="nc">&nbsp;		ORG = Vocabularies.createIRI(NAMESPACE, &quot;org&quot;);</b>
+<b class="nc">&nbsp;		ORGANIZATION_NAME = Vocabularies.createIRI(NAMESPACE, &quot;organization-name&quot;);</b>
+<b class="nc">&nbsp;		ORGANIZATION_UNIT = Vocabularies.createIRI(NAMESPACE, &quot;organization-unit&quot;);</b>
+<b class="nc">&nbsp;		PHOTO = Vocabularies.createIRI(NAMESPACE, &quot;photo&quot;);</b>
+<b class="nc">&nbsp;		POST_OFFICE_BOX = Vocabularies.createIRI(NAMESPACE, &quot;post-office-box&quot;);</b>
+<b class="nc">&nbsp;		POSTAL_CODE = Vocabularies.createIRI(NAMESPACE, &quot;postal-code&quot;);</b>
+<b class="nc">&nbsp;		PRODID = Vocabularies.createIRI(NAMESPACE, &quot;prodid&quot;);</b>
+<b class="nc">&nbsp;		REGION = Vocabularies.createIRI(NAMESPACE, &quot;region&quot;);</b>
+<b class="nc">&nbsp;		REV = Vocabularies.createIRI(NAMESPACE, &quot;rev&quot;);</b>
+<b class="nc">&nbsp;		ROLE = Vocabularies.createIRI(NAMESPACE, &quot;role&quot;);</b>
+<b class="nc">&nbsp;		SORT_STRING = Vocabularies.createIRI(NAMESPACE, &quot;sort-string&quot;);</b>
+<b class="nc">&nbsp;		SOUND = Vocabularies.createIRI(NAMESPACE, &quot;sound&quot;);</b>
+<b class="nc">&nbsp;		STREET_ADDRESS = Vocabularies.createIRI(NAMESPACE, &quot;street-address&quot;);</b>
+<b class="nc">&nbsp;		TEL_PROP = Vocabularies.createIRI(NAMESPACE, &quot;tel&quot;);</b>
+<b class="nc">&nbsp;		TITLE = Vocabularies.createIRI(NAMESPACE, &quot;title&quot;);</b>
+<b class="nc">&nbsp;		TZ = Vocabularies.createIRI(NAMESPACE, &quot;tz&quot;);</b>
+<b class="nc">&nbsp;		URL = Vocabularies.createIRI(NAMESPACE, &quot;url&quot;);</b>
+<b class="nc">&nbsp;		VALUE = Vocabularies.createIRI(NAMESPACE, &quot;value&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

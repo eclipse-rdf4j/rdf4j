@@ -1,0 +1,894 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Rio</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: Rio (org.eclipse.rdf4j.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Rio</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    15.4%
+  </span>
+  <span class="absValue">
+    (6/39)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    10.9%
+  </span>
+  <span class="absValue">
+    (11/101)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio;
+&nbsp;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.io.Writer;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.NamespaceAware;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.ContextStatementCollector;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
+&nbsp;
+&nbsp;/**
+&nbsp; * Static methods for parsing and writing RDF for all available syntaxes.
+&nbsp; * &lt;p&gt;
+&nbsp; * It includes methods for searching for {@link RDFFormat}s based on MIME types and file extensions, creating
+&nbsp; * {@link RDFParser}s and {@link RDFWriter}s, and directly parsing and writing.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Peter Ansell
+&nbsp; */
+<b class="nc">&nbsp;public class Rio {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match a MIME type against the list of RDF formats that can be parsed.
+&nbsp;	 *
+&nbsp;	 * @param mimeType A MIME type, e.g. &quot;application/rdf+xml&quot;.
+&nbsp;	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;RDFFormat&gt; getParserFormatForMIMEType(String mimeType) {
+<b class="fc">&nbsp;		return RDFFormat.matchMIMEType(mimeType, RDFParserRegistry.getInstance().getKeys());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match the extension of a file name against the list of RDF formats that can be parsed.
+&nbsp;	 *
+&nbsp;	 * @param fileName A file name.
+&nbsp;	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;RDFFormat&gt; getParserFormatForFileName(String fileName) {
+<b class="fc">&nbsp;		return RDFFormat.matchFileName(fileName, RDFParserRegistry.getInstance().getKeys());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match a MIME type against the list of RDF formats that can be written.
+&nbsp;	 *
+&nbsp;	 * @param mimeType A MIME type, e.g. &quot;application/rdf+xml&quot;.
+&nbsp;	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;RDFFormat&gt; getWriterFormatForMIMEType(String mimeType) {
+<b class="nc">&nbsp;		return RDFFormat.matchMIMEType(mimeType, RDFWriterRegistry.getInstance().getKeys());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Tries to match the extension of a file name against the list of RDF formats that can be written.
+&nbsp;	 *
+&nbsp;	 * @param fileName A file name.
+&nbsp;	 * @return An RDFFormat object if a match was found, or {@link Optional#empty()} otherwise.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;RDFFormat&gt; getWriterFormatForFileName(String fileName) {
+<b class="nc">&nbsp;		return RDFFormat.matchFileName(fileName, RDFWriterRegistry.getInstance().getKeys());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating RDFParser objects.This method uses the registry returned by
+&nbsp;	 * {@link RDFParserRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
+&nbsp;	 * the appropriate parser.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @return RDF Parser
+&nbsp;	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static RDFParser createParser(RDFFormat format) throws UnsupportedRDFormatException {
+<b class="fc">&nbsp;		RDFParserFactory factory = RDFParserRegistry.getInstance()</b>
+<b class="fc">&nbsp;				.get(format)</b>
+<b class="fc">&nbsp;				.orElseThrow(Rio.unsupportedFormat(format));</b>
+&nbsp;
+<b class="fc">&nbsp;		return factory.getParser();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating RDFParser objects that use the specified ValueFactory to create RDF model
+&nbsp;	 * objects.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param valueFactory
+&nbsp;	 * @return RDF Parser
+&nbsp;	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+&nbsp;	 * @see #createParser(RDFFormat)
+&nbsp;	 * @see RDFParser#setValueFactory(ValueFactory)
+&nbsp;	 */
+&nbsp;	public static RDFParser createParser(RDFFormat format, ValueFactory valueFactory)
+&nbsp;			throws UnsupportedRDFormatException {
+<b class="fc">&nbsp;		RDFParser rdfParser = createParser(format);</b>
+<b class="fc">&nbsp;		rdfParser.setValueFactory(valueFactory);</b>
+<b class="fc">&nbsp;		return rdfParser;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+&nbsp;	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
+&nbsp;	 * the appropriate writer.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param out
+&nbsp;	 * @return RDF Writer
+&nbsp;	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static RDFWriter createWriter(RDFFormat format, OutputStream out) throws UnsupportedRDFormatException {
+<b class="nc">&nbsp;		RDFWriterFactory factory = RDFWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(format)</b>
+<b class="nc">&nbsp;				.orElseThrow(Rio.unsupportedFormat(format));</b>
+&nbsp;
+<b class="nc">&nbsp;		return factory.getWriter(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+&nbsp;	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
+&nbsp;	 * the appropriate writer.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param out
+&nbsp;	 * @param baseURI
+&nbsp;	 * @return RDF Writer
+&nbsp;	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
+&nbsp;	 * @throws URISyntaxException           If the baseURI is invalid
+&nbsp;	 */
+&nbsp;	public static RDFWriter createWriter(RDFFormat format, OutputStream out, String baseURI)
+&nbsp;			throws UnsupportedRDFormatException, URISyntaxException {
+<b class="nc">&nbsp;		RDFWriterFactory factory = RDFWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(format)</b>
+<b class="nc">&nbsp;				.orElseThrow(Rio.unsupportedFormat(format));</b>
+&nbsp;
+<b class="nc">&nbsp;		return factory.getWriter(out, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+&nbsp;	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
+&nbsp;	 * the appropriate writer.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param writer
+&nbsp;	 * @return RDF Writer
+&nbsp;	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static RDFWriter createWriter(RDFFormat format, Writer writer) throws UnsupportedRDFormatException {
+<b class="nc">&nbsp;		RDFWriterFactory factory = RDFWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(format)</b>
+<b class="nc">&nbsp;				.orElseThrow(Rio.unsupportedFormat(format));</b>
+&nbsp;
+<b class="nc">&nbsp;		return factory.getWriter(writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convenience methods for creating RDFWriter objects.This method uses the registry returned by
+&nbsp;	 * {@link RDFWriterRegistry#getInstance()} to get a factory for the specified format and uses this factory to create
+&nbsp;	 * the appropriate writer.
+&nbsp;	 *
+&nbsp;	 * @param format
+&nbsp;	 * @param writer
+&nbsp;	 * @param baseURI
+&nbsp;	 * @return RDF Writer
+&nbsp;	 * @throws UnsupportedRDFormatException If no writer is available for the specified RDF format.
+&nbsp;	 * @throws URISyntaxException           If the baseURI is invalid
+&nbsp;	 */
+&nbsp;	public static RDFWriter createWriter(RDFFormat format, Writer writer, String baseURI)
+&nbsp;			throws UnsupportedRDFormatException, URISyntaxException {
+<b class="nc">&nbsp;		RDFWriterFactory factory = RDFWriterRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(format)</b>
+<b class="nc">&nbsp;				.orElseThrow(Rio.unsupportedFormat(format));</b>
+&nbsp;
+<b class="nc">&nbsp;		return factory.getWriter(writer, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
+&nbsp;	 *
+&nbsp;	 * @param in         An InputStream from which RDF data can be read.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
+&nbsp;	 *                   contextual information in the actual data. If no contexts are supplied the contextual
+&nbsp;	 *                   information in the input stream is used, if no context information is available the data is
+&nbsp;	 *                   added without any context.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 */
+&nbsp;	public static Model parse(InputStream in, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parse(in, null, dataFormat, new ParserConfig(), SimpleValueFactory.getInstance(),</b>
+&nbsp;				new ParseErrorLogger(), contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
+&nbsp;	 *
+&nbsp;	 * @param in         An InputStream from which RDF data can be read.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param settings   The {@link ParserConfig} containing settings for configuring the parser.
+&nbsp;	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
+&nbsp;	 *                   contextual information in the actual data. If no contexts are supplied the contextual
+&nbsp;	 *                   information in the input stream is used, if no context information is available the data is
+&nbsp;	 *                   added without any context.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 *
+&nbsp;	 * @since 4.0.0
+&nbsp;	 */
+&nbsp;	public static Model parse(InputStream in, RDFFormat dataFormat, ParserConfig settings, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parse(in, null, dataFormat, settings, SimpleValueFactory.getInstance(),</b>
+&nbsp;				new ParseErrorLogger(), contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
+&nbsp;	 *
+&nbsp;	 * @param in         An InputStream from which RDF data can be read.
+&nbsp;	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. May be
+&nbsp;	 *                   &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
+&nbsp;	 *                   contextual information in the actual data. If no contexts are supplied the contextual
+&nbsp;	 *                   information in the input stream is used, if no context information is available the data is
+&nbsp;	 *                   added without any context.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 */
+&nbsp;	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parse(in, baseURI, dataFormat, new ParserConfig(), SimpleValueFactory.getInstance(),</b>
+&nbsp;				new ParseErrorLogger(), contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
+&nbsp;	 *
+&nbsp;	 * @param in         An InputStream from which RDF data can be read.
+&nbsp;	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. May be
+&nbsp;	 *                   &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param settings   The {@link ParserConfig} containing settings for configuring the parser.
+&nbsp;	 * @param contexts   The contexts to add the data to. If one or more contexts are supplied the method ignores
+&nbsp;	 *                   contextual information in the actual data. If no contexts are supplied the contextual
+&nbsp;	 *                   information in the input stream is used, if no context information is available the data is
+&nbsp;	 *                   added without any context.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 *
+&nbsp;	 * @since 4.0.0
+&nbsp;	 */
+&nbsp;	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
+&nbsp;			Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parse(in, baseURI, dataFormat, settings, SimpleValueFactory.getInstance(),</b>
+&nbsp;				new ParseErrorLogger(), contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
+&nbsp;	 *
+&nbsp;	 * @param in           An InputStream from which RDF data can be read.
+&nbsp;	 * @param baseURI      The base URI to resolve any relative URIs that are in the data against. May be
+&nbsp;	 *                     &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @param dataFormat   The serialization format of the data.
+&nbsp;	 * @param settings     The {@link ParserConfig} containing settings for configuring the parser.
+&nbsp;	 * @param valueFactory The {@link ValueFactory} used by the parser to create statements.
+&nbsp;	 * @param errors       The {@link ParseErrorListener} used by the parser to signal errors, including errors that do
+&nbsp;	 *                     not generate an {@link RDFParseException}.
+&nbsp;	 * @param contexts     The contexts to add the data to. If one or more contexts are supplied the method ignores
+&nbsp;	 *                     contextual information in the actual data. If no contexts are supplied the contextual
+&nbsp;	 *                     information in the input stream is used, if no context information is available the data is
+&nbsp;	 *                     added without any context.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 */
+&nbsp;	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
+&nbsp;			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+&nbsp;
+<b class="nc">&nbsp;		return parse(in, baseURI, dataFormat, settings, valueFactory, errors, new DynamicModelFactory(), contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from an {@link InputStream} to a {@link Model}, optionally to one or more named contexts.
+&nbsp;	 *
+&nbsp;	 * @param in           An InputStream from which RDF data can be read.
+&nbsp;	 * @param baseURI      The base URI to resolve any relative URIs that are in the data against. May be
+&nbsp;	 *                     &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @param dataFormat   The serialization format of the data.
+&nbsp;	 * @param settings     The {@link ParserConfig} containing settings for configuring the parser.
+&nbsp;	 * @param valueFactory The {@link ValueFactory} used by the parser to create statements.
+&nbsp;	 * @param errors       The {@link ParseErrorListener} used by the parser to signal errors, including errors that do
+&nbsp;	 *                     not generate an {@link RDFParseException}.
+&nbsp;	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
+&nbsp;	 * @param contexts     The contexts to add the data to. If one or more contexts are supplied the method ignores
+&nbsp;	 *                     contextual information in the actual data. If no contexts are supplied the contextual
+&nbsp;	 *                     information in the input stream is used, if no context information is available the data is
+&nbsp;	 *                     added without any context.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 */
+&nbsp;	public static Model parse(InputStream in, String baseURI, RDFFormat dataFormat, ParserConfig settings,
+&nbsp;			ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		Model result = modelFactory.createEmptyModel();</b>
+<b class="nc">&nbsp;		RDFParser parser = createParser(dataFormat, valueFactory);</b>
+<b class="nc">&nbsp;		parser.setParserConfig(settings);</b>
+<b class="nc">&nbsp;		parser.setParseErrorListener(errors);</b>
+<b class="nc">&nbsp;		parser.setRDFHandler(new ContextStatementCollector(result, valueFactory, contexts));</b>
+&nbsp;		// DynamicModel and ContextStatementCollector should not throw
+&nbsp;		// RDFHandlerException exceptions
+<b class="nc">&nbsp;		parser.parse(in, baseURI);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts. &lt;b&gt;Note: using
+&nbsp;	 * a Reader to upload byte-based data means that you have to be careful not to destroy the data&#39;s character encoding
+&nbsp;	 * by enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is
+&nbsp;	 * to be preferred.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @param reader     A Reader from which RDF data can be read.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
+&nbsp;	 *                   these contexts, ignoring any context information in the data itself.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 */
+&nbsp;	public static Model parse(Reader reader, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parse(reader, null, dataFormat, new ParserConfig(), SimpleValueFactory.getInstance(),</b>
+&nbsp;				new ParseErrorLogger(), contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts. &lt;b&gt;Note: using
+&nbsp;	 * a Reader to upload byte-based data means that you have to be careful not to destroy the data&#39;s character encoding
+&nbsp;	 * by enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is
+&nbsp;	 * to be preferred.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @param reader     A Reader from which RDF data can be read.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param settings   The {@link ParserConfig} containing settings for configuring the parser.
+&nbsp;	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
+&nbsp;	 *                   these contexts, ignoring any context information in the data itself.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 *
+&nbsp;	 * @since 4.0.0
+&nbsp;	 */
+&nbsp;	public static Model parse(Reader reader, RDFFormat dataFormat, ParserConfig settings, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parse(reader, null, dataFormat, settings, SimpleValueFactory.getInstance(),</b>
+&nbsp;				new ParseErrorLogger(), contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts. &lt;b&gt;Note: using
+&nbsp;	 * a Reader to upload byte-based data means that you have to be careful not to destroy the data&#39;s character encoding
+&nbsp;	 * by enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is
+&nbsp;	 * to be preferred.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @param reader     A Reader from which RDF data can be read.
+&nbsp;	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. May be
+&nbsp;	 *                   &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
+&nbsp;	 *                   these contexts, ignoring any context information in the data itself.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 */
+&nbsp;	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parse(reader, baseURI, dataFormat, new ParserConfig(), SimpleValueFactory.getInstance(),</b>
+&nbsp;				new ParseErrorLogger(), contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts. &lt;b&gt;Note: using
+&nbsp;	 * a Reader to upload byte-based data means that you have to be careful not to destroy the data&#39;s character encoding
+&nbsp;	 * by enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is
+&nbsp;	 * to be preferred.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @param reader       A Reader from which RDF data can be read.
+&nbsp;	 * @param baseURI      The base URI to resolve any relative URIs that are in the data against. May be
+&nbsp;	 *                     &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @param dataFormat   The serialization format of the data.
+&nbsp;	 * @param settings     The {@link ParserConfig} containing settings for configuring the parser.
+&nbsp;	 * @param valueFactory The {@link ValueFactory} used by the parser to create statements.
+&nbsp;	 * @param errors       The {@link ParseErrorListener} used by the parser to signal errors, including errors that do
+&nbsp;	 *                     not generate an {@link RDFParseException}.
+&nbsp;	 * @param contexts     The contexts to add the data to. If one or more contexts are specified the data is added to
+&nbsp;	 *                     these contexts, ignoring any context information in the data itself.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 */
+&nbsp;	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
+&nbsp;			ValueFactory valueFactory, ParseErrorListener errors, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+&nbsp;
+<b class="nc">&nbsp;		return parse(reader, baseURI, dataFormat, settings, valueFactory, errors, new DynamicModelFactory(), contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds RDF data from a {@link Reader} to a {@link Model}, optionally to one or more named contexts. &lt;b&gt;Note: using
+&nbsp;	 * a Reader to upload byte-based data means that you have to be careful not to destroy the data&#39;s character encoding
+&nbsp;	 * by enforcing a default character encoding upon the bytes. If possible, adding such data using an InputStream is
+&nbsp;	 * to be preferred.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @param reader       A Reader from which RDF data can be read.
+&nbsp;	 * @param baseURI      The base URI to resolve any relative URIs that are in the data against. May be
+&nbsp;	 *                     &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @param dataFormat   The serialization format of the data.
+&nbsp;	 * @param settings     The {@link ParserConfig} containing settings for configuring the parser.
+&nbsp;	 * @param valueFactory The {@link ValueFactory} used by the parser to create statements.
+&nbsp;	 * @param errors       The {@link ParseErrorListener} used by the parser to signal errors, including errors that do
+&nbsp;	 *                     not generate an {@link RDFParseException}.
+&nbsp;	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
+&nbsp;	 * @param contexts     The contexts to add the data to. If one or more contexts are specified the data is added to
+&nbsp;	 *                     these contexts, ignoring any context information in the data itself.
+&nbsp;	 * @return A {@link Model} containing the parsed statements.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFParser} is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 */
+&nbsp;	public static Model parse(Reader reader, String baseURI, RDFFormat dataFormat, ParserConfig settings,
+&nbsp;			ValueFactory valueFactory, ParseErrorListener errors, ModelFactory modelFactory, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		Model result = modelFactory.createEmptyModel();</b>
+<b class="nc">&nbsp;		RDFParser parser = createParser(dataFormat, valueFactory);</b>
+<b class="nc">&nbsp;		parser.setParserConfig(settings);</b>
+<b class="nc">&nbsp;		parser.setParseErrorListener(errors);</b>
+<b class="nc">&nbsp;		parser.setRDFHandler(new ContextStatementCollector(result, valueFactory, contexts));</b>
+&nbsp;		// Model and ContextStatementCollector should not throw
+&nbsp;		// RDFHandlerException exceptions
+<b class="nc">&nbsp;		parser.parse(reader, baseURI);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link OutputStream} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link OutputStream} to write the statements to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, OutputStream output, RDFFormat dataFormat)
+&nbsp;			throws RDFHandlerException {
+<b class="nc">&nbsp;		write(model, output, dataFormat, new WriterConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link OutputStream} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link OutputStream} to write the statements to.
+&nbsp;	 * @param baseURI    The base URI to relativize IRIs against.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws URISyntaxException           If the baseURI is invalid
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, OutputStream output, String baseURI, RDFFormat dataFormat)
+&nbsp;			throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+<b class="nc">&nbsp;		write(model, output, baseURI, dataFormat, new WriterConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link Writer} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link Writer} to write the statements to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, Writer output, RDFFormat dataFormat)
+&nbsp;			throws RDFHandlerException {
+<b class="nc">&nbsp;		write(model, output, dataFormat, new WriterConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link Writer} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link Writer} to write the statements to.
+&nbsp;	 * @param baseURI    The base URI to relativize IRIs against.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws URISyntaxException           If the baseURI is invalid
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, Writer output, String baseURI, RDFFormat dataFormat)
+&nbsp;			throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+<b class="nc">&nbsp;		write(model, output, baseURI, dataFormat, new WriterConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link OutputStream} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link OutputStream} to write the statements to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @param settings   The {@link WriterConfig} containing settings for configuring the writer.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, OutputStream output, RDFFormat dataFormat,
+&nbsp;			WriterConfig settings) throws RDFHandlerException {
+<b class="nc">&nbsp;		final RDFWriter writer = Rio.createWriter(dataFormat, output);</b>
+<b class="nc">&nbsp;		writer.setWriterConfig(settings);</b>
+<b class="nc">&nbsp;		write(model, writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link OutputStream} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link OutputStream} to write the statements to.
+&nbsp;	 * @param baseURI    The base URI to relativize IRIs against.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @param settings   The {@link WriterConfig} containing settings for configuring the writer.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws URISyntaxException           If the baseURI is invalid
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, OutputStream output, String baseURI, RDFFormat dataFormat,
+&nbsp;			WriterConfig settings) throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+<b class="nc">&nbsp;		final RDFWriter writer = Rio.createWriter(dataFormat, output, baseURI);</b>
+<b class="nc">&nbsp;		writer.setWriterConfig(settings);</b>
+<b class="nc">&nbsp;		write(model, writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link Writer} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link Writer} to write the statements to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @param settings   The {@link WriterConfig} containing settings for configuring the writer.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, Writer output, RDFFormat dataFormat, WriterConfig settings)
+&nbsp;			throws RDFHandlerException {
+<b class="nc">&nbsp;		final RDFWriter writer = Rio.createWriter(dataFormat, output);</b>
+<b class="nc">&nbsp;		writer.setWriterConfig(settings);</b>
+<b class="nc">&nbsp;		write(model, writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link Writer} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model      A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param output     The {@link Writer} to write the statements to.
+&nbsp;	 * @param baseURI    The base URI to relativize IRIs against.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statements.
+&nbsp;	 * @param settings   The {@link WriterConfig} containing settings for configuring the writer.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statements.
+&nbsp;	 * @throws URISyntaxException           If the baseURI is invalid
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, Writer output, String baseURI, RDFFormat dataFormat,
+&nbsp;			WriterConfig settings) throws RDFHandlerException, UnsupportedRDFormatException, URISyntaxException {
+<b class="nc">&nbsp;		final RDFWriter writer = Rio.createWriter(dataFormat, output, baseURI);</b>
+<b class="nc">&nbsp;		writer.setWriterConfig(settings);</b>
+<b class="nc">&nbsp;		write(model, writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statements to the given {@link RDFHandler}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the collection is a {@link Model}, its namespaces will also be written.
+&nbsp;	 *
+&nbsp;	 * @param model  A collection of statements, such as a {@link Model}, to be written.
+&nbsp;	 * @param writer
+&nbsp;	 * @throws RDFHandlerException Thrown if there is an error writing the statements.
+&nbsp;	 */
+&nbsp;	public static void write(Iterable&lt;Statement&gt; model, RDFHandler writer) throws RDFHandlerException {
+<b class="nc">&nbsp;		writer.startRDF();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (model instanceof NamespaceAware) {</b>
+<b class="nc">&nbsp;			for (Namespace nextNamespace : ((NamespaceAware) model).getNamespaces()) {</b>
+<b class="nc">&nbsp;				writer.handleNamespace(nextNamespace.getPrefix(), nextNamespace.getName());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (final Statement st : model) {</b>
+<b class="nc">&nbsp;			writer.handleStatement(st);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		writer.endRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given statement to the given {@link OutputStream} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * @param st         The statement to be written.
+&nbsp;	 * @param output     The {@link OutputStream} to write the statement to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statement.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statement.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Statement st, OutputStream output, RDFFormat dataFormat) throws RDFHandlerException {
+<b class="nc">&nbsp;		write(st, output, dataFormat, new WriterConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given single statement to the given {@link OutputStream} in the given format.
+&nbsp;	 *
+&nbsp;	 * @param st         The statement to be written.
+&nbsp;	 * @param output     The {@link OutputStream} to write the statement to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statement.
+&nbsp;	 * @param settings   The {@link WriterConfig} containing setting for configuring the writer.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statement.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Statement st, OutputStream output, RDFFormat dataFormat, WriterConfig settings)
+&nbsp;			throws RDFHandlerException {
+<b class="nc">&nbsp;		final RDFWriter writer = Rio.createWriter(dataFormat, output);</b>
+<b class="nc">&nbsp;		writer.setWriterConfig(settings);</b>
+<b class="nc">&nbsp;		write(st, writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given single statement to the given {@link Writer} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * @param statement  A statement to be written.
+&nbsp;	 * @param output     The {@link Writer} to write the statement to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statement.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statement.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Statement statement, Writer output, RDFFormat dataFormat) throws RDFHandlerException {
+<b class="nc">&nbsp;		write(statement, output, dataFormat, new WriterConfig());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given single statement to the given {@link Writer} in the given format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * @param statement  A statement to be written.
+&nbsp;	 * @param output     The {@link Writer} to write the statement to.
+&nbsp;	 * @param dataFormat The {@link RDFFormat} to use when writing the statement.
+&nbsp;	 * @param settings   The {@link WriterConfig} containing settings for configuring the writer.
+&nbsp;	 * @throws RDFHandlerException          Thrown if there is an error writing the statement.
+&nbsp;	 * @throws UnsupportedRDFormatException If no {@link RDFWriter} is available for the specified RDF format.
+&nbsp;	 */
+&nbsp;	public static void write(Statement statement, Writer output, RDFFormat dataFormat, WriterConfig settings)
+&nbsp;			throws RDFHandlerException {
+<b class="nc">&nbsp;		final RDFWriter writer = Rio.createWriter(dataFormat, output);</b>
+<b class="nc">&nbsp;		writer.setWriterConfig(settings);</b>
+<b class="nc">&nbsp;		write(statement, writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the given single statement to the given {@link RDFHandler}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * @param statement A statement, to be written.
+&nbsp;	 * @param writer
+&nbsp;	 * @throws RDFHandlerException Thrown if there is an error writing the statement.
+&nbsp;	 */
+&nbsp;	public static void write(Statement statement, RDFHandler writer) throws RDFHandlerException {
+<b class="nc">&nbsp;		writer.startRDF();</b>
+<b class="nc">&nbsp;		writer.handleStatement(statement);</b>
+<b class="nc">&nbsp;		writer.endRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void main(String[] args)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException, UnsupportedRDFormatException {
+<b class="nc">&nbsp;		if (args.length &lt; 2) {</b>
+<b class="nc">&nbsp;			System.out.println(&quot;Usage: java org.eclipse.rdf4j.rio.Rio &lt;inputFile&gt; &lt;outputFile&gt;&quot;);</b>
+<b class="nc">&nbsp;			System.exit(1);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String inputFile = args[0];</b>
+<b class="nc">&nbsp;		String outputFile = args[1];</b>
+&nbsp;
+<b class="nc">&nbsp;		try (FileOutputStream outStream = new FileOutputStream(outputFile);</b>
+<b class="nc">&nbsp;				FileInputStream inStream = new FileInputStream(inputFile)) {</b>
+<b class="nc">&nbsp;			createParser(getParserFormatForFileName(inputFile).orElse(RDFFormat.RDFXML))</b>
+<b class="nc">&nbsp;					.setRDFHandler(</b>
+<b class="nc">&nbsp;							createWriter(getWriterFormatForFileName(outputFile).orElse(RDFFormat.RDFXML), outStream))</b>
+<b class="nc">&nbsp;					.parse(inStream, &quot;file:&quot; + inputFile);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Helper method to use to create a lambda for {@link Optional#orElseThrow(Supplier)} to indicate a format is
+&nbsp;	 * unsupported.
+&nbsp;	 *
+&nbsp;	 * @param unsupportedFormat The format that was not found.
+&nbsp;	 * @return A lambda that can be used to generate an exception if the format is not found.
+&nbsp;	 */
+&nbsp;	public static Supplier&lt;UnsupportedRDFormatException&gt; unsupportedFormat(RDFFormat unsupportedFormat) {
+<b class="fc">&nbsp;		return () -&gt; new UnsupportedRDFormatException(&quot;Did not recognise RDF format object &quot; + unsupportedFormat);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Helper method to use to create a lambda for {@link Optional#orElseThrow(Supplier)} to indicate a format is
+&nbsp;	 * unsupported.
+&nbsp;	 *
+&nbsp;	 * @param unsupportedFormat The format that was not found.
+&nbsp;	 * @return A lambda that can be used to generate an exception if the format is not found.
+&nbsp;	 */
+&nbsp;	public static Supplier&lt;UnsupportedRDFormatException&gt; unsupportedFormat(String unsupportedFormat) {
+<b class="fc">&nbsp;		return () -&gt; new UnsupportedRDFormatException(&quot;Did not recognise RDF format string &quot; + unsupportedFormat);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

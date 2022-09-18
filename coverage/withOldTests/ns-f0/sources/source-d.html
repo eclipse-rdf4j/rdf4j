@@ -1,0 +1,203 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SpinWellKnownFunctions</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spin</a>
+</div>
+
+<h1>Coverage Summary for Class: SpinWellKnownFunctions (org.eclipse.rdf4j.spin)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SpinWellKnownFunctions</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/49)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.spin;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FN;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SP;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+&nbsp;
+&nbsp;import com.google.common.collect.BiMap;
+&nbsp;import com.google.common.collect.HashBiMap;
+&nbsp;
+&nbsp;final class SpinWellKnownFunctions {
+&nbsp;
+<b class="nc">&nbsp;	private static final ValueFactory valueFactory = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final FunctionRegistry functionRegistry = FunctionRegistry.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;	static final SpinWellKnownFunctions INSTANCE = new SpinWellKnownFunctions();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final BiMap&lt;String, IRI&gt; stringToUri = HashBiMap.create(64);</b>
+&nbsp;
+<b class="nc">&nbsp;	private final BiMap&lt;IRI, String&gt; uriToString = stringToUri.inverse();</b>
+&nbsp;
+<b class="nc">&nbsp;	public SpinWellKnownFunctions() {</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.SUBSTRING.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;substr&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.SUBSTRING_BEFORE.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;strbefore&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.SUBSTRING_AFTER.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;strafter&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.STARTS_WITH.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;strstarts&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.ENDS_WITH.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;strends&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.STRING_LENGTH.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;strlen&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.CONCAT.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;concat&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.CONTAINS.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;contains&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.LOWER_CASE.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;lcase&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.UPPER_CASE.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;ucase&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.REPLACE.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;replace&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.NUMERIC_ABS.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;abs&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.NUMERIC_CEIL.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;ceil&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.NUMERIC_FLOOR.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;floor&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.NUMERIC_ROUND.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;round&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.YEAR_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;year&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.MONTH_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;month&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.DAY_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;day&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.HOURS_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;hours&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.MINUTES_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;minutes&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.SECONDS_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;seconds&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.TIMEZONE_FROM_DATETIME.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;timezone&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(FN.ENCODE_FOR_URI.stringValue(), valueFactory.createIRI(SP.NAMESPACE, &quot;encode_for_uri&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;NOW&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;now&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;RAND&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;rand&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;STRDT&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;strdt&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;STRLANG&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;strlang&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;TZ&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;tz&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;UUID&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;uuid&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;STRUUID&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;struuid&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;MD5&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;md5&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;SHA1&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;sha1&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;SHA256&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;sha256&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;SHA384&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;sha384&quot;));</b>
+<b class="nc">&nbsp;		stringToUri.put(&quot;SHA512&quot;, valueFactory.createIRI(SP.NAMESPACE, &quot;sha512&quot;));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getURI(String name) {
+<b class="nc">&nbsp;		IRI iri = stringToUri.get(name);</b>
+<b class="nc">&nbsp;		if (iri == null &amp;&amp; functionRegistry.has(name)) {</b>
+<b class="nc">&nbsp;			iri = valueFactory.createIRI(name);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return iri;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getName(IRI IRI) {
+<b class="nc">&nbsp;		String name = uriToString.get(IRI);</b>
+<b class="nc">&nbsp;		if (name == null &amp;&amp; functionRegistry.has(IRI.stringValue())) {</b>
+<b class="nc">&nbsp;			name = IRI.stringValue();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return name;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,224 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONLDInternalRDFParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.jsonld</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONLDInternalRDFParser (org.eclipse.rdf4j.rio.jsonld)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONLDInternalRDFParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.jsonld;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.NamespaceAware;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;
+&nbsp;import com.github.jsonldjava.core.JsonLdConsts;
+&nbsp;import com.github.jsonldjava.core.JsonLdError;
+&nbsp;import com.github.jsonldjava.core.RDFDataset;
+&nbsp;
+&nbsp;/**
+&nbsp; * A package private internal implementation class.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+<b class="nc">&nbsp;class JSONLDInternalRDFParser implements com.github.jsonldjava.core.RDFParser {</b>
+&nbsp;
+&nbsp;	public void setPrefix(RDFDataset result, String fullUri, String prefix) {
+<b class="nc">&nbsp;		result.setNamespace(fullUri, prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void handleStatement(RDFDataset result, Statement nextStatement) {
+&nbsp;		// TODO: from a basic look at the code it seems some of these could be
+&nbsp;		// null
+&nbsp;		// null values for IRIs will probably break things further down the line
+&nbsp;		// and i&#39;m not sure yet if this should be something handled later on, or
+&nbsp;		// something that should be checked here
+<b class="nc">&nbsp;		final String subject = getResourceValue(nextStatement.getSubject());</b>
+<b class="nc">&nbsp;		final String predicate = getResourceValue(nextStatement.getPredicate());</b>
+<b class="nc">&nbsp;		final Value object = nextStatement.getObject();</b>
+<b class="nc">&nbsp;		final String graphName = getResourceValue(nextStatement.getContext());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (object instanceof Literal) {</b>
+<b class="nc">&nbsp;			final Literal literal = (Literal) object;</b>
+<b class="nc">&nbsp;			final String value = literal.getLabel();</b>
+&nbsp;
+<b class="nc">&nbsp;			String datatype = getResourceValue(literal.getDatatype());</b>
+&nbsp;
+&nbsp;			// In RDF-1.1, Language Literals internally have the datatype
+&nbsp;			// rdf:langString
+<b class="nc">&nbsp;			if (literal.getLanguage().isPresent() &amp;&amp; datatype == null) {</b>
+<b class="nc">&nbsp;				datatype = RDF.LANGSTRING.stringValue();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// In RDF-1.1, RDF-1.0 Plain Literals are now Typed Literals with
+&nbsp;			// type xsd:String
+<b class="nc">&nbsp;			if (!literal.getLanguage().isPresent() &amp;&amp; datatype == null) {</b>
+<b class="nc">&nbsp;				datatype = XSD.STRING.stringValue();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			result.addQuad(subject, predicate, value, datatype, literal.getLanguage().orElse(null), graphName);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			result.addQuad(subject, predicate, getResourceValue((Resource) object), graphName);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getResourceValue(Resource subject) {
+<b class="nc">&nbsp;		if (subject == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="nc">&nbsp;		} else if (subject instanceof IRI) {</b>
+<b class="nc">&nbsp;			return subject.stringValue();</b>
+<b class="nc">&nbsp;		} else if (subject instanceof BNode) {</b>
+<b class="nc">&nbsp;			return JsonLdConsts.BLANK_NODE_PREFIX + subject.stringValue();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new IllegalStateException(&quot;Did not recognise resource type: &quot; + subject.getClass().getName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFDataset parse(Object input) throws JsonLdError {
+<b class="nc">&nbsp;		final RDFDataset result = new RDFDataset();</b>
+<b class="nc">&nbsp;		if (input instanceof Statement) {</b>
+<b class="nc">&nbsp;			handleStatement(result, (Statement) input);</b>
+<b class="nc">&nbsp;		} else if (input instanceof Model) {</b>
+<b class="nc">&nbsp;			if (input instanceof NamespaceAware) {</b>
+<b class="nc">&nbsp;				final Set&lt;Namespace&gt; namespaces = ((NamespaceAware) input).getNamespaces();</b>
+<b class="nc">&nbsp;				for (final Namespace nextNs : namespaces) {</b>
+<b class="nc">&nbsp;					result.setNamespace(nextNs.getName(), nextNs.getPrefix());</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (final Statement nextStatement : (Model) input) {</b>
+<b class="nc">&nbsp;				handleStatement(result, nextStatement);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

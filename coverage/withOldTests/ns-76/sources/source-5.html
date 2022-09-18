@@ -1,0 +1,196 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DAWGTestResultSetUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.dawg</a>
+</div>
+
+<h1>Coverage Summary for Class: DAWGTestResultSetUtil (org.eclipse.rdf4j.query.dawg)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DAWGTestResultSetUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.dawg;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.impl.TreeModel;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class DAWGTestResultSetUtil {</b>
+&nbsp;
+&nbsp;	public static TupleQueryResult toTupleQueryResult(Iterable&lt;? extends Statement&gt; dawgGraph)
+&nbsp;			throws DAWGTestResultSetParseException {
+<b class="nc">&nbsp;		TupleQueryResultBuilder tqrBuilder = new TupleQueryResultBuilder();</b>
+<b class="nc">&nbsp;		DAWGTestResultSetParser parser = new DAWGTestResultSetParser(tqrBuilder);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			parser.startRDF();</b>
+<b class="nc">&nbsp;			for (Statement st : dawgGraph) {</b>
+<b class="nc">&nbsp;				parser.handleStatement(st);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			parser.endRDF();</b>
+&nbsp;
+<b class="nc">&nbsp;			return tqrBuilder.getQueryResult();</b>
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			throw new DAWGTestResultSetParseException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Model toGraph(TupleQueryResult tqr) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Model graph = new TreeModel();</b>
+<b class="nc">&nbsp;		DAWGTestResultSetWriter writer = new DAWGTestResultSetWriter(new StatementCollector(graph));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			writer.startQueryResult(tqr.getBindingNames());</b>
+<b class="nc">&nbsp;			while (tqr.hasNext()) {</b>
+<b class="nc">&nbsp;				writer.handleSolution(tqr.next());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writer.endQueryResult();</b>
+<b class="nc">&nbsp;		} catch (TupleQueryResultHandlerException e) {</b>
+&nbsp;			// No exceptions expected from DAWGTestResultSetWriter or
+&nbsp;			// StatementCollector, foud a bug?
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return graph;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean toBooleanQueryResult(Iterable&lt;? extends Statement&gt; dawgGraph)
+&nbsp;			throws DAWGTestResultSetParseException {
+<b class="nc">&nbsp;		DAWGTestBooleanParser parser = new DAWGTestBooleanParser();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			parser.startRDF();</b>
+<b class="nc">&nbsp;			for (Statement st : dawgGraph) {</b>
+<b class="nc">&nbsp;				parser.handleStatement(st);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			parser.endRDF();</b>
+&nbsp;
+<b class="nc">&nbsp;			return parser.getValue();</b>
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			throw new DAWGTestResultSetParseException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

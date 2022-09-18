@@ -1,0 +1,112 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AggregateFunctionFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql.aggregate</a>
+</div>
+
+<h1>Coverage Summary for Class: AggregateFunctionFactory (org.eclipse.rdf4j.query.parser.sparql.aggregate)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">AggregateFunctionFactory</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql.aggregate;
+&nbsp;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * Factory for a registered {@link AggregateFunction} that is evaluated in the same fashion as standard aggregate
+&nbsp; * functions e.g.{@link org.eclipse.rdf4j.query.algebra.Sum} &amp; {@link org.eclipse.rdf4j.query.algebra.Count}
+&nbsp; *
+&nbsp; * @author Tomas Kovachev t.kovachev1996@gmail.com
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;public interface AggregateFunctionFactory {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the identifier associated with given function
+&nbsp;	 */
+&nbsp;	String getIri();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Builds an aggregate function with input evaluation step
+&nbsp;	 *
+&nbsp;	 * @param evaluationStep used to process values from an iterator&#39;s binding set
+&nbsp;	 * @return an aggregate function evaluator
+&nbsp;	 */
+&nbsp;	AggregateFunction buildFunction(Function&lt;BindingSet, Value&gt; evaluationStep);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return result collector associated with given function type
+&nbsp;	 */
+&nbsp;	AggregateCollector getCollector();
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

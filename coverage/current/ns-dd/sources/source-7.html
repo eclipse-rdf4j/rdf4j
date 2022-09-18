@@ -1,0 +1,606 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TargetChainRetriever</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.targets</a>
+</div>
+
+<h1>Coverage Summary for Class: TargetChainRetriever (org.eclipse.rdf4j.sail.shacl.ast.targets)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TargetChainRetriever</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TargetChainRetriever$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/70)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/94)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TargetChainRetriever$1$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/114)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/153)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.targets;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.StreamSupport;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleBinding;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserFactory;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LoggingCloseableIteration;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeHelper;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SimpleBindingSet;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingletonBindingSet;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Used to run the query that represents the target and sets the bindings based on values that match the statement
+&nbsp; * patterns from the added/removed sail connection
+&nbsp; */
+&nbsp;public class TargetChainRetriever implements PlanNode {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(TargetChainRetriever.class);</b>
+&nbsp;
+&nbsp;	private static final int BULK_SIZE = 1000;
+&nbsp;
+&nbsp;	private final ConnectionsGroup connectionsGroup;
+&nbsp;	private final List&lt;StatementMatcher&gt; statementMatchers;
+&nbsp;	private final List&lt;StatementMatcher&gt; removedStatementMatchers;
+&nbsp;	private final String queryFragment;
+&nbsp;	private final QueryParserFactory queryParserFactory;
+&nbsp;	private final ConstraintComponent.Scope scope;
+&nbsp;	private final Resource[] dataGraph;
+&nbsp;	private final Dataset dataset;
+&nbsp;	private final Set&lt;String&gt; varNames;
+&nbsp;	private final String sparqlProjection;
+&nbsp;
+&nbsp;	private StackTraceElement[] stackTrace;
+&nbsp;	private ValidationExecutionLogger validationExecutionLogger;
+&nbsp;
+&nbsp;	public TargetChainRetriever(ConnectionsGroup connectionsGroup,
+&nbsp;			Resource[] dataGraph, List&lt;StatementMatcher&gt; statementMatchers,
+&nbsp;			List&lt;StatementMatcher&gt; removedStatementMatchers, String queryFragment,
+<b class="nc">&nbsp;			List&lt;StatementMatcher.Variable&gt; vars, ConstraintComponent.Scope scope) {</b>
+<b class="nc">&nbsp;		this.connectionsGroup = connectionsGroup;</b>
+<b class="nc">&nbsp;		this.dataGraph = dataGraph;</b>
+<b class="nc">&nbsp;		this.varNames = vars.stream().map(StatementMatcher.Variable::getName).collect(Collectors.toSet());</b>
+&nbsp;
+<b class="nc">&nbsp;		this.dataset = PlanNodeHelper.asDefaultGraphDataset(this.dataGraph);</b>
+<b class="nc">&nbsp;		this.statementMatchers = StatementMatcher.reduce(varNames, statementMatchers);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.scope = scope;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.sparqlProjection = vars.stream()</b>
+<b class="nc">&nbsp;				.map(StatementMatcher.Variable::asSparqlVariable)</b>
+<b class="nc">&nbsp;				.reduce((a, b) -&gt; a + &quot; &quot; + b)</b>
+<b class="nc">&nbsp;				.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.queryFragment = StatementMatcher.StableRandomVariableProvider.normalize(queryFragment);</b>
+&nbsp;
+&nbsp;//		this.stackTrace = Thread.currentThread().getStackTrace();
+&nbsp;
+<b class="nc">&nbsp;		queryParserFactory = QueryParserRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(QueryLanguage.SPARQL)</b>
+<b class="nc">&nbsp;				.get();</b>
+&nbsp;
+<b class="nc">&nbsp;		this.removedStatementMatchers = removedStatementMatchers != null</b>
+<b class="nc">&nbsp;				? StatementMatcher.reduce(varNames, removedStatementMatchers)</b>
+<b class="nc">&nbsp;				: Collections.emptyList();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator() {
+&nbsp;
+<b class="nc">&nbsp;		return new LoggingCloseableIteration(this, validationExecutionLogger) {</b>
+&nbsp;
+<b class="nc">&nbsp;			final Iterator&lt;StatementMatcher&gt; statementPatternIterator = statementMatchers.iterator();</b>
+<b class="nc">&nbsp;			final Iterator&lt;StatementMatcher&gt; removedStatementIterator = removedStatementMatchers.iterator();</b>
+&nbsp;
+&nbsp;			StatementMatcher currentStatementMatcher;
+&nbsp;			CloseableIteration&lt;? extends Statement, SailException&gt; statements;
+&nbsp;			ValidationTuple next;
+&nbsp;
+&nbsp;			CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; results;
+&nbsp;
+&nbsp;			ParsedQuery parsedQuery;
+&nbsp;
+<b class="nc">&nbsp;			private final List&lt;BindingSet&gt; bulk = new ArrayList&lt;&gt;(BULK_SIZE);</b>
+&nbsp;
+&nbsp;			public void calculateNextStatementMatcher() {
+<b class="nc">&nbsp;				if (statements != null &amp;&amp; statements.hasNext()) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (!statementPatternIterator.hasNext() &amp;&amp; !removedStatementIterator.hasNext()) {</b>
+<b class="nc">&nbsp;					if (statements != null) {</b>
+<b class="nc">&nbsp;						statements.close();</b>
+<b class="nc">&nbsp;						statements = null;</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+&nbsp;				do {
+<b class="nc">&nbsp;					if (statements != null) {</b>
+<b class="nc">&nbsp;						statements.close();</b>
+<b class="nc">&nbsp;						statements = null;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (!statementPatternIterator.hasNext() &amp;&amp; !removedStatementIterator.hasNext()) {</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					SailConnection connection;
+&nbsp;
+<b class="nc">&nbsp;					if (statementPatternIterator.hasNext()) {</b>
+<b class="nc">&nbsp;						currentStatementMatcher = statementPatternIterator.next();</b>
+<b class="nc">&nbsp;						connection = connectionsGroup.getAddedStatements();</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						if (!connectionsGroup.getStats().hasRemoved()) {</b>
+<b class="nc">&nbsp;							break;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						currentStatementMatcher = removedStatementIterator.next();</b>
+<b class="nc">&nbsp;						connection = connectionsGroup.getRemovedStatements();</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					statements = connection.getStatements(</b>
+<b class="nc">&nbsp;							currentStatementMatcher.getSubjectValue(),</b>
+<b class="nc">&nbsp;							currentStatementMatcher.getPredicateValue(),</b>
+<b class="nc">&nbsp;							currentStatementMatcher.getObjectValue(), false, dataGraph);</b>
+&nbsp;
+<b class="nc">&nbsp;				} while (!statements.hasNext());</b>
+&nbsp;
+<b class="nc">&nbsp;				parsedQuery = null;</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			private void calculateNextResult() {
+<b class="nc">&nbsp;				if (next != null) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				while (results == null || !results.hasNext()) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						if (results != null) {</b>
+<b class="nc">&nbsp;							results.close();</b>
+<b class="nc">&nbsp;							results = null;</b>
+&nbsp;
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						while (statements == null || !statements.hasNext()) {</b>
+<b class="nc">&nbsp;							calculateNextStatementMatcher();</b>
+<b class="nc">&nbsp;							if (statements == null) {</b>
+&nbsp;								return;
+&nbsp;							}
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						if (parsedQuery == null) {</b>
+<b class="nc">&nbsp;							String query = &quot;select &quot; + sparqlProjection + &quot; where {\n&quot; +</b>
+<b class="nc">&nbsp;									currentStatementMatcher.getSparqlValuesDecl() +</b>
+&nbsp;									queryFragment + &quot;\n&quot; +
+&nbsp;									&quot;}&quot;;
+&nbsp;
+<b class="nc">&nbsp;							parsedQuery = queryParserFactory.getParser().parseQuery(query, null);</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						Set&lt;String&gt; varNames = currentStatementMatcher.getVarNames();</b>
+&nbsp;
+<b class="nc">&nbsp;						List&lt;BindingSet&gt; bulk = readStatementsInBulk(varNames);</b>
+&nbsp;
+<b class="nc">&nbsp;						setBindings(varNames, bulk);</b>
+&nbsp;
+<b class="nc">&nbsp;						results = connectionsGroup.getBaseConnection()</b>
+<b class="nc">&nbsp;								.evaluate(parsedQuery.getTupleExpr(), dataset,</b>
+<b class="nc">&nbsp;										EmptyBindingSet.getInstance(), true);</b>
+&nbsp;
+<b class="nc">&nbsp;					} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;						logger.error(&quot;Malformed query:\n{}&quot;, queryFragment);</b>
+<b class="nc">&nbsp;						throw e;</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (results.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet nextBinding = results.next();</b>
+&nbsp;
+<b class="nc">&nbsp;					if (nextBinding.size() == 1) {</b>
+<b class="nc">&nbsp;						Iterator&lt;Binding&gt; iterator = nextBinding.iterator();</b>
+<b class="nc">&nbsp;						if (iterator.hasNext()) {</b>
+<b class="nc">&nbsp;							next = new ValidationTuple(iterator.next().getValue(), scope, false, dataGraph);</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							next = new ValidationTuple((Value) null, scope, false, dataGraph);</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} else {</b>
+<b class="nc">&nbsp;						Value[] values = StreamSupport.stream(nextBinding.spliterator(), false)</b>
+<b class="nc">&nbsp;								.sorted(Comparator.comparing(Binding::getName))</b>
+<b class="nc">&nbsp;								.map(Binding::getValue)</b>
+<b class="nc">&nbsp;								.toArray(Value[]::new);</b>
+<b class="nc">&nbsp;						next = new ValidationTuple(values, scope, false, dataGraph);</b>
+&nbsp;
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			private List&lt;BindingSet&gt; readStatementsInBulk(Set&lt;String&gt; varNames) {
+<b class="nc">&nbsp;				bulk.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;				for (int i = 0; i &lt; BULK_SIZE &amp;&amp; statements.hasNext(); i++) {</b>
+<b class="nc">&nbsp;					Statement next = statements.next();</b>
+&nbsp;
+<b class="nc">&nbsp;					Binding[] bindings = new Binding[varNames.size()];</b>
+<b class="nc">&nbsp;					int j = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (currentStatementMatcher.getSubjectValue() == null</b>
+<b class="nc">&nbsp;							&amp;&amp; currentStatementMatcher.getSubjectName() != null) {</b>
+<b class="nc">&nbsp;						bindings[j++] = new SimpleBinding(currentStatementMatcher.getSubjectName(), next.getSubject());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (currentStatementMatcher.getPredicateValue() == null</b>
+<b class="nc">&nbsp;							&amp;&amp; currentStatementMatcher.getPredicateName() != null) {</b>
+<b class="nc">&nbsp;						bindings[j++] = new SimpleBinding(currentStatementMatcher.getPredicateName(),</b>
+<b class="nc">&nbsp;								next.getPredicate());</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (currentStatementMatcher.getObjectValue() == null</b>
+<b class="nc">&nbsp;							&amp;&amp; currentStatementMatcher.getObjectName() != null) {</b>
+<b class="nc">&nbsp;						bindings[j++] = new SimpleBinding(currentStatementMatcher.getObjectName(), next.getObject());</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (bindings.length == 1) {</b>
+<b class="nc">&nbsp;						bulk.add(new SingletonBindingSet(bindings[0].getName(), bindings[0].getValue()));</b>
+&nbsp;
+&nbsp;					} else {
+<b class="nc">&nbsp;						bulk.add(new SimpleBindingSet(varNames, bindings));</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+<b class="nc">&nbsp;				return bulk;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			private void setBindings(Set&lt;String&gt; varNames, List&lt;BindingSet&gt; bulk) {
+<b class="nc">&nbsp;				parsedQuery.getTupleExpr()</b>
+<b class="nc">&nbsp;						.visit(new AbstractSimpleQueryModelVisitor&lt;&gt;(false) {</b>
+&nbsp;							@Override
+&nbsp;							public void meet(BindingSetAssignment node) {
+<b class="nc">&nbsp;								Set&lt;String&gt; bindingNames = node.getBindingNames();</b>
+<b class="nc">&nbsp;								if (bindingNames.equals(varNames)) {</b>
+<b class="nc">&nbsp;									node.setBindingSets(bulk);</b>
+&nbsp;								}
+<b class="nc">&nbsp;								super.meet(node);</b>
+&nbsp;							}
+&nbsp;
+&nbsp;						});
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void localClose() throws SailException {
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					if (statements != null) {</b>
+<b class="nc">&nbsp;						statements.close();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					if (results != null) {</b>
+<b class="nc">&nbsp;						results.close();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected ValidationTuple loggingNext() throws SailException {
+<b class="nc">&nbsp;				calculateNextResult();</b>
+&nbsp;
+<b class="nc">&nbsp;				ValidationTuple temp = next;</b>
+<b class="nc">&nbsp;				next = null;</b>
+&nbsp;
+<b class="nc">&nbsp;				return temp;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected boolean localHasNext() throws SailException {
+<b class="nc">&nbsp;				calculateNextResult();</b>
+&nbsp;
+<b class="nc">&nbsp;				return next != null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean bindingsEquivalent(StatementMatcher currentStatementMatcher, MapBindingSet bindings,
+&nbsp;			MapBindingSet previousBindings) {
+<b class="nc">&nbsp;		if (currentStatementMatcher == null || bindings == null || previousBindings == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		boolean equivalent = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (equivalent &amp;&amp; currentStatementMatcher.getSubjectValue() == null</b>
+<b class="nc">&nbsp;				&amp;&amp; !currentStatementMatcher.subjectIsWildcard()) {</b>
+<b class="nc">&nbsp;			equivalent = Objects.equals(bindings.getBinding(currentStatementMatcher.getSubjectName()),</b>
+<b class="nc">&nbsp;					previousBindings.getBinding(currentStatementMatcher.getSubjectName()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (equivalent &amp;&amp; currentStatementMatcher.getPredicateValue() == null</b>
+<b class="nc">&nbsp;				&amp;&amp; !currentStatementMatcher.predicateIsWildcard()) {</b>
+<b class="nc">&nbsp;			equivalent = Objects.equals(bindings.getBinding(currentStatementMatcher.getPredicateName()),</b>
+<b class="nc">&nbsp;					previousBindings.getBinding(currentStatementMatcher.getPredicateName()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (equivalent &amp;&amp; currentStatementMatcher.getObjectValue() == null</b>
+<b class="nc">&nbsp;				&amp;&amp; !currentStatementMatcher.objectIsWildcard()) {</b>
+<b class="nc">&nbsp;			equivalent = Objects.equals(bindings.getBinding(currentStatementMatcher.getObjectName()),</b>
+<b class="nc">&nbsp;					previousBindings.getBinding(currentStatementMatcher.getObjectName()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return equivalent;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int depth() {
+<b class="nc">&nbsp;		return 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void getPlanAsGraphvizDot(StringBuilder stringBuilder) {
+&nbsp;
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return System.identityHashCode(this) + &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void receiveLogger(ValidationExecutionLogger validationExecutionLogger) {
+<b class="nc">&nbsp;		this.validationExecutionLogger = validationExecutionLogger;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean producesSorted() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean requiresSorted() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		TargetChainRetriever that = (TargetChainRetriever) o;</b>
+<b class="nc">&nbsp;		return statementMatchers.equals(that.statementMatchers) &amp;&amp;</b>
+<b class="nc">&nbsp;				removedStatementMatchers.equals(that.removedStatementMatchers) &amp;&amp;</b>
+<b class="nc">&nbsp;				queryFragment.equals(that.queryFragment) &amp;&amp;</b>
+<b class="nc">&nbsp;				Objects.equals(dataset, that.dataset) &amp;&amp;</b>
+&nbsp;				scope == that.scope;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(statementMatchers, removedStatementMatchers, queryFragment, scope, dataset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;TargetChainRetriever{&quot; +</b>
+&nbsp;				&quot;statementPatterns=&quot; + statementMatchers +
+&nbsp;				&quot;, removedStatementMatchers=&quot; + removedStatementMatchers +
+<b class="nc">&nbsp;				&quot;, query=&#39;&quot; + queryFragment.replace(&quot;\n&quot;, &quot;\t&quot;) + &#39;\&#39;&#39; +</b>
+&nbsp;				&quot;, scope=&quot; + scope +
+&nbsp;				&#39;}&#39;;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

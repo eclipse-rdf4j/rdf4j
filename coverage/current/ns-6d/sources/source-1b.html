@@ -1,0 +1,2271 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StrictEvaluationStrategy</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: StrictEvaluationStrategy (org.eclipse.rdf4j.query.algebra.evaluation.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StrictEvaluationStrategy</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.1%
+  </span>
+  <span class="absValue">
+    (89/141)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.4%
+  </span>
+  <span class="absValue">
+    (283/520)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    59%
+  </span>
+  <span class="absValue">
+    (486/824)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">StrictEvaluationStrategy$QueryRootQueryEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">StrictEvaluationStrategy$ResultSizeCountingIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">StrictEvaluationStrategy$TimedIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    59.3%
+  </span>
+  <span class="absValue">
+    (89/150)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.4%
+  </span>
+  <span class="absValue">
+    (283/520)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.2%
+  </span>
+  <span class="absValue">
+    (486/850)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.function.BiFunction;
+&nbsp;import java.util.function.Consumer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ReducedIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Coalesce;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAll;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAny;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Group;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.In;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsResource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Label;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LangMatches;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Like;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LocalName;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Namespace;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Slice;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TripleRef;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RdfStarQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValueEvaluationStepSupplier;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ReificationRdfStarQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ZeroLengthPathEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.util.UUIDable;
+&nbsp;
+&nbsp;import com.google.common.base.Stopwatch;
+&nbsp;
+&nbsp;/**
+&nbsp; * Minimally-conforming SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given
+&nbsp; * {@link TripleSource}, optionally using the given {@link Dataset}.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author James Leigh
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author David Huynh
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see ExtendedEvaluationStrategy
+&nbsp; */
+&nbsp;public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient, UUIDable {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	protected final TripleSource tripleSource;
+&nbsp;
+&nbsp;	protected final Dataset dataset;
+&nbsp;
+&nbsp;	protected FederatedServiceResolver serviceResolver;
+&nbsp;
+&nbsp;	// shared return value for successive calls of the NOW() function within the
+&nbsp;	// same query. Will be reset upon each new query being evaluated. See
+&nbsp;	// SES-869.
+&nbsp;	private Literal sharedValueOfNow;
+&nbsp;
+&nbsp;	private final long iterationCacheSyncThreshold;
+&nbsp;
+&nbsp;	// track the results size that each node in the query plan produces during execution
+&nbsp;	private boolean trackResultSize;
+&nbsp;
+&nbsp;	// track the exeution time of each node in the plan
+&nbsp;	private boolean trackTime;
+&nbsp;
+&nbsp;	private UUID uuid;
+&nbsp;
+&nbsp;	private QueryOptimizerPipeline pipeline;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public StrictEvaluationStrategy(TripleSource tripleSource, FederatedServiceResolver serviceResolver) {
+<b class="nc">&nbsp;		this(tripleSource, null, serviceResolver);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+&nbsp;			FederatedServiceResolver serviceResolver) {
+<b class="nc">&nbsp;		this(tripleSource, dataset, serviceResolver, 0, new EvaluationStatistics());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+&nbsp;			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+&nbsp;			EvaluationStatistics evaluationStatistics) {
+<b class="nc">&nbsp;		this(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics, false);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public StrictEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+&nbsp;			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+<b class="fc">&nbsp;			EvaluationStatistics evaluationStatistics, boolean trackResultSize) {</b>
+<b class="fc">&nbsp;		this.tripleSource = tripleSource;</b>
+<b class="fc">&nbsp;		this.dataset = dataset;</b>
+<b class="fc">&nbsp;		this.serviceResolver = serviceResolver;</b>
+<b class="fc">&nbsp;		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;</b>
+<b class="fc">&nbsp;		this.pipeline = new StandardQueryOptimizerPipeline(this, tripleSource, evaluationStatistics);</b>
+<b class="fc">&nbsp;		this.trackResultSize = trackResultSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true, since = &quot;4.0.0&quot;)
+&nbsp;	@Override
+&nbsp;	synchronized public UUID getUUID() {
+<b class="nc">&nbsp;		if (uuid == null) {</b>
+<b class="nc">&nbsp;			uuid = UUID.randomUUID();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return uuid;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+<b class="fc">&nbsp;		serviceResolver = resolver;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return serviceResolver.getService(serviceUrl);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+<b class="nc">&nbsp;		Objects.requireNonNull(pipeline);</b>
+<b class="nc">&nbsp;		this.pipeline = pipeline;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Execute the {@link QueryOptimizerPipeline} on the given {@link TupleExpr} to optimize its execution plan.
+&nbsp;	 *
+&nbsp;	 * @param expr                 the {@link TupleExpr} to optimize.
+&nbsp;	 * @param evaluationStatistics this param is ignored!
+&nbsp;	 * @param bindings             a-priori bindings supplied for the query, which can potentially be inlined.
+&nbsp;	 * @return the optimized {@link TupleExpr}.
+&nbsp;	 * @see #setOptimizerPipeline(QueryOptimizerPipeline)
+&nbsp;	 * @since 3.0
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+&nbsp;
+<b class="fc">&nbsp;		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {</b>
+<b class="fc">&nbsp;			optimizer.optimize(expr, dataset, bindings);</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return expr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(TupleExpr expr, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; ret;
+&nbsp;
+<b class="fc">&nbsp;		if (expr instanceof StatementPattern) {</b>
+<b class="fc">&nbsp;			ret = evaluate((StatementPattern) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof UnaryTupleOperator) {</b>
+<b class="nc">&nbsp;			ret = evaluate((UnaryTupleOperator) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof BinaryTupleOperator) {</b>
+<b class="fc">&nbsp;			ret = evaluate((BinaryTupleOperator) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof SingletonSet) {</b>
+<b class="nc">&nbsp;			ret = evaluate((SingletonSet) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			ret = evaluate((EmptySet) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof ZeroLengthPath) {</b>
+<b class="fc">&nbsp;			ret = evaluate((ZeroLengthPath) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof ArbitraryLengthPath) {</b>
+<b class="fc">&nbsp;			ret = evaluate((ArbitraryLengthPath) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof BindingSetAssignment) {</b>
+<b class="nc">&nbsp;			ret = evaluate((BindingSetAssignment) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof TripleRef) {</b>
+<b class="nc">&nbsp;			ret = evaluate((TripleRef) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unsupported tuple expr type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (trackTime) {</b>
+&nbsp;			// set resultsSizeActual to at least be 0 so we can track iterations that don&#39;t procude anything
+<b class="nc">&nbsp;			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));</b>
+<b class="nc">&nbsp;			ret = new TimedIterator(ret, expr);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (trackResultSize) {</b>
+&nbsp;			// set resultsSizeActual to at least be 0 so we can track iterations that don&#39;t procude anything
+<b class="nc">&nbsp;			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));</b>
+<b class="nc">&nbsp;			ret = new ResultSizeCountingIterator(ret, expr);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return ret;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryEvaluationStep precompile(TupleExpr expr) {
+<b class="fc">&nbsp;		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory());</b>
+<b class="fc">&nbsp;		if (expr instanceof QueryRoot) {</b>
+<b class="fc">&nbsp;			String[] allVariables = ArrayBindingBasedQueryEvaluationContext</b>
+<b class="fc">&nbsp;					.findAllVariablesUsedInQuery((QueryRoot) expr);</b>
+<b class="fc">&nbsp;			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return precompile(expr, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+&nbsp;		QueryEvaluationStep ret;
+&nbsp;
+<b class="fc">&nbsp;		if (expr instanceof StatementPattern) {</b>
+<b class="fc">&nbsp;			ret = prepare((StatementPattern) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof UnaryTupleOperator) {</b>
+<b class="fc">&nbsp;			ret = prepare((UnaryTupleOperator) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof BinaryTupleOperator) {</b>
+<b class="fc">&nbsp;			ret = prepare((BinaryTupleOperator) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof SingletonSet) {</b>
+<b class="fc">&nbsp;			ret = prepare((SingletonSet) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof EmptySet) {</b>
+<b class="fc">&nbsp;			ret = prepare((EmptySet) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof ZeroLengthPath) {</b>
+<b class="fc">&nbsp;			ret = prepare((ZeroLengthPath) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof ArbitraryLengthPath) {</b>
+<b class="fc">&nbsp;			ret = prepare((ArbitraryLengthPath) expr, context);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof BindingSetAssignment) {</b>
+<b class="fc">&nbsp;			ret = prepare((BindingSetAssignment) expr, context);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof TripleRef) {</b>
+<b class="nc">&nbsp;			ret = prepare((TripleRef) expr, context);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unsupported tuple expr type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (ret != null) {</b>
+<b class="pc">&nbsp;			if (trackTime) {</b>
+<b class="nc">&nbsp;				ret = trackTime(expr, ret);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (trackResultSize) {</b>
+<b class="nc">&nbsp;				ret = trackResultSize(expr, ret);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return ret;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return EvaluationStrategy.super.precompile(expr, context);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
+<b class="nc">&nbsp;		return QueryEvaluationStep.wrap(qes, (iter) -&gt; {</b>
+<b class="nc">&nbsp;			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));</b>
+<b class="nc">&nbsp;			return new ResultSizeCountingIterator(iter, expr);</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
+<b class="nc">&nbsp;		return QueryEvaluationStep.wrap(qes, (iter) -&gt; {</b>
+<b class="nc">&nbsp;			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));</b>
+<b class="nc">&nbsp;			return new TimedIterator(iter, expr);</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(ArbitraryLengthPath alp,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return precompile(alp).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		final Scope scope = alp.getScope();</b>
+<b class="fc">&nbsp;		final Var subjectVar = alp.getSubjectVar();</b>
+<b class="fc">&nbsp;		final TupleExpr pathExpression = alp.getPathExpression();</b>
+<b class="fc">&nbsp;		final Var objVar = alp.getObjectVar();</b>
+<b class="fc">&nbsp;		final Var contextVar = alp.getContextVar();</b>
+<b class="fc">&nbsp;		final long minLength = alp.getMinLength();</b>
+<b class="fc">&nbsp;		return bindings -&gt; new PathIteration(StrictEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,</b>
+&nbsp;				contextVar, minLength, bindings);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(ZeroLengthPath zlp,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return precompile(zlp).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="fc">&nbsp;		final Var subjectVar = zlp.getSubjectVar();</b>
+<b class="fc">&nbsp;		final Var objVar = zlp.getObjectVar();</b>
+<b class="fc">&nbsp;		final Var contextVar = zlp.getContextVar();</b>
+<b class="fc">&nbsp;		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);</b>
+<b class="fc">&nbsp;		QueryValueEvaluationStep objPrep = precompile(objVar, context);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Service service, String serviceUri,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; bindings) throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			FederatedService fs = serviceResolver.getService(serviceUri);</b>
+<b class="nc">&nbsp;			return fs.evaluate(service, bindings, service.getBaseURI());</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+&nbsp;			// suppress exceptions if silent
+<b class="nc">&nbsp;			if (service.isSilent()) {</b>
+<b class="nc">&nbsp;				return bindings;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new QueryEvaluationException(e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Service service, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(service).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return new MinusQueryEvaluationStep(precompile(node.getLeftArg(), context),</b>
+<b class="fc">&nbsp;				precompile(node.getRightArg(), context));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return bindings -&gt; new GroupIterator(StrictEvaluationStrategy.this, node, bindings, iterationCacheSyncThreshold,</b>
+&nbsp;				context);
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		QueryEvaluationStep leftArg = precompile(node.getLeftArg(), context);</b>
+<b class="nc">&nbsp;		QueryEvaluationStep rightArg = precompile(node.getRightArg(), context);</b>
+<b class="nc">&nbsp;		return new IntersectionQueryEvaluationStep(leftArg, rightArg, this::makeSet);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return new JoinQueryEvaluationStep(this, node, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return LeftJoinQueryEvaluationStep.supply(this, node, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep arg = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		return bindings -&gt; new MultiProjectionIterator(node, arg.evaluate(bindings), bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep temp = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		return new ProjectionQueryEvaluationStep(node, temp, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		QueryEvaluationStep arg = precompile(node.getArg(), context);</b>
+<b class="nc">&nbsp;		return new QueryRootQueryEvaluationStep(arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return new StatementPatternQueryEvaluationStep(node, context, tripleSource);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep leftQes = precompile(node.getLeftArg(), context);</b>
+<b class="fc">&nbsp;		QueryEvaluationStep rightQes = precompile(node.getRightArg(), context);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new UnionQueryEvaluationStep(leftQes, rightQes);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Slice node, QueryEvaluationContext context) throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep arg = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		return SliceQueryEvaluationStep.supply(node, arg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep arg = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		Consumer&lt;MutableBindingSet&gt; consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this,</b>
+&nbsp;				context);
+<b class="fc">&nbsp;		return new ExtensionQueryEvaluationStep(arg, consumer, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		Var serviceRef = service.getServiceRef();</b>
+<b class="nc">&nbsp;		return new ServiceQueryEvaluationStep(service, serviceRef, serviceResolver);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
+&nbsp;
+<b class="fc">&nbsp;		if (FilterIterator.isPartOfSubQuery(node)) {</b>
+<b class="fc">&nbsp;			context = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(node, context);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		QueryEvaluationStep arg = precompile(node.getArg(), context);</b>
+&nbsp;		QueryValueEvaluationStep ves;
+&nbsp;		try {
+<b class="fc">&nbsp;			ves = precompile(node.getCondition(), context);</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+&nbsp;			// If we have a failed compilation we always return false.
+&nbsp;			// Which means empty. so let&#39;s short circuit that.
+&nbsp;//			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
+<b class="nc">&nbsp;			return QueryEvaluationStep.EMPTY;</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;		// if the query evaluation is constant it is either FILTER(true) or FILTER(false)
+&nbsp;		// in one case we can remove this step from the evaluated plan
+&nbsp;		// in the other case nothing can pass the filter so we can return the empty set.
+<b class="pc">&nbsp;		if (ves.isConstant()) {</b>
+<b class="nc">&nbsp;			if (StrictEvaluationStrategy.this.isTrue(ves, EmptyBindingSet.getInstance())) {</b>
+<b class="nc">&nbsp;				return arg;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return QueryEvaluationStep.EMPTY;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return bs -&gt; new FilterIterator(node, arg.evaluate(bs), ves, StrictEvaluationStrategy.this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Order node, QueryEvaluationContext context) throws QueryEvaluationException {
+<b class="fc">&nbsp;		ValueComparator vcmp = new ValueComparator();</b>
+<b class="fc">&nbsp;		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);</b>
+<b class="fc">&nbsp;		boolean reduced = isReducedOrDistinct(node);</b>
+<b class="fc">&nbsp;		long limit = getLimit(node);</b>
+<b class="fc">&nbsp;		QueryEvaluationStep preparedArg = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		return new OrderQueryEvaluationStep(cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="fc">&nbsp;		return new BindingSetAssignmentQueryEvaluationStep(node, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private final class QueryRootQueryEvaluationStep implements QueryEvaluationStep {
+&nbsp;		private final QueryEvaluationStep arg;
+&nbsp;
+<b class="nc">&nbsp;		private QueryRootQueryEvaluationStep(QueryEvaluationStep arg) {</b>
+<b class="nc">&nbsp;			this.arg = arg;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bs) {
+&nbsp;			// TODO fix the sharing of the now element to be safe
+<b class="nc">&nbsp;			StrictEvaluationStrategy.this.sharedValueOfNow = null;</b>
+<b class="nc">&nbsp;			return arg.evaluate(bs);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep child = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		return bs -&gt; new DescribeIteration(child.evaluate(bs), StrictEvaluationStrategy.this, node.getBindingNames(),</b>
+&nbsp;				bs);
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep child = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="fc">&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate = child.evaluate(bindings);</b>
+<b class="fc">&nbsp;			return new DistinctIteration&lt;&gt;(evaluate, StrictEvaluationStrategy.this::makeSet);</b>
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep arg = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;		return bindings -&gt; new ReducedIteration&lt;&gt;(arg.evaluate(bindings));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(DescribeOperator operator,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(operator).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(StatementPattern statementPattern,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return precompile(statementPattern).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Value getVarValue(Var var, BindingSet bindings) {
+<b class="nc">&nbsp;		if (var == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="nc">&nbsp;		} else if (var.hasValue()) {</b>
+<b class="nc">&nbsp;			return var.getValue();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return bindings.getValue(var.getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(UnaryTupleOperator expr,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (expr instanceof Projection) {</b>
+<b class="nc">&nbsp;			return evaluate((Projection) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof MultiProjection) {</b>
+<b class="nc">&nbsp;			return evaluate((MultiProjection) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Filter) {</b>
+<b class="nc">&nbsp;			return evaluate((Filter) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Service) {</b>
+<b class="nc">&nbsp;			return evaluate((Service) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Slice) {</b>
+<b class="nc">&nbsp;			return evaluate((Slice) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Extension) {</b>
+<b class="nc">&nbsp;			return evaluate((Extension) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Distinct) {</b>
+<b class="nc">&nbsp;			return evaluate((Distinct) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Reduced) {</b>
+<b class="nc">&nbsp;			return evaluate((Reduced) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Group) {</b>
+<b class="nc">&nbsp;			return evaluate((Group) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Order) {</b>
+<b class="nc">&nbsp;			return evaluate((Order) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof QueryRoot) {</b>
+&nbsp;			// new query, reset shared return value for successive calls of
+&nbsp;			// NOW()
+<b class="nc">&nbsp;			this.sharedValueOfNow = null;</b>
+<b class="nc">&nbsp;			return evaluate(expr.getArg(), bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof DescribeOperator) {</b>
+<b class="nc">&nbsp;			return evaluate((DescribeOperator) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unknown unary tuple operator type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(UnaryTupleOperator expr, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		if (expr instanceof Projection) {</b>
+<b class="fc">&nbsp;			return prepare((Projection) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof MultiProjection) {</b>
+<b class="fc">&nbsp;			return prepare((MultiProjection) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Filter) {</b>
+<b class="fc">&nbsp;			return prepare((Filter) expr, context);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Service) {</b>
+<b class="nc">&nbsp;			return prepare((Service) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Slice) {</b>
+<b class="fc">&nbsp;			return prepare((Slice) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Extension) {</b>
+<b class="fc">&nbsp;			return prepare((Extension) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Distinct) {</b>
+<b class="fc">&nbsp;			return prepare((Distinct) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Reduced) {</b>
+<b class="fc">&nbsp;			return prepare((Reduced) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Group) {</b>
+<b class="fc">&nbsp;			return prepare((Group) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Order) {</b>
+<b class="fc">&nbsp;			return prepare((Order) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof QueryRoot) {</b>
+&nbsp;			// new query, reset shared return value for successive calls of
+&nbsp;			// NOW()
+<b class="fc">&nbsp;			this.sharedValueOfNow = null;</b>
+<b class="fc">&nbsp;			return precompile(expr.getArg(), context);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof DescribeOperator) {</b>
+<b class="fc">&nbsp;			return prepare((DescribeOperator) expr, context);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unknown unary tuple operator type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSetAssignment bsa,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(bsa).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Projection projection, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(projection).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(MultiProjection multiProjection,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(multiProjection).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Filter filter, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(filter).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Slice slice, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(slice).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Extension extension, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(extension).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Distinct distinct, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(distinct).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Reduced reduced, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return new ReducedIteration&lt;&gt;(evaluate(reduced.getArg(), bindings));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Group node, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(node).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Order node, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(node).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BinaryTupleOperator expr,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		if (expr instanceof Join) {</b>
+<b class="fc">&nbsp;			return evaluate((Join) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof LeftJoin) {</b>
+<b class="nc">&nbsp;			return evaluate((LeftJoin) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Union) {</b>
+<b class="fc">&nbsp;			return evaluate((Union) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Intersection) {</b>
+<b class="nc">&nbsp;			return evaluate((Intersection) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Difference) {</b>
+<b class="nc">&nbsp;			return evaluate((Difference) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unsupported binary tuple operator type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(BinaryTupleOperator expr, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		if (expr instanceof Join) {</b>
+<b class="fc">&nbsp;			return prepare((Join) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof LeftJoin) {</b>
+<b class="fc">&nbsp;			return prepare((LeftJoin) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Union) {</b>
+<b class="fc">&nbsp;			return prepare((Union) expr, context);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Intersection) {</b>
+<b class="nc">&nbsp;			return prepare((Intersection) expr, context);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Difference) {</b>
+<b class="fc">&nbsp;			return prepare((Difference) expr, context);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unsupported binary tuple operator type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Join join, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return precompile(join).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(LeftJoin leftJoin,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(leftJoin).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(final Union union,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return precompile(union).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(final Intersection intersection,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(intersection).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(final Difference difference,
+&nbsp;			final BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return precompile(difference).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(SingletonSet singletonSet,
+&nbsp;			BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return new SingletonIteration&lt;&gt;(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(SingletonSet singletonSet, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return SingletonIteration::new;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(EmptySet emptySet, BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		return QueryEvaluationStep.EMPTY_ITERATION;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(EmptySet emptySet, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return bindings -&gt; QueryEvaluationStep.EMPTY_ITERATION;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryValueEvaluationStep precompile(ValueExpr expr, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		if (expr instanceof Var) {</b>
+<b class="fc">&nbsp;			return prepare((Var) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof ValueConstant) {</b>
+<b class="fc">&nbsp;			return prepare((ValueConstant) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof BNodeGenerator) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Bound) {</b>
+<b class="fc">&nbsp;			return prepare((Bound) expr, context);</b>
+&nbsp;//			return new QueryValueEvaluationStep.Minimal(this, expr);
+<b class="fc">&nbsp;		} else if (expr instanceof Str) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Label) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Lang) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof LangMatches) {</b>
+<b class="fc">&nbsp;			return prepare((LangMatches) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Datatype) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Namespace) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof LocalName) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof IsResource) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof IsURI) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IsBNode) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof IsLiteral) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IsNumeric) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IRIFunction) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Regex) {</b>
+<b class="nc">&nbsp;			return prepare((Regex) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Coalesce) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Like) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof FunctionCall) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof And) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Or) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Not) {</b>
+<b class="fc">&nbsp;			return prepare((Not) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof SameTerm) {</b>
+<b class="fc">&nbsp;			return prepare((SameTerm) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Compare) {</b>
+<b class="fc">&nbsp;			return prepare((Compare) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof MathExpr) {</b>
+<b class="fc">&nbsp;			return prepare((MathExpr) expr, context);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof In) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof CompareAny) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof CompareAll) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Exists) {</b>
+<b class="fc">&nbsp;			return prepare((Exists) expr, context);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof If) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof ListMemberOperator) {</b>
+<b class="fc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof ValueExprTripleRef) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.Minimal(this, expr);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unsupported value expr type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	@Override
+&nbsp;	public Value evaluate(ValueExpr expr, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		if (expr instanceof Var) {</b>
+<b class="fc">&nbsp;			return evaluate((Var) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof ValueConstant) {</b>
+<b class="fc">&nbsp;			return evaluate((ValueConstant) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof BNodeGenerator) {</b>
+<b class="fc">&nbsp;			return evaluate((BNodeGenerator) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Bound) {</b>
+<b class="fc">&nbsp;			return evaluate((Bound) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Str) {</b>
+<b class="fc">&nbsp;			return evaluate((Str) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Label) {</b>
+<b class="nc">&nbsp;			return evaluate((Label) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Lang) {</b>
+<b class="fc">&nbsp;			return evaluate((Lang) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof LangMatches) {</b>
+<b class="nc">&nbsp;			return evaluate((LangMatches) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Datatype) {</b>
+<b class="fc">&nbsp;			return evaluate((Datatype) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Namespace) {</b>
+<b class="nc">&nbsp;			return evaluate((Namespace) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof LocalName) {</b>
+<b class="nc">&nbsp;			return evaluate((LocalName) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof IsResource) {</b>
+<b class="nc">&nbsp;			return evaluate((IsResource) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IsURI) {</b>
+<b class="fc">&nbsp;			return evaluate((IsURI) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IsBNode) {</b>
+<b class="fc">&nbsp;			return evaluate((IsBNode) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IsLiteral) {</b>
+<b class="fc">&nbsp;			return evaluate((IsLiteral) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IsNumeric) {</b>
+<b class="fc">&nbsp;			return evaluate((IsNumeric) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof IRIFunction) {</b>
+<b class="fc">&nbsp;			return evaluate((IRIFunction) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Regex) {</b>
+<b class="fc">&nbsp;			return evaluate((Regex) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Coalesce) {</b>
+<b class="fc">&nbsp;			return evaluate((Coalesce) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof Like) {</b>
+<b class="nc">&nbsp;			return evaluate((Like) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof FunctionCall) {</b>
+<b class="fc">&nbsp;			return evaluate((FunctionCall) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof And) {</b>
+<b class="fc">&nbsp;			return evaluate((And) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Or) {</b>
+<b class="fc">&nbsp;			return evaluate((Or) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Not) {</b>
+<b class="fc">&nbsp;			return evaluate((Not) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof SameTerm) {</b>
+<b class="fc">&nbsp;			return evaluate((SameTerm) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Compare) {</b>
+<b class="fc">&nbsp;			return evaluate((Compare) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof MathExpr) {</b>
+<b class="fc">&nbsp;			return evaluate((MathExpr) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof In) {</b>
+<b class="nc">&nbsp;			return evaluate((In) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof CompareAny) {</b>
+<b class="nc">&nbsp;			return evaluate((CompareAny) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof CompareAll) {</b>
+<b class="nc">&nbsp;			return evaluate((CompareAll) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof Exists) {</b>
+<b class="fc">&nbsp;			return evaluate((Exists) expr, bindings);</b>
+<b class="fc">&nbsp;		} else if (expr instanceof If) {</b>
+<b class="fc">&nbsp;			return evaluate((If) expr, bindings);</b>
+<b class="pc">&nbsp;		} else if (expr instanceof ListMemberOperator) {</b>
+<b class="fc">&nbsp;			return evaluate((ListMemberOperator) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof ValueExprTripleRef) {</b>
+<b class="nc">&nbsp;			return evaluate((ValueExprTripleRef) expr, bindings);</b>
+<b class="nc">&nbsp;		} else if (expr == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;expr must not be null&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Unsupported value expr type: &quot; + expr.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Var var, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value value = var.getValue();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (value == null) {</b>
+<b class="fc">&nbsp;			value = bindings.getValue(var.getName());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (value == null) {</b>
+<b class="fc">&nbsp;			throw new ValueExprEvaluationException();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(Var var, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="fc">&nbsp;		Value value = var.getValue();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (value != null) {</b>
+<b class="fc">&nbsp;			return new ConstantQueryValueEvaluationStep(value);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			java.util.function.Function&lt;BindingSet, Value&gt; getValue = context.getValue(var.getName());</b>
+<b class="fc">&nbsp;			return bindings -&gt; {</b>
+<b class="fc">&nbsp;				Value value1 = getValue.apply(bindings);</b>
+<b class="fc">&nbsp;				if (value1 == null) {</b>
+<b class="fc">&nbsp;					throw new ValueExprEvaluationException();</b>
+&nbsp;				}
+<b class="fc">&nbsp;				return value1;</b>
+&nbsp;			};
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(ValueConstant valueConstant, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return valueConstant.getValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(ValueConstant valueConstant, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return new ConstantQueryValueEvaluationStep(valueConstant);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(BNodeGenerator node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		ValueExpr nodeIdExpr = node.getNodeIdExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (nodeIdExpr != null) {</b>
+<b class="fc">&nbsp;			Value nodeId = evaluate(nodeIdExpr, bindings);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (nodeId instanceof Literal) {</b>
+<b class="fc">&nbsp;				String nodeLabel = ((Literal) nodeId).getLabel() + (bindings.toString().hashCode());</b>
+<b class="fc">&nbsp;				return tripleSource.getValueFactory().createBNode(nodeLabel);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(&quot;BNODE function argument must be a literal&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return tripleSource.getValueFactory().createBNode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Bound node, BindingSet bindings) throws QueryEvaluationException {
+&nbsp;		try {
+<b class="fc">&nbsp;			Value argValue = evaluate(node.getArg(), bindings);</b>
+<b class="pc">&nbsp;			return BooleanLiteral.valueOf(argValue != null);</b>
+<b class="fc">&nbsp;		} catch (ValueExprEvaluationException e) {</b>
+<b class="fc">&nbsp;			return BooleanLiteral.FALSE;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryValueEvaluationStep prepare(Bound node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;		try {
+<b class="fc">&nbsp;			QueryValueEvaluationStep arg = precompile(node.getArg(), context);</b>
+<b class="fc">&nbsp;			return bindings -&gt; {</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					Value argValue = arg.evaluate(bindings);</b>
+<b class="pc">&nbsp;					return BooleanLiteral.valueOf(argValue != null);</b>
+<b class="fc">&nbsp;				} catch (ValueExprEvaluationException e) {</b>
+<b class="fc">&nbsp;					return BooleanLiteral.FALSE;</b>
+&nbsp;				}
+&nbsp;			};
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Str node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+<b class="pc">&nbsp;		if (argValue != null) {</b>
+&nbsp;
+<b class="fc">&nbsp;			if (argValue.isIRI()) {</b>
+<b class="fc">&nbsp;				return tripleSource.getValueFactory().createLiteral(argValue.toString());</b>
+<b class="fc">&nbsp;			} else if (argValue.isLiteral()) {</b>
+<b class="fc">&nbsp;				Literal literal = (Literal) argValue;</b>
+&nbsp;
+<b class="fc">&nbsp;				if (QueryEvaluationUtility.isSimpleLiteral(literal)) {</b>
+<b class="fc">&nbsp;					return literal;</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					return tripleSource.getValueFactory().createLiteral(literal.getLabel());</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (argValue.isTriple()) {</b>
+<b class="nc">&nbsp;				return tripleSource.getValueFactory().createLiteral(argValue.toString());</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Label node, BindingSet bindings) throws QueryEvaluationException {
+&nbsp;		// FIXME: deprecate Label in favour of Str(?)
+<b class="nc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (argValue instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal literal = (Literal) argValue;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (QueryEvaluationUtility.isSimpleLiteral(literal)) {</b>
+<b class="nc">&nbsp;				return literal;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return tripleSource.getValueFactory().createLiteral(literal.getLabel());</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Lang node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (argValue instanceof Literal) {</b>
+<b class="fc">&nbsp;			Literal literal = (Literal) argValue;</b>
+<b class="fc">&nbsp;			return tripleSource.getValueFactory().createLiteral(literal.getLanguage().orElse(&quot;&quot;));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Datatype node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value v = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (v instanceof Literal) {</b>
+<b class="fc">&nbsp;			Literal literal = (Literal) v;</b>
+&nbsp;
+<b class="pc">&nbsp;			if (literal.getDatatype() != null) {</b>
+&nbsp;				// literal with datatype
+<b class="fc">&nbsp;				return literal.getDatatype();</b>
+<b class="nc">&nbsp;			} else if (literal.getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;				return CoreDatatype.RDF.LANGSTRING.getIri();</b>
+&nbsp;			} else {
+&nbsp;				// simple literal
+<b class="nc">&nbsp;				return CoreDatatype.XSD.STRING.getIri();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Namespace node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (argValue instanceof IRI) {</b>
+<b class="nc">&nbsp;			IRI uri = (IRI) argValue;</b>
+<b class="nc">&nbsp;			return tripleSource.getValueFactory().createIRI(uri.getNamespace());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(LocalName node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (argValue instanceof IRI) {</b>
+<b class="nc">&nbsp;			IRI uri = (IRI) argValue;</b>
+<b class="nc">&nbsp;			return tripleSource.getValueFactory().createLiteral(uri.getLocalName());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the operand (a variable) contains a Resource.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operand contains a Resource, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(IsResource node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+<b class="nc">&nbsp;		return BooleanLiteral.valueOf(argValue instanceof Resource);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the operand (a variable) contains a URI.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operand contains a URI, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(IsURI node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(argValue instanceof IRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the operand (a variable) contains a BNode.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operand contains a BNode, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(IsBNode node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(argValue instanceof BNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the operand (a variable) contains a Literal.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operand contains a Literal, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(IsLiteral node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(argValue instanceof Literal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the operand (a variable) contains a numeric datatyped literal, i.e. a literal with datatype
+&nbsp;	 * CoreDatatype.XSD:float, CoreDatatype.XSD:double, CoreDatatype.XSD:decimal, or a derived datatype of
+&nbsp;	 * CoreDatatype.XSD:decimal.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operand contains a numeric datatyped literal, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(IsNumeric node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (argValue instanceof Literal) {</b>
+<b class="fc">&nbsp;			Literal lit = (Literal) argValue;</b>
+<b class="fc">&nbsp;			IRI datatype = lit.getDatatype();</b>
+&nbsp;
+<b class="fc">&nbsp;			return BooleanLiteral.valueOf(XMLDatatypeUtil.isNumericDatatype(datatype));</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return BooleanLiteral.FALSE;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a URI from the operand value (a plain literal or a URI).
+&nbsp;	 *
+&nbsp;	 * @param node     represents an invocation of the SPARQL IRI function
+&nbsp;	 * @param bindings used to generate the value that the URI is based on
+&nbsp;	 * @return a URI generated from the given arguments
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public IRI evaluate(IRIFunction node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (argValue instanceof Literal) {</b>
+<b class="fc">&nbsp;			final Literal lit = (Literal) argValue;</b>
+&nbsp;
+<b class="fc">&nbsp;			String uriString = lit.getLabel();</b>
+<b class="fc">&nbsp;			final String baseURI = node.getBaseURI();</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				ParsedIRI iri = ParsedIRI.create(uriString);</b>
+<b class="pc">&nbsp;				if (!iri.isAbsolute() &amp;&amp; baseURI != null) {</b>
+&nbsp;					// uri string may be a relative reference.
+<b class="fc">&nbsp;					uriString = ParsedIRI.create(baseURI).resolve(iri).toString();</b>
+<b class="pc">&nbsp;				} else if (!iri.isAbsolute()) {</b>
+<b class="fc">&nbsp;					throw new ValueExprEvaluationException(&quot;not an absolute IRI reference: &quot; + uriString);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(&quot;not a valid IRI reference: &quot; + uriString);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			IRI result;
+&nbsp;
+&nbsp;			try {
+<b class="fc">&nbsp;				result = tripleSource.getValueFactory().createIRI(uriString);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(e.getMessage());</b>
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;			return result;</b>
+<b class="pc">&nbsp;		} else if (argValue instanceof IRI) {</b>
+<b class="nc">&nbsp;			return ((IRI) argValue);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the two operands match according to the &lt;code&gt;regex&lt;/code&gt; operator.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operands match according to the &lt;var&gt;regex&lt;/var&gt; operator, &lt;var&gt;false&lt;/var&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Regex node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		return prepare(node, new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset)).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the two operands match according to the &lt;code&gt;regex&lt;/code&gt; operator.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operands match according to the &lt;var&gt;regex&lt;/var&gt; operator, &lt;var&gt;false&lt;/var&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	protected QueryValueEvaluationStep prepare(Regex node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return RegexValueEvaluationStepSupplier.make(this, node, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(LangMatches node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value langTagValue = evaluate(node.getLeftArg(), bindings);</b>
+<b class="nc">&nbsp;		Value langRangeValue = evaluate(node.getRightArg(), bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		return evaluateLangMatch(langTagValue, langRangeValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(LangMatches node, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		return supplyBinaryValueEvaluation(node, this::evaluateLangMatch, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Value evaluateLangMatch(Value langTagValue, Value langRangeValue) {
+<b class="pc">&nbsp;		if (QueryEvaluationUtility.isSimpleLiteral(langTagValue)</b>
+<b class="pc">&nbsp;				&amp;&amp; QueryEvaluationUtility.isSimpleLiteral(langRangeValue)) {</b>
+<b class="fc">&nbsp;			String langTag = ((Literal) langTagValue).getLabel();</b>
+<b class="fc">&nbsp;			String langRange = ((Literal) langRangeValue).getLabel();</b>
+&nbsp;
+<b class="fc">&nbsp;			boolean result = Literals.langMatches(langTag, langRange);</b>
+&nbsp;
+<b class="fc">&nbsp;			return BooleanLiteral.valueOf(result);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new ValueExprEvaluationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines whether the two operands match according to the &lt;code&gt;like&lt;/code&gt; operator. The operator is defined as
+&nbsp;	 * a string comparison with the possible use of an asterisk (*) at the end and/or the start of the second operand to
+&nbsp;	 * indicate substring matching.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the operands match according to the &lt;var&gt;like&lt;/var&gt; operator, &lt;var&gt;false&lt;/var&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Like node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value val = evaluate(node.getArg(), bindings);</b>
+<b class="nc">&nbsp;		String strVal = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (val instanceof IRI) {</b>
+<b class="nc">&nbsp;			strVal = val.toString();</b>
+<b class="nc">&nbsp;		} else if (val instanceof Literal) {</b>
+<b class="nc">&nbsp;			strVal = ((Literal) val).getLabel();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (strVal == null) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!node.isCaseSensitive()) {</b>
+&nbsp;			// Convert strVal to lower case, just like the pattern has been done
+<b class="nc">&nbsp;			strVal = strVal.toLowerCase();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int valIndex = 0;</b>
+<b class="nc">&nbsp;		int prevPatternIndex = -1;</b>
+<b class="nc">&nbsp;		int patternIndex = node.getOpPattern().indexOf(&#39;*&#39;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (patternIndex == -1) {</b>
+&nbsp;			// No wildcards
+<b class="nc">&nbsp;			return BooleanLiteral.valueOf(node.getOpPattern().equals(strVal));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		String snippet;
+&nbsp;
+<b class="nc">&nbsp;		if (patternIndex &gt; 0) {</b>
+&nbsp;			// Pattern does not start with a wildcard, first part must match
+<b class="nc">&nbsp;			snippet = node.getOpPattern().substring(0, patternIndex);</b>
+<b class="nc">&nbsp;			if (!strVal.startsWith(snippet)) {</b>
+<b class="nc">&nbsp;				return BooleanLiteral.FALSE;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			valIndex += snippet.length();</b>
+<b class="nc">&nbsp;			prevPatternIndex = patternIndex;</b>
+<b class="nc">&nbsp;			patternIndex = node.getOpPattern().indexOf(&#39;*&#39;, patternIndex + 1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		while (patternIndex != -1) {</b>
+&nbsp;			// Get snippet between previous wildcard and this wildcard
+<b class="nc">&nbsp;			snippet = node.getOpPattern().substring(prevPatternIndex + 1, patternIndex);</b>
+&nbsp;
+&nbsp;			// Search for the snippet in the value
+<b class="nc">&nbsp;			valIndex = strVal.indexOf(snippet, valIndex);</b>
+<b class="nc">&nbsp;			if (valIndex == -1) {</b>
+<b class="nc">&nbsp;				return BooleanLiteral.FALSE;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			valIndex += snippet.length();</b>
+<b class="nc">&nbsp;			prevPatternIndex = patternIndex;</b>
+<b class="nc">&nbsp;			patternIndex = node.getOpPattern().indexOf(&#39;*&#39;, patternIndex + 1);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Part after last wildcard
+<b class="nc">&nbsp;		snippet = node.getOpPattern().substring(prevPatternIndex + 1);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (snippet.length() &gt; 0) {</b>
+&nbsp;			// Pattern does not end with a wildcard.
+&nbsp;
+&nbsp;			// Search last occurence of the snippet.
+<b class="nc">&nbsp;			valIndex = strVal.indexOf(snippet, valIndex);</b>
+&nbsp;			int i;
+<b class="nc">&nbsp;			while ((i = strVal.indexOf(snippet, valIndex + 1)) != -1) {</b>
+&nbsp;				// A later occurence was found.
+<b class="nc">&nbsp;				valIndex = i;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (valIndex == -1) {</b>
+<b class="nc">&nbsp;				return BooleanLiteral.FALSE;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			valIndex += snippet.length();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (valIndex &lt; strVal.length()) {</b>
+&nbsp;				// Some characters were not matched
+<b class="nc">&nbsp;				return BooleanLiteral.FALSE;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return BooleanLiteral.TRUE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates a function.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(FunctionCall node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Function function = FunctionRegistry.getInstance()</b>
+<b class="fc">&nbsp;				.get(node.getURI())</b>
+<b class="fc">&nbsp;				.orElseThrow(() -&gt; new QueryEvaluationException(&quot;Unknown function &#39;&quot; + node.getURI() + &quot;&#39;&quot;));</b>
+&nbsp;
+&nbsp;		// the NOW function is a special case as it needs to keep a shared
+&nbsp;		// return
+&nbsp;		// value for the duration of the query.
+<b class="fc">&nbsp;		if (function instanceof Now) {</b>
+<b class="fc">&nbsp;			return evaluate((Now) function, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		List&lt;ValueExpr&gt; args = node.getArgs();</b>
+&nbsp;
+<b class="fc">&nbsp;		Value[] argValues = new Value[args.size()];</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; args.size(); i++) {</b>
+<b class="fc">&nbsp;			argValues[i] = evaluate(args.get(i), bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return function.evaluate(tripleSource, argValues);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public QueryValueEvaluationStep prepare(FunctionCall node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		Function function = FunctionRegistry.getInstance()</b>
+<b class="nc">&nbsp;				.get(node.getURI())</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new QueryEvaluationException(&quot;Unknown function &#39;&quot; + node.getURI() + &quot;&#39;&quot;));</b>
+&nbsp;
+&nbsp;		// the NOW function is a special case as it needs to keep a shared
+&nbsp;		// return
+&nbsp;		// value for the duration of the query.
+<b class="nc">&nbsp;		if (function instanceof Now) {</b>
+<b class="nc">&nbsp;			return prepare((Now) function, context);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		List&lt;ValueExpr&gt; args = node.getArgs();</b>
+&nbsp;
+<b class="nc">&nbsp;		QueryValueEvaluationStep[] argSteps = new QueryValueEvaluationStep[args.size()];</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean allConstant = determineIfFunctionCallWillBeAConstant(context, function, args, argSteps);</b>
+<b class="nc">&nbsp;		if (allConstant) {</b>
+<b class="nc">&nbsp;			Value[] argValues = evaluateAllArguments(args, argSteps, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;			Value res = function.evaluate(tripleSource, argValues);</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(res);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return bindings -&gt; {</b>
+<b class="nc">&nbsp;				Value[] argValues = evaluateAllArguments(args, argSteps, bindings);</b>
+<b class="nc">&nbsp;				return function.evaluate(tripleSource, argValues);</b>
+&nbsp;			};
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If all input is constant normally the function call output will be constant as well.
+&nbsp;	 *
+&nbsp;	 * @param context  used to precompile arguments of the function
+&nbsp;	 * @param function that might be constant
+&nbsp;	 * @param args     that the function must evaluate
+&nbsp;	 * @param argSteps side effect this array is filled
+&nbsp;	 * @return if this function resolves to a constant value
+&nbsp;	 */
+&nbsp;	private boolean determineIfFunctionCallWillBeAConstant(QueryEvaluationContext context, Function function,
+&nbsp;			List&lt;ValueExpr&gt; args, QueryValueEvaluationStep[] argSteps) {
+<b class="nc">&nbsp;		boolean allConstant = true;</b>
+<b class="nc">&nbsp;		if (function.mustReturnDifferentResult()) {</b>
+<b class="nc">&nbsp;			allConstant = false;</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; args.size(); i++) {</b>
+<b class="nc">&nbsp;				argSteps[i] = precompile(args.get(i), context);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; args.size(); i++) {</b>
+<b class="nc">&nbsp;				argSteps[i] = precompile(args.get(i), context);</b>
+<b class="nc">&nbsp;				if (!argSteps[i].isConstant()) {</b>
+<b class="nc">&nbsp;					allConstant = false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return allConstant;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Value[] evaluateAllArguments(List&lt;ValueExpr&gt; args, QueryValueEvaluationStep[] argSteps,
+&nbsp;			BindingSet bindings) {
+<b class="nc">&nbsp;		Value[] argValues = new Value[argSteps.length];</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; args.size(); i++) {</b>
+<b class="nc">&nbsp;			argValues[i] = argSteps[i].evaluate(bindings);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return argValues;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(And node, BindingSet bindings) throws QueryEvaluationException {
+&nbsp;		try {
+<b class="fc">&nbsp;			Value leftValue = evaluate(node.getLeftArg(), bindings);</b>
+<b class="fc">&nbsp;			if (QueryEvaluationUtility.getEffectiveBooleanValue(leftValue) == QueryEvaluationUtility.Result._false) {</b>
+&nbsp;				// Left argument evaluates to false, we don&#39;t need to look any
+&nbsp;				// further
+<b class="fc">&nbsp;				return BooleanLiteral.FALSE;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (ValueExprEvaluationException e) {</b>
+&nbsp;			// Failed to evaluate the left argument. Result is &#39;false&#39; when
+&nbsp;			// the right argument evaluates to &#39;false&#39;, failure otherwise.
+<b class="nc">&nbsp;			Value rightValue = evaluate(node.getRightArg(), bindings);</b>
+<b class="nc">&nbsp;			if (QueryEvaluationUtility.getEffectiveBooleanValue(rightValue) == QueryEvaluationUtility.Result._false) {</b>
+<b class="nc">&nbsp;				return BooleanLiteral.FALSE;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException();</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// Left argument evaluated to &#39;true&#39;, result is determined
+&nbsp;		// by the evaluation of the right argument.
+<b class="fc">&nbsp;		Value rightValue = evaluate(node.getRightArg(), bindings);</b>
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(rightValue));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Or node, BindingSet bindings) throws QueryEvaluationException {
+&nbsp;		try {
+<b class="fc">&nbsp;			Value leftValue = evaluate(node.getLeftArg(), bindings);</b>
+<b class="fc">&nbsp;			if (QueryEvaluationUtil.getEffectiveBooleanValue(leftValue)) {</b>
+&nbsp;				// Left argument evaluates to true, we don&#39;t need to look any
+&nbsp;				// further
+<b class="fc">&nbsp;				return BooleanLiteral.TRUE;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (ValueExprEvaluationException e) {</b>
+&nbsp;			// Failed to evaluate the left argument. Result is &#39;true&#39; when
+&nbsp;			// the right argument evaluates to &#39;true&#39;, failure otherwise.
+<b class="nc">&nbsp;			Value rightValue = evaluate(node.getRightArg(), bindings);</b>
+<b class="nc">&nbsp;			if (QueryEvaluationUtil.getEffectiveBooleanValue(rightValue)) {</b>
+<b class="nc">&nbsp;				return BooleanLiteral.TRUE;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException();</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// Left argument evaluated to &#39;false&#39;, result is determined
+&nbsp;		// by the evaluation of the right argument.
+<b class="fc">&nbsp;		Value rightValue = evaluate(node.getRightArg(), bindings);</b>
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(QueryEvaluationUtil.getEffectiveBooleanValue(rightValue));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Not node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value argValue = evaluate(node.getArg(), bindings);</b>
+<b class="fc">&nbsp;		boolean argBoolean = QueryEvaluationUtil.getEffectiveBooleanValue(argValue);</b>
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(!argBoolean);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(Not node, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		return supplyUnaryValueEvaluation(node,</b>
+<b class="fc">&nbsp;				(v) -&gt; BooleanLiteral.valueOf(!QueryEvaluationUtil.getEffectiveBooleanValue(v)), context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Now node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		if (sharedValueOfNow == null) {</b>
+<b class="fc">&nbsp;			sharedValueOfNow = node.evaluate(tripleSource.getValueFactory());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return sharedValueOfNow;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * During the execution of a single query NOW() should always return the same result and is in practical terms a
+&nbsp;	 * constant during evaluation.
+&nbsp;	 *
+&nbsp;	 * @param node    that represent the NOW() function
+&nbsp;	 * @param context that holds the shared now() of the query invocation
+&nbsp;	 * @return a constant value evaluation step
+&nbsp;	 */
+&nbsp;	protected QueryValueEvaluationStep prepare(Now node, QueryEvaluationContext context) {
+<b class="nc">&nbsp;		return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(context.getNow());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(SameTerm node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value leftVal = evaluate(node.getLeftArg(), bindings);</b>
+<b class="fc">&nbsp;		Value rightVal = evaluate(node.getRightArg(), bindings);</b>
+&nbsp;
+<b class="pc">&nbsp;		return BooleanLiteral.valueOf(leftVal != null &amp;&amp; leftVal.equals(rightVal));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(SameTerm node, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		return supplyBinaryValueEvaluation(node,</b>
+<b class="pc">&nbsp;				(leftVal, rightVal) -&gt; BooleanLiteral.valueOf(leftVal != null &amp;&amp; leftVal.equals(rightVal)), context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Coalesce node, BindingSet bindings) throws ValueExprEvaluationException {
+<b class="fc">&nbsp;		Value result = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ValueExpr expr : node.getArguments()) {</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				result = evaluate(expr, bindings);</b>
+&nbsp;
+&nbsp;				// return first result that does not produce an error on
+&nbsp;				// evaluation.
+<b class="fc">&nbsp;				break;</b>
+<b class="fc">&nbsp;			} catch (QueryEvaluationException ignored) {</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (result == null) {</b>
+<b class="fc">&nbsp;			throw new ValueExprEvaluationException(</b>
+<b class="fc">&nbsp;					&quot;COALESCE arguments do not evaluate to a value: &quot; + node.getSignature());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Compare node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value leftVal = evaluate(node.getLeftArg(), bindings);</b>
+<b class="fc">&nbsp;		Value rightVal = evaluate(node.getRightArg(), bindings);</b>
+&nbsp;
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(Compare node, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -&gt; BooleanLiteral</b>
+<b class="fc">&nbsp;				.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator())), context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(MathExpr node, BindingSet bindings) throws QueryEvaluationException {
+&nbsp;		// Do the math
+<b class="fc">&nbsp;		Value leftVal = evaluate(node.getLeftArg(), bindings);</b>
+<b class="fc">&nbsp;		Value rightVal = evaluate(node.getRightArg(), bindings);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (leftVal instanceof Literal &amp;&amp; rightVal instanceof Literal) {</b>
+<b class="fc">&nbsp;			return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new ValueExprEvaluationException(&quot;Both arguments must be numeric literals&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Value mathOperationApplier(MathExpr node, Value leftVal, Value rightVal) {
+<b class="pc">&nbsp;		if (leftVal instanceof Literal &amp;&amp; rightVal instanceof Literal) {</b>
+<b class="fc">&nbsp;			return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		throw new ValueExprEvaluationException(&quot;Both arguments must be literals&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryValueEvaluationStep prepare(MathExpr node, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -&gt; mathOperationApplier(node, leftVal, rightVal),</b>
+&nbsp;				context);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(If node, BindingSet bindings) throws QueryEvaluationException {
+&nbsp;		Value result;
+&nbsp;
+&nbsp;		boolean conditionIsTrue;
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			Value value = evaluate(node.getCondition(), bindings);</b>
+<b class="fc">&nbsp;			conditionIsTrue = QueryEvaluationUtil.getEffectiveBooleanValue(value);</b>
+<b class="fc">&nbsp;		} catch (ValueExprEvaluationException e) {</b>
+&nbsp;			// in case of type error, if-construction should result in empty
+&nbsp;			// binding.
+<b class="fc">&nbsp;			return null;</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (conditionIsTrue) {</b>
+<b class="fc">&nbsp;			result = evaluate(node.getResult(), bindings);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			result = evaluate(node.getAlternative(), bindings);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(In node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value leftValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+&nbsp;		// Result is false until a match has been found
+<b class="nc">&nbsp;		boolean result = false;</b>
+&nbsp;
+&nbsp;		// Use first binding name from tuple expr to compare values
+<b class="nc">&nbsp;		String bindingName = node.getSubQuery().getBindingNames().iterator().next();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = evaluate(node.getSubQuery(), bindings)) {</b>
+<b class="nc">&nbsp;			while (!result &amp;&amp; iter.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				Value rightValue = bindingSet.getValue(bindingName);</b>
+&nbsp;
+<b class="nc">&nbsp;				result = leftValue == null &amp;&amp; rightValue == null || leftValue != null &amp;&amp; leftValue.equals(rightValue);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return BooleanLiteral.valueOf(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(ListMemberOperator node, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		List&lt;ValueExpr&gt; args = node.getArguments();</b>
+<b class="fc">&nbsp;		Value leftValue = evaluate(args.get(0), bindings);</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean result = false;</b>
+<b class="fc">&nbsp;		ValueExprEvaluationException typeError = null;</b>
+<b class="fc">&nbsp;		for (int i = 1; i &lt; args.size(); i++) {</b>
+<b class="fc">&nbsp;			ValueExpr arg = args.get(i);</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				Value rightValue = evaluate(arg, bindings);</b>
+<b class="pc">&nbsp;				result = leftValue == null &amp;&amp; rightValue == null;</b>
+<b class="pc">&nbsp;				if (!result) {</b>
+<b class="fc">&nbsp;					result = QueryEvaluationUtil.compare(leftValue, rightValue, CompareOp.EQ);</b>
+&nbsp;				}
+<b class="fc">&nbsp;				if (result) {</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			} catch (ValueExprEvaluationException caught) {</b>
+<b class="fc">&nbsp;				typeError = caught;</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (typeError != null &amp;&amp; !result) {</b>
+&nbsp;			// cf. SPARQL spec a type error is thrown if the value is not in the
+&nbsp;			// list and one of the list members caused a type error in the
+&nbsp;			// comparison.
+<b class="fc">&nbsp;			throw typeError;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return BooleanLiteral.valueOf(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(CompareAny node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value leftValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+&nbsp;		// Result is false until a match has been found
+<b class="nc">&nbsp;		boolean result = false;</b>
+&nbsp;
+&nbsp;		// Use first binding name from tuple expr to compare values
+<b class="nc">&nbsp;		String bindingName = node.getSubQuery().getBindingNames().iterator().next();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = evaluate(node.getSubQuery(), bindings)) {</b>
+<b class="nc">&nbsp;			while (!result &amp;&amp; iter.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				Value rightValue = bindingSet.getValue(bindingName);</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					result = QueryEvaluationUtil.compare(leftValue, rightValue, node.getOperator());</b>
+<b class="nc">&nbsp;				} catch (ValueExprEvaluationException e) {</b>
+&nbsp;					// ignore, maybe next value will match
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return BooleanLiteral.valueOf(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(CompareAll node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value leftValue = evaluate(node.getArg(), bindings);</b>
+&nbsp;
+&nbsp;		// Result is true until a mismatch has been found
+<b class="nc">&nbsp;		boolean result = true;</b>
+&nbsp;
+&nbsp;		// Use first binding name from tuple expr to compare values
+<b class="nc">&nbsp;		String bindingName = node.getSubQuery().getBindingNames().iterator().next();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = evaluate(node.getSubQuery(), bindings)) {</b>
+<b class="nc">&nbsp;			while (result &amp;&amp; iter.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				Value rightValue = bindingSet.getValue(bindingName);</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					result = QueryEvaluationUtil.compare(leftValue, rightValue, node.getOperator());</b>
+<b class="nc">&nbsp;				} catch (ValueExprEvaluationException e) {</b>
+&nbsp;					// Exception thrown by ValueCompare.isTrue(...)
+<b class="nc">&nbsp;					result = false;</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return BooleanLiteral.valueOf(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(Exists node, BindingSet bindings) throws QueryEvaluationException {
+<b class="pc">&nbsp;		try (CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = evaluate(node.getSubQuery(), bindings)) {</b>
+<b class="fc">&nbsp;			return BooleanLiteral.valueOf(iter.hasNext());</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		QueryEvaluationStep subQuery = precompile(node.getSubQuery(), context);</b>
+<b class="fc">&nbsp;		return bindings -&gt; {</b>
+<b class="pc">&nbsp;			try (CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = subQuery.evaluate(bindings)) {</b>
+<b class="fc">&nbsp;				return BooleanLiteral.valueOf(iter.hasNext());</b>
+<b class="pc">&nbsp;			}</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isTrue(ValueExpr expr, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value value = evaluate(expr, bindings);</b>
+<b class="fc">&nbsp;		return QueryEvaluationUtility.getEffectiveBooleanValue(value).orElse(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;		Value value = expr.evaluate(bindings);</b>
+<b class="fc">&nbsp;		return QueryEvaluationUtility.getEffectiveBooleanValue(value).orElse(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean isReducedOrDistinct(QueryModelNode node) {
+<b class="fc">&nbsp;		QueryModelNode parent = node.getParentNode();</b>
+<b class="fc">&nbsp;		if (parent instanceof Slice) {</b>
+<b class="fc">&nbsp;			return isReducedOrDistinct(parent);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		return parent instanceof Distinct || parent instanceof Reduced;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the limit of the current variable bindings before any further projection.
+&nbsp;	 */
+&nbsp;	protected long getLimit(QueryModelNode node) {
+<b class="fc">&nbsp;		long offset = 0;</b>
+<b class="fc">&nbsp;		if (node instanceof Slice) {</b>
+<b class="fc">&nbsp;			Slice slice = (Slice) node;</b>
+<b class="pc">&nbsp;			if (slice.hasOffset() &amp;&amp; slice.hasLimit()) {</b>
+<b class="nc">&nbsp;				return slice.getOffset() + slice.getLimit();</b>
+<b class="pc">&nbsp;			} else if (slice.hasLimit()) {</b>
+<b class="fc">&nbsp;				return slice.getLimit();</b>
+<b class="nc">&nbsp;			} else if (slice.hasOffset()) {</b>
+<b class="nc">&nbsp;				offset = slice.getOffset();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		QueryModelNode parent = node.getParentNode();</b>
+<b class="pc">&nbsp;		if (parent instanceof Distinct || parent instanceof Reduced || parent instanceof Slice) {</b>
+<b class="fc">&nbsp;			long limit = getLimit(parent);</b>
+<b class="pc">&nbsp;			if (offset &gt; 0L &amp;&amp; limit &lt; Long.MAX_VALUE) {</b>
+<b class="nc">&nbsp;				return offset + limit;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return limit;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return Long.MAX_VALUE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	public Value evaluate(ValueExprTripleRef node, BindingSet bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Value subj = evaluate(node.getSubjectVar(), bindings);</b>
+<b class="nc">&nbsp;		if (!(subj instanceof Resource)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;no subject value&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value pred = evaluate(node.getPredicateVar(), bindings);</b>
+<b class="nc">&nbsp;		if (!(pred instanceof IRI)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;no predicate value&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Value obj = evaluate(node.getObjectVar(), bindings);</b>
+<b class="nc">&nbsp;		if (obj == null) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;no object value&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return tripleSource.getValueFactory().createTriple((Resource) subj, (IRI) pred, obj);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * evaluates a TripleRef node returning bindingsets from the matched Triple nodes in the dataset (or explore
+&nbsp;	 * standard reification)
+&nbsp;	 *
+&nbsp;	 * @param ref      to evaluate
+&nbsp;	 * @param bindings with the solutions
+&nbsp;	 * @return iteration over the solutions
+&nbsp;	 */
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(TripleRef ref, BindingSet bindings) {
+<b class="nc">&nbsp;		return precompile(ref).evaluate(bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryEvaluationStep prepare(TripleRef ref, QueryEvaluationContext context) {
+&nbsp;		// Naive implementation that walks over all statements matching (x rdf:type rdf:Statement)
+&nbsp;		// and filter those that do not match the bindings for subject, predicate and object vars (if bound)
+<b class="nc">&nbsp;		final org.eclipse.rdf4j.query.algebra.Var subjVar = ref.getSubjectVar();</b>
+<b class="nc">&nbsp;		final org.eclipse.rdf4j.query.algebra.Var predVar = ref.getPredicateVar();</b>
+<b class="nc">&nbsp;		final org.eclipse.rdf4j.query.algebra.Var objVar = ref.getObjectVar();</b>
+<b class="nc">&nbsp;		final org.eclipse.rdf4j.query.algebra.Var extVar = ref.getExprVar();</b>
+&nbsp;		// whether the TripleSouce support access to RDF star
+<b class="nc">&nbsp;		final boolean sourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;</b>
+<b class="nc">&nbsp;		if (sourceSupportsRdfStar) {</b>
+<b class="nc">&nbsp;			return new RdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, (RDFStarTripleSource) tripleSource,</b>
+&nbsp;					context);
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new ReificationRdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This class wraps an iterator and increments the &quot;resultSizeActual&quot; of the query model node that the iterator
+&nbsp;	 * represents. This means we can track the number of tuples that have been retrieved from this node.
+&nbsp;	 */
+&nbsp;	private static class ResultSizeCountingIterator extends IterationWrapper&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iterator;
+&nbsp;		QueryModelNode queryModelNode;
+&nbsp;
+&nbsp;		public ResultSizeCountingIterator(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iterator,
+&nbsp;				QueryModelNode queryModelNode) {
+<b class="nc">&nbsp;			super(iterator);</b>
+<b class="nc">&nbsp;			this.iterator = iterator;</b>
+<b class="nc">&nbsp;			this.queryModelNode = queryModelNode;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;			return iterator.hasNext();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public BindingSet next() throws QueryEvaluationException {
+<b class="nc">&nbsp;			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);</b>
+<b class="nc">&nbsp;			return iterator.next();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This class wraps an iterator and tracks the time used to execute next() and hasNext()
+&nbsp;	 */
+&nbsp;	private static class TimedIterator extends IterationWrapper&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iterator;
+&nbsp;		QueryModelNode queryModelNode;
+&nbsp;
+<b class="nc">&nbsp;		Stopwatch stopwatch = Stopwatch.createUnstarted();</b>
+&nbsp;
+&nbsp;		public TimedIterator(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iterator,
+&nbsp;				QueryModelNode queryModelNode) {
+<b class="nc">&nbsp;			super(iterator);</b>
+<b class="nc">&nbsp;			this.iterator = iterator;</b>
+<b class="nc">&nbsp;			this.queryModelNode = queryModelNode;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public BindingSet next() throws QueryEvaluationException {
+<b class="nc">&nbsp;			stopwatch.start();</b>
+<b class="nc">&nbsp;			BindingSet next = iterator.next();</b>
+<b class="nc">&nbsp;			stopwatch.stop();</b>
+<b class="nc">&nbsp;			return next;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;			stopwatch.start();</b>
+<b class="nc">&nbsp;			boolean hasNext = super.hasNext();</b>
+<b class="nc">&nbsp;			stopwatch.stop();</b>
+<b class="nc">&nbsp;			return hasNext;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void handleClose() throws QueryEvaluationException {
+&nbsp;			try {
+<b class="nc">&nbsp;				queryModelNode.setTotalTimeNanosActual(</b>
+<b class="nc">&nbsp;						queryModelNode.getTotalTimeNanosActual() + stopwatch.elapsed(TimeUnit.NANOSECONDS));</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				super.handleClose();</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTrackResultSize(boolean trackResultSize) {
+<b class="nc">&nbsp;		this.trackResultSize = trackResultSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isTrackResultSize() {
+<b class="fc">&nbsp;		return trackResultSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTrackTime(boolean trackTime) {
+<b class="nc">&nbsp;		this.trackTime = trackTime;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Supply a QueryValueEvalationStep that will invoke the function (operator passed in). It will try to optimise
+&nbsp;	 * constant argument to be called only once per query run,
+&nbsp;	 *
+&nbsp;	 * @param node      the node to evaluate
+&nbsp;	 * @param operation the function that wraps the operator.
+&nbsp;	 * @param context   in which the query is running.
+&nbsp;	 * @return a potential constant evaluation step.
+&nbsp;	 */
+&nbsp;	protected QueryValueEvaluationStep supplyBinaryValueEvaluation(BinaryValueOperator node,
+&nbsp;			BiFunction&lt;Value, Value, Value&gt; operation, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		QueryValueEvaluationStep leftStep = precompile(node.getLeftArg(), context);</b>
+<b class="fc">&nbsp;		QueryValueEvaluationStep rightStep = precompile(node.getRightArg(), context);</b>
+<b class="pc">&nbsp;		if (leftStep.isConstant() &amp;&amp; rightStep.isConstant()) {</b>
+<b class="nc">&nbsp;			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;			Value value = operation.apply(leftVal, rightVal);</b>
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);</b>
+<b class="fc">&nbsp;		} else if (leftStep.isConstant()) {</b>
+<b class="fc">&nbsp;			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="fc">&nbsp;			return bindings -&gt; operation.apply(leftVal, rightStep.evaluate(bindings));</b>
+<b class="fc">&nbsp;		} else if (rightStep.isConstant()) {</b>
+<b class="fc">&nbsp;			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="fc">&nbsp;			return bindings -&gt; operation.apply(leftStep.evaluate(bindings), rightVal);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return bindings -&gt; {</b>
+<b class="fc">&nbsp;				Value leftVal = leftStep.evaluate(bindings);</b>
+<b class="fc">&nbsp;				Value rightVal = rightStep.evaluate(bindings);</b>
+<b class="fc">&nbsp;				return operation.apply(leftVal, rightVal);</b>
+&nbsp;			};
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return a QueryEvaluationStep that applies constant propegation.
+&nbsp;	 *
+&nbsp;	 * @param node      that will be evaluated/prepared
+&nbsp;	 * @param operation the task to be done
+&nbsp;	 * @param context   in which the evaluation takes place
+&nbsp;	 * @return a potentially constant step
+&nbsp;	 */
+&nbsp;	protected QueryValueEvaluationStep supplyUnaryValueEvaluation(UnaryValueOperator node,
+&nbsp;			java.util.function.Function&lt;Value, Value&gt; operation, QueryEvaluationContext context) {
+<b class="fc">&nbsp;		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);</b>
+<b class="pc">&nbsp;		if (argStep.isConstant()) {</b>
+<b class="nc">&nbsp;			Value argValue = argStep.evaluate(EmptyBindingSet.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(operation.apply(argValue));</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return bindings -&gt; {</b>
+<b class="fc">&nbsp;				Value argValue = argStep.evaluate(bindings);</b>
+<b class="fc">&nbsp;				return operation.apply(argValue);</b>
+&nbsp;			};
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

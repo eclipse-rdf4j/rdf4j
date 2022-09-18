@@ -1,0 +1,361 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DistanceQuerySpec</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: DistanceQuerySpec (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DistanceQuerySpec</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/92)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;
+&nbsp;public class DistanceQuerySpec extends AbstractSearchQueryEvaluator {
+&nbsp;
+&nbsp;	private FunctionCall distanceFunction;
+&nbsp;
+&nbsp;	private Literal from;
+&nbsp;
+&nbsp;	private IRI units;
+&nbsp;
+&nbsp;	private final ValueExpr distanceExpr;
+&nbsp;
+&nbsp;	private double distance;
+&nbsp;
+&nbsp;	private String distanceVar;
+&nbsp;
+&nbsp;	private StatementPattern geoStatement;
+&nbsp;
+&nbsp;	private String subjectVar;
+&nbsp;
+&nbsp;	private Var contextVar;
+&nbsp;
+&nbsp;	private IRI geoProperty;
+&nbsp;
+&nbsp;	private final String geoVar;
+&nbsp;
+&nbsp;	private Filter filter;
+&nbsp;
+<b class="nc">&nbsp;	public DistanceQuerySpec(FunctionCall distanceFunction, ValueExpr distanceExpr, String distVar, Filter filter) {</b>
+<b class="nc">&nbsp;		this.distanceFunction = distanceFunction;</b>
+<b class="nc">&nbsp;		this.distanceExpr = distanceExpr;</b>
+<b class="nc">&nbsp;		this.distanceVar = distVar;</b>
+<b class="nc">&nbsp;		this.filter = filter;</b>
+<b class="nc">&nbsp;		if (distanceFunction != null) {</b>
+<b class="nc">&nbsp;			List&lt;ValueExpr&gt; args = distanceFunction.getArgs();</b>
+<b class="nc">&nbsp;			this.from = getLiteral(args.get(0));</b>
+<b class="nc">&nbsp;			this.geoVar = getVarName(args.get(1));</b>
+<b class="nc">&nbsp;			this.units = getURI(args.get(2));</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			this.from = null;</b>
+<b class="nc">&nbsp;			this.geoVar = null;</b>
+<b class="nc">&nbsp;			this.units = null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (distanceExpr != null) {</b>
+<b class="nc">&nbsp;			Literal dist = getLiteral(distanceExpr);</b>
+<b class="nc">&nbsp;			this.distance = (dist != null) ? dist.doubleValue() : Double.NaN;</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			this.distance = Double.NaN;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public DistanceQuerySpec(Literal from, IRI units, double dist, String distVar, IRI geoProperty, String geoVar,
+<b class="nc">&nbsp;			String subjectVar, Var contextVar) {</b>
+<b class="nc">&nbsp;		this.from = from;</b>
+<b class="nc">&nbsp;		this.units = units;</b>
+<b class="nc">&nbsp;		this.distance = dist;</b>
+<b class="nc">&nbsp;		this.distanceVar = distVar;</b>
+<b class="nc">&nbsp;		this.geoProperty = geoProperty;</b>
+<b class="nc">&nbsp;		this.geoVar = geoVar;</b>
+<b class="nc">&nbsp;		this.subjectVar = subjectVar;</b>
+<b class="nc">&nbsp;		this.contextVar = contextVar;</b>
+<b class="nc">&nbsp;		this.distanceFunction = null;</b>
+<b class="nc">&nbsp;		this.distanceExpr = null;</b>
+<b class="nc">&nbsp;		this.filter = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setFrom(Literal from) {
+<b class="nc">&nbsp;		this.from = from;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Literal getFrom() {
+<b class="nc">&nbsp;		return from;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setUnits(IRI units) {
+<b class="nc">&nbsp;		this.units = units;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getUnits() {
+<b class="nc">&nbsp;		return units;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setDistance(double d) {
+<b class="nc">&nbsp;		this.distance = d;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public double getDistance() {
+<b class="nc">&nbsp;		return distance;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setDistanceVar(String varName) {
+<b class="nc">&nbsp;		this.distanceVar = varName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getDistanceVar() {
+<b class="nc">&nbsp;		return distanceVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setGeometryPattern(StatementPattern sp) {
+<b class="nc">&nbsp;		if (sp.getSubjectVar().hasValue()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Subject cannot be bound: &quot; + sp);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!sp.getPredicateVar().hasValue()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Predicate must be bound: &quot; + sp);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (sp.getObjectVar().hasValue()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Object cannot be bound: &quot; + sp);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!sp.getObjectVar().getName().equals(geoVar)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Object var name does not match geometry var name&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.geoStatement = sp;</b>
+<b class="nc">&nbsp;		this.subjectVar = sp.getSubjectVar().getName();</b>
+<b class="nc">&nbsp;		this.contextVar = sp.getContextVar();</b>
+<b class="nc">&nbsp;		this.geoProperty = (IRI) sp.getPredicateVar().getValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getSubjectVar() {
+<b class="nc">&nbsp;		return subjectVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Var getContextVar() {
+<b class="nc">&nbsp;		return contextVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getGeoProperty() {
+<b class="nc">&nbsp;		return geoProperty;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getGeoVar() {
+<b class="nc">&nbsp;		return geoVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setDistanceFunctionCall(FunctionCall distanceFunction) {
+<b class="nc">&nbsp;		this.distanceFunction = distanceFunction;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FunctionCall getDistanceFunctionCall() {
+<b class="nc">&nbsp;		return distanceFunction;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValueExpr getDistanceExpr() {
+<b class="nc">&nbsp;		return distanceExpr;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setFilter(Filter f) {
+<b class="nc">&nbsp;		this.filter = f;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Filter getFilter() {
+<b class="nc">&nbsp;		return filter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryModelNode getParentQueryModelNode() {
+<b class="nc">&nbsp;		return filter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryModelNode removeQueryPatterns() {
+<b class="nc">&nbsp;		final QueryModelNode placeholder = new SingletonSet();</b>
+&nbsp;
+<b class="nc">&nbsp;		filter.replaceWith(filter.getArg());</b>
+&nbsp;
+<b class="nc">&nbsp;		geoStatement.replaceWith(placeholder);</b>
+&nbsp;
+<b class="nc">&nbsp;		QueryModelNode functionParent = distanceFunction.getParentNode();</b>
+<b class="nc">&nbsp;		if (functionParent instanceof ExtensionElem) {</b>
+<b class="nc">&nbsp;			Extension extension = (Extension) functionParent.getParentNode();</b>
+<b class="nc">&nbsp;			List&lt;ExtensionElem&gt; elements = extension.getElements();</b>
+<b class="nc">&nbsp;			if (elements.size() &gt; 1) {</b>
+<b class="nc">&nbsp;				elements.remove(functionParent);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				extension.replaceWith(extension.getArg());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return placeholder;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isEvaluable() {
+<b class="nc">&nbsp;		return (getFrom() != null &amp;&amp; !Double.isNaN(distance) &amp;&amp; getUnits() != null &amp;&amp; geoProperty != null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static Literal getLiteral(ValueExpr v) {
+<b class="nc">&nbsp;		Value value = getValue(v);</b>
+<b class="nc">&nbsp;		if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			return (Literal) value;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static IRI getURI(ValueExpr v) {
+<b class="nc">&nbsp;		Value value = getValue(v);</b>
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			return (IRI) value;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static Value getValue(ValueExpr v) {
+<b class="nc">&nbsp;		Value value = null;</b>
+<b class="nc">&nbsp;		if (v instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;			value = ((ValueConstant) v).getValue();</b>
+<b class="nc">&nbsp;		} else if (v instanceof Var) {</b>
+<b class="nc">&nbsp;			value = ((Var) v).getValue();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static String getVarName(ValueExpr v) {
+<b class="nc">&nbsp;		if (v instanceof Var) {</b>
+<b class="nc">&nbsp;			Var var = (Var) v;</b>
+<b class="nc">&nbsp;			if (!var.isConstant()) {</b>
+<b class="nc">&nbsp;				return var.getName();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

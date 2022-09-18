@@ -1,0 +1,457 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractSPARQLXMLParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.sparqlxml</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractSPARQLXMLParser (org.eclipse.rdf4j.query.resultio.sparqlxml)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractSPARQLXMLParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.2%
+  </span>
+  <span class="absValue">
+    (6/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    34.8%
+  </span>
+  <span class="absValue">
+    (16/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.6%
+  </span>
+  <span class="absValue">
+    (55/129)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.sparqlxml;
+&nbsp;
+&nbsp;import java.io.BufferedInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+&nbsp;import org.eclipse.rdf4j.common.xml.SimpleSAXParser;
+&nbsp;import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.AbstractQueryResultParser;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
+&nbsp;import org.xml.sax.ErrorHandler;
+&nbsp;import org.xml.sax.SAXException;
+&nbsp;import org.xml.sax.SAXNotRecognizedException;
+&nbsp;import org.xml.sax.SAXNotSupportedException;
+&nbsp;import org.xml.sax.SAXParseException;
+&nbsp;import org.xml.sax.XMLReader;
+&nbsp;
+&nbsp;/**
+&nbsp; * Abstract base class for SPARQL Results XML Parsers.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public abstract class AbstractSPARQLXMLParser extends AbstractQueryResultParser implements ErrorHandler {
+&nbsp;
+&nbsp;	private SimpleSAXParser internalSAXParser;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	protected AbstractSPARQLXMLParser() {
+<b class="fc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	protected AbstractSPARQLXMLParser(ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parseQueryResult(InputStream in)
+&nbsp;			throws IOException, QueryResultParseException, QueryResultHandlerException {
+<b class="nc">&nbsp;		parseQueryResultInternal(in, true, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean parseQueryResultInternal(InputStream in, boolean attemptParseBoolean, boolean attemptParseTuple)
+&nbsp;			throws IOException, QueryResultParseException, QueryResultHandlerException {
+<b class="pc">&nbsp;		if (!attemptParseBoolean &amp;&amp; !attemptParseTuple) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+&nbsp;					&quot;Internal error: Did not specify whether to parse as either boolean and/or tuple&quot;);
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		BufferedInputStream buff = new BufferedInputStream(in);</b>
+&nbsp;		// Wrap in a custom InputStream that doesn&#39;t allow close to be called by dependencies before we are ready to
+&nbsp;		// call it
+<b class="fc">&nbsp;		UncloseableInputStream uncloseable = new UncloseableInputStream(buff);</b>
+&nbsp;
+<b class="fc">&nbsp;		SAXException caughtException = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean result = false;</b>
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			if (attemptParseBoolean) {</b>
+<b class="fc">&nbsp;				buff.mark(Integer.MAX_VALUE);</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					SPARQLBooleanSAXParser valueParser = new SPARQLBooleanSAXParser();</b>
+&nbsp;
+&nbsp;					XMLReader xmlReader;
+&nbsp;
+<b class="pc">&nbsp;					if (getParserConfig().isSet(XMLParserSettings.CUSTOM_XML_READER)) {</b>
+<b class="nc">&nbsp;						xmlReader = getParserConfig().get(XMLParserSettings.CUSTOM_XML_READER);</b>
+&nbsp;					} else {
+<b class="fc">&nbsp;						xmlReader = XMLReaderFactory.createXMLReader();</b>
+&nbsp;					}
+<b class="fc">&nbsp;					xmlReader.setErrorHandler(this);</b>
+&nbsp;
+&nbsp;					// Set all compulsory feature settings, using the defaults if they are
+&nbsp;					// not explicitly set
+<b class="fc">&nbsp;					for (RioSetting&lt;Boolean&gt; aSetting : getCompulsoryXmlFeatureSettings()) {</b>
+&nbsp;						try {
+<b class="fc">&nbsp;							xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));</b>
+<b class="nc">&nbsp;						} catch (SAXNotRecognizedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a recognized SAX feature.&quot;, aSetting.getKey()));</b>
+<b class="nc">&nbsp;						} catch (SAXNotSupportedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a supported SAX feature.&quot;, aSetting.getKey()));</b>
+<b class="fc">&nbsp;						}</b>
+<b class="fc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// Set all compulsory property settings, using the defaults if they are
+&nbsp;					// not explicitly set
+<b class="pc">&nbsp;					for (RioSetting&lt;?&gt; aSetting : getCompulsoryXmlPropertySettings()) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));</b>
+<b class="nc">&nbsp;						} catch (SAXNotRecognizedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a recognized SAX property.&quot;, aSetting.getKey()));</b>
+<b class="nc">&nbsp;						} catch (SAXNotSupportedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a supported SAX property.&quot;, aSetting.getKey()));</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// Check for any optional feature settings that are explicitly set in
+&nbsp;					// the parser config
+<b class="fc">&nbsp;					for (RioSetting&lt;Boolean&gt; aSetting : getOptionalXmlFeatureSettings()) {</b>
+&nbsp;						try {
+<b class="pc">&nbsp;							if (getParserConfig().isSet(aSetting)) {</b>
+<b class="nc">&nbsp;								xmlReader.setFeature(aSetting.getKey(), getParserConfig().get(aSetting));</b>
+&nbsp;							}
+<b class="nc">&nbsp;						} catch (SAXNotRecognizedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a recognized SAX feature.&quot;, aSetting.getKey()));</b>
+<b class="nc">&nbsp;						} catch (SAXNotSupportedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a supported SAX feature.&quot;, aSetting.getKey()));</b>
+<b class="fc">&nbsp;						}</b>
+<b class="fc">&nbsp;					}</b>
+&nbsp;
+&nbsp;					// Check for any optional property settings that are explicitly set in
+&nbsp;					// the parser config
+<b class="pc">&nbsp;					for (RioSetting&lt;?&gt; aSetting : getOptionalXmlPropertySettings()) {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							if (getParserConfig().isSet(aSetting)) {</b>
+<b class="nc">&nbsp;								xmlReader.setProperty(aSetting.getKey(), getParserConfig().get(aSetting));</b>
+&nbsp;							}
+<b class="nc">&nbsp;						} catch (SAXNotRecognizedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a recognized SAX property.&quot;, aSetting.getKey()));</b>
+<b class="nc">&nbsp;						} catch (SAXNotSupportedException e) {</b>
+<b class="nc">&nbsp;							reportWarning(String.format(&quot;%s is not a supported SAX property.&quot;, aSetting.getKey()));</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="fc">&nbsp;					internalSAXParser = new SimpleSAXParser(xmlReader);</b>
+<b class="fc">&nbsp;					internalSAXParser.setPreserveWhitespace(true);</b>
+&nbsp;
+<b class="fc">&nbsp;					internalSAXParser.setListener(valueParser);</b>
+<b class="fc">&nbsp;					internalSAXParser.parse(uncloseable);</b>
+&nbsp;
+<b class="fc">&nbsp;					result = valueParser.getValue();</b>
+&nbsp;
+&nbsp;					try {
+<b class="pc">&nbsp;						if (this.handler != null) {</b>
+<b class="fc">&nbsp;							this.handler.handleBoolean(result);</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;						if (e.getCause() != null &amp;&amp; e.getCause() instanceof IOException) {</b>
+<b class="nc">&nbsp;							throw (IOException) e.getCause();</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							throw new QueryResultParseException(&quot;Found an issue with the query result handler&quot;, e);</b>
+&nbsp;						}
+<b class="fc">&nbsp;					}</b>
+&nbsp;					// if there were no exceptions up to this point, return the
+&nbsp;					// boolean
+&nbsp;					// result;
+<b class="fc">&nbsp;					return result;</b>
+<b class="nc">&nbsp;				} catch (SAXException e) {</b>
+<b class="nc">&nbsp;					caughtException = e;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Reset the buffered input stream and try again looking for tuple
+&nbsp;				// results
+<b class="nc">&nbsp;				buff.reset();</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (attemptParseTuple) {</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					XMLReader xmlReader = XMLReaderFactory.createXMLReader();</b>
+<b class="fc">&nbsp;					xmlReader.setErrorHandler(this);</b>
+<b class="fc">&nbsp;					internalSAXParser = new SimpleSAXParser(xmlReader);</b>
+<b class="fc">&nbsp;					internalSAXParser.setPreserveWhitespace(true);</b>
+&nbsp;
+<b class="fc">&nbsp;					internalSAXParser.setListener(new SPARQLResultsSAXParser(this.valueFactory, this.handler));</b>
+&nbsp;
+<b class="fc">&nbsp;					internalSAXParser.parse(uncloseable);</b>
+&nbsp;
+&nbsp;					// we had success, so remove the exception that we were tracking
+&nbsp;					// from
+&nbsp;					// the boolean failure
+<b class="fc">&nbsp;					caughtException = null;</b>
+<b class="nc">&nbsp;				} catch (SAXException e) {</b>
+<b class="nc">&nbsp;					caughtException = e;</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (caughtException != null) {</b>
+<b class="nc">&nbsp;				Exception wrappedExc = caughtException.getException();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (wrappedExc == null) {</b>
+<b class="nc">&nbsp;					throw new QueryResultParseException(caughtException);</b>
+<b class="nc">&nbsp;				} else if (wrappedExc instanceof QueryResultParseException) {</b>
+<b class="nc">&nbsp;					throw (QueryResultParseException) wrappedExc;</b>
+<b class="nc">&nbsp;				} else if (wrappedExc instanceof QueryResultHandlerException) {</b>
+<b class="nc">&nbsp;					throw (QueryResultHandlerException) wrappedExc;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new QueryResultParseException(wrappedExc);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;		} finally {
+&nbsp;			// Explicitly call the delegator to the close method to actually close it
+<b class="fc">&nbsp;			uncloseable.doClose();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void reportWarning(String msg) {
+<b class="nc">&nbsp;		if (getParseErrorListener() != null) {</b>
+<b class="nc">&nbsp;			getParseErrorListener().warning(msg, internalSAXParser.getLocator().getLineNumber(),</b>
+<b class="nc">&nbsp;					internalSAXParser.getLocator().getColumnNumber());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a collection of settings that will always be set as XML parser properties using
+&nbsp;	 * {@link XMLReader#setProperty(String, Object)}
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Subclasses can override this to specify more supported settings.
+&nbsp;	 *
+&nbsp;	 * @return A collection of {@link RioSetting}s that indicate which properties will always be setup using
+&nbsp;	 *         {@link XMLReader#setProperty(String, Object)}.
+&nbsp;	 */
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getCompulsoryXmlPropertySettings() {
+<b class="fc">&nbsp;		return Collections.&lt;RioSetting&lt;?&gt;&gt;emptyList();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a collection of settings that will always be set as XML parser features using
+&nbsp;	 * {@link XMLReader#setFeature(String, boolean)}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Subclasses can override this to specify more supported settings.
+&nbsp;	 *
+&nbsp;	 * @return A collection of {@link RioSetting}s that indicate which boolean settings will always be setup using
+&nbsp;	 *         {@link XMLReader#setFeature(String, boolean)}.
+&nbsp;	 */
+&nbsp;	public Collection&lt;RioSetting&lt;Boolean&gt;&gt; getCompulsoryXmlFeatureSettings() {
+<b class="fc">&nbsp;		Set&lt;RioSetting&lt;Boolean&gt;&gt; results = new HashSet&lt;&gt;();</b>
+<b class="fc">&nbsp;		results.add(XMLParserSettings.SECURE_PROCESSING);</b>
+<b class="fc">&nbsp;		results.add(XMLParserSettings.DISALLOW_DOCTYPE_DECL);</b>
+<b class="fc">&nbsp;		results.add(XMLParserSettings.EXTERNAL_GENERAL_ENTITIES);</b>
+<b class="fc">&nbsp;		results.add(XMLParserSettings.EXTERNAL_PARAMETER_ENTITIES);</b>
+<b class="fc">&nbsp;		return results;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser
+&nbsp;	 * properties using {@link XMLReader#setProperty(String, Object)}
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Subclasses can override this to specify more supported settings.
+&nbsp;	 *
+&nbsp;	 * @return A collection of {@link RioSetting}s that indicate which properties can be setup using
+&nbsp;	 *         {@link XMLReader#setProperty(String, Object)}.
+&nbsp;	 */
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getOptionalXmlPropertySettings() {
+<b class="fc">&nbsp;		return Collections.&lt;RioSetting&lt;?&gt;&gt;emptyList();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a collection of settings that will be used, if set in {@link #getParserConfig()}, as XML parser features
+&nbsp;	 * using {@link XMLReader#setFeature(String, boolean)}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Subclasses can override this to specify more supported settings.
+&nbsp;	 *
+&nbsp;	 * @return A collection of {@link RioSetting}s that indicate which boolean settings can be setup using
+&nbsp;	 *         {@link XMLReader#setFeature(String, boolean)}.
+&nbsp;	 */
+&nbsp;	public Collection&lt;RioSetting&lt;Boolean&gt;&gt; getOptionalXmlFeatureSettings() {
+<b class="fc">&nbsp;		Set&lt;RioSetting&lt;Boolean&gt;&gt; results = new HashSet&lt;&gt;();</b>
+<b class="fc">&nbsp;		results.add(XMLParserSettings.LOAD_EXTERNAL_DTD);</b>
+<b class="fc">&nbsp;		return results;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+&nbsp;		// Override to add SPARQL/XML specific supported settings
+<b class="nc">&nbsp;		Set&lt;RioSetting&lt;?&gt;&gt; results = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		results.addAll(getCompulsoryXmlPropertySettings());</b>
+<b class="nc">&nbsp;		results.addAll(getCompulsoryXmlFeatureSettings());</b>
+<b class="nc">&nbsp;		results.addAll(getOptionalXmlPropertySettings());</b>
+<b class="nc">&nbsp;		results.addAll(getOptionalXmlFeatureSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		results.add(XMLParserSettings.CUSTOM_XML_READER);</b>
+<b class="nc">&nbsp;		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);</b>
+&nbsp;
+<b class="nc">&nbsp;		return results;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void warning(SAXParseException exception) throws SAXException {
+<b class="nc">&nbsp;		reportWarning(exception.getMessage());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void error(SAXParseException exception) throws SAXException {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (getParserConfig().get(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {</b>
+<b class="nc">&nbsp;				if (getParseErrorListener() != null) {</b>
+<b class="nc">&nbsp;					getParseErrorListener().error(exception.getMessage(),</b>
+<b class="nc">&nbsp;							internalSAXParser.getLocator().getLineNumber(),</b>
+<b class="nc">&nbsp;							internalSAXParser.getLocator().getColumnNumber());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (!getParserConfig().isNonFatalError(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS)) {</b>
+<b class="nc">&nbsp;					throw new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),</b>
+<b class="nc">&nbsp;							internalSAXParser.getLocator().getColumnNumber());</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (QueryResultParseException e) {</b>
+<b class="nc">&nbsp;			throw new SAXException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void fatalError(SAXParseException exception) throws SAXException {
+<b class="nc">&nbsp;		if (getParseErrorListener() != null) {</b>
+<b class="nc">&nbsp;			getParseErrorListener().fatalError(exception.getMessage(), internalSAXParser.getLocator().getLineNumber(),</b>
+<b class="nc">&nbsp;					internalSAXParser.getLocator().getColumnNumber());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new SAXParseException(exception.getMessage(), internalSAXParser.getLocator(),</b>
+<b class="nc">&nbsp;				new QueryResultParseException(exception, internalSAXParser.getLocator().getLineNumber(),</b>
+<b class="nc">&nbsp;						internalSAXParser.getLocator().getColumnNumber()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

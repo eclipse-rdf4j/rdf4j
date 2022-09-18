@@ -1,0 +1,179 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SourceSelectionCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.cache</a>
+</div>
+
+<h1>Coverage Summary for Class: SourceSelectionCache (org.eclipse.rdf4j.federated.cache)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+  <tr>
+    <td class="name">SourceSelectionCache$StatementSourceAssurance</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.cache;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.optimizer.SourceSelection;
+&nbsp;import org.eclipse.rdf4j.federated.structures.SubQuery;
+&nbsp;
+&nbsp;/**
+&nbsp; * Describes a cache that can be used for {@link SourceSelection} to reduce the number of remote requests.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public interface SourceSelectionCache {
+&nbsp;
+<b class="nc">&nbsp;	enum StatementSourceAssurance {</b>
+&nbsp;		/**
+&nbsp;		 * The endpoint does &lt;b&gt;not&lt;/b&gt; provide any information
+&nbsp;		 */
+<b class="nc">&nbsp;		NONE,</b>
+&nbsp;		/**
+&nbsp;		 * The endpoint has data for a given query pattern
+&nbsp;		 */
+<b class="nc">&nbsp;		HAS_REMOTE_STATEMENTS,</b>
+&nbsp;		/**
+&nbsp;		 * No local information available: a remote check needs to be performed to check if a data source can provide
+&nbsp;		 * statements
+&nbsp;		 */
+<b class="nc">&nbsp;		POSSIBLY_HAS_STATEMENTS</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Ask the cache if a given endpoint can provide results for a {@link SubQuery}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Implementations may infer information by applying logical rules, e.g. if a cache knows that an endpoint can
+&nbsp;	 * provide statements {s, foaf:name, &quot;Alan&quot;}, it can also provide results for {s, foaf:name, ?name}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If a cache cannot provide information for the given arguments, it must return
+&nbsp;	 * {@link StatementSourceAssurance#POSSIBLY_HAS_STATEMENTS} in order to trigger a remote check.&lt;/p
+&nbsp;	 *
+&nbsp;	 * @param subQuery
+&nbsp;	 * @param endpoint
+&nbsp;	 * @return the {@link StatementSourceAssurance}
+&nbsp;	 */
+&nbsp;	StatementSourceAssurance getAssurance(SubQuery subQuery, Endpoint endpoint);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Update the information for a given {@link SubQuery} and {@link Endpoint}.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Implementations must make sure that any operations are thread-safe
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param subQuery
+&nbsp;	 * @param endpoint
+&nbsp;	 * @param hasStatements
+&nbsp;	 */
+&nbsp;	void updateInformation(SubQuery subQuery, Endpoint endpoint, boolean hasStatements);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

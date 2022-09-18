@@ -1,0 +1,231 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HTTPRepositoryConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.http.config</a>
+</div>
+
+<h1>Coverage Summary for Class: HTTPRepositoryConfig (org.eclipse.rdf4j.repository.http.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HTTPRepositoryConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.http.config;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.NAMESPACE;
+&nbsp;import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.PASSWORD;
+&nbsp;import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.REPOSITORYURL;
+&nbsp;import static org.eclipse.rdf4j.repository.http.config.HTTPRepositorySchema.USERNAME;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.repository.config.AbstractRepositoryImplConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class HTTPRepositoryConfig extends AbstractRepositoryImplConfig {
+&nbsp;
+&nbsp;	private String url;
+&nbsp;
+&nbsp;	private String username;
+&nbsp;
+&nbsp;	private String password;
+&nbsp;
+&nbsp;	public HTTPRepositoryConfig() {
+<b class="nc">&nbsp;		super(HTTPRepositoryFactory.REPOSITORY_TYPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public HTTPRepositoryConfig(String url) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		setURL(url);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getURL() {
+<b class="nc">&nbsp;		return url;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setURL(String url) {
+<b class="nc">&nbsp;		this.url = url;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getUsername() {
+<b class="nc">&nbsp;		return username;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setUsername(String username) {
+<b class="nc">&nbsp;		this.username = username;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getPassword() {
+<b class="nc">&nbsp;		return password;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPassword(String password) {
+<b class="nc">&nbsp;		this.password = password;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void validate() throws RepositoryConfigException {
+<b class="nc">&nbsp;		super.validate();</b>
+<b class="nc">&nbsp;		if (url == null) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(&quot;No URL specified for HTTP repository&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model graph) {
+<b class="nc">&nbsp;		Resource implNode = super.export(graph);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (url != null) {</b>
+<b class="nc">&nbsp;			graph.setNamespace(&quot;http&quot;, NAMESPACE);</b>
+<b class="nc">&nbsp;			graph.add(implNode, REPOSITORYURL, SimpleValueFactory.getInstance().createIRI(url));</b>
+&nbsp;		}
+&nbsp;		// if (username != null) {
+&nbsp;		// graph.add(implNode, USERNAME,
+&nbsp;		// graph.getValueFactory().createLiteral(username));
+&nbsp;		// }
+&nbsp;		// if (password != null) {
+&nbsp;		// graph.add(implNode, PASSWORD,
+&nbsp;		// graph.getValueFactory().createLiteral(password));
+&nbsp;		// }
+&nbsp;
+<b class="nc">&nbsp;		return implNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model model, Resource implNode) throws RepositoryConfigException {
+<b class="nc">&nbsp;		super.parse(model, implNode);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Models.objectIRI(model.getStatements(implNode, REPOSITORYURL, null))</b>
+<b class="nc">&nbsp;					.ifPresent(iri -&gt; setURL(iri.stringValue()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(model.getStatements(implNode, USERNAME, null))</b>
+<b class="nc">&nbsp;					.ifPresent(username -&gt; setUsername(username.getLabel()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(model.getStatements(implNode, PASSWORD, null))</b>
+<b class="nc">&nbsp;					.ifPresent(password -&gt; setPassword(password.getLabel()));</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (ModelException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>

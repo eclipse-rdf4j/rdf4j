@@ -1,0 +1,232 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > UnionIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iteration</a>
+</div>
+
+<h1>Coverage Summary for Class: UnionIteration (org.eclipse.rdf4j.common.iteration)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">UnionIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iteration;
+&nbsp;
+&nbsp;import java.lang.reflect.UndeclaredThrowableException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;/**
+&nbsp; * An Iteration that returns the bag union of the results of a number of Iterations. &#39;Bag union&#39; means that the
+&nbsp; * UnionIteration does not filter duplicate objects.
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class UnionIteration&lt;E, X extends Exception&gt; extends LookAheadIteration&lt;E, X&gt; {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final Iterator&lt;? extends Iteration&lt;? extends E, X&gt;&gt; argIter;
+&nbsp;
+&nbsp;	private Iteration&lt;? extends E, X&gt; currentIter;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
+&nbsp;	 *
+&nbsp;	 * @param args The Iterations containing the elements to iterate over.
+&nbsp;	 */
+&nbsp;	@SafeVarargs
+&nbsp;	public UnionIteration(Iteration&lt;? extends E, X&gt;... args) {
+<b class="nc">&nbsp;		this(Arrays.asList(args));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new UnionIteration that returns the bag union of the results of a number of Iterations.
+&nbsp;	 *
+&nbsp;	 * @param args The Iterations containing the elements to iterate over.
+&nbsp;	 */
+<b class="nc">&nbsp;	public UnionIteration(Iterable&lt;? extends Iteration&lt;? extends E, X&gt;&gt; args) {</b>
+<b class="nc">&nbsp;		argIter = args.iterator();</b>
+&nbsp;
+&nbsp;		// Initialize with empty iteration
+<b class="nc">&nbsp;		currentIter = new EmptyIteration&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected E getNextElement() throws X {
+<b class="nc">&nbsp;		if (isClosed()) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		while (true) {
+&nbsp;
+<b class="nc">&nbsp;			Iteration&lt;? extends E, X&gt; nextCurrentIter = currentIter;</b>
+<b class="nc">&nbsp;			if (nextCurrentIter != null &amp;&amp; nextCurrentIter.hasNext()) {</b>
+<b class="nc">&nbsp;				return nextCurrentIter.next();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Current Iteration exhausted, continue with the next one
+<b class="nc">&nbsp;			Iterations.closeCloseable(nextCurrentIter);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (argIter.hasNext()) {</b>
+<b class="nc">&nbsp;				currentIter = argIter.next();</b>
+&nbsp;			} else {
+&nbsp;				// All elements have been returned
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws X {
+&nbsp;		try {
+&nbsp;			// Close this iteration, this will prevent lookAhead() from calling
+&nbsp;			// getNextElement() again
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				List&lt;Throwable&gt; collectedExceptions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;				while (argIter.hasNext()) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						Iterations.closeCloseable(argIter.next());</b>
+<b class="nc">&nbsp;					} catch (Throwable e) {</b>
+<b class="nc">&nbsp;						if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;							Thread.currentThread().interrupt();</b>
+&nbsp;						}
+<b class="nc">&nbsp;						collectedExceptions.add(e);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (!collectedExceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;					throw new UndeclaredThrowableException(collectedExceptions.get(0));</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				Iterations.closeCloseable(currentIter);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:22</div>
+</div>
+</body>
+</html>

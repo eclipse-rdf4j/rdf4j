@@ -1,0 +1,367 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ReadCommittedWrapper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.extensiblestore</a>
+</div>
+
+<h1>Coverage Summary for Class: ReadCommittedWrapper (org.eclipse.rdf4j.sail.extensiblestore)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ReadCommittedWrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ReadCommittedWrapper$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/35)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/72)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/78)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.extensiblestore;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatementHelper;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Håvard Mikkelsen Ottestad
+&nbsp; */
+&nbsp;class ReadCommittedWrapper implements DataStructureInterface {
+&nbsp;
+&nbsp;	private final DataStructureInterface dataStructure;
+&nbsp;
+<b class="nc">&nbsp;	private Map&lt;ExtensibleStatement, ExtensibleStatement&gt; internalAdded = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private Map&lt;ExtensibleStatement, ExtensibleStatement&gt; internalRemoved = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	ReadCommittedWrapper(DataStructureInterface dataStructure) {</b>
+<b class="nc">&nbsp;		this.dataStructure = dataStructure;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(ExtensibleStatement statement) {
+<b class="nc">&nbsp;		internalAdded.put(statement, statement);</b>
+<b class="nc">&nbsp;		internalRemoved.remove(statement);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeStatement(ExtensibleStatement statement) {
+<b class="nc">&nbsp;		internalRemoved.put(statement, statement);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; getStatements(Resource subject,
+&nbsp;			IRI predicate, Value object, boolean inferred, Resource... context) {
+&nbsp;
+&nbsp;		// must match single statement
+<b class="nc">&nbsp;		if (subject != null &amp;&amp; predicate != null &amp;&amp; object != null &amp;&amp; context != null &amp;&amp; context.length == 1) {</b>
+<b class="nc">&nbsp;			Statement statement = SimpleValueFactory.getInstance()</b>
+<b class="nc">&nbsp;					.createStatement(subject, predicate, object, context[0]);</b>
+&nbsp;
+<b class="nc">&nbsp;			statement = ExtensibleStatementHelper.getDefaultImpl().fromStatement(statement, inferred);</b>
+&nbsp;
+<b class="nc">&nbsp;			ExtensibleStatement extensibleStatement = internalAdded.get(statement);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (extensibleStatement != null) {</b>
+<b class="nc">&nbsp;				return new SingletonIteration&lt;&gt;(extensibleStatement);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (internalRemoved.containsKey(statement)) {</b>
+<b class="nc">&nbsp;					return new EmptyIteration&lt;&gt;();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					synchronized (dataStructure) {</b>
+<b class="nc">&nbsp;						return dataStructure.getStatements(subject, predicate, object, inferred, context);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			synchronized (dataStructure) {</b>
+&nbsp;
+<b class="nc">&nbsp;				return new LookAheadIteration&lt;&gt;() {</b>
+&nbsp;
+<b class="nc">&nbsp;					final Set&lt;ExtensibleStatement&gt; internalAddedLocal = new HashSet&lt;&gt;(internalAdded.values());</b>
+<b class="nc">&nbsp;					final Set&lt;ExtensibleStatement&gt; internalRemovedLocal = new HashSet&lt;&gt;(internalRemoved.values());</b>
+&nbsp;
+<b class="nc">&nbsp;					final Iterator&lt;ExtensibleStatement&gt; left = internalAddedLocal.stream()</b>
+<b class="nc">&nbsp;							.filter(statement -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;								if (subject != null &amp;&amp; !statement.getSubject().equals(subject)) {</b>
+<b class="nc">&nbsp;									return false;</b>
+&nbsp;								}
+<b class="nc">&nbsp;								if (predicate != null &amp;&amp; !statement.getPredicate().equals(predicate)) {</b>
+<b class="nc">&nbsp;									return false;</b>
+&nbsp;								}
+<b class="nc">&nbsp;								if (object != null &amp;&amp; !statement.getObject().equals(object)) {</b>
+<b class="nc">&nbsp;									return false;</b>
+&nbsp;								}
+<b class="nc">&nbsp;								if (context != null &amp;&amp; context.length &gt; 0</b>
+<b class="nc">&nbsp;										&amp;&amp; !containsContext(context, statement.getContext())) {</b>
+<b class="nc">&nbsp;									return false;</b>
+&nbsp;								}
+&nbsp;
+<b class="nc">&nbsp;								if (!inferred &amp;&amp; inferred != statement.isInferred()) {</b>
+<b class="nc">&nbsp;									return false;</b>
+&nbsp;								}
+&nbsp;
+<b class="nc">&nbsp;								return true;</b>
+&nbsp;							})
+<b class="nc">&nbsp;							.iterator();</b>
+&nbsp;
+<b class="nc">&nbsp;					final CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; right = dataStructure</b>
+<b class="nc">&nbsp;							.getStatements(</b>
+&nbsp;									subject, predicate, object, inferred, context);
+&nbsp;
+&nbsp;					@Override
+&nbsp;					protected void handleClose() throws SailException {
+<b class="nc">&nbsp;						super.handleClose();</b>
+<b class="nc">&nbsp;						right.close();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					@Override
+&nbsp;					protected ExtensibleStatement getNextElement() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;						ExtensibleStatement next = null;</b>
+&nbsp;
+&nbsp;						do {
+<b class="nc">&nbsp;							ExtensibleStatement tempNext = null;</b>
+<b class="nc">&nbsp;							if (left.hasNext()) {</b>
+<b class="nc">&nbsp;								tempNext = left.next();</b>
+<b class="nc">&nbsp;							} else if (right.hasNext()) {</b>
+<b class="nc">&nbsp;								tempNext = right.next();</b>
+&nbsp;
+<b class="nc">&nbsp;								if (!internalAddedLocal.isEmpty() &amp;&amp; internalAddedLocal.contains(tempNext)) {</b>
+<b class="nc">&nbsp;									tempNext = null;</b>
+&nbsp;								}
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							if (tempNext != null) {</b>
+<b class="nc">&nbsp;								if (internalRemovedLocal.isEmpty() || !internalRemovedLocal.contains(tempNext)) {</b>
+<b class="nc">&nbsp;									next = tempNext;</b>
+&nbsp;								}
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;						} while (next == null &amp;&amp; (left.hasNext() || right.hasNext()));</b>
+&nbsp;
+<b class="nc">&nbsp;						return next;</b>
+&nbsp;
+&nbsp;					}
+&nbsp;
+&nbsp;				};
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean containsContext(Resource[] haystack, Resource needle) {
+<b class="nc">&nbsp;		for (Resource resource : haystack) {</b>
+<b class="nc">&nbsp;			if (resource == null &amp;&amp; needle == null) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (resource != null &amp;&amp; resource.equals(needle)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushForCommit() {
+&nbsp;
+<b class="nc">&nbsp;		if (internalAdded.isEmpty() &amp;&amp; internalRemoved.isEmpty()) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		List&lt;ExtensibleStatement&gt; internalAddedEffective = internalAdded</b>
+<b class="nc">&nbsp;				.keySet()</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.filter(statement -&gt; !internalRemoved.containsKey(statement))</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;		synchronized (dataStructure) {</b>
+<b class="nc">&nbsp;			internalAddedEffective.forEach(dataStructure::addStatement);</b>
+<b class="nc">&nbsp;			internalRemoved.values().forEach(dataStructure::removeStatement);</b>
+<b class="nc">&nbsp;			dataStructure.flushForReading();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		internalAdded = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		internalRemoved = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushForReading() {
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() {
+<b class="nc">&nbsp;		dataStructure.init();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:20</div>
+</div>
+</body>
+</html>
