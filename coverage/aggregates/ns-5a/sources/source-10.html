@@ -1,0 +1,223 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SimpleIRI</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: SimpleIRI (org.eclipse.rdf4j.model.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SimpleIRI</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (5/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (12/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.impl;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractIRI;
+&nbsp;import org.eclipse.rdf4j.model.util.URIUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * The default implementation of the {@link IRI} interface.
+&nbsp; */
+&nbsp;public class SimpleIRI extends AbstractIRI {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -7330406348751485330L;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The IRI string.
+&nbsp;	 */
+&nbsp;	private String iriString;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An index indicating the first character of the local name in the IRI string, -1 if not yet set.
+&nbsp;	 */
+&nbsp;	private int localNameIdx;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new, un-initialized IRI. This IRI&#39;s string value needs to be {@link #setIRIString(String) set} before
+&nbsp;	 * the normal methods can be used.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected SimpleIRI() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new IRI from the supplied string.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note that creating SimpleIRI objects directly via this constructor is not the recommended approach. Instead, use
+&nbsp;	 * a {@link org.eclipse.rdf4j.model.ValueFactory ValueFactory} (obtained from your repository or by using
+&nbsp;	 * {@link SimpleValueFactory#getInstance()}) to create new IRI objects.
+&nbsp;	 *
+&nbsp;	 * @param iriString A String representing a valid, absolute IRI. May not be &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @throws IllegalArgumentException If the supplied IRI is not a valid (absolute) IRI.
+&nbsp;	 * @see org.eclipse.rdf4j.model.impl.SimpleValueFactory#createIRI(String)
+&nbsp;	 */
+<b class="fc">&nbsp;	protected SimpleIRI(String iriString) {</b>
+<b class="fc">&nbsp;		setIRIString(iriString);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	protected void setIRIString(String iriString) {
+<b class="fc">&nbsp;		Objects.requireNonNull(iriString, &quot;iriString must not be null&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (iriString.indexOf(&#39;:&#39;) &lt; 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a valid (absolute) IRI: &quot; + iriString);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		this.iriString = iriString;</b>
+<b class="fc">&nbsp;		this.localNameIdx = -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String stringValue() {
+<b class="fc">&nbsp;		return iriString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getNamespace() {
+<b class="fc">&nbsp;		if (localNameIdx &lt; 0) {</b>
+<b class="fc">&nbsp;			localNameIdx = URIUtil.getLocalNameIndex(iriString);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return iriString.substring(0, localNameIdx);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getLocalName() {
+<b class="pc">&nbsp;		if (localNameIdx &lt; 0) {</b>
+<b class="nc">&nbsp;			localNameIdx = URIUtil.getLocalNameIndex(iriString);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return iriString.substring(localNameIdx);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

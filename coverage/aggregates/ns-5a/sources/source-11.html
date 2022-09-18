@@ -1,0 +1,485 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SimpleLiteral</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: SimpleLiteral (org.eclipse.rdf4j.model.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SimpleLiteral</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75.8%
+  </span>
+  <span class="absValue">
+    (25/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    58.3%
+  </span>
+  <span class="absValue">
+    (42/72)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    74.6%
+  </span>
+  <span class="absValue">
+    (85/114)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.impl;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;
+&nbsp;/**
+&nbsp; * A simple default implementation of the {@link Literal} interface.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author David Huynh
+&nbsp; */
+<b class="fc">&nbsp;public class SimpleLiteral extends AbstractLiteral {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -1649571784782592271L;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The literal&#39;s label.
+&nbsp;	 */
+&nbsp;	private String label;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The literal&#39;s language tag.
+&nbsp;	 */
+&nbsp;	private String language;
+&nbsp;	// Cache Optional instance for the language, or null if not yet computed. Marked as transient because Optional is
+&nbsp;	// not serializable.
+<b class="fc">&nbsp;	transient private Optional&lt;String&gt; optionalLanguageCache = null;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The literal&#39;s datatype.
+&nbsp;	 */
+&nbsp;	private IRI datatype;
+&nbsp;
+&nbsp;	// Cached CoreDatatype, or null if not yet computed.
+<b class="fc">&nbsp;	private CoreDatatype coreDatatype = null;</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;	protected SimpleLiteral() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new plain literal with the supplied label.
+&nbsp;	 *
+&nbsp;	 * @param label The label for the literal, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected SimpleLiteral(String label) {</b>
+<b class="nc">&nbsp;		setLabel(label);</b>
+<b class="nc">&nbsp;		setDatatype(org.eclipse.rdf4j.model.vocabulary.XSD.STRING);</b>
+<b class="nc">&nbsp;		optionalLanguageCache = Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new plain literal with the supplied label and language tag.
+&nbsp;	 *
+&nbsp;	 * @param label    The label for the literal, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param language The language tag for the literal, must not be &lt;var&gt;null&lt;/var&gt; and not be empty.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected SimpleLiteral(String label, String language) {</b>
+<b class="fc">&nbsp;		setLabel(label);</b>
+<b class="fc">&nbsp;		setLanguage(language);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new datatyped literal with the supplied label and datatype.
+&nbsp;	 *
+&nbsp;	 * @param label    The label for the literal, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param datatype The datatype for the literal.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected SimpleLiteral(String label, IRI datatype) {</b>
+<b class="fc">&nbsp;		setLabel(label);</b>
+<b class="pc">&nbsp;		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;datatype rdf:langString requires a language tag&quot;);</b>
+<b class="pc">&nbsp;		} else if (datatype == null) {</b>
+<b class="nc">&nbsp;			setDatatype(CoreDatatype.XSD.STRING);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			setDatatype(datatype);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		optionalLanguageCache = Optional.empty();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new datatyped literal with the supplied label and datatype.
+&nbsp;	 *
+&nbsp;	 * @param label    The label for the literal, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param datatype The datatype for the literal.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected SimpleLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {</b>
+<b class="pc">&nbsp;		assert coreDatatype != null;</b>
+<b class="pc">&nbsp;		assert datatype != null;</b>
+<b class="pc">&nbsp;		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (CoreDatatype.RDF.LANGSTRING == coreDatatype) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;datatype rdf:langString requires a language tag&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		setLabel(label);</b>
+<b class="fc">&nbsp;		setDatatype(datatype, coreDatatype);</b>
+<b class="fc">&nbsp;		optionalLanguageCache = Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(since = &quot;4.0.0&quot;, forRemoval = true)
+<b class="nc">&nbsp;	protected SimpleLiteral(String label, XSD.Datatype datatype) {</b>
+<b class="nc">&nbsp;		setLabel(label);</b>
+<b class="nc">&nbsp;		if (org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatype.getIri())) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;datatype rdf:langString requires a language tag&quot;);</b>
+<b class="nc">&nbsp;		} else if (datatype == null) {</b>
+<b class="nc">&nbsp;			setDatatype(CoreDatatype.XSD.STRING);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			setDatatype(datatype.getCoreDatatype());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	protected SimpleLiteral(String label, CoreDatatype datatype) {</b>
+<b class="fc">&nbsp;		setLabel(label);</b>
+<b class="pc">&nbsp;		if (datatype == CoreDatatype.RDF.LANGSTRING) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;datatype rdf:langString requires a language tag&quot;);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			setDatatype(datatype);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		optionalLanguageCache = Optional.empty();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	protected void setLabel(String label) {
+<b class="fc">&nbsp;		Objects.requireNonNull(label, &quot;Literal label cannot be null&quot;);</b>
+<b class="fc">&nbsp;		this.label = label;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getLabel() {
+<b class="fc">&nbsp;		return label;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setLanguage(String language) {
+<b class="fc">&nbsp;		Objects.requireNonNull(language);</b>
+<b class="pc">&nbsp;		if (language.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Language tag cannot be empty&quot;);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		this.language = language;</b>
+<b class="fc">&nbsp;		optionalLanguageCache = Optional.of(language);</b>
+<b class="fc">&nbsp;		setDatatype(CoreDatatype.RDF.LANGSTRING);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Optional&lt;String&gt; getLanguage() {
+<b class="pc">&nbsp;		if (optionalLanguageCache == null) {</b>
+<b class="nc">&nbsp;			optionalLanguageCache = Optional.ofNullable(language);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return optionalLanguageCache;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setDatatype(IRI datatype) {
+<b class="fc">&nbsp;		this.datatype = datatype;</b>
+<b class="fc">&nbsp;		coreDatatype = CoreDatatype.from(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
+<b class="pc">&nbsp;		assert datatype != null;</b>
+<b class="pc">&nbsp;		assert coreDatatype != null;</b>
+<b class="pc">&nbsp;		assert coreDatatype == CoreDatatype.NONE || datatype == coreDatatype.getIri();</b>
+&nbsp;
+<b class="fc">&nbsp;		this.datatype = datatype;</b>
+<b class="fc">&nbsp;		this.coreDatatype = coreDatatype;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated(since = &quot;4.0.0&quot;, forRemoval = true)
+&nbsp;	protected void setDatatype(XSD.Datatype datatype) {
+<b class="nc">&nbsp;		this.datatype = datatype.getIri();</b>
+<b class="nc">&nbsp;		coreDatatype = datatype.getCoreDatatype();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setDatatype(CoreDatatype datatype) {
+<b class="fc">&nbsp;		Objects.requireNonNull(datatype);</b>
+<b class="fc">&nbsp;		this.datatype = datatype.getIri();</b>
+<b class="fc">&nbsp;		this.coreDatatype = datatype;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI getDatatype() {
+<b class="fc">&nbsp;		return datatype;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated Use {@link #getCoreDatatype()} instead.
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.0.0&quot;, forRemoval = true)
+&nbsp;	public Optional&lt;XSD.Datatype&gt; getXsdDatatype() {
+<b class="nc">&nbsp;		CoreDatatype coreDatatype = getCoreDatatype();</b>
+&nbsp;
+<b class="nc">&nbsp;		return org.eclipse.rdf4j.model.vocabulary.XSD.Datatype.from(coreDatatype.asXSDDatatype().orElse(null));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// Overrides Object.equals(Object), implements Literal.equals(Object)
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="fc">&nbsp;		if (this == o) {</b>
+<b class="fc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (o instanceof Literal) {</b>
+<b class="fc">&nbsp;			Literal other = (Literal) o;</b>
+&nbsp;
+<b class="fc">&nbsp;			CoreDatatype coreDatatype = getCoreDatatype();</b>
+&nbsp;
+&nbsp;			// Compare core datatypes
+<b class="fc">&nbsp;			if (coreDatatype != ((Literal) o).getCoreDatatype()) {</b>
+<b class="fc">&nbsp;				return false;</b>
+<b class="pc">&nbsp;			} else if (coreDatatype == CoreDatatype.NONE) {</b>
+&nbsp;				// Compare other datatypes
+<b class="nc">&nbsp;				if (!datatype.equals(other.getDatatype())) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// Compare labels
+<b class="fc">&nbsp;			if (!label.equals(other.getLabel())) {</b>
+<b class="fc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			Optional&lt;String&gt; language = getLanguage();</b>
+<b class="fc">&nbsp;			Optional&lt;String&gt; otherLanguage = other.getLanguage();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (language.isPresent() &amp;&amp; otherLanguage.isPresent()) {</b>
+<b class="fc">&nbsp;				return language.get().equalsIgnoreCase(otherLanguage.get());</b>
+&nbsp;			}
+&nbsp;			// If only one has a language, then return false
+&nbsp;			else {
+<b class="pc">&nbsp;				return language.isEmpty() &amp;&amp; otherLanguage.isEmpty();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// overrides Object.hashCode(), implements Literal.hashCode()
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="fc">&nbsp;		return label.hashCode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the label of the literal with its language or datatype. Note that this method does not escape the quoted
+&nbsp;	 * label.
+&nbsp;	 *
+&nbsp;	 * @see org.eclipse.rdf4j.rio.ntriples.NTriplesUtil#toNTriplesString(org.eclipse.rdf4j.model.Literal)
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="fc">&nbsp;		if (Literals.isLanguageLiteral(this)) {</b>
+<b class="fc">&nbsp;			StringBuilder sb = new StringBuilder(label.length() + language.length() + 3);</b>
+<b class="fc">&nbsp;			sb.append(&#39;&quot;&#39;).append(label).append(&#39;&quot;&#39;);</b>
+<b class="fc">&nbsp;			sb.append(&#39;@&#39;).append(language);</b>
+<b class="fc">&nbsp;			return sb.toString();</b>
+<b class="pc">&nbsp;		} else if (org.eclipse.rdf4j.model.vocabulary.XSD.STRING.equals(datatype) || datatype == null) {</b>
+<b class="fc">&nbsp;			StringBuilder sb = new StringBuilder(label.length() + 2);</b>
+<b class="fc">&nbsp;			sb.append(&#39;&quot;&#39;).append(label).append(&#39;&quot;&#39;);</b>
+<b class="fc">&nbsp;			return sb.toString();</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			StringBuilder sb = new StringBuilder(label.length() + datatype.stringValue().length() + 6);</b>
+<b class="fc">&nbsp;			sb.append(&#39;&quot;&#39;).append(label).append(&#39;&quot;&#39;);</b>
+<b class="fc">&nbsp;			sb.append(&quot;^^&lt;&quot;).append(datatype.toString()).append(&quot;&gt;&quot;);</b>
+<b class="fc">&nbsp;			return sb.toString();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String stringValue() {
+<b class="fc">&nbsp;		return label;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean booleanValue() {
+<b class="fc">&nbsp;		return XMLDatatypeUtil.parseBoolean(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public byte byteValue() {
+<b class="nc">&nbsp;		return XMLDatatypeUtil.parseByte(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public short shortValue() {
+<b class="nc">&nbsp;		return XMLDatatypeUtil.parseShort(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int intValue() {
+<b class="fc">&nbsp;		return XMLDatatypeUtil.parseInt(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long longValue() {
+<b class="nc">&nbsp;		return XMLDatatypeUtil.parseLong(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public float floatValue() {
+<b class="nc">&nbsp;		return XMLDatatypeUtil.parseFloat(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public double doubleValue() {
+<b class="fc">&nbsp;		return XMLDatatypeUtil.parseDouble(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BigInteger integerValue() {
+<b class="fc">&nbsp;		return XMLDatatypeUtil.parseInteger(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BigDecimal decimalValue() {
+<b class="fc">&nbsp;		return XMLDatatypeUtil.parseDecimal(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public XMLGregorianCalendar calendarValue() {
+<b class="fc">&nbsp;		return XMLDatatypeUtil.parseCalendar(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CoreDatatype getCoreDatatype() {
+<b class="pc">&nbsp;		if (coreDatatype == null) {</b>
+<b class="nc">&nbsp;			coreDatatype = CoreDatatype.from(datatype);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return coreDatatype;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

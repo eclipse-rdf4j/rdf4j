@@ -1,0 +1,97 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SearchQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: SearchQuery (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">SearchQuery</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;
+&nbsp;@Deprecated
+&nbsp;public interface SearchQuery {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Queries for the given subject or all subjects if null.
+&nbsp;	 */
+&nbsp;	Iterable&lt;? extends DocumentScore&gt; query(Resource subject) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Highlights the given field or all fields if null.
+&nbsp;	 */
+&nbsp;	void highlight(IRI property);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,202 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LoadQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.core.query</a>
+</div>
+
+<h1>Coverage Summary for Class: LoadQuery (org.eclipse.rdf4j.sparqlbuilder.core.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LoadQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.core.query;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SPARQL LOAD Query
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#load&quot;&gt; SPARQL LOAD Query&lt;/a&gt;
+&nbsp; */
+&nbsp;public class LoadQuery extends GraphManagementQuery&lt;LoadQuery&gt; {
+&nbsp;	private static final String LOAD = &quot;LOAD&quot;;
+&nbsp;	private static final String INTO_GRAPH = &quot;INTO GRAPH&quot;;
+&nbsp;
+&nbsp;	private Iri from;
+<b class="nc">&nbsp;	private Optional&lt;Iri&gt; to = Optional.empty();</b>
+&nbsp;
+<b class="nc">&nbsp;	LoadQuery() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify which graph to load form
+&nbsp;	 *
+&nbsp;	 * @param from the IRI identifying the graph to load triples from
+&nbsp;	 *
+&nbsp;	 * @return this LoadQuery instance
+&nbsp;	 */
+&nbsp;	public LoadQuery from(Iri from) {
+<b class="nc">&nbsp;		this.from = from;</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify which graph to load form
+&nbsp;	 *
+&nbsp;	 * @param from the IRI identifying the graph to load triples from
+&nbsp;	 *
+&nbsp;	 * @return this LoadQuery instance
+&nbsp;	 */
+&nbsp;	public LoadQuery from(IRI from) {
+<b class="nc">&nbsp;		return from(iri(from));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify which graph to load into, if not the default graph
+&nbsp;	 *
+&nbsp;	 * @param to the IRI identifying the graph to load into
+&nbsp;	 *
+&nbsp;	 * @return this LoadQuery instance
+&nbsp;	 */
+&nbsp;	public LoadQuery to(Iri to) {
+<b class="nc">&nbsp;		this.to = Optional.ofNullable(to);</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify which graph to load into, if not the default graph
+&nbsp;	 *
+&nbsp;	 * @param to the IRI identifying the graph to load into
+&nbsp;	 *
+&nbsp;	 * @return this LoadQuery instance
+&nbsp;	 */
+&nbsp;	public LoadQuery to(IRI to) {
+<b class="nc">&nbsp;		return to(iri(to));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		StringBuilder load = new StringBuilder();</b>
+<b class="nc">&nbsp;		load.append(LOAD).append(&quot; &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		appendSilent(load);</b>
+&nbsp;
+<b class="nc">&nbsp;		load.append(from.getQueryString());</b>
+&nbsp;
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendQueryElementIfPresent(to, load, &quot; &quot; + INTO_GRAPH + &quot; &quot;, null);</b>
+&nbsp;
+<b class="nc">&nbsp;		return load.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

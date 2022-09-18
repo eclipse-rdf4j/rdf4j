@@ -1,0 +1,163 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Properties</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks</a>
+</div>
+
+<h1>Coverage Summary for Class: Properties (org.eclipse.rdf4j.common.concurrent.locks)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Properties</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks;
+&nbsp;
+&nbsp;/**
+&nbsp; * Class controlling various logging properties such as the amount of lock tracking that is done for debugging (at the
+&nbsp; * cost of performance).
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class Properties {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The system property &quot;info.aduna.concurrent.locks.trackLocks&quot; that can be used to enable lock tracking by giving
+&nbsp;	 * it a (non-null) value.
+&nbsp;	 */
+&nbsp;	public static final String TRACK_LOCKS = &quot;info.aduna.concurrent.locks.trackLocks&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets of clears the {@link #TRACK_LOCKS} system property.
+&nbsp;	 */
+&nbsp;	public static void setLockTrackingEnabled(boolean trackLocks) {
+<b class="nc">&nbsp;		if (trackLocks) {</b>
+<b class="nc">&nbsp;			System.setProperty(TRACK_LOCKS, &quot;&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			System.clearProperty(TRACK_LOCKS);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean lockTrackingEnabled() {
+&nbsp;		try {
+<b class="nc">&nbsp;			return System.getProperty(TRACK_LOCKS) != null;</b>
+<b class="nc">&nbsp;		} catch (SecurityException e) {</b>
+&nbsp;			// Thrown when not allowed to read system properties, for example when
+&nbsp;			// running in applets
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

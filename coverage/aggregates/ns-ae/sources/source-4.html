@@ -1,0 +1,439 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFJSONWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.rdfjson</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFJSONWriter (org.eclipse.rdf4j.rio.rdfjson)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFJSONWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/120)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.rdfjson;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.TreeModel;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.RDFJSONWriterSettings;
+&nbsp;
+&nbsp;import com.fasterxml.jackson.core.JsonFactory;
+&nbsp;import com.fasterxml.jackson.core.JsonGenerationException;
+&nbsp;import com.fasterxml.jackson.core.JsonGenerator;
+&nbsp;import com.fasterxml.jackson.core.util.DefaultIndenter;
+&nbsp;import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
+&nbsp;import com.fasterxml.jackson.core.util.DefaultPrettyPrinter.Indenter;
+&nbsp;
+&nbsp;/**
+&nbsp; * {@link RDFWriter} implementation for the RDF/JSON format
+&nbsp; *
+&nbsp; * @author Peter Ansell p_ansell@yahoo.com
+&nbsp; */
+&nbsp;public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
+&nbsp;
+&nbsp;	private final Writer writer;
+&nbsp;
+&nbsp;	private final RDFFormat actualFormat;
+&nbsp;
+&nbsp;	private Model graph;
+&nbsp;
+&nbsp;	private Resource lastWrittenSubject;
+&nbsp;
+&nbsp;	private IRI lastWrittenPredicate;
+&nbsp;
+&nbsp;	private JsonGenerator jg;
+&nbsp;
+&nbsp;	private boolean isEmptyStream;
+&nbsp;
+&nbsp;	private boolean isStreaming;
+&nbsp;
+<b class="nc">&nbsp;	public RDFJSONWriter(final OutputStream out, final RDFFormat actualFormat) {</b>
+<b class="nc">&nbsp;		this.actualFormat = actualFormat;</b>
+<b class="nc">&nbsp;		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public RDFJSONWriter(final Writer writer, final RDFFormat actualFormat) {</b>
+<b class="nc">&nbsp;		this.writer = writer;</b>
+<b class="nc">&nbsp;		this.actualFormat = actualFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		super.startRDF();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			isStreaming = getWriterConfig().get(RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);</b>
+<b class="nc">&nbsp;			jg = configureNewJsonFactory().createGenerator(writer);</b>
+<b class="nc">&nbsp;			if (getWriterConfig().get(BasicWriterSettings.PRETTY_PRINT)) {</b>
+<b class="nc">&nbsp;				Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;</b>
+<b class="nc">&nbsp;				DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)</b>
+<b class="nc">&nbsp;						.withObjectIndenter(indenter);</b>
+<b class="nc">&nbsp;				jg.setPrettyPrinter(pp);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (isStreaming) {</b>
+<b class="nc">&nbsp;				isEmptyStream = true;</b>
+<b class="nc">&nbsp;				lastWrittenPredicate = null;</b>
+<b class="nc">&nbsp;				lastWrittenSubject = null;</b>
+<b class="nc">&nbsp;				jg.writeStartObject();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				graph = new TreeModel();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (final IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+&nbsp;			try {
+<b class="nc">&nbsp;				if (isStreaming) {</b>
+<b class="nc">&nbsp;					if (!isEmptyStream) {</b>
+<b class="nc">&nbsp;						jg.writeEndArray();</b>
+&nbsp;					}
+<b class="nc">&nbsp;					jg.writeEndObject();</b>
+<b class="nc">&nbsp;					lastWrittenPredicate = null;</b>
+<b class="nc">&nbsp;					lastWrittenSubject = null;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					RDFJSONWriter.modelToRdfJsonInternal(this.graph, this.getWriterConfig(), jg);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				jg.close();</b>
+<b class="nc">&nbsp;				writer.flush();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (final IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return actualFormat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		final Set&lt;RioSetting&lt;?&gt;&gt; results = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		results.add(BasicWriterSettings.PRETTY_PRINT);</b>
+<b class="nc">&nbsp;		results.add(RDFJSONWriterSettings.ALLOW_MULTIPLE_OBJECT_VALUES);</b>
+&nbsp;
+<b class="nc">&nbsp;		return results;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(final String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		// Comments are ignored.
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(final String prefix, final String uri) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		// Namespace prefixes are not used in RDF/JSON.
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void consumeStatement(final Statement statement) throws RDFHandlerException {
+<b class="nc">&nbsp;		if (isStreaming) {</b>
+<b class="nc">&nbsp;			consumeStreamingStatement(statement);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			graph.add(statement);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Helper method to reduce complexity of the JSON serialisation algorithm Any null contexts will only be serialised
+&nbsp;	 * to JSON if there are also non-null contexts in the contexts array
+&nbsp;	 *
+&nbsp;	 * @param object   The RDF value to serialise
+&nbsp;	 * @param contexts The set of contexts that are relevant to this object, including null contexts as they are found.
+&nbsp;	 * @param jg       the {@link JsonGenerator} to write to.
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws JsonGenerationException
+&nbsp;	 */
+&nbsp;	public static void writeObject(final Value object, final Set&lt;Resource&gt; contexts, final JsonGenerator jg)
+&nbsp;			throws JsonGenerationException, IOException {
+<b class="nc">&nbsp;		jg.writeStartObject();</b>
+<b class="nc">&nbsp;		if (object instanceof Literal) {</b>
+<b class="nc">&nbsp;			jg.writeObjectField(RDFJSONUtility.VALUE, object.stringValue());</b>
+&nbsp;
+<b class="nc">&nbsp;			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.LITERAL);</b>
+<b class="nc">&nbsp;			final Literal l = (Literal) object;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (Literals.isLanguageLiteral(l)) {</b>
+<b class="nc">&nbsp;				jg.writeObjectField(RDFJSONUtility.LANG, l.getLanguage().orElse(null));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				jg.writeObjectField(RDFJSONUtility.DATATYPE, l.getDatatype().stringValue());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (object instanceof BNode) {</b>
+<b class="nc">&nbsp;			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((BNode) object));</b>
+&nbsp;
+<b class="nc">&nbsp;			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.BNODE);</b>
+<b class="nc">&nbsp;		} else if (object instanceof IRI) {</b>
+<b class="nc">&nbsp;			jg.writeObjectField(RDFJSONUtility.VALUE, resourceToString((IRI) object));</b>
+&nbsp;
+<b class="nc">&nbsp;			jg.writeObjectField(RDFJSONUtility.TYPE, RDFJSONUtility.URI);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (contexts != null &amp;&amp; !contexts.isEmpty() &amp;&amp; !(contexts.size() == 1 &amp;&amp; contexts.iterator().next() == null)) {</b>
+<b class="nc">&nbsp;			jg.writeArrayFieldStart(RDFJSONUtility.GRAPHS);</b>
+<b class="nc">&nbsp;			for (final Resource nextContext : contexts) {</b>
+<b class="nc">&nbsp;				if (nextContext == null) {</b>
+<b class="nc">&nbsp;					jg.writeNull();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					jg.writeString(resourceToString(nextContext));</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			jg.writeEndArray();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		jg.writeEndObject();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the correct syntax for a Resource, depending on whether it is a URI or a Blank Node (ie, BNode)
+&nbsp;	 *
+&nbsp;	 * @param uriOrBnode The resource to serialise to a string
+&nbsp;	 * @return The string value of the sesame resource
+&nbsp;	 */
+&nbsp;	public static String resourceToString(final Resource uriOrBnode) {
+<b class="nc">&nbsp;		if (uriOrBnode instanceof IRI) {</b>
+<b class="nc">&nbsp;			return uriOrBnode.stringValue();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return &quot;_:&quot; + ((BNode) uriOrBnode).getID();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void modelToRdfJsonInternal(final Model graph, final WriterConfig writerConfig,
+&nbsp;			final JsonGenerator jg) throws IOException {
+<b class="nc">&nbsp;		if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {</b>
+&nbsp;			// SES-2011: Always use \n for consistency
+<b class="nc">&nbsp;			Indenter indenter = DefaultIndenter.SYSTEM_LINEFEED_INSTANCE;</b>
+&nbsp;			// By default Jackson does not pretty print, so enable this unless
+&nbsp;			// PRETTY_PRINT setting is disabled
+<b class="nc">&nbsp;			DefaultPrettyPrinter pp = new DefaultPrettyPrinter().withArrayIndenter(indenter)</b>
+<b class="nc">&nbsp;					.withObjectIndenter(indenter);</b>
+<b class="nc">&nbsp;			jg.setPrettyPrinter(pp);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		jg.writeStartObject();</b>
+<b class="nc">&nbsp;		for (final Resource nextSubject : graph.subjects()) {</b>
+<b class="nc">&nbsp;			jg.writeObjectFieldStart(RDFJSONWriter.resourceToString(nextSubject));</b>
+<b class="nc">&nbsp;			for (final IRI nextPredicate : graph.filter(nextSubject, null, null).predicates()) {</b>
+<b class="nc">&nbsp;				jg.writeArrayFieldStart(nextPredicate.stringValue());</b>
+<b class="nc">&nbsp;				for (final Value nextObject : graph.filter(nextSubject, nextPredicate, null).objects()) {</b>
+&nbsp;					// contexts are optional, so this may return empty in some
+&nbsp;					// scenarios depending on the interpretation of the way contexts
+&nbsp;					// work
+<b class="nc">&nbsp;					final Set&lt;Resource&gt; contexts = graph.filter(nextSubject, nextPredicate, nextObject).contexts();</b>
+&nbsp;
+<b class="nc">&nbsp;					RDFJSONWriter.writeObject(nextObject, contexts, jg);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				jg.writeEndArray();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			jg.writeEndObject();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		jg.writeEndObject();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get an instance of JsonFactory.
+&nbsp;	 *
+&nbsp;	 * @return A newly configured JsonFactory based on the currently enabled settings
+&nbsp;	 */
+&nbsp;	private JsonFactory configureNewJsonFactory() {
+<b class="nc">&nbsp;		final JsonFactory nextJsonFactory = new JsonFactory();</b>
+&nbsp;		// Disable features that may work for most JSON where the field names are
+&nbsp;		// in limited supply,
+&nbsp;		// but does not work for RDF/JSON where a wide range of URIs are used for
+&nbsp;		// subjects and predicates
+<b class="nc">&nbsp;		nextJsonFactory.disable(JsonFactory.Feature.INTERN_FIELD_NAMES);</b>
+<b class="nc">&nbsp;		nextJsonFactory.disable(JsonFactory.Feature.CANONICALIZE_FIELD_NAMES);</b>
+<b class="nc">&nbsp;		nextJsonFactory.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);</b>
+&nbsp;
+<b class="nc">&nbsp;		return nextJsonFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Consumes statement when RDF/JSON writer is streaming output.
+&nbsp;	 */
+&nbsp;	private void consumeStreamingStatement(final Statement statement) throws RDFHandlerException {
+<b class="nc">&nbsp;		Resource subj = statement.getSubject();</b>
+<b class="nc">&nbsp;		IRI pred = statement.getPredicate();</b>
+<b class="nc">&nbsp;		Value obj = statement.getObject();</b>
+<b class="nc">&nbsp;		Resource context = statement.getContext();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!subj.equals(lastWrittenSubject)) {</b>
+<b class="nc">&nbsp;				if (lastWrittenSubject != null) {</b>
+&nbsp;					// close previous predicate-object array and then close the previous subject object
+<b class="nc">&nbsp;					jg.writeEndArray();</b>
+<b class="nc">&nbsp;					jg.writeEndObject();</b>
+<b class="nc">&nbsp;					lastWrittenPredicate = null;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				jg.writeObjectFieldStart(RDFJSONWriter.resourceToString(subj));</b>
+<b class="nc">&nbsp;				lastWrittenSubject = subj;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!pred.equals(lastWrittenPredicate)) {</b>
+<b class="nc">&nbsp;				if (lastWrittenPredicate != null) {</b>
+&nbsp;					// close previous predicate array and then close the previous subject object
+<b class="nc">&nbsp;					jg.writeEndArray();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				jg.writeArrayFieldStart(pred.stringValue());</b>
+<b class="nc">&nbsp;				lastWrittenPredicate = pred;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			writeObject(obj, Collections.singleton(context), jg);</b>
+<b class="nc">&nbsp;			if (isEmptyStream) {</b>
+<b class="nc">&nbsp;				isEmptyStream = false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (final IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

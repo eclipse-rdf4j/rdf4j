@@ -1,0 +1,424 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ByteArrayUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.io</a>
+</div>
+
+<h1>Coverage Summary for Class: ByteArrayUtil (org.eclipse.rdf4j.common.io)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ByteArrayUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/75)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.io;
+&nbsp;
+&nbsp;import java.util.BitSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * Class providing utility methods for handling byte arrays.
+&nbsp; */
+<b class="nc">&nbsp;public class ByteArrayUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Puts the entire &lt;var&gt;source&lt;/var&gt; array in the &lt;var&gt;target&lt;/var&gt; array at offset &lt;var&gt;offset&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param source source array
+&nbsp;	 * @param target target array
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 */
+&nbsp;	public static void put(byte[] source, byte[] target, int offset) {
+<b class="nc">&nbsp;		System.arraycopy(source, 0, target, offset, source.length);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the subarray from &lt;var&gt;array&lt;/var&gt; that starts at &lt;var&gt;offset&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param array  source array
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @return byte array
+&nbsp;	 */
+&nbsp;	public static byte[] get(byte[] array, int offset) {
+<b class="nc">&nbsp;		return get(array, offset, array.length - offset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the subarray of length &lt;var&gt;length&lt;/var&gt; from &lt;var&gt;array&lt;/var&gt; that starts at &lt;var&gt;offset&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param array  byte array
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @param length length
+&nbsp;	 * @return byte array
+&nbsp;	 */
+&nbsp;	public static byte[] get(byte[] array, int offset, int length) {
+<b class="nc">&nbsp;		byte[] result = new byte[length];</b>
+<b class="nc">&nbsp;		System.arraycopy(array, offset, result, 0, length);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Put an integer value (padded) in a byte array at a specific offset.
+&nbsp;	 *
+&nbsp;	 * @param value  integer value
+&nbsp;	 * @param array  byte array
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 */
+&nbsp;	public static void putInt(int value, byte[] array, int offset) {
+<b class="nc">&nbsp;		array[offset] = (byte) (0xff &amp; (value &gt;&gt;&gt; 24));</b>
+<b class="nc">&nbsp;		array[offset + 1] = (byte) (0xff &amp; (value &gt;&gt;&gt; 16));</b>
+<b class="nc">&nbsp;		array[offset + 2] = (byte) (0xff &amp; (value &gt;&gt;&gt; 8));</b>
+<b class="nc">&nbsp;		array[offset + 3] = (byte) (0xff &amp; value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get an integer value from a byte array at a specific offset.
+&nbsp;	 *
+&nbsp;	 * @param array  byte array
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @return integer value
+&nbsp;	 */
+&nbsp;	public static int getInt(byte[] array, int offset) {
+<b class="nc">&nbsp;		return ((array[offset] &amp; 0xff) &lt;&lt; 24) | ((array[offset + 1] &amp; 0xff) &lt;&lt; 16) | ((array[offset + 2] &amp; 0xff) &lt;&lt; 8)</b>
+&nbsp;				| (array[offset + 3] &amp; 0xff);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Put a long value (padded) in a byte array at a specific offset.
+&nbsp;	 *
+&nbsp;	 * @param value  long value
+&nbsp;	 * @param array  byte array
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 */
+&nbsp;	public static void putLong(long value, byte[] array, int offset) {
+<b class="nc">&nbsp;		array[offset] = (byte) (0xff &amp; (value &gt;&gt;&gt; 56));</b>
+<b class="nc">&nbsp;		array[offset + 1] = (byte) (0xff &amp; (value &gt;&gt;&gt; 48));</b>
+<b class="nc">&nbsp;		array[offset + 2] = (byte) (0xff &amp; (value &gt;&gt;&gt; 40));</b>
+<b class="nc">&nbsp;		array[offset + 3] = (byte) (0xff &amp; (value &gt;&gt;&gt; 32));</b>
+<b class="nc">&nbsp;		array[offset + 4] = (byte) (0xff &amp; (value &gt;&gt;&gt; 24));</b>
+<b class="nc">&nbsp;		array[offset + 5] = (byte) (0xff &amp; (value &gt;&gt;&gt; 16));</b>
+<b class="nc">&nbsp;		array[offset + 6] = (byte) (0xff &amp; (value &gt;&gt;&gt; 8));</b>
+<b class="nc">&nbsp;		array[offset + 7] = (byte) (0xff &amp; value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a long value from a byte array at a specific offset.
+&nbsp;	 *
+&nbsp;	 * @param array  byte array
+&nbsp;	 * @param offset offset
+&nbsp;	 * @return long value
+&nbsp;	 */
+&nbsp;	public static long getLong(byte[] array, int offset) {
+<b class="nc">&nbsp;		return ((long) (array[offset] &amp; 0xff) &lt;&lt; 56) | ((long) (array[offset + 1] &amp; 0xff) &lt;&lt; 48)</b>
+&nbsp;				| ((long) (array[offset + 2] &amp; 0xff) &lt;&lt; 40) | ((long) (array[offset + 3] &amp; 0xff) &lt;&lt; 32)
+&nbsp;				| ((long) (array[offset + 4] &amp; 0xff) &lt;&lt; 24) | ((long) (array[offset + 5] &amp; 0xff) &lt;&lt; 16)
+&nbsp;				| ((long) (array[offset + 6] &amp; 0xff) &lt;&lt; 8) | ((long) (array[offset + 7] &amp; 0xff));
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a byte from a byte array.
+&nbsp;	 *
+&nbsp;	 * @param a         the byte array to look in
+&nbsp;	 * @param fromIndex the position from which to start looking
+&nbsp;	 * @param toIndex   the position up to which to look
+&nbsp;	 * @param key       the byte to find
+&nbsp;	 * @return the position of the byte in the array, or -1 if the byte was not found in the array
+&nbsp;	 */
+&nbsp;	public static int find(byte[] a, int fromIndex, int toIndex, byte key) {
+<b class="nc">&nbsp;		int result = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (fromIndex &lt; 0) {</b>
+<b class="nc">&nbsp;			fromIndex = 0;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		toIndex = Math.min(toIndex, a.length);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = fromIndex; fromIndex &lt; toIndex &amp;&amp; result == -1 &amp;&amp; i &lt; toIndex; i++) {</b>
+<b class="nc">&nbsp;			if (a[i] == key) {</b>
+<b class="nc">&nbsp;				result = i;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Look for a sequence of bytes in a byte array.
+&nbsp;	 *
+&nbsp;	 * @param a         the byte array to look in
+&nbsp;	 * @param fromIndex the position from which to start looking
+&nbsp;	 * @param toIndex   the position up to which to look
+&nbsp;	 * @param key       the bytes to find
+&nbsp;	 * @return the position of the bytes in the array, or -1 if the bytes were not found in the array
+&nbsp;	 */
+&nbsp;	public static int find(byte[] a, int fromIndex, int toIndex, byte[] key) {
+<b class="nc">&nbsp;		int result = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;		int sublen = key.length;</b>
+<b class="nc">&nbsp;		int maxpos, first, sp = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		maxpos = Math.min(toIndex, a.length) - sublen;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (first = fromIndex; sp != sublen &amp;&amp; first &lt;= maxpos; first++) {</b>
+<b class="nc">&nbsp;			first = find(a, first, maxpos, key[0]);</b>
+&nbsp;
+<b class="nc">&nbsp;			if ((first &lt; 0) || (first &gt; maxpos)) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (sp = 1; sp &lt; sublen; sp++) {</b>
+<b class="nc">&nbsp;				if (a[first + sp] != key[sp]) {</b>
+<b class="nc">&nbsp;					sp = sublen;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (sublen == 0) {</b>
+<b class="nc">&nbsp;			result = 0;</b>
+<b class="nc">&nbsp;		} else if (sp == sublen) {</b>
+<b class="nc">&nbsp;			result = (first - 1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether &lt;var&gt;value&lt;/var&gt; matches &lt;var&gt;pattern&lt;/var&gt; with respect to the bits specified by &lt;var&gt;mask&lt;/var&gt;.
+&nbsp;	 * In other words: this method returns true if &lt;var&gt;(value[i] ^ pattern[i]) &amp;amp; mask[i] == 0&lt;/var&gt; for all i.
+&nbsp;	 *
+&nbsp;	 * @param value   byte array
+&nbsp;	 * @param mask
+&nbsp;	 * @param pattern pattern
+&nbsp;	 * @return true if pattern was found
+&nbsp;	 */
+&nbsp;	public static boolean matchesPattern(byte[] value, byte[] mask, byte[] pattern) {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; value.length; i++) {</b>
+<b class="nc">&nbsp;			if (((value[i] ^ pattern[i]) &amp; mask[i]) != 0) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether &lt;var&gt;subValue&lt;/var&gt; matches the region in &lt;var&gt;superValue&lt;/var&gt; starting at offset
+&nbsp;	 * &lt;var&gt;offset&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param subValue   value to search for
+&nbsp;	 * @param superValue byte array
+&nbsp;	 * @param offset     non-negative offset
+&nbsp;	 * @return true upon exact match, false otherwise
+&nbsp;	 */
+&nbsp;	public static boolean regionMatches(byte[] subValue, byte[] superValue, int offset) {
+<b class="nc">&nbsp;		for (int i = 0; i &lt; subValue.length; i++) {</b>
+<b class="nc">&nbsp;			if (subValue[i] != superValue[i + offset]) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two regions of bytes, indicating whether one is larger than the other.
+&nbsp;	 *
+&nbsp;	 * @param array1    The first byte array.
+&nbsp;	 * @param startIdx1 The start of the region in the first array.
+&nbsp;	 * @param array2    The second byte array.
+&nbsp;	 * @param startIdx2 The start of the region in the second array.
+&nbsp;	 * @param length    The length of the region that should be compared.
+&nbsp;	 * @return A negative number when the first region is smaller than the second, a positive number when the first
+&nbsp;	 *         region is larger than the second, or 0 if the regions are equal.
+&nbsp;	 */
+&nbsp;	public static int compareRegion(byte[] array1, int startIdx1, byte[] array2, int startIdx2, int length) {
+<b class="nc">&nbsp;		int result = 0;</b>
+<b class="nc">&nbsp;		for (int i = 0; result == 0 &amp;&amp; i &lt; length; i++) {</b>
+<b class="nc">&nbsp;			result = (array1[startIdx1 + i] &amp; 0xff) - (array2[startIdx2 + i] &amp; 0xff);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert a byte array to a vector of bits.
+&nbsp;	 *
+&nbsp;	 * @param array byte array
+&nbsp;	 * @return bitset
+&nbsp;	 */
+&nbsp;	public static BitSet toBitSet(byte[] array) {
+<b class="nc">&nbsp;		BitSet bitSet = new BitSet(8 * array.length);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int byteNo = 0; byteNo &lt; array.length; byteNo++) {</b>
+<b class="nc">&nbsp;			byte b = array[byteNo];</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int bitNo = 0; bitNo &lt; 8; bitNo++) {</b>
+<b class="nc">&nbsp;				if ((b &amp; byteMask(bitNo)) != 0) {</b>
+<b class="nc">&nbsp;					bitSet.set(8 * byteNo + bitNo);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return bitSet;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert a bitset to a byte array.
+&nbsp;	 *
+&nbsp;	 * @param bitSet bitset (should not be null)
+&nbsp;	 * @return byte array
+&nbsp;	 */
+&nbsp;	public static byte[] toByteArray(BitSet bitSet) {
+<b class="nc">&nbsp;		byte[] array = new byte[bitSet.size() / 8 + 1];</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = bitSet.nextSetBit(0); i &gt;= 0; i = bitSet.nextSetBit(i + 1)) {</b>
+<b class="nc">&nbsp;			array[i / 8] |= byteMask(i);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return array;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a byte mask, setting bit bitNo to 1 and other bits to 0.
+&nbsp;	 *
+&nbsp;	 * @param bitNo bit
+&nbsp;	 * @return byte mask
+&nbsp;	 */
+&nbsp;	private static byte byteMask(int bitNo) {
+<b class="nc">&nbsp;		return (byte) (0x80 &gt;&gt;&gt; (bitNo % 8));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the hexadecimal value of the supplied byte array. The resulting string always uses two hexadecimals per
+&nbsp;	 * byte. As a result, the length of the resulting string is guaranteed to be twice the length of the supplied byte
+&nbsp;	 * array.
+&nbsp;	 *
+&nbsp;	 * @param array byte array
+&nbsp;	 * @return hexadecimal string
+&nbsp;	 */
+&nbsp;	public static String toHexString(byte[] array) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(2 * array.length);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; array.length; i++) {</b>
+<b class="nc">&nbsp;			String hex = Integer.toHexString(array[i] &amp; 0xff);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (hex.length() == 1) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;0&#39;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			sb.append(hex);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

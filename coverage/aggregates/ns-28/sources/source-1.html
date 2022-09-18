@@ -1,0 +1,315 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CmdLineParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console</a>
+</div>
+
+<h1>Coverage Summary for Class: CmdLineParser (org.eclipse.rdf4j.console)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CmdLineParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console;
+&nbsp;
+&nbsp;import org.apache.commons.cli.AlreadySelectedException;
+&nbsp;import org.apache.commons.cli.CommandLine;
+&nbsp;import org.apache.commons.cli.DefaultParser;
+&nbsp;import org.apache.commons.cli.HelpFormatter;
+&nbsp;import org.apache.commons.cli.Option;
+&nbsp;import org.apache.commons.cli.OptionGroup;
+&nbsp;import org.apache.commons.cli.Options;
+&nbsp;import org.apache.commons.cli.ParseException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Helper class for configuring console
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;class CmdLineParser {
+&nbsp;
+<b class="nc">&nbsp;	private final static Option HELP = new Option(&quot;h&quot;, &quot;help&quot;, false, &quot;print this help&quot;);</b>
+<b class="nc">&nbsp;	private final static Option VERSION = new Option(&quot;v&quot;, &quot;version&quot;, false, &quot;print version information&quot;);</b>
+<b class="nc">&nbsp;	private final static Option SERVER = new Option(&quot;s&quot;, &quot;serverURL&quot;, true,</b>
+&nbsp;			&quot;URL of RDF4J Server to connect to, e.g. http://localhost:8080/rdf4j-server/&quot;);
+<b class="nc">&nbsp;	private final static Option DIRECTORY = new Option(&quot;d&quot;, &quot;dataDir&quot;, true, &quot;data dir to &#39;connect&#39; to&quot;);</b>
+<b class="nc">&nbsp;	private final static Option ECHO = new Option(&quot;e&quot;, &quot;echo&quot;, false,</b>
+&nbsp;			&quot;echoes input back to stdout, useful for logging script sessions&quot;);
+<b class="nc">&nbsp;	private final static Option QUIET = new Option(&quot;q&quot;, &quot;quiet&quot;, false, &quot;suppresses prompts, useful for scripting&quot;);</b>
+<b class="nc">&nbsp;	private final static Option FORCE = new Option(&quot;f&quot;, &quot;force&quot;, false,</b>
+&nbsp;			&quot;always answer yes to (suppressed) confirmation prompts&quot;);
+<b class="nc">&nbsp;	private final static Option CAUTIOUS = new Option(&quot;c&quot;, &quot;cautious&quot;, false,</b>
+&nbsp;			&quot;always answer no to (suppressed) confirmation prompts&quot;);
+<b class="nc">&nbsp;	private final static Option MODE = new Option(&quot;x&quot;, &quot;exitOnError&quot;, false,</b>
+&nbsp;			&quot;immediately exit the console on the first error&quot;);
+&nbsp;
+<b class="nc">&nbsp;	private final static OptionGroup CAUTION_GROUP = new OptionGroup().addOption(CAUTIOUS)</b>
+<b class="nc">&nbsp;			.addOption(FORCE)</b>
+<b class="nc">&nbsp;			.addOption(MODE);</b>
+<b class="nc">&nbsp;	private final static OptionGroup LOCATION_GROUP = new OptionGroup().addOption(SERVER).addOption(DIRECTORY);</b>
+<b class="nc">&nbsp;	private final static Options OPTIONS = new Options().addOptionGroup(LOCATION_GROUP)</b>
+<b class="nc">&nbsp;			.addOptionGroup(CAUTION_GROUP)</b>
+<b class="nc">&nbsp;			.addOption(HELP)</b>
+<b class="nc">&nbsp;			.addOption(VERSION)</b>
+<b class="nc">&nbsp;			.addOption(ECHO)</b>
+<b class="nc">&nbsp;			.addOption(QUIET);</b>
+&nbsp;
+&nbsp;	private final Console console;
+&nbsp;	private CommandLine commandLine;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse command line arguments
+&nbsp;	 *
+&nbsp;	 * @param args arguments
+&nbsp;	 * @return parsed command line or null
+&nbsp;	 */
+&nbsp;	protected CommandLine parse(String[] args) {
+&nbsp;		try {
+<b class="nc">&nbsp;			commandLine = new DefaultParser().parse(OPTIONS, args);</b>
+<b class="nc">&nbsp;		} catch (ParseException e) {</b>
+<b class="nc">&nbsp;			commandLine = null;</b>
+<b class="nc">&nbsp;			console.getConsoleIO().writeError(e.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return commandLine;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Print usage / available command line OPTIONS to screen
+&nbsp;	 */
+&nbsp;	protected void printUsage() {
+<b class="nc">&nbsp;		ConsoleIO io = console.getConsoleIO();</b>
+&nbsp;
+<b class="nc">&nbsp;		io.writeln(&quot;RDF4J Console, an interactive command shell for RDF4J repositories.&quot;);</b>
+<b class="nc">&nbsp;		final HelpFormatter formatter = new HelpFormatter();</b>
+<b class="nc">&nbsp;		formatter.setWidth(80);</b>
+<b class="nc">&nbsp;		formatter.printHelp(&quot;start-console [OPTION] [repositoryID]&quot;, OPTIONS);</b>
+<b class="nc">&nbsp;		io.writeln();</b>
+<b class="nc">&nbsp;		io.writeln(&quot;For bug reports and suggestions, see http://www.rdf4j.org/&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handle help or version parameter at the command line
+&nbsp;	 *
+&nbsp;	 * @return false if an information option was given
+&nbsp;	 */
+&nbsp;	protected boolean handleInfoOptions() {
+<b class="nc">&nbsp;		if (commandLine.hasOption(HELP.getOpt())) {</b>
+<b class="nc">&nbsp;			printUsage();</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (commandLine.hasOption(VERSION.getOpt())) {</b>
+<b class="nc">&nbsp;			console.getConsoleIO().writeln(console.getState().getApplicationName());</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handle command line &quot;exit on error&quot; mode
+&nbsp;	 */
+&nbsp;	protected void handleExitOption() {
+<b class="nc">&nbsp;		console.setExitOnError(commandLine.hasOption(MODE.getOpt()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handle command line echo options
+&nbsp;	 */
+&nbsp;	protected void handleEchoOptions() {
+<b class="nc">&nbsp;		ConsoleIO io = console.getConsoleIO();</b>
+&nbsp;
+<b class="nc">&nbsp;		io.setEcho(commandLine.hasOption(ECHO.getOpt()));</b>
+<b class="nc">&nbsp;		io.setQuiet(commandLine.hasOption(QUIET.getOpt()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handle command line caution group
+&nbsp;	 *
+&nbsp;	 * @return location of the (remote or local) repository
+&nbsp;	 */
+&nbsp;	protected boolean handleCautionGroup() {
+<b class="nc">&nbsp;		ConsoleIO io = console.getConsoleIO();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (commandLine.hasOption(FORCE.getOpt())) {</b>
+<b class="nc">&nbsp;				CAUTION_GROUP.setSelected(FORCE);</b>
+<b class="nc">&nbsp;				io.setForce();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (commandLine.hasOption(CAUTIOUS.getOpt())) {</b>
+<b class="nc">&nbsp;				CAUTION_GROUP.setSelected(CAUTIOUS);</b>
+<b class="nc">&nbsp;				io.setCautious();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (AlreadySelectedException e) {</b>
+<b class="nc">&nbsp;			printUsage();</b>
+<b class="nc">&nbsp;			return false;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handle command line location group
+&nbsp;	 *
+&nbsp;	 * @return location of the (remote or local) repository
+&nbsp;	 */
+&nbsp;	protected String handleLocationGroup() {
+<b class="nc">&nbsp;		String location = null;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (commandLine.hasOption(DIRECTORY.getOpt())) {</b>
+<b class="nc">&nbsp;				LOCATION_GROUP.setSelected(DIRECTORY);</b>
+<b class="nc">&nbsp;				location = commandLine.getOptionValue(DIRECTORY.getOpt());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (commandLine.hasOption(SERVER.getOpt())) {</b>
+<b class="nc">&nbsp;				LOCATION_GROUP.setSelected(SERVER);</b>
+<b class="nc">&nbsp;				location = commandLine.getOptionValue(SERVER.getOpt());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (AlreadySelectedException e) {</b>
+<b class="nc">&nbsp;			printUsage();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return location;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get selected location from location group. Can be d(irectory) or s(erver)
+&nbsp;	 *
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	protected String getSelectedLocation() {
+<b class="nc">&nbsp;		return LOCATION_GROUP.getSelected();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get remaining argument from command line, if any. Returns empty string if there is no argument, null on error
+&nbsp;	 *
+&nbsp;	 * @return argument as string, or null on error
+&nbsp;	 */
+&nbsp;	protected String handleOtherArg() {
+<b class="nc">&nbsp;		String[] otherArgs = commandLine.getArgs();</b>
+<b class="nc">&nbsp;		if (otherArgs.length &gt; 1) {</b>
+<b class="nc">&nbsp;			printUsage();</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (otherArgs.length == 1) ? otherArgs[0] : &quot;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param console
+&nbsp;	 */
+<b class="nc">&nbsp;	protected CmdLineParser(Console console) {</b>
+<b class="nc">&nbsp;		this.console = console;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

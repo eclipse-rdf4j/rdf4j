@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > DocumentScore</title>
+  <title>Coverage Report > DocumentDistance</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
 </div>
 
-<h1>Coverage Summary for Class: DocumentScore (org.eclipse.rdf4j.sail.lucene)</h1>
+<h1>Coverage Summary for Class: DocumentDistance (org.eclipse.rdf4j.sail.lucene)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">DocumentScore</td>
+  <td class="name">DocumentDistance</td>
 </tr>
 
 </table>
@@ -50,13 +50,9 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail.lucene;
 &nbsp;
-&nbsp;public interface DocumentScore extends DocumentResult {
+&nbsp;public interface DocumentDistance extends DocumentResult {
 &nbsp;
-&nbsp;	float getScore();
-&nbsp;
-&nbsp;	boolean isHighlighted();
-&nbsp;
-&nbsp;	Iterable&lt;String&gt; getSnippets(String field);
+&nbsp;	double getDistance();
 &nbsp;}
 </code>
 </pre>
@@ -81,7 +77,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

@@ -1,0 +1,355 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXFactory (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.NativeRepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXException;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepository;
+&nbsp;import org.eclipse.rdf4j.federated.write.DefaultWriteStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.federated.write.WriteStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolver;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * FedX initialization factory methods for convenience: methods initialize the {@link FederationManager} and all
+&nbsp; * required FedX structures. See {@link FederationManager} for some a code snippet.
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * Use the {@link FedXFactory#newFederation()} builder to create an advanced and customized federation
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FedXFactory {
+&nbsp;
+<b class="nc">&nbsp;	protected static final Logger log = LoggerFactory.getLogger(FedXFactory.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a federation with the provided sparql endpoints
+&nbsp;	 *
+&nbsp;	 * @param sparqlEndpoints the list of SPARQL endpoints
+&nbsp;	 *
+&nbsp;	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+&nbsp;	 *
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	public static FedXRepository createSparqlFederation(
+&nbsp;			List&lt;String&gt; sparqlEndpoints) throws Exception {
+<b class="nc">&nbsp;		return newFederation().withSparqlEndpoints(sparqlEndpoints).create();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the federation with a specified data source configuration file (*.ttl). Federation members are constructed
+&nbsp;	 * from the data source configuration. Sample data source configuration files can be found in the documentation.
+&nbsp;	 *
+&nbsp;	 * @param dataConfig the location of the data source configuration
+&nbsp;	 *
+&nbsp;	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+&nbsp;	 *
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	public static FedXRepository createFederation(File dataConfig)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		return newFederation().withMembers(dataConfig).create();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the federation by providing the endpoints to add. The fedx configuration can provide information about the
+&nbsp;	 * dataConfig to be used which may contain the default federation members.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * @param endpoints additional endpoints to be added, may be null or empty
+&nbsp;	 *
+&nbsp;	 * @return the configured FedX federation {@link Sail} wrapped in a {@link FedXRepository}
+&nbsp;	 *
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static FedXRepository createFederation(
+&nbsp;			List&lt;Endpoint&gt; endpoints) throws FedXException {
+&nbsp;
+<b class="nc">&nbsp;		return newFederation().withMembers(endpoints).create();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new customizable FedX federation. Once all configuration is supplied, the Federation can be created
+&nbsp;	 * using {@link #create()}
+&nbsp;	 *
+&nbsp;	 * @return the {@link FedXFactory} builder
+&nbsp;	 */
+&nbsp;	public static FedXFactory newFederation() {
+<b class="nc">&nbsp;		return new FedXFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected RepositoryResolver repositoryResolver;
+&nbsp;	protected FederatedServiceResolver federatedServiceResolver;
+&nbsp;	protected FederationEvaluationStrategyFactory strategyFactory;
+&nbsp;	protected WriteStrategyFactory writeStrategyFactory;
+<b class="nc">&nbsp;	protected List&lt;Endpoint&gt; members = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;	protected FedXConfig config = FedXConfig.DEFAULT_CONFIG;</b>
+&nbsp;	protected File fedxBaseDir;
+&nbsp;
+<b class="nc">&nbsp;	private FedXFactory() {</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withRepositoryResolver(RepositoryResolver repositoryResolver) {
+<b class="nc">&nbsp;		this.repositoryResolver = repositoryResolver;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withFederatedServiceResolver(FederatedServiceResolver federatedServiceResolver) {
+<b class="nc">&nbsp;		this.federatedServiceResolver = federatedServiceResolver;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withFederationEvaluationStrategyFactory(FederationEvaluationStrategyFactory strategyFactory) {
+<b class="nc">&nbsp;		this.strategyFactory = strategyFactory;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify the {@link WriteStrategyFactory} to be used. If not explicitly set, {@link DefaultWriteStrategyFactory}
+&nbsp;	 * is used.
+&nbsp;	 *
+&nbsp;	 * @param writeStrategyFactory the {@link WriteStrategyFactory} to be used.
+&nbsp;	 * @return this factory
+&nbsp;	 */
+&nbsp;	public FedXFactory withWriteStrategyFactory(WriteStrategyFactory writeStrategyFactory) {
+<b class="nc">&nbsp;		this.writeStrategyFactory = writeStrategyFactory;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withMembers(List&lt;Endpoint&gt; endpoints) {
+<b class="nc">&nbsp;		members.addAll(endpoints);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withMembers(File dataConfig) {
+<b class="nc">&nbsp;		log.info(&quot;Loading federation members from dataConfig &quot; + dataConfig + &quot;.&quot;);</b>
+<b class="nc">&nbsp;		members.addAll(EndpointFactory.loadFederationMembers(dataConfig, fedxBaseDir));</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize the federation with members from the model.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Currently the types NativeStore, ResolvableEndpoint and SPARQLEndpoint are supported. For details please refer to
+&nbsp;	 * the documentation in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
+&nbsp;	 * {@link SPARQLRepositoryInformation}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param model the model defining the federation members
+&nbsp;	 * @return the factory
+&nbsp;	 */
+&nbsp;	public FedXFactory withMembers(Model model) {
+<b class="nc">&nbsp;		log.debug(&quot;Loading federation members from model.&quot;);</b>
+<b class="nc">&nbsp;		members.addAll(EndpointFactory.loadFederationMembers(model, fedxBaseDir));</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withSparqlEndpoint(String sparqlEndpoint) {
+<b class="nc">&nbsp;		members.add(EndpointFactory.loadSPARQLEndpoint(sparqlEndpoint));</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withSparqlEndpoints(List&lt;String&gt; sparqlEndpoints) {
+<b class="nc">&nbsp;		for (String sparqlEndpoint : sparqlEndpoints) {</b>
+<b class="nc">&nbsp;			withSparqlEndpoint(sparqlEndpoint);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withResolvableEndpoint(String repositoryId) {
+<b class="nc">&nbsp;		return withResolvableEndpoint(repositoryId, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withResolvableEndpoint(String repositoryId, boolean writable) {
+<b class="nc">&nbsp;		members.add(EndpointFactory.loadResolvableRepository(repositoryId, writable));</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXFactory withConfig(FedXConfig config) {
+<b class="nc">&nbsp;		this.config = config;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Configure the FedX base directory at federation construction time.
+&nbsp;	 *
+&nbsp;	 * @param fedxBaseDir the fedx base directory
+&nbsp;	 * @return the {@link FedXFactory} instance
+&nbsp;	 */
+&nbsp;	public FedXFactory withFedXBaseDir(File fedxBaseDir) {
+<b class="nc">&nbsp;		this.fedxBaseDir = fedxBaseDir;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the federation using the provided configuration
+&nbsp;	 *
+&nbsp;	 * @return the configured {@link FedXRepository}
+&nbsp;	 */
+&nbsp;	public FedXRepository create() {
+<b class="nc">&nbsp;		if (members.isEmpty()) {</b>
+<b class="nc">&nbsp;			log.info(&quot;Initializing federation without any pre-configured members&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		FedX federation = new FedX(members);</b>
+<b class="nc">&nbsp;		if (this.strategyFactory != null) {</b>
+<b class="nc">&nbsp;			federation.setFederationEvaluationStrategy(strategyFactory);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (this.writeStrategyFactory != null) {</b>
+<b class="nc">&nbsp;			federation.setWriteStrategyFactory(writeStrategyFactory);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		FedXRepository repo = new FedXRepository(federation, this.config);</b>
+<b class="nc">&nbsp;		if (this.repositoryResolver != null) {</b>
+<b class="nc">&nbsp;			repo.setRepositoryResolver(repositoryResolver);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (this.federatedServiceResolver != null) {</b>
+<b class="nc">&nbsp;			repo.setFederatedServiceResolver(federatedServiceResolver);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (this.fedxBaseDir != null) {</b>
+<b class="nc">&nbsp;			repo.setDataDir(fedxBaseDir);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return repo;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

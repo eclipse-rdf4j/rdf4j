@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > Clearable</title>
+  <title>Coverage Report > ResultCache</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.spring.resultcache</a>
 </div>
 
-<h1>Coverage Summary for Class: Clearable (org.eclipse.rdf4j.spring.resultcache)</h1>
+<h1>Coverage Summary for Class: ResultCache (org.eclipse.rdf4j.spring.resultcache)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">Clearable</td>
+  <td class="name">ResultCache</td>
 </tr>
 
 </table>
@@ -54,11 +54,22 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;/**
 &nbsp; * @since 4.0.0
 &nbsp; * @author Florian Kleedorfer
+&nbsp; * @param &lt;K&gt;
+&nbsp; * @param &lt;T&gt;
 &nbsp; */
-&nbsp;public interface Clearable {
-&nbsp;	void markDirty();
+&nbsp;public interface ResultCache&lt;K, T&gt; extends Clearable {
 &nbsp;
-&nbsp;	void clearCachedResults();
+&nbsp;	T get(K key);
+&nbsp;
+&nbsp;	void put(K key, T cachedObject);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Calling this method instructs the cache to return &lt;code&gt;null&lt;/code&gt; to all {@link #get(K)} calls and ignore any
+&nbsp;	 * {@link #put(K, T)} calls from the current thread until the cache is cleared. Context: after a write operation on
+&nbsp;	 * a connection (which is assumed to be handled exclusively by a dedicated thread), the local cache must be cleared
+&nbsp;	 * and the global cache bypassed until the connection is returned.
+&nbsp;	 */
+&nbsp;	void bypassForCurrentThread();
 &nbsp;}
 </code>
 </pre>
@@ -83,7 +94,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

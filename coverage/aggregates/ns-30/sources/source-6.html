@@ -1,0 +1,212 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FederationContext</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: FederationContext (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FederationContext</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.monitoring.Monitoring;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;
+&nbsp;/**
+&nbsp; * Context to maintain the state of the current federation
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FederationContext {
+&nbsp;
+&nbsp;	private final FederationManager manager;
+&nbsp;
+&nbsp;	private final EndpointManager endpointManager;
+&nbsp;
+&nbsp;	private final Monitoring monitoring;
+&nbsp;
+&nbsp;	private final QueryManager queryManager;
+&nbsp;
+&nbsp;	private final DelegateFederatedServiceResolver serviceResolver;
+&nbsp;
+&nbsp;	private final FedXConfig fedXConfig;
+&nbsp;
+&nbsp;	private final SourceSelectionCache sourceSelectionCache;
+&nbsp;
+&nbsp;	public FederationContext(FederationManager manager, EndpointManager endpointManager, QueryManager queryManager,
+&nbsp;			DelegateFederatedServiceResolver federatedServiceResolver,
+&nbsp;			Monitoring monitoring, FedXConfig fedXConfig) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.manager = manager;</b>
+<b class="nc">&nbsp;		this.endpointManager = endpointManager;</b>
+<b class="nc">&nbsp;		this.queryManager = queryManager;</b>
+<b class="nc">&nbsp;		this.serviceResolver = federatedServiceResolver;</b>
+<b class="nc">&nbsp;		this.monitoring = monitoring;</b>
+<b class="nc">&nbsp;		this.fedXConfig = fedXConfig;</b>
+<b class="nc">&nbsp;		this.sourceSelectionCache = createSourceSelectionCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedX getFederation() {
+<b class="nc">&nbsp;		return this.manager.getFederation();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FederationManager getManager() {
+<b class="nc">&nbsp;		return this.manager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public QueryManager getQueryManager() {
+<b class="nc">&nbsp;		return this.queryManager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public EndpointManager getEndpointManager() {
+<b class="nc">&nbsp;		return this.endpointManager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Monitoring getMonitoringService() {
+<b class="nc">&nbsp;		return this.monitoring;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public DelegateFederatedServiceResolver getFederatedServiceResolver() {
+<b class="nc">&nbsp;		return this.serviceResolver;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedXConfig getConfig() {
+<b class="nc">&nbsp;		return this.fedXConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SourceSelectionCache getSourceSelectionCache() {
+<b class="nc">&nbsp;		return this.sourceSelectionCache;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a fresh {@link FederationEvalStrategy} using information from this federation context.
+&nbsp;	 */
+&nbsp;	public FederationEvalStrategy createStrategy(Dataset dataset) {
+<b class="nc">&nbsp;		TripleSource tripleSource = null;</b>
+<b class="nc">&nbsp;		EvaluationStatistics evaluationStatistics = null;</b>
+<b class="nc">&nbsp;		return manager.getFederationEvaluationStrategyFactory()</b>
+<b class="nc">&nbsp;				.createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create the {@link SourceSelectionCache}
+&nbsp;	 *
+&nbsp;	 * @return the {@link SourceSelectionCache}
+&nbsp;	 * @see FedXConfig#getSourceSelectionCacheSpec()
+&nbsp;	 */
+&nbsp;	private SourceSelectionCache createSourceSelectionCache() {
+<b class="nc">&nbsp;		String cacheSpec = getConfig().getSourceSelectionCacheSpec();</b>
+<b class="nc">&nbsp;		return new SourceSelectionMemoryCache(cacheSpec);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

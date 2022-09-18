@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > Binding</title>
+  <title>Coverage Report > Operation</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query</a>
 </div>
 
-<h1>Coverage Summary for Class: Binding (org.eclipse.rdf4j.query)</h1>
+<h1>Coverage Summary for Class: Operation (org.eclipse.rdf4j.query)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">Binding</td>
+  <td class="name">Operation</td>
 </tr>
 
 </table>
@@ -50,53 +50,91 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query;
 &nbsp;
-&nbsp;import java.io.Serializable;
-&nbsp;
 &nbsp;import org.eclipse.rdf4j.model.Value;
 &nbsp;
 &nbsp;/**
-&nbsp; * A named value binding.
+&nbsp; * An operation (e.g. a query or an update) on a repository that can be formulated in one of the supported query
+&nbsp; * languages (for example SPARQL). It allows one to predefine bindings in the operation to be able to reuse the same
+&nbsp; * operation with different bindings.
+&nbsp; *
+&nbsp; * @author Jeen
 &nbsp; */
-&nbsp;public interface Binding extends Serializable {
+&nbsp;public interface Operation {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the name of the binding (e.g. the variable name).
+&nbsp;	 * Binds the specified variable to the supplied value. Any value that was previously bound to the specified value
+&nbsp;	 * will be overwritten.
 &nbsp;	 *
-&nbsp;	 * @return The name of the binding.
+&nbsp;	 * @param name  The name of the variable that should be bound.
+&nbsp;	 * @param value The (new) value for the specified variable.
 &nbsp;	 */
-&nbsp;	String getName();
+&nbsp;	void setBinding(String name, Value value);
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the value of the binding. The returned value is never equal to &lt;var&gt;null&lt;/var&gt;, such a &quot;binding&quot; is
-&nbsp;	 * considered to be unbound.
+&nbsp;	 * Removes a previously set binding on the supplied variable. Calling this method with an unbound variable name has
+&nbsp;	 * no effect.
 &nbsp;	 *
-&nbsp;	 * @return The value of the binding, never &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param name The name of the variable from which the binding is to be removed.
 &nbsp;	 */
-&nbsp;	Value getValue();
+&nbsp;	void removeBinding(String name);
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Compares a binding object to another object.
-&nbsp;	 *
-&nbsp;	 * @param o The object to compare this binding to.
-&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the other object is an instance of {@link Binding} and both their names and values are
-&nbsp;	 *         equal, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * Removes all previously set bindings.
 &nbsp;	 */
-&nbsp;	@Override
-&nbsp;	boolean equals(Object o);
+&nbsp;	void clearBindings();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * The hash code of a binding is defined as the bit-wise XOR of the hash codes of its name and value:
+&nbsp;	 * Retrieves the bindings that have been set on this operation.
 &nbsp;	 *
-&nbsp;	 * &lt;pre&gt;
-&nbsp;	 * name.hashCode() &amp;circ; value.hashCode()
-&nbsp;	 * &lt;/pre&gt;
-&nbsp;	 *
-&nbsp;	 * .
-&nbsp;	 *
-&nbsp;	 * @return A hash code for the binding.
+&nbsp;	 * @return A (possibly empty) set of operation variable bindings.
+&nbsp;	 * @see #setBinding(String, Value)
 &nbsp;	 */
-&nbsp;	@Override
-&nbsp;	int hashCode();
+&nbsp;	BindingSet getBindings();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specifies the dataset against which to execute an operation, overriding any dataset that is specified in the
+&nbsp;	 * operation itself.
+&nbsp;	 */
+&nbsp;	void setDataset(Dataset dataset);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the dataset that has been set using {@link #setDataset(Dataset)}, if any.
+&nbsp;	 */
+&nbsp;	Dataset getDataset();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determine whether evaluation results of this operation should include inferred statements (if any inferred
+&nbsp;	 * statements are present in the repository). The default setting is &#39;true&#39;.
+&nbsp;	 *
+&nbsp;	 * @param includeInferred indicates whether inferred statements should be included in the result.
+&nbsp;	 */
+&nbsp;	void setIncludeInferred(boolean includeInferred);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns whether or not this operation will return inferred statements (if any are present in the repository).
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if inferred statements will be returned, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	boolean getIncludeInferred();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specifies the maximum time that an operation is allowed to run. The operation will be interrupted when it exceeds
+&nbsp;	 * the time limit. Any consecutive requests to fetch query results will result in {@link QueryInterruptedException}s
+&nbsp;	 * or {@link UpdateExecutionException}s (depending on whether the operation is a query or an update).
+&nbsp;	 *
+&nbsp;	 * @param maxExecutionTimeSeconds The maximum query time, measured in seconds. A negative or zero value indicates an
+&nbsp;	 *                                unlimited execution time (which is the default).
+&nbsp;	 */
+&nbsp;	void setMaxExecutionTime(int maxExecutionTimeSeconds);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the maximum operation execution time.
+&nbsp;	 *
+&nbsp;	 * @return The maximum operation execution time, measured in seconds.
+&nbsp;	 * @see #setMaxExecutionTime(int)
+&nbsp;	 */
+&nbsp;	int getMaxExecutionTime();
+&nbsp;
 &nbsp;}
 </code>
 </pre>
@@ -121,7 +159,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

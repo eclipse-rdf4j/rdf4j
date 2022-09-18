@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RdfValue</title>
+  <title>Coverage Report > Iri</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.rdf</a>
 </div>
 
-<h1>Coverage Summary for Class: RdfValue (org.eclipse.rdf4j.sparqlbuilder.rdf)</h1>
+<h1>Coverage Summary for Class: Iri (org.eclipse.rdf4j.sparqlbuilder.rdf)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RdfValue</td>
+  <td class="name">Iri</td>
 </tr>
 
 </table>
@@ -51,12 +51,15 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;
 &nbsp;package org.eclipse.rdf4j.sparqlbuilder.rdf;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.Operand;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.SparqlOperator;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphName;
 &nbsp;
 &nbsp;/**
-&nbsp; * Denotes an RDF Value.
+&nbsp; * Denotes an RDF IRI
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/2014/NOTE-rdf11-primer-20140624/#section-IRI&quot;&gt; RDF IRIs&lt;/a&gt;
 &nbsp; */
-&nbsp;public interface RdfValue extends RdfObject, Operand {
+&nbsp;public interface Iri extends RdfResource, RdfPredicate, GraphName, SparqlOperator {
 &nbsp;}
 </code>
 </pre>
@@ -81,7 +84,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

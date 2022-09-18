@@ -1,0 +1,211 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlFunction</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.constraint</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlFunction (org.eclipse.rdf4j.sparqlbuilder.constraint)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlFunction</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.constraint;
+&nbsp;
+&nbsp;/**
+&nbsp; * The built-in SPARQL Functions. Keeping this public until {@link Expressions} is completed.
+&nbsp; *
+&nbsp; * @see &lt;a href= &quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#SparqlOps&quot;&gt; SPARQL Function Definitions&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;@SuppressWarnings(&quot;javadoc&quot;) // acceptable, as this won&#39;t be public for long</b>
+&nbsp;public enum SparqlFunction implements SparqlOperator {
+<b class="nc">&nbsp;	ABS(&quot;ABS&quot;),</b>
+<b class="nc">&nbsp;	BNODE(&quot;BNODE&quot;),</b>
+<b class="nc">&nbsp;	BOUND(&quot;BOUND&quot;),</b>
+<b class="nc">&nbsp;	CEIL(&quot;CEIL&quot;),</b>
+<b class="nc">&nbsp;	COALESCE(&quot;COALESCE&quot;),</b>
+<b class="nc">&nbsp;	CONCAT(&quot;CONCAT&quot;),</b>
+<b class="nc">&nbsp;	CONTAINS(&quot;CONTAINS&quot;),</b>
+<b class="nc">&nbsp;	DATATYPE(&quot;DATATYPE&quot;),</b>
+<b class="nc">&nbsp;	DAY(&quot;DAY&quot;),</b>
+<b class="nc">&nbsp;	ENCODE_FOR_URI(&quot;ENCODE_FOR_URI&quot;),</b>
+<b class="nc">&nbsp;	FLOOR(&quot;FLOOR&quot;),</b>
+<b class="nc">&nbsp;	HOURS(&quot;HOURS&quot;),</b>
+<b class="nc">&nbsp;	IF(&quot;IF&quot;),</b>
+<b class="nc">&nbsp;	IN(&quot;IN&quot;, true),</b>
+<b class="nc">&nbsp;	NOT_IN(&quot;NOT IN&quot;, true),</b>
+<b class="nc">&nbsp;	IRI(&quot;IRI&quot;),</b>
+<b class="nc">&nbsp;	IS_BLANK(&quot;isBLANK&quot;),</b>
+<b class="nc">&nbsp;	IS_IRI(&quot;isIRI&quot;),</b>
+<b class="nc">&nbsp;	IS_LITERAL(&quot;isLITERAL&quot;),</b>
+<b class="nc">&nbsp;	IS_NUMERIC(&quot;isNUMERIC&quot;),</b>
+<b class="nc">&nbsp;	IS_URI(&quot;isURI&quot;),</b>
+<b class="nc">&nbsp;	LANG(&quot;LANG&quot;),</b>
+<b class="nc">&nbsp;	LANGMATCHES(&quot;LANGMATCHES&quot;),</b>
+<b class="nc">&nbsp;	LCASE(&quot;LCASE&quot;),</b>
+<b class="nc">&nbsp;	MD5(&quot;MD5&quot;),</b>
+<b class="nc">&nbsp;	MINUTES(&quot;MINUTES&quot;),</b>
+<b class="nc">&nbsp;	MONTH(&quot;MONTH&quot;),</b>
+<b class="nc">&nbsp;	NOW(&quot;NOW&quot;),</b>
+<b class="nc">&nbsp;	RAND(&quot;RAND&quot;),</b>
+<b class="nc">&nbsp;	REGEX(&quot;REGEX&quot;),</b>
+<b class="nc">&nbsp;	REPLACE(&quot;REPLACE&quot;),</b>
+<b class="nc">&nbsp;	ROUND(&quot;ROUND&quot;),</b>
+<b class="nc">&nbsp;	SAME_TERM(&quot;sameTerm&quot;),</b>
+<b class="nc">&nbsp;	SECONDS(&quot;SECONDS&quot;),</b>
+<b class="nc">&nbsp;	SHA1(&quot;SHA1&quot;),</b>
+<b class="nc">&nbsp;	SHA256(&quot;SHA256&quot;),</b>
+<b class="nc">&nbsp;	SHA384(&quot;SHA384&quot;),</b>
+<b class="nc">&nbsp;	SHA512(&quot;SHA512&quot;),</b>
+<b class="nc">&nbsp;	STR(&quot;STR&quot;),</b>
+<b class="nc">&nbsp;	STRAFTER(&quot;STRAFTER&quot;),</b>
+<b class="nc">&nbsp;	STRBEFORE(&quot;STRBEFORE&quot;),</b>
+<b class="nc">&nbsp;	STRDT(&quot;STRDT&quot;),</b>
+<b class="nc">&nbsp;	STRENDS(&quot;STRENDS&quot;),</b>
+<b class="nc">&nbsp;	STRING(&quot;STR&quot;),</b>
+<b class="nc">&nbsp;	STRLANG(&quot;STRLANG&quot;),</b>
+<b class="nc">&nbsp;	STRLEN(&quot;STRLEN&quot;),</b>
+<b class="nc">&nbsp;	STRSTARTS(&quot;STRSTARTS&quot;),</b>
+<b class="nc">&nbsp;	STRUUID(&quot;STRUUID&quot;),</b>
+<b class="nc">&nbsp;	SUBSTR(&quot;SUBSTR&quot;),</b>
+<b class="nc">&nbsp;	TIMEZONE(&quot;TIMEZONE&quot;),</b>
+<b class="nc">&nbsp;	TZ(&quot;TZ&quot;),</b>
+<b class="nc">&nbsp;	UCASE(&quot;UCASE&quot;),</b>
+<b class="nc">&nbsp;	URI(&quot;URI&quot;),</b>
+<b class="nc">&nbsp;	UUID(&quot;UUID&quot;),</b>
+<b class="nc">&nbsp;	YEAR(&quot;YEAR&quot;);</b>
+&nbsp;
+&nbsp;	private final String function;
+&nbsp;	private final boolean pad;
+&nbsp;
+&nbsp;	SparqlFunction(String function) {
+<b class="nc">&nbsp;		this(function, false);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	SparqlFunction(String function, boolean pad) {</b>
+<b class="nc">&nbsp;		this.function = function;</b>
+<b class="nc">&nbsp;		this.pad = pad;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean pad() {
+<b class="nc">&nbsp;		return this.pad;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		return function + (pad ? &quot; &quot; : &quot;&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,456 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MultipleFileLogReader</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.logging.file.logback</a>
+</div>
+
+<h1>Coverage Summary for Class: MultipleFileLogReader (org.eclipse.rdf4j.common.logging.file.logback)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MultipleFileLogReader</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/89)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">MultipleFileLogReader$DateRangeFilenameFilter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/111)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.logging.file.logback;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FilenameFilter;
+&nbsp;import java.io.IOException;
+&nbsp;import java.text.ParseException;
+&nbsp;import java.text.SimpleDateFormat;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Calendar;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Vector;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogReader;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogRecord;
+&nbsp;import org.eclipse.rdf4j.common.logging.base.AbstractLogReader;
+&nbsp;
+&nbsp;import ch.qos.logback.core.Appender;
+&nbsp;import ch.qos.logback.core.rolling.RollingFileAppender;
+&nbsp;import ch.qos.logback.core.rolling.RollingPolicy;
+&nbsp;import ch.qos.logback.core.rolling.TimeBasedRollingPolicy;
+&nbsp;
+&nbsp;/**
+&nbsp; * Date range-enabled wrapper for FileLogReader. Reads multiple log files chunked by dates as a single log.
+&nbsp; *
+&nbsp; * @author alex
+&nbsp; */
+<b class="nc">&nbsp;public class MultipleFileLogReader extends AbstractLogReader {</b>
+&nbsp;
+<b class="nc">&nbsp;	private Date startDate = null;</b>
+<b class="nc">&nbsp;	private Date endDate = null;</b>
+<b class="nc">&nbsp;	private Date minDate = new Date();</b>
+<b class="nc">&nbsp;	private Date maxDate = new Date();</b>
+&nbsp;
+<b class="nc">&nbsp;	private String fileNamePattern = null;</b>
+<b class="nc">&nbsp;	private Vector&lt;File&gt; logFiles = new Vector&lt;&gt;();</b>
+<b class="nc">&nbsp;	private Iterator&lt;File&gt; logFilesIterator = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	private LogRecord next = null;</b>
+<b class="nc">&nbsp;	private int count = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;	private FileLogReader currentReader = null;</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean supportsDateRanges() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setAppender(Appender&lt;?&gt; appender) {
+<b class="nc">&nbsp;		super.setAppender(appender);</b>
+<b class="nc">&nbsp;		if (appender instanceof RollingFileAppender) {</b>
+<b class="nc">&nbsp;			RollingPolicy rp = ((RollingFileAppender&lt;?&gt;) appender).getRollingPolicy();</b>
+<b class="nc">&nbsp;			if (rp instanceof TimeBasedRollingPolicy) {</b>
+<b class="nc">&nbsp;				fileNamePattern = ((TimeBasedRollingPolicy) rp).getFileNamePattern();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(&quot;Must be TimeBasedRollingPolicy!&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;MultipleFileLogReader appender must be an instance of RollingFileAppender!&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws Exception {
+<b class="nc">&nbsp;		if (this.getAppender() == null) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Appender must be set before initialization!&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		count = 0;</b>
+<b class="nc">&nbsp;		logFiles = new Vector&lt;&gt;();</b>
+<b class="nc">&nbsp;		Calendar startCal = null;</b>
+<b class="nc">&nbsp;		Calendar endCal = null;</b>
+<b class="nc">&nbsp;		if (startDate != null) {</b>
+<b class="nc">&nbsp;			startCal = Calendar.getInstance();</b>
+<b class="nc">&nbsp;			startCal.setTime(startDate);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (endDate != null) {</b>
+<b class="nc">&nbsp;			endCal = Calendar.getInstance();</b>
+<b class="nc">&nbsp;			endCal.setTime(endDate);</b>
+&nbsp;		}
+&nbsp;		// Extracts date pattern
+<b class="nc">&nbsp;		Pattern dfPattern = Pattern.compile(&quot;(.+)%d\\{(.+)\\}&quot;);</b>
+<b class="nc">&nbsp;		Matcher dfMatcher = dfPattern.matcher(fileNamePattern);</b>
+<b class="nc">&nbsp;		if (!dfMatcher.matches()) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Wrong filename pattern: &quot; + fileNamePattern);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String dfs = dfMatcher.group(2);</b>
+<b class="nc">&nbsp;		SimpleDateFormat df = new SimpleDateFormat(dfs);</b>
+<b class="nc">&nbsp;		String spattern = new File(fileNamePattern).getName();</b>
+<b class="nc">&nbsp;		spattern = spattern.replace(&quot;.&quot;, &quot;\\.&quot;);</b>
+<b class="nc">&nbsp;		spattern = spattern.replace(&quot;%d{&quot; + dfs + &quot;}&quot;, &quot;(.*)&quot;);</b>
+<b class="nc">&nbsp;		Pattern pattern = Pattern.compile(spattern);</b>
+<b class="nc">&nbsp;		File dir = new File(fileNamePattern).getParentFile();</b>
+&nbsp;
+<b class="nc">&nbsp;		String[] files = dir.list(new DateRangeFilenameFilter(pattern, df, startCal, endCal));</b>
+<b class="nc">&nbsp;		Arrays.sort(files);</b>
+<b class="nc">&nbsp;		for (int i = files.length - 1; i &gt;= 0; i--) {</b>
+<b class="nc">&nbsp;			File f = new File(dir, files[i]);</b>
+<b class="nc">&nbsp;			logFiles.add(f);</b>
+<b class="nc">&nbsp;			System.out.println(f.getAbsolutePath());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		logFilesIterator = logFiles.iterator();</b>
+<b class="nc">&nbsp;		if (logFilesIterator.hasNext()) {</b>
+<b class="nc">&nbsp;			currentReader = new FileLogReader(logFilesIterator.next());</b>
+<b class="nc">&nbsp;			currentReader.init();</b>
+<b class="nc">&nbsp;			next = getNext();</b>
+<b class="nc">&nbsp;			if (getOffset() &gt; 0) {</b>
+<b class="nc">&nbsp;				doSkip(getOffset());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() {
+<b class="nc">&nbsp;		if (getLimit() == 0) {</b>
+<b class="nc">&nbsp;			return isMoreAvailable();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return isMoreAvailable() &amp;&amp; (count &lt; (getOffset() + getLimit()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isMoreAvailable() {
+<b class="nc">&nbsp;		return next != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public LogRecord next() {
+<b class="nc">&nbsp;		LogRecord result = next;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			next = getNext();</b>
+<b class="nc">&nbsp;			count++;</b>
+<b class="nc">&nbsp;		} catch (Exception ex) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Unable to get next log record.&quot;, ex);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (!hasNext()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				destroy();</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				e.printStackTrace();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get next log record
+&nbsp;	 *
+&nbsp;	 * @return log record
+&nbsp;	 * @throws Exception
+&nbsp;	 */
+&nbsp;	private LogRecord getNext() throws Exception {
+<b class="nc">&nbsp;		if (currentReader.hasNext()) {</b>
+<b class="nc">&nbsp;			return currentReader.next();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (logFilesIterator.hasNext()) {</b>
+<b class="nc">&nbsp;			currentReader = new FileLogReader(logFilesIterator.next());</b>
+<b class="nc">&nbsp;			currentReader.init();</b>
+<b class="nc">&nbsp;			return getNext();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Skip for a specific offset
+&nbsp;	 *
+&nbsp;	 * @param offset offset
+&nbsp;	 */
+&nbsp;	private void doSkip(int offset) {
+<b class="nc">&nbsp;		while (this.hasNext() &amp;&amp; (count &lt; offset)) {</b>
+<b class="nc">&nbsp;			this.next();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() throws IOException {
+<b class="nc">&nbsp;		if (currentReader.hasNext()) {</b>
+<b class="nc">&nbsp;			currentReader.destroy();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the start date
+&nbsp;	 *
+&nbsp;	 * @return start date.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Date getStartDate() {
+<b class="nc">&nbsp;		return startDate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set start date
+&nbsp;	 *
+&nbsp;	 * @param startDate The startDate to set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void setStartDate(Date startDate) {
+<b class="nc">&nbsp;		this.startDate = startDate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the end date
+&nbsp;	 *
+&nbsp;	 * @return end date
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Date getEndDate() {
+<b class="nc">&nbsp;		return endDate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the end date
+&nbsp;	 *
+&nbsp;	 * @param endDate The endDate to set.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void setEndDate(Date endDate) {
+<b class="nc">&nbsp;		this.endDate = endDate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Date getMaxDate() {
+<b class="nc">&nbsp;		return this.maxDate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Date getMinDate() {
+<b class="nc">&nbsp;		return this.minDate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Custom filename filter
+&nbsp;	 *
+&nbsp;	 * @author alex
+&nbsp;	 */
+&nbsp;	public class DateRangeFilenameFilter implements FilenameFilter {
+&nbsp;
+&nbsp;		Pattern pattern;
+&nbsp;
+&nbsp;		SimpleDateFormat df;
+&nbsp;
+&nbsp;		Calendar startCal, endCal;
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Constructor
+&nbsp;		 *
+&nbsp;		 * @param pattern
+&nbsp;		 * @param df
+&nbsp;		 * @param startCal
+&nbsp;		 * @param endCal
+&nbsp;		 */
+<b class="nc">&nbsp;		public DateRangeFilenameFilter(Pattern pattern, SimpleDateFormat df, Calendar startCal, Calendar endCal) {</b>
+<b class="nc">&nbsp;			this.pattern = pattern;</b>
+<b class="nc">&nbsp;			this.df = df;</b>
+<b class="nc">&nbsp;			this.startCal = startCal;</b>
+<b class="nc">&nbsp;			this.endCal = endCal;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean accept(File dir, String name) {
+<b class="nc">&nbsp;			Matcher matcher = pattern.matcher(name);</b>
+<b class="nc">&nbsp;			if (!matcher.matches()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String ds = matcher.group(1);</b>
+&nbsp;			Date d;
+&nbsp;			try {
+<b class="nc">&nbsp;				d = df.parse(ds);</b>
+<b class="nc">&nbsp;			} catch (ParseException e) {</b>
+<b class="nc">&nbsp;				e.printStackTrace();</b>
+<b class="nc">&nbsp;				return false;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if ((maxDate == null) || (d.compareTo(maxDate) &gt; 0)) {</b>
+<b class="nc">&nbsp;				maxDate = d;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if ((minDate == null) || (d.compareTo(minDate) &lt; 0)) {</b>
+<b class="nc">&nbsp;				minDate = d;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Calendar cal = Calendar.getInstance();</b>
+<b class="nc">&nbsp;			cal.setTime(d);</b>
+<b class="nc">&nbsp;			return (((startCal == null) || (cal.compareTo(startCal) &gt;= 0))</b>
+<b class="nc">&nbsp;					&amp;&amp; ((endCal == null) || (cal.compareTo(endCal) &lt;= 0)));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

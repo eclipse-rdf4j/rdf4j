@@ -1,0 +1,573 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > WeakObjectRegistry</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: WeakObjectRegistry (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">WeakObjectRegistry</td>
+<td class="coverageStat">
+  <span class="percent">
+    53.8%
+  </span>
+  <span class="absValue">
+    (7/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.1%
+  </span>
+  <span class="absValue">
+    (15/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    55%
+  </span>
+  <span class="absValue">
+    (44/80)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">WeakObjectRegistry$AdderBasedReadWriteLock</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    41.7%
+  </span>
+  <span class="absValue">
+    (5/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    72.4%
+  </span>
+  <span class="absValue">
+    (21/29)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">WeakObjectRegistry$AutoCloseableIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    77.3%
+  </span>
+  <span class="absValue">
+    (17/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    96.6%
+  </span>
+  <span class="absValue">
+    (28/29)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (18/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.4%
+  </span>
+  <span class="absValue">
+    (37/68)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.4%
+  </span>
+  <span class="absValue">
+    (93/138)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.util.AbstractSet;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.WeakHashMap;
+&nbsp;import java.util.concurrent.atomic.LongAdder;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An object registry that uses weak references to keep track of the stored objects. The registry can be used to
+&nbsp; * retrieve stored objects using another, equivalent object. As such, it can be used to prevent the use of duplicates in
+&nbsp; * another data structure, reducing memory usage. The objects that are being stored should properly implement the
+&nbsp; * {@link Object#equals} and {@link Object#hashCode} methods.
+&nbsp; */
+<b class="fc">&nbsp;public class WeakObjectRegistry&lt;K, E extends K&gt; extends AbstractSet&lt;E&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(WeakObjectRegistry.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The hash map that is used to store the objects.
+&nbsp;	 */
+&nbsp;	private final Map&lt;E, WeakReference&lt;E&gt;&gt;[] objectMap;
+&nbsp;	private final AdderBasedReadWriteLock[] locks;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructs a new, empty object registry.
+&nbsp;	 */
+&nbsp;	public WeakObjectRegistry() {
+<b class="fc">&nbsp;		super();</b>
+<b class="fc">&nbsp;		int concurrency = Runtime.getRuntime().availableProcessors() * 2;</b>
+&nbsp;
+<b class="fc">&nbsp;		objectMap = new WeakHashMap[concurrency];</b>
+<b class="fc">&nbsp;		for (int i = 0; i &lt; objectMap.length; i++) {</b>
+<b class="fc">&nbsp;			objectMap[i] = new WeakHashMap&lt;&gt;();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		locks = new AdderBasedReadWriteLock[objectMap.length];</b>
+<b class="fc">&nbsp;		for (int index = 0; index &lt; locks.length; index++) {</b>
+<b class="fc">&nbsp;			locks[index] = new AdderBasedReadWriteLock();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructs a new WeakObjectRegistry containing the elements in the specified collection.
+&nbsp;	 *
+&nbsp;	 * @param c The collection whose elements are to be placed into this object registry.
+&nbsp;	 * @throws NullPointerException If the specified collection is null.
+&nbsp;	 */
+&nbsp;	public WeakObjectRegistry(int cacheSize, Collection&lt;? extends E&gt; c) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		addAll(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the stored object that is equal to the supplied &lt;var&gt;key&lt;/var&gt; object.
+&nbsp;	 *
+&nbsp;	 * @param key The object that should be used as the search key for the operation.
+&nbsp;	 * @return A stored object that is equal to the supplied key, or &lt;var&gt;null&lt;/var&gt; if no such object was found.
+&nbsp;	 */
+&nbsp;	public E get(K key) {
+<b class="pc">&nbsp;		if (key == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		int index = getIndex(key);</b>
+<b class="fc">&nbsp;		boolean readLock = locks[index].readLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			Map&lt;E, WeakReference&lt;E&gt;&gt; weakReferenceMap = objectMap[index];</b>
+&nbsp;
+<b class="fc">&nbsp;			WeakReference&lt;E&gt; weakRef = weakReferenceMap.get(key);</b>
+<b class="fc">&nbsp;			if (weakRef != null) {</b>
+<b class="fc">&nbsp;				return weakRef.get(); // may be null</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			locks[index].unlockReader(readLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private int getIndex(Object key) {
+<b class="fc">&nbsp;		int i = Math.abs(key.hashCode());</b>
+<b class="fc">&nbsp;		return i % objectMap.length;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public AutoCloseableIterator&lt;E&gt; closeableIterator() {
+<b class="fc">&nbsp;		return new AutoCloseableIterator&lt;&gt;(objectMap, locks);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;E&gt; iterator() {
+<b class="nc">&nbsp;		logger.warn(&quot;This method is not thread safe! Use closeableIterator() instead.&quot;);</b>
+<b class="nc">&nbsp;		return new AutoCloseableIterator&lt;&gt;(objectMap, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static class AutoCloseableIterator&lt;E&gt; implements Iterator&lt;E&gt;, AutoCloseable {
+&nbsp;
+&nbsp;		private final Iterator&lt;Map&lt;E, WeakReference&lt;E&gt;&gt;&gt; iterator;
+&nbsp;		private final AdderBasedReadWriteLock[] locks;
+&nbsp;
+&nbsp;		Iterator&lt;E&gt; currentIterator;
+&nbsp;		boolean[] readLocks;
+<b class="fc">&nbsp;		boolean init = false;</b>
+&nbsp;
+<b class="fc">&nbsp;		public AutoCloseableIterator(Map&lt;E, WeakReference&lt;E&gt;&gt;[] objectMap, AdderBasedReadWriteLock[] locks) {</b>
+<b class="fc">&nbsp;			this.iterator = Arrays.asList(objectMap).iterator();</b>
+<b class="fc">&nbsp;			this.locks = locks;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void init() {
+<b class="fc">&nbsp;			if (!init) {</b>
+<b class="fc">&nbsp;				init = true;</b>
+<b class="pc">&nbsp;				if (locks != null) {</b>
+<b class="fc">&nbsp;					readLocks = new boolean[locks.length];</b>
+<b class="fc">&nbsp;					for (int index = 0; index &lt; locks.length; index++) {</b>
+<b class="fc">&nbsp;						readLocks[index] = locks[index].readLock();</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;				currentIterator = iterator.next().keySet().iterator();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() {
+<b class="fc">&nbsp;			init();</b>
+<b class="pc">&nbsp;			if (currentIterator == null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			while (currentIterator != null) {</b>
+<b class="fc">&nbsp;				if (currentIterator.hasNext()) {</b>
+<b class="fc">&nbsp;					return true;</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					currentIterator = null;</b>
+<b class="fc">&nbsp;					if (iterator.hasNext()) {</b>
+<b class="fc">&nbsp;						currentIterator = iterator.next().keySet().iterator();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public E next() {
+<b class="fc">&nbsp;			init();</b>
+<b class="fc">&nbsp;			return currentIterator.next();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() {
+<b class="pc">&nbsp;			if (init) {</b>
+<b class="pc">&nbsp;				if (locks != null) {</b>
+<b class="fc">&nbsp;					for (int index = 0; index &lt; locks.length; index++) {</b>
+<b class="pc">&nbsp;						if (readLocks[index]) {</b>
+<b class="fc">&nbsp;							locks[index].unlockReader(readLocks[index]);</b>
+<b class="fc">&nbsp;							readLocks[index] = false;</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int size() {
+<b class="nc">&nbsp;		int size = 0;</b>
+<b class="nc">&nbsp;		for (Map&lt;E, WeakReference&lt;E&gt;&gt; weakReferenceMap : objectMap) {</b>
+<b class="nc">&nbsp;			size += weakReferenceMap.size();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return size;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean contains(Object key) {
+<b class="nc">&nbsp;		return get((K) key) != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean add(E object) {
+<b class="nc">&nbsp;		int index = getIndex(object);</b>
+<b class="nc">&nbsp;		boolean writeLock = locks[index].writeLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			Map&lt;E, WeakReference&lt;E&gt;&gt; weakReferenceMap = objectMap[index];</b>
+<b class="nc">&nbsp;			WeakReference&lt;E&gt; ref = new WeakReference&lt;&gt;(object);</b>
+&nbsp;
+<b class="nc">&nbsp;			ref = weakReferenceMap.put(object, ref);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (ref != null) {</b>
+<b class="nc">&nbsp;				E e = ref.get();</b>
+<b class="nc">&nbsp;				if (e != null) {</b>
+&nbsp;					// A duplicate was added which replaced the existing object. Undo this operation.
+<b class="nc">&nbsp;					weakReferenceMap.put(e, ref);</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			locks[index].unlockWriter(writeLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public E getOrAdd(K key, Supplier&lt;E&gt; supplier) {
+&nbsp;
+<b class="fc">&nbsp;		int index = getIndex(key);</b>
+<b class="fc">&nbsp;		Map&lt;E, WeakReference&lt;E&gt;&gt; weakReferenceMap = objectMap[index];</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean readLock = locks[index].readLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			WeakReference&lt;E&gt; ref = weakReferenceMap.get(key);</b>
+<b class="fc">&nbsp;			if (ref != null) {</b>
+<b class="fc">&nbsp;				E e = ref.get();</b>
+<b class="pc">&nbsp;				if (e != null) {</b>
+&nbsp;					// we found the object
+<b class="fc">&nbsp;					return e;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			locks[index].unlockReader(readLock);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// we could not find the object, so we will use the supplier to create a new object and add that
+<b class="fc">&nbsp;		boolean writeLock = locks[index].writeLock();</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			E object = supplier.get();</b>
+<b class="fc">&nbsp;			WeakReference&lt;E&gt; ref = weakReferenceMap.put(object, new WeakReference&lt;&gt;(object));</b>
+<b class="pc">&nbsp;			if (ref != null) {</b>
+<b class="nc">&nbsp;				E e = ref.get();</b>
+<b class="nc">&nbsp;				if (e != null) {</b>
+&nbsp;					// Between releasing the read-lock and acquiring the write-lock another thread put the object in the
+&nbsp;					// weakReferenceMap. We need to put back the one that was there before and return that one to the
+&nbsp;					// user.
+<b class="nc">&nbsp;					weakReferenceMap.put(e, ref);</b>
+<b class="nc">&nbsp;					object = e;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="pc">&nbsp;			assert object != null;</b>
+<b class="fc">&nbsp;			return object;</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="fc">&nbsp;			locks[index].unlockWriter(writeLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean remove(Object object) {
+&nbsp;
+<b class="nc">&nbsp;		int index = getIndex(object);</b>
+<b class="nc">&nbsp;		boolean writeLock = locks[index].writeLock();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			Map&lt;E, WeakReference&lt;E&gt;&gt; weakReferenceMap = objectMap[index];</b>
+<b class="nc">&nbsp;			WeakReference&lt;E&gt; ref = weakReferenceMap.remove(object);</b>
+<b class="nc">&nbsp;			return ref != null &amp;&amp; ref.get() != null;</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			locks[index].unlockWriter(writeLock);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear() {
+&nbsp;
+<b class="fc">&nbsp;		for (int index = 0; index &lt; objectMap.length; index++) {</b>
+<b class="fc">&nbsp;			boolean writeLock = locks[index].writeLock();</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				objectMap[index].clear();</b>
+&nbsp;			} finally {
+<b class="fc">&nbsp;				locks[index].unlockWriter(writeLock);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class AdderBasedReadWriteLock {</b>
+&nbsp;
+&nbsp;		// StampedLock for handling writers.
+&nbsp;		private volatile boolean writeLocked;
+&nbsp;
+&nbsp;		private static final VarHandle WRITE_LOCKED;
+&nbsp;
+&nbsp;		static {
+&nbsp;			try {
+<b class="fc">&nbsp;				WRITE_LOCKED = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;						.in(AdderBasedReadWriteLock.class)</b>
+<b class="fc">&nbsp;						.findVarHandle(AdderBasedReadWriteLock.class, &quot;writeLocked&quot;, boolean.class);</b>
+<b class="nc">&nbsp;			} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;				throw new Error(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// LongAdder for handling readers. When the count is equal then there are no active readers.
+<b class="fc">&nbsp;		private final LongAdder readersLocked = new LongAdder();</b>
+<b class="fc">&nbsp;		private final LongAdder readersUnlocked = new LongAdder();</b>
+&nbsp;
+&nbsp;		public boolean readLock() {
+&nbsp;			while (true) {
+<b class="fc">&nbsp;				readersLocked.increment();</b>
+<b class="pc">&nbsp;				if (!((boolean) WRITE_LOCKED.getAcquire(this))) {</b>
+&nbsp;					// Everything is good! We have acquired a read-lock and there are no active writers.
+<b class="fc">&nbsp;					return true;</b>
+&nbsp;				} else {
+&nbsp;					// Release our read lock so we don&#39;t block any writers.
+<b class="nc">&nbsp;					readersUnlocked.increment();</b>
+<b class="nc">&nbsp;					while (((boolean) WRITE_LOCKED.getAcquire(this))) {</b>
+<b class="nc">&nbsp;						Thread.onSpinWait();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public void unlockReader(boolean locked) {
+<b class="pc">&nbsp;			if (locked) {</b>
+<b class="fc">&nbsp;				readersUnlocked.increment();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IllegalMonitorStateException();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean writeLock() {
+&nbsp;
+&nbsp;			// Acquire a write-lock.
+&nbsp;			boolean writeLocked;
+&nbsp;			do {
+<b class="fc">&nbsp;				writeLocked = WRITE_LOCKED.compareAndSet(this, false, true);</b>
+<b class="pc">&nbsp;			} while (!writeLocked);</b>
+&nbsp;
+&nbsp;			// Wait for active readers to finish.
+&nbsp;			while (true) {
+&nbsp;				// The order is important here.
+<b class="fc">&nbsp;				long unlockedSum = readersUnlocked.sum();</b>
+<b class="fc">&nbsp;				long lockedSum = readersLocked.sum();</b>
+<b class="pc">&nbsp;				if (unlockedSum == lockedSum) {</b>
+&nbsp;					// No active readers.
+<b class="fc">&nbsp;					return writeLocked;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					Thread.onSpinWait();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void unlockWriter(boolean writeLocked) {
+<b class="pc">&nbsp;			if (writeLocked) {</b>
+&nbsp;				// Make sure that readers in other threads will be able to read the writes that were made by the user
+&nbsp;				// within the write-locked section. The stamped lock only guarantees that writes are visible to other
+&nbsp;				// threads if those threads use a stamped lock read-lock.
+<b class="fc">&nbsp;				VarHandle.fullFence();</b>
+<b class="fc">&nbsp;				WRITE_LOCKED.setRelease(this, false);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

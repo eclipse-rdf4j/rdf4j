@@ -1,0 +1,650 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFXMLWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.rdfxml</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFXMLWriter (org.eclipse.rdf4j.rio.rdfxml)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFXMLWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/96)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/212)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.rdfxml;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.common.xml.XMLUtil;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the RDFWriter interface that writes RDF documents in XML-serialized RDF format.
+&nbsp; */
+&nbsp;public class RDFXMLWriter extends AbstractRDFWriter implements CharSink {
+&nbsp;
+&nbsp;	protected final ParsedIRI baseIRI;
+&nbsp;	protected final Writer writer;
+&nbsp;	protected String defaultNamespace;
+<b class="nc">&nbsp;	protected boolean headerWritten = false;</b>
+<b class="nc">&nbsp;	protected Resource lastWrittenSubject = null;</b>
+<b class="nc">&nbsp;	protected char quote = &#39;&quot;&#39;;</b>
+<b class="nc">&nbsp;	protected boolean entityQuote = false;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out The OutputStream to write the RDF/XML document to.
+&nbsp;	 */
+&nbsp;	public RDFXMLWriter(OutputStream out) {
+<b class="nc">&nbsp;		this(out, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLWriter that will write to the supplied OutputStream.
+&nbsp;	 *
+&nbsp;	 * @param out     The OutputStream to write the RDF/XML document to.
+&nbsp;	 * @param baseIRI base URI
+&nbsp;	 */
+<b class="nc">&nbsp;	public RDFXMLWriter(OutputStream out, ParsedIRI baseIRI) {</b>
+<b class="nc">&nbsp;		this.baseIRI = baseIRI;</b>
+<b class="nc">&nbsp;		this.writer = new OutputStreamWriter(out, StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;		namespaceTable = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer The Writer to write the RDF/XML document to.
+&nbsp;	 */
+&nbsp;	public RDFXMLWriter(Writer writer) {
+<b class="nc">&nbsp;		this(writer, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFXMLWriter that will write to the supplied Writer.
+&nbsp;	 *
+&nbsp;	 * @param writer  The Writer to write the RDF/XML document to.
+&nbsp;	 * @param baseIRI base URI
+&nbsp;	 */
+<b class="nc">&nbsp;	public RDFXMLWriter(Writer writer, ParsedIRI baseIRI) {</b>
+<b class="nc">&nbsp;		this.baseIRI = baseIRI;</b>
+<b class="nc">&nbsp;		this.writer = writer;</b>
+<b class="nc">&nbsp;		namespaceTable = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.RDFXML;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		final Collection&lt;RioSetting&lt;?&gt;&gt; settings = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+<b class="nc">&nbsp;		settings.add(BasicWriterSettings.BASE_DIRECTIVE);</b>
+<b class="nc">&nbsp;		settings.add(XMLWriterSettings.USE_SINGLE_QUOTES);</b>
+<b class="nc">&nbsp;		settings.add(XMLWriterSettings.QUOTES_TO_ENTITIES_IN_TEXT);</b>
+<b class="nc">&nbsp;		settings.add(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG);</b>
+<b class="nc">&nbsp;		settings.add(XMLWriterSettings.INCLUDE_XML_PI);</b>
+<b class="nc">&nbsp;		return settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeHeader() throws IOException {
+&nbsp;		try {
+&nbsp;			// This export format needs the RDF namespace to be defined, add a
+&nbsp;			// prefix for it if there isn&#39;t one yet.
+<b class="nc">&nbsp;			setNamespace(RDF.PREFIX, RDF.NAMESPACE);</b>
+&nbsp;
+<b class="nc">&nbsp;			WriterConfig writerConfig = getWriterConfig();</b>
+<b class="nc">&nbsp;			quote = writerConfig.get(XMLWriterSettings.USE_SINGLE_QUOTES) ? &#39;\&#39;&#39; : &#39;\&quot;&#39;;</b>
+<b class="nc">&nbsp;			entityQuote = writerConfig.get(XMLWriterSettings.QUOTES_TO_ENTITIES_IN_TEXT);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (writerConfig.get(XMLWriterSettings.INCLUDE_XML_PI)) {</b>
+<b class="nc">&nbsp;				String str = (quote == &#39;\&quot;&#39;) ? &quot;&lt;?xml version=\&quot;1.0\&quot; encoding=\&quot;UTF-8\&quot;?&gt;\n&quot;</b>
+<b class="nc">&nbsp;						: &quot;&lt;?xml version=&#39;1.0&#39; encoding=&#39;UTF-8&#39;?&gt;\n&quot;;</b>
+<b class="nc">&nbsp;				writer.write(str);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (writerConfig.get(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG)) {</b>
+<b class="nc">&nbsp;				writeStartOfStartTag(RDF.NAMESPACE, &quot;RDF&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (defaultNamespace != null) {</b>
+<b class="nc">&nbsp;					writeNewLine();</b>
+<b class="nc">&nbsp;					writeIndent();</b>
+<b class="nc">&nbsp;					writeQuotedAttribute(&quot;xmlns&quot;, defaultNamespace);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				for (Map.Entry&lt;String, String&gt; entry : namespaceTable.entrySet()) {</b>
+<b class="nc">&nbsp;					String name = entry.getKey();</b>
+<b class="nc">&nbsp;					String prefix = entry.getValue();</b>
+&nbsp;
+<b class="nc">&nbsp;					writeNewLine();</b>
+<b class="nc">&nbsp;					writeIndent();</b>
+<b class="nc">&nbsp;					writeQuotedAttribute(&quot;xmlns:&quot; + prefix, name);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				if (baseIRI != null &amp;&amp; writerConfig.get(BasicWriterSettings.BASE_DIRECTIVE)) {</b>
+<b class="nc">&nbsp;					writeNewLine();</b>
+<b class="nc">&nbsp;					writeIndent();</b>
+<b class="nc">&nbsp;					writeQuotedAttribute(&quot;xml:base&quot;, baseIRI.toString());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				writeEndOfStartTag();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			writeNewLine();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			headerWritten = true;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!headerWritten) {</b>
+<b class="nc">&nbsp;				writeHeader();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			flushPendingStatements();</b>
+&nbsp;
+<b class="nc">&nbsp;			writeNewLine();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (getWriterConfig().get(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG)) {</b>
+<b class="nc">&nbsp;				writeEndTag(RDF.NAMESPACE, &quot;RDF&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			writer.flush();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String name) {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+<b class="nc">&nbsp;		setNamespace(prefix, name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setNamespace(String prefix, String name) {
+<b class="nc">&nbsp;		if (headerWritten) {</b>
+&nbsp;			// Header containing namespace declarations has already been written
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (prefix.isEmpty()) {</b>
+<b class="nc">&nbsp;			defaultNamespace = name;</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (namespaceTable.containsKey(name)) {</b>
+&nbsp;			// Namespace is already mapped to a prefix
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// Try to give the namespace the specified prefix
+<b class="nc">&nbsp;		boolean isLegalPrefix = XMLUtil.isNCName(prefix);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!isLegalPrefix || namespaceTable.containsValue(prefix)) {</b>
+&nbsp;			// Specified prefix is not legal or the prefix is already in use,
+&nbsp;			// generate a legal unique prefix
+<b class="nc">&nbsp;			if (!isLegalPrefix) {</b>
+<b class="nc">&nbsp;				prefix = &quot;ns&quot;;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			int number = 1;</b>
+<b class="nc">&nbsp;			while (namespaceTable.containsValue(prefix + number)) {</b>
+<b class="nc">&nbsp;				number++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			prefix += number;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		namespaceTable.put(name, prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void consumeStatement(Statement st) {
+<b class="nc">&nbsp;		Resource subj = st.getSubject();</b>
+<b class="nc">&nbsp;		IRI pred = st.getPredicate();</b>
+<b class="nc">&nbsp;		Value obj = st.getObject();</b>
+&nbsp;
+&nbsp;		// Verify that an XML namespace-qualified name can be created for the
+&nbsp;		// predicate
+<b class="nc">&nbsp;		String predString = pred.toString();</b>
+<b class="nc">&nbsp;		int predSplitIdx = XMLUtil.findURISplitIndex(predString);</b>
+<b class="nc">&nbsp;		if (predSplitIdx == -1) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(&quot;Unable to create XML namespace-qualified name for predicate: &quot; + predString);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String predNamespace = predString.substring(0, predSplitIdx);</b>
+<b class="nc">&nbsp;		String predLocalName = predString.substring(predSplitIdx);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!headerWritten) {</b>
+<b class="nc">&nbsp;				writeHeader();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// SUBJECT
+<b class="nc">&nbsp;			if (!subj.equals(lastWrittenSubject)) {</b>
+<b class="nc">&nbsp;				flushPendingStatements();</b>
+&nbsp;
+&nbsp;				// Write new subject:
+<b class="nc">&nbsp;				writeNewLine();</b>
+<b class="nc">&nbsp;				writeStartOfStartTag(RDF.NAMESPACE, &quot;Description&quot;);</b>
+<b class="nc">&nbsp;				if (subj instanceof BNode) {</b>
+<b class="nc">&nbsp;					BNode bNode = (BNode) subj;</b>
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;nodeID&quot;, getValidNodeId(bNode));</b>
+<b class="nc">&nbsp;				} else if (baseIRI != null) {</b>
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;about&quot;, baseIRI.relativize(subj.stringValue()));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					IRI uri = (IRI) subj;</b>
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;about&quot;, uri.toString());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				writeEndOfStartTag();</b>
+<b class="nc">&nbsp;				writeNewLine();</b>
+&nbsp;
+<b class="nc">&nbsp;				lastWrittenSubject = subj;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// PREDICATE
+<b class="nc">&nbsp;			writeIndent();</b>
+<b class="nc">&nbsp;			writeStartOfStartTag(predNamespace, predLocalName);</b>
+&nbsp;
+&nbsp;			// OBJECT
+<b class="nc">&nbsp;			if (obj instanceof Resource) {</b>
+<b class="nc">&nbsp;				Resource objRes = (Resource) obj;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (objRes instanceof BNode) {</b>
+<b class="nc">&nbsp;					BNode bNode = (BNode) objRes;</b>
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;nodeID&quot;, getValidNodeId(bNode));</b>
+<b class="nc">&nbsp;				} else if (baseIRI != null) {</b>
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;resource&quot;, baseIRI.relativize(objRes.stringValue()));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					IRI uri = (IRI) objRes;</b>
+<b class="nc">&nbsp;					writeAttribute(RDF.NAMESPACE, &quot;resource&quot;, uri.toString());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				writeEndOfEmptyTag();</b>
+<b class="nc">&nbsp;			} else if (obj instanceof Literal) {</b>
+<b class="nc">&nbsp;				Literal objLit = (Literal) obj;</b>
+&nbsp;				// datatype attribute
+<b class="nc">&nbsp;				boolean isXMLLiteral = false;</b>
+&nbsp;
+&nbsp;				// language attribute
+<b class="nc">&nbsp;				if (Literals.isLanguageLiteral(objLit)) {</b>
+<b class="nc">&nbsp;					writeAttribute(&quot;xml:lang&quot;, objLit.getLanguage().get());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					CoreDatatype coreDatatype = objLit.getCoreDatatype();</b>
+&nbsp;
+&nbsp;					// Check if datatype is rdf:XMLLiteral
+<b class="nc">&nbsp;					isXMLLiteral = coreDatatype == CoreDatatype.RDF.XMLLITERAL;</b>
+&nbsp;
+<b class="nc">&nbsp;					if (isXMLLiteral) {</b>
+<b class="nc">&nbsp;						writeAttribute(RDF.NAMESPACE, &quot;parseType&quot;, &quot;Literal&quot;);</b>
+<b class="nc">&nbsp;					} else if (coreDatatype != CoreDatatype.XSD.STRING) {</b>
+<b class="nc">&nbsp;						writeAttribute(RDF.NAMESPACE, &quot;datatype&quot;, objLit.getDatatype().toString());</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				writeEndOfStartTag();</b>
+&nbsp;
+&nbsp;				// label
+<b class="nc">&nbsp;				if (isXMLLiteral) {</b>
+&nbsp;					// Write XML literal as plain XML
+<b class="nc">&nbsp;					writer.write(objLit.getLabel());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					writeCharacterData(objLit.getLabel());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				writeEndTag(predNamespace, predLocalName);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			writeNewLine();</b>
+&nbsp;
+&nbsp;			// Don&#39;t write &lt;/rdf:Description&gt; yet, maybe the next statement
+&nbsp;			// has the same subject.
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!headerWritten) {</b>
+<b class="nc">&nbsp;				writeHeader();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			flushPendingStatements();</b>
+&nbsp;
+<b class="nc">&nbsp;			writer.write(&quot;&lt;!-- &quot;);</b>
+<b class="nc">&nbsp;			writer.write(comment);</b>
+<b class="nc">&nbsp;			writer.write(&quot; --&gt;&quot;);</b>
+<b class="nc">&nbsp;			writeNewLine();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void flushPendingStatements() throws IOException, RDFHandlerException {
+<b class="nc">&nbsp;		if (lastWrittenSubject != null) {</b>
+&nbsp;			// The last statement still has to be closed:
+<b class="nc">&nbsp;			writeEndTag(RDF.NAMESPACE, &quot;Description&quot;);</b>
+<b class="nc">&nbsp;			writeNewLine();</b>
+&nbsp;
+<b class="nc">&nbsp;			lastWrittenSubject = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeStartOfStartTag(String namespace, String localName) throws IOException {
+<b class="nc">&nbsp;		if (namespace.equals(defaultNamespace)) {</b>
+<b class="nc">&nbsp;			writer.write(&quot;&lt;&quot;);</b>
+<b class="nc">&nbsp;			writer.write(localName);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			String prefix = namespaceTable.get(namespace);</b>
+&nbsp;
+&nbsp;			// If the prefix was not defined, or the root rdf:RDF tag was not
+&nbsp;			// written, then use xmlns=...
+<b class="nc">&nbsp;			if (prefix == null || !getWriterConfig().get(XMLWriterSettings.INCLUDE_ROOT_RDF_TAG)) {</b>
+<b class="nc">&nbsp;				writer.write(&quot;&lt;&quot;);</b>
+<b class="nc">&nbsp;				writer.write(localName);</b>
+<b class="nc">&nbsp;				writeQuotedAttribute(&quot; xmlns&quot;, namespace);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writer.write(&quot;&lt;&quot;);</b>
+<b class="nc">&nbsp;				writer.write(prefix);</b>
+<b class="nc">&nbsp;				writer.write(&quot;:&quot;);</b>
+<b class="nc">&nbsp;				writer.write(localName);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeAttribute(String attName, String value) throws IOException {
+<b class="nc">&nbsp;		writeQuotedAttribute(&quot; &quot; + attName, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeAttribute(String namespace, String attName, String value)
+&nbsp;			throws IOException, RDFHandlerException {
+&nbsp;		// Note: attribute cannot use the default namespace
+<b class="nc">&nbsp;		String prefix = namespaceTable.get(namespace);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (prefix == null) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(</b>
+&nbsp;					&quot;No prefix has been declared for the namespace used in this attribute: &quot; + namespace);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writeQuotedAttribute(&quot; &quot; + prefix + &quot;:&quot; + attName, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write quoted attribute
+&nbsp;	 *
+&nbsp;	 * @param attName attribute name
+&nbsp;	 * @param value   string value
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeQuotedAttribute(String attName, String value) throws IOException {
+<b class="nc">&nbsp;		String str = (quote == &#39;\&quot;&#39;) ? XMLUtil.escapeDoubleQuotedAttValue(value)</b>
+<b class="nc">&nbsp;				: XMLUtil.escapeSingleQuotedAttValue(value);</b>
+<b class="nc">&nbsp;		writer.write(attName);</b>
+<b class="nc">&nbsp;		writer.write(&quot;=&quot;);</b>
+<b class="nc">&nbsp;		writer.write(quote);</b>
+<b class="nc">&nbsp;		writer.write(str);</b>
+<b class="nc">&nbsp;		writer.write(quote);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write &amp;gt;
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeEndOfStartTag() throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write &amp;gt; or /&amp;gt;
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeEndOfEmptyTag() throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;/&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeEndTag(String namespace, String localName) throws IOException {
+<b class="nc">&nbsp;		if (namespace.equals(defaultNamespace)) {</b>
+<b class="nc">&nbsp;			writer.write(&quot;&lt;/&quot;);</b>
+<b class="nc">&nbsp;			writer.write(localName);</b>
+<b class="nc">&nbsp;			writer.write(&quot;&gt;&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writer.write(&quot;&lt;/&quot;);</b>
+<b class="nc">&nbsp;			String prefix = namespaceTable.get(namespace);</b>
+<b class="nc">&nbsp;			if (prefix != null) {</b>
+<b class="nc">&nbsp;				writer.write(prefix);</b>
+<b class="nc">&nbsp;				writer.write(&quot;:&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writer.write(localName);</b>
+<b class="nc">&nbsp;			writer.write(&quot;&gt;&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Replace special characters in text with entities.
+&nbsp;	 *
+&nbsp;	 * @param chars text
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeCharacterData(String chars) throws IOException {
+&nbsp;		String str;
+<b class="nc">&nbsp;		if (!entityQuote) {</b>
+<b class="nc">&nbsp;			str = XMLUtil.escapeCharacterData(chars);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			str = (quote == &#39;\&quot;&#39;) ? XMLUtil.escapeDoubleQuotedAttValue(chars)</b>
+<b class="nc">&nbsp;					: XMLUtil.escapeSingleQuotedAttValue(chars);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		writer.write(str);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write tab
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeIndent() throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;\t&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write newline character
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void writeNewLine() throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;\n&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a syntactically valid node id from the supplied blank node id. This is necessary because RDF/XML syntax
+&nbsp;	 * enforces the blank node id is a valid NCName.
+&nbsp;	 *
+&nbsp;	 * @param bNode a blank node identifier
+&nbsp;	 * @return the blank node identifier converted to a form that is a valid NCName.
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/REC-rdf-syntax/#rdf-id&quot;&gt;section 7.2.34 of the RDF/XML Syntax specification&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	protected String getValidNodeId(BNode bNode) throws IOException {
+<b class="nc">&nbsp;		String validNodeId = bNode.getID();</b>
+<b class="nc">&nbsp;		if (!XMLUtil.isNCName(validNodeId)) {</b>
+<b class="nc">&nbsp;			StringBuilder builder = new StringBuilder();</b>
+<b class="nc">&nbsp;			if (validNodeId.isEmpty()) {</b>
+<b class="nc">&nbsp;				if (this.getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS)) {</b>
+<b class="nc">&nbsp;					throw new IOException(&quot;Cannot consistently write blank nodes with empty internal identifiers&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				builder.append(&quot;genid-hash-&quot;);</b>
+<b class="nc">&nbsp;				builder.append(Integer.toHexString(System.identityHashCode(bNode)));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (!XMLUtil.isNCNameStartChar(validNodeId.charAt(0))) {</b>
+&nbsp;					// prepend legal start char
+<b class="nc">&nbsp;					builder.append(&quot;genid-start-&quot;);</b>
+<b class="nc">&nbsp;					builder.append(Integer.toHexString(validNodeId.charAt(0)));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					builder.append(validNodeId.charAt(0));</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				for (int i = 1; i &lt; validNodeId.length(); i++) {</b>
+&nbsp;					// do char-by-char scan and replace illegal chars where
+&nbsp;					// necessary.
+<b class="nc">&nbsp;					if (XMLUtil.isNCNameChar(validNodeId.charAt(i))) {</b>
+<b class="nc">&nbsp;						builder.append(validNodeId.charAt(i));</b>
+&nbsp;					} else {
+&nbsp;						// replace incompatible char with encoded hex value that will
+&nbsp;						// always be alphanumeric.
+<b class="nc">&nbsp;						builder.append(Integer.toHexString(validNodeId.charAt(i)));</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			validNodeId = builder.toString();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return validNodeId;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,180 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BoundFiltersNode</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: BoundFiltersNode (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BoundFiltersNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link QueryModelNode} for printing the bound filter vars (e.g. in a {@link FedXStatementPattern})
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class BoundFiltersNode extends AbstractQueryModelNode {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -757075347491900484L;
+&nbsp;
+&nbsp;	private final BindingSet boundFilters;
+&nbsp;
+&nbsp;	public BoundFiltersNode(BindingSet boundFilters) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.boundFilters = boundFilters;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="nc">&nbsp;		visitor.meetOther(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getSignature() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(64);</b>
+<b class="nc">&nbsp;		sb.append(&quot;BoundFilters (&quot;);</b>
+<b class="nc">&nbsp;		int i = 0;</b>
+<b class="nc">&nbsp;		for (Binding b : boundFilters) {</b>
+<b class="nc">&nbsp;			sb.append(b.getName()).append(&quot;=&quot;).append(b.getValue());</b>
+<b class="nc">&nbsp;			if (i++ &lt; boundFilters.size() - 1) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;, &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		sb.append(&quot;)&quot;);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor, BindingSet boundFilters) throws X {
+<b class="nc">&nbsp;		new BoundFiltersNode(boundFilters).visit(visitor);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

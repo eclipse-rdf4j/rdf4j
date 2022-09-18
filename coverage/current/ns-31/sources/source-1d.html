@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > EmptyResult</title>
+  <title>Coverage Report > QueryRef</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
 </div>
 
-<h1>Coverage Summary for Class: EmptyResult (org.eclipse.rdf4j.federated.algebra)</h1>
+<h1>Coverage Summary for Class: QueryRef (org.eclipse.rdf4j.federated.algebra)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">EmptyResult</td>
+  <td class="name">QueryRef</td>
 </tr>
 
 </table>
@@ -50,17 +50,23 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.federated.algebra;
 &nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;
 &nbsp;/**
-&nbsp; * A generic interface to mark some TupleExpr as empty.
+&nbsp; * Interface to access the {@link QueryInfo} from all FedX Algebra nodes. All FedX Algebra nodes should implement this
+&nbsp; * interface.
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
 &nbsp; *
-&nbsp; * @see EmptyStatementPattern
-&nbsp; * @see EmptyNJoin
-&nbsp; *
 &nbsp; */
-&nbsp;public interface EmptyResult {
+&nbsp;public interface QueryRef {
 &nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the attached query information of the tuple expression
+&nbsp;	 *
+&nbsp;	 * @return the {@link QueryInfo}
+&nbsp;	 */
+&nbsp;	QueryInfo getQueryInfo();
 &nbsp;}
 </code>
 </pre>
@@ -85,7 +91,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

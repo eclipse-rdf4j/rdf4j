@@ -1,0 +1,470 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > OWL</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: OWL (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">OWL</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    98.8%
+  </span>
+  <span class="absValue">
+    (79/80)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for OWL / OWL 2 primitives and for the OWL / OWL 2 namespace.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/owl-ref/&quot;&gt;OWL Web Ontology Language Reference&lt;/a&gt;
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/owl2-overview/&quot;&gt;OWL 2 Web Ontology Language Document Overview&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;public class OWL {</b>
+&nbsp;
+&nbsp;	/** The OWL namespace: http://www.w3.org/2002/07/owl# */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/2002/07/owl#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the OWL and the OWL 2 namespace: &quot;owl&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;owl&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the OWL namespace.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// OWL Lite
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Class */
+&nbsp;	public final static IRI CLASS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Individual */
+&nbsp;	@Deprecated
+&nbsp;	public final static IRI INDIVIDUAL;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Thing */
+&nbsp;	public static final IRI THING;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Nothing */
+&nbsp;	public static final IRI NOTHING;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#equivalentClass */
+&nbsp;	public final static IRI EQUIVALENTCLASS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#equivalentProperty */
+&nbsp;	public final static IRI EQUIVALENTPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#sameAs */
+&nbsp;	public final static IRI SAMEAS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#differentFrom */
+&nbsp;	public final static IRI DIFFERENTFROM;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#AllDifferent */
+&nbsp;	public final static IRI ALLDIFFERENT;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#distinctMembers */
+&nbsp;	public final static IRI DISTINCTMEMBERS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#ObjectProperty */
+&nbsp;	public final static IRI OBJECTPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#DatatypeProperty */
+&nbsp;	public final static IRI DATATYPEPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#inverseOf */
+&nbsp;	public final static IRI INVERSEOF;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#TransitiveProperty */
+&nbsp;	public final static IRI TRANSITIVEPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#SymmetricProperty */
+&nbsp;	public final static IRI SYMMETRICPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#FunctionalProperty */
+&nbsp;	public final static IRI FUNCTIONALPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#InverseFunctionalProperty */
+&nbsp;	public final static IRI INVERSEFUNCTIONALPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Restriction */
+&nbsp;	public final static IRI RESTRICTION;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#onProperty */
+&nbsp;	public final static IRI ONPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#allValuesFrom */
+&nbsp;	public final static IRI ALLVALUESFROM;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#someValuesFrom */
+&nbsp;	public final static IRI SOMEVALUESFROM;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#minCardinality */
+&nbsp;	public final static IRI MINCARDINALITY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#maxCardinality */
+&nbsp;	public final static IRI MAXCARDINALITY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#cardinality */
+&nbsp;	public final static IRI CARDINALITY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Ontology */
+&nbsp;	public final static IRI ONTOLOGY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#imports */
+&nbsp;	public final static IRI IMPORTS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#intersectionOf */
+&nbsp;	public final static IRI INTERSECTIONOF;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#versionInfo */
+&nbsp;	public final static IRI VERSIONINFO;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#versionIRI */
+&nbsp;	public final static IRI VERSIONIRI;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#priorVersion */
+&nbsp;	public final static IRI PRIORVERSION;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#backwardCompatibleWith */
+&nbsp;	public final static IRI BACKWARDCOMPATIBLEWITH;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#incompatibleWith */
+&nbsp;	public final static IRI INCOMPATIBLEWITH;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#DeprecatedClass */
+&nbsp;	public final static IRI DEPRECATEDCLASS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#DeprecatedProperty */
+&nbsp;	public final static IRI DEPRECATEDPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#AnnotationProperty */
+&nbsp;	public final static IRI ANNOTATIONPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#OntologyProperty */
+&nbsp;	public final static IRI ONTOLOGYPROPERTY;
+&nbsp;
+&nbsp;	// OWL DL and OWL Full
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#oneOf */
+&nbsp;	public final static IRI ONEOF;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#hasValue */
+&nbsp;	public final static IRI HASVALUE;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#disjointWith */
+&nbsp;	public final static IRI DISJOINTWITH;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#unionOf */
+&nbsp;	public final static IRI UNIONOF;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#complementOf */
+&nbsp;	public final static IRI COMPLEMENTOF;
+&nbsp;
+&nbsp;	// OWL 2
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#AllDisjointClasses */
+&nbsp;	public final static IRI ALLDISJOINTCLASSES;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#AllDisjointProperties */
+&nbsp;	public final static IRI ALLDISJOINTPROPERTIES;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#annotatedProperty */
+&nbsp;	public final static IRI ANNOTATEDPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#annotatedSource */
+&nbsp;	public final static IRI ANNOTATEDSOURCE;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#annotatedTarget */
+&nbsp;	public final static IRI ANNOTATEDTARGET;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Annotation */
+&nbsp;	public final static IRI ANNOTATION;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#assertionProperty */
+&nbsp;	public final static IRI ASSERTIONPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#AsymmetricProperty */
+&nbsp;	public final static IRI ASYMMETRICPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#Axiom */
+&nbsp;	public final static IRI AXIOM;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#bottomDataProperty */
+&nbsp;	public final static IRI BOTTOMDATAPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#bottomObjectProperty */
+&nbsp;	public final static IRI BOTTOMOBJECTPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#DataRange */
+&nbsp;	public final static IRI DATARANGE;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#datatypeComplementOf */
+&nbsp;	public final static IRI DATATYPECOMPLEMENTOF;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#deprecated */
+&nbsp;	public final static IRI DEPRECATED;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#disjointUnionOf */
+&nbsp;	public final static IRI DISJOINTUNIONOF;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#hasKey */
+&nbsp;	public final static IRI HASKEY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#hasSelf */
+&nbsp;	public final static IRI HASSELF;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#IrreflexiveProperty */
+&nbsp;	public final static IRI IRREFLEXIVEPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#maxQualifiedCardinality */
+&nbsp;	public final static IRI MAXQUALIFIEDCARDINALITY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#members */
+&nbsp;	public final static IRI MEMBERS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#minQualifiedCardinality */
+&nbsp;	public final static IRI MINQUALIFIEDCARDINALITY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#NamedIndividual */
+&nbsp;	public final static IRI NAMEDINDIVIDUAL;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#NegativePropertyAssertion */
+&nbsp;	public final static IRI NEGATIVEPROPERTYASSERTION;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#onClass */
+&nbsp;	public final static IRI ONCLASS;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#onDataRange */
+&nbsp;	public final static IRI ONDATARANGE;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#onDatatype */
+&nbsp;	public final static IRI ONDATATYPE;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#onProperties */
+&nbsp;	public final static IRI ONPROPERTIES;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#propertyChainAxiom */
+&nbsp;	public final static IRI PROPERTYCHAINAXIOM;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#propertyDisjointWith */
+&nbsp;	public final static IRI PROPERTYDISJOINTWITH;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#qualifiedCardinality */
+&nbsp;	public final static IRI QUALIFIEDCARDINALITY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#ReflexiveProperty */
+&nbsp;	public final static IRI REFLEXIVEPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#sourceIndividual */
+&nbsp;	public final static IRI SOURCEINDIVIDUAL;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#targetIndividual */
+&nbsp;	public final static IRI TARGETINDIVIDUAL;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#targetValue */
+&nbsp;	public final static IRI TARGETVALUE;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#topDataProperty */
+&nbsp;	public final static IRI TOPDATAPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#topObjectProperty */
+&nbsp;	public final static IRI TOPOBJECTPROPERTY;
+&nbsp;
+&nbsp;	/** http://www.w3.org/2002/07/owl#withRestrictions */
+&nbsp;	public final static IRI WITHRESTRICTIONS;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="fc">&nbsp;		CLASS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;Class&quot;);</b>
+<b class="fc">&nbsp;		INDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, &quot;Individual&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		THING = Vocabularies.createIRI(OWL.NAMESPACE, &quot;Thing&quot;);</b>
+<b class="fc">&nbsp;		NOTHING = Vocabularies.createIRI(NAMESPACE, &quot;Nothing&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		EQUIVALENTCLASS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;equivalentClass&quot;);</b>
+<b class="fc">&nbsp;		EQUIVALENTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;equivalentProperty&quot;);</b>
+<b class="fc">&nbsp;		SAMEAS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;sameAs&quot;);</b>
+<b class="fc">&nbsp;		DIFFERENTFROM = Vocabularies.createIRI(OWL.NAMESPACE, &quot;differentFrom&quot;);</b>
+<b class="fc">&nbsp;		ALLDIFFERENT = Vocabularies.createIRI(OWL.NAMESPACE, &quot;AllDifferent&quot;);</b>
+<b class="fc">&nbsp;		DISTINCTMEMBERS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;distinctMembers&quot;);</b>
+<b class="fc">&nbsp;		OBJECTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;ObjectProperty&quot;);</b>
+<b class="fc">&nbsp;		DATATYPEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;DatatypeProperty&quot;);</b>
+<b class="fc">&nbsp;		INVERSEOF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;inverseOf&quot;);</b>
+<b class="fc">&nbsp;		TRANSITIVEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;TransitiveProperty&quot;);</b>
+<b class="fc">&nbsp;		SYMMETRICPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;SymmetricProperty&quot;);</b>
+<b class="fc">&nbsp;		FUNCTIONALPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;FunctionalProperty&quot;);</b>
+<b class="fc">&nbsp;		INVERSEFUNCTIONALPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;InverseFunctionalProperty&quot;);</b>
+<b class="fc">&nbsp;		RESTRICTION = Vocabularies.createIRI(OWL.NAMESPACE, &quot;Restriction&quot;);</b>
+<b class="fc">&nbsp;		ONPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;onProperty&quot;);</b>
+<b class="fc">&nbsp;		ALLVALUESFROM = Vocabularies.createIRI(OWL.NAMESPACE, &quot;allValuesFrom&quot;);</b>
+<b class="fc">&nbsp;		SOMEVALUESFROM = Vocabularies.createIRI(OWL.NAMESPACE, &quot;someValuesFrom&quot;);</b>
+<b class="fc">&nbsp;		MINCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;minCardinality&quot;);</b>
+<b class="fc">&nbsp;		MAXCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;maxCardinality&quot;);</b>
+<b class="fc">&nbsp;		CARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;cardinality&quot;);</b>
+<b class="fc">&nbsp;		ONTOLOGY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;Ontology&quot;);</b>
+<b class="fc">&nbsp;		IMPORTS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;imports&quot;);</b>
+<b class="fc">&nbsp;		INTERSECTIONOF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;intersectionOf&quot;);</b>
+<b class="fc">&nbsp;		VERSIONINFO = Vocabularies.createIRI(OWL.NAMESPACE, &quot;versionInfo&quot;);</b>
+<b class="fc">&nbsp;		VERSIONIRI = Vocabularies.createIRI(OWL.NAMESPACE, &quot;versionIRI&quot;);</b>
+<b class="fc">&nbsp;		PRIORVERSION = Vocabularies.createIRI(OWL.NAMESPACE, &quot;priorVersion&quot;);</b>
+<b class="fc">&nbsp;		BACKWARDCOMPATIBLEWITH = Vocabularies.createIRI(OWL.NAMESPACE, &quot;backwardCompatibleWith&quot;);</b>
+<b class="fc">&nbsp;		INCOMPATIBLEWITH = Vocabularies.createIRI(OWL.NAMESPACE, &quot;incompatibleWith&quot;);</b>
+<b class="fc">&nbsp;		DEPRECATEDCLASS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;DeprecatedClass&quot;);</b>
+<b class="fc">&nbsp;		DEPRECATEDPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;DeprecatedProperty&quot;);</b>
+<b class="fc">&nbsp;		ANNOTATIONPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;AnnotationProperty&quot;);</b>
+<b class="fc">&nbsp;		ONTOLOGYPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;OntologyProperty&quot;);</b>
+&nbsp;
+&nbsp;		// OWL DL and OWL Full
+&nbsp;
+<b class="fc">&nbsp;		ONEOF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;oneOf&quot;);</b>
+<b class="fc">&nbsp;		HASVALUE = Vocabularies.createIRI(OWL.NAMESPACE, &quot;hasValue&quot;);</b>
+<b class="fc">&nbsp;		DISJOINTWITH = Vocabularies.createIRI(OWL.NAMESPACE, &quot;disjointWith&quot;);</b>
+<b class="fc">&nbsp;		UNIONOF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;unionOf&quot;);</b>
+<b class="fc">&nbsp;		COMPLEMENTOF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;complementOf&quot;);</b>
+&nbsp;
+&nbsp;		// OWL 2
+&nbsp;
+<b class="fc">&nbsp;		ALLDISJOINTCLASSES = Vocabularies.createIRI(OWL.NAMESPACE, &quot;AllDisjointClasses&quot;);</b>
+<b class="fc">&nbsp;		ALLDISJOINTPROPERTIES = Vocabularies.createIRI(OWL.NAMESPACE, &quot;AllDisjointProperties&quot;);</b>
+<b class="fc">&nbsp;		ANNOTATEDPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;annotatedProperty&quot;);</b>
+<b class="fc">&nbsp;		ANNOTATEDSOURCE = Vocabularies.createIRI(OWL.NAMESPACE, &quot;annotatedSource&quot;);</b>
+<b class="fc">&nbsp;		ANNOTATEDTARGET = Vocabularies.createIRI(OWL.NAMESPACE, &quot;annotatedTarget&quot;);</b>
+<b class="fc">&nbsp;		ANNOTATION = Vocabularies.createIRI(OWL.NAMESPACE, &quot;Annotation&quot;);</b>
+<b class="fc">&nbsp;		ASSERTIONPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;assertionProperty&quot;);</b>
+<b class="fc">&nbsp;		ASYMMETRICPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;AsymmetricProperty&quot;);</b>
+<b class="fc">&nbsp;		AXIOM = Vocabularies.createIRI(OWL.NAMESPACE, &quot;Axiom&quot;);</b>
+<b class="fc">&nbsp;		BOTTOMDATAPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;bottomDataProperty&quot;);</b>
+<b class="fc">&nbsp;		BOTTOMOBJECTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;bottomObjectProperty&quot;);</b>
+<b class="fc">&nbsp;		DATARANGE = Vocabularies.createIRI(OWL.NAMESPACE, &quot;DataRange&quot;);</b>
+<b class="fc">&nbsp;		DATATYPECOMPLEMENTOF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;datatypeComplementOf&quot;);</b>
+<b class="fc">&nbsp;		DEPRECATED = Vocabularies.createIRI(OWL.NAMESPACE, &quot;deprecated&quot;);</b>
+<b class="fc">&nbsp;		DISJOINTUNIONOF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;disjointUnionOf&quot;);</b>
+<b class="fc">&nbsp;		HASKEY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;hasKey&quot;);</b>
+<b class="fc">&nbsp;		HASSELF = Vocabularies.createIRI(OWL.NAMESPACE, &quot;hasSelf&quot;);</b>
+<b class="fc">&nbsp;		IRREFLEXIVEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;IrreflexiveProperty&quot;);</b>
+<b class="fc">&nbsp;		MAXQUALIFIEDCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;maxQualifiedCardinality&quot;);</b>
+<b class="fc">&nbsp;		MEMBERS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;members&quot;);</b>
+<b class="fc">&nbsp;		MINQUALIFIEDCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;minQualifiedCardinality&quot;);</b>
+<b class="fc">&nbsp;		NAMEDINDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, &quot;NamedIndividual&quot;);</b>
+<b class="fc">&nbsp;		NEGATIVEPROPERTYASSERTION = Vocabularies.createIRI(OWL.NAMESPACE, &quot;NegativePropertyAssertion&quot;);</b>
+<b class="fc">&nbsp;		ONCLASS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;onClass&quot;);</b>
+<b class="fc">&nbsp;		ONDATARANGE = Vocabularies.createIRI(OWL.NAMESPACE, &quot;onDataRange&quot;);</b>
+<b class="fc">&nbsp;		ONDATATYPE = Vocabularies.createIRI(OWL.NAMESPACE, &quot;onDatatype&quot;);</b>
+<b class="fc">&nbsp;		ONPROPERTIES = Vocabularies.createIRI(OWL.NAMESPACE, &quot;onProperties&quot;);</b>
+<b class="fc">&nbsp;		PROPERTYCHAINAXIOM = Vocabularies.createIRI(OWL.NAMESPACE, &quot;propertyChainAxiom&quot;);</b>
+<b class="fc">&nbsp;		PROPERTYDISJOINTWITH = Vocabularies.createIRI(OWL.NAMESPACE, &quot;propertyDisjointWith&quot;);</b>
+<b class="fc">&nbsp;		QUALIFIEDCARDINALITY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;qualifiedCardinality&quot;);</b>
+<b class="fc">&nbsp;		REFLEXIVEPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;ReflexiveProperty&quot;);</b>
+<b class="fc">&nbsp;		SOURCEINDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, &quot;sourceIndividual&quot;);</b>
+<b class="fc">&nbsp;		TARGETINDIVIDUAL = Vocabularies.createIRI(OWL.NAMESPACE, &quot;targetIndividual&quot;);</b>
+<b class="fc">&nbsp;		TARGETVALUE = Vocabularies.createIRI(OWL.NAMESPACE, &quot;targetValue&quot;);</b>
+<b class="fc">&nbsp;		TOPDATAPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;topDataProperty&quot;);</b>
+<b class="fc">&nbsp;		TOPOBJECTPROPERTY = Vocabularies.createIRI(OWL.NAMESPACE, &quot;topObjectProperty&quot;);</b>
+<b class="fc">&nbsp;		WITHRESTRICTIONS = Vocabularies.createIRI(OWL.NAMESPACE, &quot;withRestrictions&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

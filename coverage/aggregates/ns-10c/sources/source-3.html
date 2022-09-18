@@ -1,0 +1,341 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CachingRepositoryConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.resultcache</a>
+</div>
+
+<h1>Coverage Summary for Class: CachingRepositoryConnection (org.eclipse.rdf4j.spring.resultcache)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CachingRepositoryConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.resultcache;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.net.URL;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class CachingRepositoryConnection extends RepositoryConnectionWrapper implements Clearable {
+&nbsp;	private final LRUResultCache&lt;ReusableTupleQueryResult&gt; localTupleQueryResultCache;
+&nbsp;	private final LRUResultCache&lt;ReusableGraphQueryResult&gt; localGraphQueryResultCache;
+&nbsp;	private final LRUResultCache&lt;ReusableTupleQueryResult&gt; globalTupleQueryResultCache;
+&nbsp;	private final LRUResultCache&lt;ReusableGraphQueryResult&gt; globalGraphQueryResultCache;
+&nbsp;	private final ResultCacheProperties properties;
+<b class="nc">&nbsp;	private boolean clearGlobalResultCacheOnClose = false;</b>
+&nbsp;
+&nbsp;	public CachingRepositoryConnection(
+&nbsp;			RepositoryConnection delegate,
+&nbsp;			LRUResultCache&lt;ReusableTupleQueryResult&gt; globalTupleQueryResultCache,
+&nbsp;			LRUResultCache&lt;ReusableGraphQueryResult&gt; globalGraphQueryResultCache,
+&nbsp;			ResultCacheProperties properties) {
+<b class="nc">&nbsp;		super(delegate.getRepository(), delegate);</b>
+<b class="nc">&nbsp;		this.globalGraphQueryResultCache = globalGraphQueryResultCache;</b>
+<b class="nc">&nbsp;		this.globalTupleQueryResultCache = globalTupleQueryResultCache;</b>
+<b class="nc">&nbsp;		this.localGraphQueryResultCache = new LRUResultCache&lt;&gt;(properties);</b>
+<b class="nc">&nbsp;		this.localTupleQueryResultCache = new LRUResultCache&lt;&gt;(properties);</b>
+<b class="nc">&nbsp;		this.properties = properties;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Integer makeCacheKey(QueryLanguage ql, String query, String baseURI) {
+<b class="nc">&nbsp;		return (ql.toString() + query + baseURI).hashCode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void renewLocalResultCache(ResultCachingTupleQuery resultCachingTupleQuery) {
+<b class="nc">&nbsp;		resultCachingTupleQuery.renewLocalResultCache(this.localTupleQueryResultCache);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void renewLocalResultCache(ResultCachingGraphQuery resultCachingGraphQuery) {
+<b class="nc">&nbsp;		resultCachingGraphQuery.renewLocalResultCache(this.localGraphQueryResultCache);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void renewClearable(ClearableAwareUpdate update) {
+<b class="nc">&nbsp;		update.renewClearable(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return new ResultCachingTupleQuery(</b>
+<b class="nc">&nbsp;				getDelegate().prepareTupleQuery(ql, queryString, baseURI),</b>
+&nbsp;				this.localTupleQueryResultCache,
+&nbsp;				this.globalTupleQueryResultCache,
+&nbsp;				properties);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return new ResultCachingGraphQuery(</b>
+<b class="nc">&nbsp;				getDelegate().prepareGraphQuery(ql, queryString, baseURI),</b>
+&nbsp;				this.localGraphQueryResultCache,
+&nbsp;				this.globalGraphQueryResultCache,
+&nbsp;				this.properties);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(QueryLanguage ql, String updateString, String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		return new ClearableAwareUpdate(</b>
+<b class="nc">&nbsp;				getDelegate().prepareUpdate(ql, updateString, baseURI), this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws RepositoryException {
+<b class="nc">&nbsp;		this.localGraphQueryResultCache.markDirty();</b>
+<b class="nc">&nbsp;		this.localTupleQueryResultCache.markDirty();</b>
+<b class="nc">&nbsp;		if (this.clearGlobalResultCacheOnClose) {</b>
+<b class="nc">&nbsp;			this.globalGraphQueryResultCache.markDirty();</b>
+<b class="nc">&nbsp;			this.globalTupleQueryResultCache.markDirty();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** As we are changing the repository&#39;s content, we have to reset all caches (even though it */
+&nbsp;	@Override
+&nbsp;	public void markDirty() {
+<b class="nc">&nbsp;		this.localGraphQueryResultCache.markDirty();</b>
+<b class="nc">&nbsp;		this.localTupleQueryResultCache.markDirty();</b>
+<b class="nc">&nbsp;		this.globalTupleQueryResultCache.bypassForCurrentThread();</b>
+<b class="nc">&nbsp;		this.globalGraphQueryResultCache.bypassForCurrentThread();</b>
+<b class="nc">&nbsp;		this.clearGlobalResultCacheOnClose = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearCachedResults() {
+<b class="nc">&nbsp;		this.localGraphQueryResultCache.clearCachedResults();</b>
+<b class="nc">&nbsp;		this.localTupleQueryResultCache.clearCachedResults();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(File file, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		super.add(file, baseURI, dataFormat, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(InputStream in, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		super.add(in, baseURI, dataFormat, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Iterable&lt;? extends Statement&gt; statements, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		super.add(statements, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;E extends Exception&gt; void add(
+&nbsp;			Iteration&lt;? extends Statement, E&gt; statementIter, Resource... contexts)
+&nbsp;			throws RepositoryException, E {
+<b class="nc">&nbsp;		super.add(statementIter, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Reader reader, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		super.add(reader, baseURI, dataFormat, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		super.add(subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		super.add(st, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void add(URL url, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException {
+<b class="nc">&nbsp;		super.add(url, baseURI, dataFormat, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		super.clear(contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(Iterable&lt;? extends Statement&gt; statements, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		super.remove(statements, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;E extends Exception&gt; void remove(
+&nbsp;			Iteration&lt;? extends Statement, E&gt; statementIter, Resource... contexts)
+&nbsp;			throws RepositoryException, E {
+<b class="nc">&nbsp;		super.remove(statementIter, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		super.remove(subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove(Statement st, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		super.remove(st, contexts);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeNamespace(String prefix) throws RepositoryException {
+<b class="nc">&nbsp;		super.removeNamespace(prefix);</b>
+<b class="nc">&nbsp;		markDirty();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,244 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryModelNode</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryModelNode (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryModelNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;
+&nbsp;/**
+&nbsp; * Main interface for all query model nodes.
+&nbsp; */
+&nbsp;public interface QueryModelNode extends Cloneable, Serializable {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Visits this node. The node reports itself to the visitor with the proper runtime type.
+&nbsp;	 */
+&nbsp;	&lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Visits the children of this node. The node calls {@link #visit(QueryModelVisitor)} on all of its child nodes.
+&nbsp;	 */
+&nbsp;	&lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the node&#39;s parent.
+&nbsp;	 *
+&nbsp;	 * @return The parent node, if any.
+&nbsp;	 */
+&nbsp;	QueryModelNode getParentNode();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the node&#39;s parent.
+&nbsp;	 *
+&nbsp;	 * @param parent The parent node for this node.
+&nbsp;	 */
+&nbsp;	void setParentNode(QueryModelNode parent);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Replaces one of the child nodes with a new node.
+&nbsp;	 *
+&nbsp;	 * @param current     The current child node.
+&nbsp;	 * @param replacement The new child node.
+&nbsp;	 * @throws IllegalArgumentException If &lt;var&gt;current&lt;/var&gt; is not one of node&#39;s children.
+&nbsp;	 * @throws ClassCastException       If &lt;var&gt;replacement&lt;/var&gt; is of an incompatible type.
+&nbsp;	 */
+&nbsp;	void replaceChildNode(QueryModelNode current, QueryModelNode replacement);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Substitutes this node with a new node in the query model tree.
+&nbsp;	 *
+&nbsp;	 * @param replacement The new node.
+&nbsp;	 * @throws IllegalStateException If this node does not have a parent node.
+&nbsp;	 * @throws ClassCastException    If &lt;var&gt;replacement&lt;/var&gt; is of an incompatible type.
+&nbsp;	 */
+&nbsp;	void replaceWith(QueryModelNode replacement);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns &lt;var&gt;true&lt;/var&gt; if this query model node and its children are recursively equal to &lt;var&gt;o&lt;/var&gt; and its
+&nbsp;	 * children.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	boolean equals(Object o);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an indented print of the node tree, starting from this node.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	String toString();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the signature of this query model node. Signatures normally include the node&#39;s name and any parameters,
+&nbsp;	 * but not parent or child nodes. This method is used by {@link #toString()}.
+&nbsp;	 *
+&nbsp;	 * @return The node&#39;s signature, e.g. &lt;var&gt;SLICE (offset=10, limit=10)&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	String getSignature();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a (deep) clone of this query model node. This method recursively clones the entire node tree, starting
+&nbsp;	 * from this nodes.
+&nbsp;	 *
+&nbsp;	 * @return A deep clone of this query model node.
+&nbsp;	 */
+&nbsp;	QueryModelNode clone();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the number of tuples that this QueryNode predicts will be outputted. For a StatementPattern this would be
+&nbsp;	 * the estimated cardinality provided by the EvaluationStatistics. For a Join the would be the resulting number of
+&nbsp;	 * joined tuples.
+&nbsp;	 *
+&nbsp;	 * @return rows
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	default double getResultSizeEstimate() {
+<b class="nc">&nbsp;		return -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	default void setResultSizeEstimate(double rows) {
+&nbsp;		// no-op for backwards compatibility
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	default long getResultSizeActual() {
+<b class="nc">&nbsp;		return -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	default void setResultSizeActual(long resultSizeActual) {
+&nbsp;		// no-op for backwards compatibility
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	default double getCostEstimate() {
+<b class="nc">&nbsp;		return -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	default void setCostEstimate(double costEstimate) {
+&nbsp;		// no-op for backwards compatibility
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	default long getTotalTimeNanosActual() {
+<b class="nc">&nbsp;		return -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Experimental
+&nbsp;	default void setTotalTimeNanosActual(long totalTime) {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

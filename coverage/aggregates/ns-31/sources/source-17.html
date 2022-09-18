@@ -1,0 +1,263 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementSource (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">StatementSource$StatementSourceType</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * A structure representing a relevant source for some expression.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class StatementSource extends AbstractQueryModelNode {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 1415552729436432653L;
+&nbsp;
+<b class="nc">&nbsp;	public enum StatementSourceType {</b>
+<b class="nc">&nbsp;		LOCAL,</b>
+<b class="nc">&nbsp;		REMOTE,</b>
+<b class="nc">&nbsp;		REMOTE_POSSIBLY</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected String id;
+&nbsp;	protected StatementSourceType type;
+&nbsp;
+&nbsp;	public StatementSource(String name, StatementSourceType type) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.id = name;</b>
+<b class="nc">&nbsp;		this.type = type;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		visitor.meetOther(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor) throws X {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getSignature() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(64);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(super.getSignature());</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot; (id=&quot;).append(id);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;, type=&quot;).append(type);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;)&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		final int prime = 31;</b>
+<b class="nc">&nbsp;		int result = 1;</b>
+<b class="nc">&nbsp;		result = prime * result + ((id == null) ? 0 : id.hashCode());</b>
+<b class="nc">&nbsp;		result = prime * result + ((type == null) ? 0 : type.hashCode());</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object obj) {
+<b class="nc">&nbsp;		if (this == obj) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (obj == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getClass() != obj.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		StatementSource other = (StatementSource) obj;</b>
+<b class="nc">&nbsp;		if (id == null) {</b>
+<b class="nc">&nbsp;			if (other.id != null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (!id.equals(other.id)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (type == null) {</b>
+<b class="nc">&nbsp;			if (other.type != null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (!type.equals(other.type)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getEndpointID() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isLocal() {
+<b class="nc">&nbsp;		return type == StatementSourceType.LOCAL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

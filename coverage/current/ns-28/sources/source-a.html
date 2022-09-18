@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > ConsoleState</title>
+  <title>Coverage Report > Setting</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.console</a>
 </div>
 
-<h1>Coverage Summary for Class: ConsoleState (org.eclipse.rdf4j.console)</h1>
+<h1>Coverage Summary for Class: Setting (org.eclipse.rdf4j.console)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">ConsoleState</td>
+  <td class="name">Setting</td>
 </tr>
 
 </table>
@@ -39,7 +39,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <pre>
 <code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
-&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
 &nbsp; *
 &nbsp; * All rights reserved. This program and the accompanying materials
 &nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
@@ -50,88 +50,46 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.console;
 &nbsp;
-&nbsp;import java.io.File;
-&nbsp;
-&nbsp;import org.eclipse.rdf4j.repository.Repository;
-&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
-&nbsp;
 &nbsp;/**
-&nbsp; * Console state interface
+&nbsp; * Setting interface
 &nbsp; *
-&nbsp; * @author Dale Visser
+&nbsp; * @author Bart Hanssens
+&nbsp; * @param &lt;T&gt;
 &nbsp; */
-&nbsp;public interface ConsoleState {
+&nbsp;public interface Setting&lt;T&gt; {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Get application name
+&nbsp;	 * Get the parameter type
 &nbsp;	 *
-&nbsp;	 * @return application name
+&nbsp;	 * @return class type
 &nbsp;	 */
-&nbsp;	String getApplicationName();
+&nbsp;	Class getType();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Get repository data directory
+&nbsp;	 * Get the initial value
 &nbsp;	 *
-&nbsp;	 * @return directory
+&nbsp;	 * @return T
 &nbsp;	 */
-&nbsp;	File getDataDirectory();
+&nbsp;	T getInitValue();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Get repository manager ID
+&nbsp;	 * Get the current value for this setting
 &nbsp;	 *
-&nbsp;	 * @return repository manager ID
+&nbsp;	 * @return value
 &nbsp;	 */
-&nbsp;	String getManagerID();
+&nbsp;	T get();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Get repository ID
+&nbsp;	 * Set the value for this setting
 &nbsp;	 *
-&nbsp;	 * @return repository ID
+&nbsp;	 * @param value
 &nbsp;	 */
-&nbsp;	String getRepositoryID();
+&nbsp;	void set(T value) throws IllegalArgumentException;
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Get repository manager
-&nbsp;	 *
-&nbsp;	 * @return repository manager
+&nbsp;	 * Clear setting
 &nbsp;	 */
-&nbsp;	RepositoryManager getManager();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Set repository manager
-&nbsp;	 *
-&nbsp;	 * @param manager repository manager
-&nbsp;	 */
-&nbsp;	void setManager(RepositoryManager manager);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Set repository manager
-&nbsp;	 *
-&nbsp;	 * @param managerID repository manager ID
-&nbsp;	 */
-&nbsp;	void setManagerID(String managerID);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Get repository
-&nbsp;	 *
-&nbsp;	 * @return repository
-&nbsp;	 */
-&nbsp;	Repository getRepository();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Set repository ID
-&nbsp;	 *
-&nbsp;	 * @param repositoryID repository ID
-&nbsp;	 */
-&nbsp;	void setRepositoryID(String repositoryID);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Set repository
-&nbsp;	 *
-&nbsp;	 * @param repository repository
-&nbsp;	 */
-&nbsp;	void setRepository(Repository repository);
-&nbsp;
+&nbsp;	void clear();
 &nbsp;}
 </code>
 </pre>
@@ -156,7 +114,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

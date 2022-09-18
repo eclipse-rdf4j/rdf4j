@@ -1,0 +1,316 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GraphPattern</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: GraphPattern (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GraphPattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70.6%
+  </span>
+  <span class="absValue">
+    (12/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (14/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (40/48)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import java.util.AbstractMap;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;
+&nbsp;/**
+&nbsp; * A graph pattern consisting of (required and optional) tuple expressions, binding assignments and boolean constraints.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class GraphPattern {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The context of this graph pattern.
+&nbsp;	 */
+&nbsp;	private Var contextVar;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The StatementPattern-scope of this graph pattern.
+&nbsp;	 */
+<b class="fc">&nbsp;	private StatementPattern.Scope spScope = StatementPattern.Scope.DEFAULT_CONTEXTS;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The required tuple expressions in this graph pattern.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final List&lt;TupleExpr&gt; requiredTEs = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The optional tuple expressions in this graph pattern, as a list of Key-Value pairs with the tuple expression as
+&nbsp;	 * the key and a list of constraints applicable to the tuple expression as the value.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final List&lt;Map.Entry&lt;TupleExpr, List&lt;ValueExpr&gt;&gt;&gt; optionalTEs = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The boolean constraints in this graph pattern.
+&nbsp;	 */
+<b class="fc">&nbsp;	private List&lt;ValueExpr&gt; constraints = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph pattern.
+&nbsp;	 */
+<b class="fc">&nbsp;	public GraphPattern() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new graph pattern that inherits the context and scope from a parent graph pattern.
+&nbsp;	 */
+<b class="fc">&nbsp;	public GraphPattern(GraphPattern parent) {</b>
+<b class="fc">&nbsp;		contextVar = parent.contextVar;</b>
+<b class="fc">&nbsp;		spScope = parent.spScope;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setContextVar(Var contextVar) {
+<b class="fc">&nbsp;		this.contextVar = contextVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Var getContextVar() {
+<b class="fc">&nbsp;		return contextVar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setStatementPatternScope(StatementPattern.Scope spScope) {
+<b class="fc">&nbsp;		this.spScope = spScope;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern.Scope getStatementPatternScope() {
+<b class="fc">&nbsp;		return spScope;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addRequiredTE(TupleExpr te) {
+<b class="fc">&nbsp;		requiredTEs.add(te);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addRequiredSP(Var subjVar, Var predVar, Var objVar) {
+&nbsp;
+<b class="fc">&nbsp;		addRequiredTE(new StatementPattern(spScope, subjVar, predVar, objVar,</b>
+<b class="fc">&nbsp;				contextVar != null ? contextVar.clone() : null));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;TupleExpr&gt; getRequiredTEs() {
+<b class="nc">&nbsp;		return Collections.unmodifiableList(requiredTEs);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * add the supplied tuple expression as an optional expression, with a list of constraints that hold as conditions.
+&nbsp;	 *
+&nbsp;	 * @param te          a tuple expression
+&nbsp;	 * @param constraints a list of constraints that form a condition for the LeftJoin to be formed from the optional
+&nbsp;	 *                    TE.
+&nbsp;	 */
+&nbsp;	public void addOptionalTE(TupleExpr te, List&lt;ValueExpr&gt; constraints) {
+&nbsp;
+<b class="fc">&nbsp;		Map.Entry&lt;TupleExpr, List&lt;ValueExpr&gt;&gt; entry = new AbstractMap.SimpleImmutableEntry&lt;&gt;(te, constraints);</b>
+<b class="fc">&nbsp;		optionalTEs.add(entry);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the optional tuple expressions as a list of tuples with the tuple expression as the key and the list of
+&nbsp;	 * value expressions as the value.
+&nbsp;	 *
+&nbsp;	 * @return a list of Map entries.
+&nbsp;	 */
+&nbsp;	public List&lt;Map.Entry&lt;TupleExpr, List&lt;ValueExpr&gt;&gt;&gt; getOptionalTEs() {
+<b class="nc">&nbsp;		return Collections.unmodifiableList(optionalTEs);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addConstraint(ValueExpr constraint) {
+<b class="fc">&nbsp;		constraints.add(constraint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addConstraints(Collection&lt;ValueExpr&gt; constraints) {
+<b class="nc">&nbsp;		this.constraints.addAll(constraints);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ValueExpr&gt; getConstraints() {
+<b class="nc">&nbsp;		return Collections.unmodifiableList(constraints);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;ValueExpr&gt; removeAllConstraints() {
+<b class="fc">&nbsp;		List&lt;ValueExpr&gt; constraints = this.constraints;</b>
+<b class="fc">&nbsp;		this.constraints = new ArrayList&lt;&gt;();</b>
+<b class="fc">&nbsp;		return constraints;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all tuple expressions and constraints.
+&nbsp;	 */
+&nbsp;	public void clear() {
+<b class="nc">&nbsp;		requiredTEs.clear();</b>
+<b class="nc">&nbsp;		optionalTEs.clear();</b>
+<b class="nc">&nbsp;		constraints.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Builds a combined tuple expression from the tuple expressions and constraints in this graph pattern.
+&nbsp;	 *
+&nbsp;	 * @return A tuple expression for this graph pattern.
+&nbsp;	 */
+&nbsp;	public TupleExpr buildTupleExpr() {
+&nbsp;		TupleExpr result;
+&nbsp;
+<b class="fc">&nbsp;		if (requiredTEs.isEmpty()) {</b>
+<b class="fc">&nbsp;			result = new SingletonSet();</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			result = requiredTEs.get(0);</b>
+&nbsp;
+<b class="fc">&nbsp;			for (int i = 1; i &lt; requiredTEs.size(); i++) {</b>
+<b class="fc">&nbsp;				TupleExpr te = requiredTEs.get(i);</b>
+<b class="fc">&nbsp;				result = new Join(result, te);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		for (Map.Entry&lt;TupleExpr, List&lt;ValueExpr&gt;&gt; entry : optionalTEs) {</b>
+<b class="fc">&nbsp;			List&lt;ValueExpr&gt; constraints = entry.getValue();</b>
+<b class="pc">&nbsp;			if (constraints != null &amp;&amp; !constraints.isEmpty()) {</b>
+<b class="fc">&nbsp;				ValueExpr condition = constraints.get(0);</b>
+<b class="pc">&nbsp;				for (int i = 1; i &lt; constraints.size(); i++) {</b>
+<b class="nc">&nbsp;					condition = new And(condition, constraints.get(i));</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				result = new LeftJoin(result, entry.getKey(), condition);</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				result = new LeftJoin(result, entry.getKey());</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ValueExpr constraint : constraints) {</b>
+<b class="fc">&nbsp;			result = new Filter(result, constraint);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

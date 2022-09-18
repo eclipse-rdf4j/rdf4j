@@ -1,0 +1,142 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlAggregate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.constraint</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlAggregate (org.eclipse.rdf4j.sparqlbuilder.constraint)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlAggregate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.constraint;
+&nbsp;
+&nbsp;/**
+&nbsp; * The built-in SPARQL aggregates. Keeping this public until {@link Expressions} is completed.
+&nbsp; *
+&nbsp; * @see &lt;a href= &quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#SparqlOps&quot;&gt; SPARQL Function Definitions&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;@SuppressWarnings(&quot;javadoc&quot;) // acceptable, as this won&#39;t be public for long</b>
+&nbsp;public enum SparqlAggregate implements SparqlOperator {
+<b class="nc">&nbsp;	AVG(&quot;AVG&quot;),</b>
+<b class="nc">&nbsp;	COUNT(&quot;COUNT&quot;),</b>
+<b class="nc">&nbsp;	GROUP_CONCAT(&quot;GROUP_CONCAT&quot;),</b>
+<b class="nc">&nbsp;	MAX(&quot;MAX&quot;),</b>
+<b class="nc">&nbsp;	MIN(&quot;MIN&quot;),</b>
+<b class="nc">&nbsp;	SAMPLE(&quot;SAMPLE&quot;),</b>
+<b class="nc">&nbsp;	SUM(&quot;SUM&quot;);</b>
+&nbsp;
+&nbsp;	private final String function;
+&nbsp;
+<b class="nc">&nbsp;	SparqlAggregate(String function) {</b>
+<b class="nc">&nbsp;		this.function = function;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		return function;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

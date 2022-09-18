@@ -1,0 +1,201 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLStarResultsJSONConstants</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.sparqljson</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLStarResultsJSONConstants (org.eclipse.rdf4j.query.resultio.sparqljson)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLStarResultsJSONConstants</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.sparqljson;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the SPARQL-star JSON format. The format handles {@link org.eclipse.rdf4j.query.TupleQueryResult} only.
+&nbsp; * For Boolean results, the SPARQL JSON format is used.
+&nbsp; * &lt;p&gt;
+&nbsp; * The format introduces a new type, triple, whose value is an object consisting of three elements:
+&nbsp; *
+&nbsp; * &lt;ul&gt;
+&nbsp; * &lt;li&gt;s - the triple&#39;s subject&lt;/li&gt;
+&nbsp; * &lt;li&gt;p - the triple&#39;s predicate&lt;/li&gt;
+&nbsp; * &lt;li&gt;o - the triple&#39;s object&lt;/li&gt;
+&nbsp; * &lt;/ul&gt;
+&nbsp; * &lt;p&gt;
+&nbsp; * Each of the three elements s, p and o is another object identical in structure to the value for each binding.
+&nbsp; * &lt;p&gt;
+&nbsp; * For example:
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * 	&quot;b&quot; : {
+&nbsp; * 		&quot;type&quot; : &quot;triple&quot;,
+&nbsp; * 		&quot;value&quot; : {
+&nbsp; * 			&quot;s&quot; : {
+&nbsp; * 				&quot;type&quot; : &quot;uri&quot;,
+&nbsp; * 				&quot;value&quot; : &quot;urn:a&quot;
+&nbsp; *            },
+&nbsp; * 			&quot;p&quot; : {
+&nbsp; * 				&quot;type&quot; : &quot;uri&quot;,
+&nbsp; * 				&quot;value&quot; : &quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#type&quot;
+&nbsp; *        },
+&nbsp; * 			&quot;o&quot; : {
+&nbsp; * 				&quot;type&quot; : &quot;uri&quot;,
+&nbsp; * 				&quot;value&quot; : &quot;urn:b&quot;
+&nbsp; *          }
+&nbsp; *        }
+&nbsp; *  }
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Pavel Mihaylov
+&nbsp; * @see &lt;a href=&quot;https://w3c.github.io/rdf-star/cg-spec/&quot;&gt;RDF-star and SPARQL-star Draft Community Group Report&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;final class SPARQLStarResultsJSONConstants {</b>
+<b class="fc">&nbsp;	static TupleQueryResultFormat QUERY_RESULT_FORMAT = TupleQueryResultFormat.JSON_STAR;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Type string for serialized {@link org.eclipse.rdf4j.model.Triple} value.
+&nbsp;	 */
+&nbsp;	static final String TRIPLE = &quot;triple&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Key name of the JSON object for the triple&#39;s subject.
+&nbsp;	 */
+&nbsp;	static final String SUBJECT = &quot;s&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Key name of the JSON object for the triple&#39;s predicate.
+&nbsp;	 */
+&nbsp;	static final String PREDICATE = &quot;p&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Key name of the JSON object for the triple&#39;s object.
+&nbsp;	 */
+&nbsp;	static final String OBJECT = &quot;o&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Type string for serialized {@link org.eclipse.rdf4j.model.Triple} value - Stardog dialect
+&nbsp;	 */
+&nbsp;	final static String TRIPLE_STARDOG = &quot;statement&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Key name of the JSON object for the triple&#39;s subject - Apache Jena dialect
+&nbsp;	 */
+&nbsp;	final static String SUBJECT_JENA = &quot;subject&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Key name of the JSON object for the triple&#39;s predicate - Apache Jena dialect
+&nbsp;	 */
+&nbsp;	final static String PREDICATE_JENA = &quot;predicate&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Key name of the JSON object for the triple&#39;s object - Apache Jena dialect
+&nbsp;	 */
+&nbsp;	final static String OBJECT_JENA = &quot;object&quot;;
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

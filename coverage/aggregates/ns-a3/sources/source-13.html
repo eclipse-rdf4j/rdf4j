@@ -1,0 +1,125 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFWriter (org.eclipse.rdf4j.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">RDFWriter</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio;
+&nbsp;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Writer;
+&nbsp;import java.util.Collection;
+&nbsp;
+&nbsp;/**
+&nbsp; * An interface for RDF document writers. To allow RDF document writers to be created through reflection, all
+&nbsp; * implementing classes should define at least two public constructors: one with an {@link OutputStream} argument and
+&nbsp; * one with an {@link Writer} argument.
+&nbsp; */
+&nbsp;public interface RDFWriter extends RDFHandler {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the RDF format that this RDFWriter uses.
+&nbsp;	 */
+&nbsp;	RDFFormat getRDFFormat();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets all supplied writer configuration options.
+&nbsp;	 *
+&nbsp;	 * @param config a writer configuration object.
+&nbsp;	 * @return Either a copy of this writer, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	RDFWriter setWriterConfig(WriterConfig config);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the current writer configuration as a single object.
+&nbsp;	 *
+&nbsp;	 * @return a writer configuration object representing the current configuration of the writer.
+&nbsp;	 */
+&nbsp;	WriterConfig getWriterConfig();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return A collection of {@link RioSetting}s that are supported by this RDFWriter.
+&nbsp;	 */
+&nbsp;	Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a setting on the writer, and return this writer object to allow chaining.
+&nbsp;	 *
+&nbsp;	 * @param setting The setting to change.
+&nbsp;	 * @param value   The value to change.
+&nbsp;	 * @return Either a copy of this writer, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	&lt;T&gt; RDFWriter set(RioSetting&lt;T&gt; setting, T value);
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

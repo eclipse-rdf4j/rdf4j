@@ -1,0 +1,271 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > VOID</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: VOID (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">VOID</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/**
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; */
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the W3C Vocabulary of Interlinked Datasets.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/void/&quot;&gt;Vocabulary of Interlinked Datasets&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class VOID {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The VoID namespace: http://rdfs.org/ns/void#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://rdfs.org/ns/void#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the VoID namespace: &quot;void&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;void&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the VoID namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** void:Dataset */
+&nbsp;	public static final IRI DATASET;
+&nbsp;
+&nbsp;	/** void:DatasetDescription */
+&nbsp;	public static final IRI DATASET_DESCRIPTION;
+&nbsp;
+&nbsp;	/** void:Linkset */
+&nbsp;	public static final IRI LINKSET;
+&nbsp;
+&nbsp;	/** void:TechnicalFeature */
+&nbsp;	public static final IRI TECHNICAL_FEATURE;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** void:class */
+&nbsp;	public static final IRI CLASS;
+&nbsp;
+&nbsp;	/** void:classPartition */
+&nbsp;	public static final IRI CLASS_PARTITION;
+&nbsp;
+&nbsp;	/** void:classes */
+&nbsp;	public static final IRI CLASSES;
+&nbsp;
+&nbsp;	/** void:dataDump */
+&nbsp;	public static final IRI DATA_DUMP;
+&nbsp;
+&nbsp;	/** void:distinctObjects */
+&nbsp;	public static final IRI DISTINCT_OBJECTS;
+&nbsp;
+&nbsp;	/** void:distinctSubjects */
+&nbsp;	public static final IRI DISTINCT_SUBJECTS;
+&nbsp;
+&nbsp;	/** void:documents */
+&nbsp;	public static final IRI DOCUMENTS;
+&nbsp;
+&nbsp;	/** void:entities */
+&nbsp;	public static final IRI ENTITIES;
+&nbsp;
+&nbsp;	/** void:exampleResource */
+&nbsp;	public static final IRI EXAMPLE_RESOURCE;
+&nbsp;
+&nbsp;	/** void:feature */
+&nbsp;	public static final IRI FEATURE;
+&nbsp;
+&nbsp;	/** void:inDataset */
+&nbsp;	public static final IRI IN_DATASET;
+&nbsp;
+&nbsp;	/** void:linkPredicate */
+&nbsp;	public static final IRI LINK_PREDICATE;
+&nbsp;
+&nbsp;	/** void:objectsTarget */
+&nbsp;	public static final IRI OBJECTS_TARGET;
+&nbsp;
+&nbsp;	/** void:openSearchDescription */
+&nbsp;	public static final IRI OPEN_SEARCH_DESCRIPTION;
+&nbsp;
+&nbsp;	/** void:properties */
+&nbsp;	public static final IRI PROPERTIES;
+&nbsp;
+&nbsp;	/** void:property */
+&nbsp;	public static final IRI PROPERTY;
+&nbsp;
+&nbsp;	/** void:propertyPartition */
+&nbsp;	public static final IRI PROPERTY_PARTITION;
+&nbsp;
+&nbsp;	/** void:rootResource */
+&nbsp;	public static final IRI ROOT_RESOURCE;
+&nbsp;
+&nbsp;	/** void:sparqlEndpoint */
+&nbsp;	public static final IRI SPARQL_ENDPOINT;
+&nbsp;
+&nbsp;	/** void:subjectsTarget */
+&nbsp;	public static final IRI SUBJECTS_TARGET;
+&nbsp;
+&nbsp;	/** void:subset */
+&nbsp;	public static final IRI SUBSET;
+&nbsp;
+&nbsp;	/** void:target */
+&nbsp;	public static final IRI TARGET;
+&nbsp;
+&nbsp;	/** void:triples */
+&nbsp;	public static final IRI TRIPLES;
+&nbsp;
+&nbsp;	/** void:uriLookupEndpoint */
+&nbsp;	public static final IRI URI_LOOKUP_ENDPOINT;
+&nbsp;
+&nbsp;	/** void:uriRegexPattern */
+&nbsp;	public static final IRI URI_REGEX_PATTERN;
+&nbsp;
+&nbsp;	/** void:uriSpace */
+&nbsp;	public static final IRI URI_SPACE;
+&nbsp;
+&nbsp;	/** void:vocabulary */
+&nbsp;	public static final IRI VOCABULARY;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		DATASET = Vocabularies.createIRI(NAMESPACE, &quot;Dataset&quot;);</b>
+<b class="nc">&nbsp;		DATASET_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;DatasetDescription&quot;);</b>
+<b class="nc">&nbsp;		LINKSET = Vocabularies.createIRI(NAMESPACE, &quot;Linkset&quot;);</b>
+<b class="nc">&nbsp;		TECHNICAL_FEATURE = Vocabularies.createIRI(NAMESPACE, &quot;TechnicalFeature&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		CLASS = Vocabularies.createIRI(NAMESPACE, &quot;class&quot;);</b>
+<b class="nc">&nbsp;		CLASS_PARTITION = Vocabularies.createIRI(NAMESPACE, &quot;classPartition&quot;);</b>
+<b class="nc">&nbsp;		CLASSES = Vocabularies.createIRI(NAMESPACE, &quot;classes&quot;);</b>
+<b class="nc">&nbsp;		DATA_DUMP = Vocabularies.createIRI(NAMESPACE, &quot;dataDump&quot;);</b>
+<b class="nc">&nbsp;		DISTINCT_OBJECTS = Vocabularies.createIRI(NAMESPACE, &quot;distinctObjects&quot;);</b>
+<b class="nc">&nbsp;		DISTINCT_SUBJECTS = Vocabularies.createIRI(NAMESPACE, &quot;distinctSubjects&quot;);</b>
+<b class="nc">&nbsp;		DOCUMENTS = Vocabularies.createIRI(NAMESPACE, &quot;documents&quot;);</b>
+<b class="nc">&nbsp;		ENTITIES = Vocabularies.createIRI(NAMESPACE, &quot;entities&quot;);</b>
+<b class="nc">&nbsp;		EXAMPLE_RESOURCE = Vocabularies.createIRI(NAMESPACE, &quot;exampleResource&quot;);</b>
+<b class="nc">&nbsp;		FEATURE = Vocabularies.createIRI(NAMESPACE, &quot;feature&quot;);</b>
+<b class="nc">&nbsp;		IN_DATASET = Vocabularies.createIRI(NAMESPACE, &quot;inDataset&quot;);</b>
+<b class="nc">&nbsp;		LINK_PREDICATE = Vocabularies.createIRI(NAMESPACE, &quot;linkPredicate&quot;);</b>
+<b class="nc">&nbsp;		OBJECTS_TARGET = Vocabularies.createIRI(NAMESPACE, &quot;objectsTarget&quot;);</b>
+<b class="nc">&nbsp;		OPEN_SEARCH_DESCRIPTION = Vocabularies.createIRI(NAMESPACE, &quot;openSearchDescription&quot;);</b>
+<b class="nc">&nbsp;		PROPERTIES = Vocabularies.createIRI(NAMESPACE, &quot;properties&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;property&quot;);</b>
+<b class="nc">&nbsp;		PROPERTY_PARTITION = Vocabularies.createIRI(NAMESPACE, &quot;propertyPartition&quot;);</b>
+<b class="nc">&nbsp;		ROOT_RESOURCE = Vocabularies.createIRI(NAMESPACE, &quot;rootResource&quot;);</b>
+<b class="nc">&nbsp;		SPARQL_ENDPOINT = Vocabularies.createIRI(NAMESPACE, &quot;sparqlEndpoint&quot;);</b>
+<b class="nc">&nbsp;		SUBJECTS_TARGET = Vocabularies.createIRI(NAMESPACE, &quot;subjectsTarget&quot;);</b>
+<b class="nc">&nbsp;		SUBSET = Vocabularies.createIRI(NAMESPACE, &quot;subset&quot;);</b>
+<b class="nc">&nbsp;		TARGET = Vocabularies.createIRI(NAMESPACE, &quot;target&quot;);</b>
+<b class="nc">&nbsp;		TRIPLES = Vocabularies.createIRI(NAMESPACE, &quot;triples&quot;);</b>
+<b class="nc">&nbsp;		URI_LOOKUP_ENDPOINT = Vocabularies.createIRI(NAMESPACE, &quot;uriLookupEndpoint&quot;);</b>
+<b class="nc">&nbsp;		URI_REGEX_PATTERN = Vocabularies.createIRI(NAMESPACE, &quot;uriRegexPattern&quot;);</b>
+<b class="nc">&nbsp;		URI_SPACE = Vocabularies.createIRI(NAMESPACE, &quot;uriSpace&quot;);</b>
+<b class="nc">&nbsp;		VOCABULARY = Vocabularies.createIRI(NAMESPACE, &quot;vocabulary&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

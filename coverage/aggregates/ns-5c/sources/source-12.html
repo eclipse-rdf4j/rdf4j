@@ -1,0 +1,323 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ORG</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: ORG (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ORG</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/**
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; */
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the W3C Organization Ontology.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/vocab-org/&quot;&gt;Organization Ontology&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart.Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class ORG {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The Organization Ontology namespace: http://www.w3.org/ns/org#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/ns/org#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the Organization Ontology namespace: &quot;org&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;org&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the Organization namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** void:ChangeEvent */
+&nbsp;	public static final IRI CHANGE_EVENT;
+&nbsp;
+&nbsp;	/** void:FormalOrganization */
+&nbsp;	public static final IRI FORMAL_ORGANIZATION;
+&nbsp;
+&nbsp;	/** void:Membership */
+&nbsp;	public static final IRI MEMBERSHIP;
+&nbsp;
+&nbsp;	/** void:Organization */
+&nbsp;	public static final IRI ORGANIZATION;
+&nbsp;
+&nbsp;	/** void:OrganizationalCollaboration */
+&nbsp;	public static final IRI ORGANIZATIONAL_COLLABORATION;
+&nbsp;
+&nbsp;	/** void:OrganizationalUnit */
+&nbsp;	public static final IRI ORGANIZATIONAL_UNIT;
+&nbsp;
+&nbsp;	/** void:Post */
+&nbsp;	public static final IRI POST;
+&nbsp;
+&nbsp;	/** void:Role */
+&nbsp;	public static final IRI ROLE;
+&nbsp;
+&nbsp;	/** void:Site */
+&nbsp;	public static final IRI SITE;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** void:basedAt */
+&nbsp;	public static final IRI BASED_AT;
+&nbsp;
+&nbsp;	/** void:changedBy */
+&nbsp;	public static final IRI CHANGED_BY;
+&nbsp;
+&nbsp;	/** void:classification */
+&nbsp;	public static final IRI CLASSIFICATION;
+&nbsp;
+&nbsp;	/** void:hasMember */
+&nbsp;	public static final IRI HAS_MEMBER;
+&nbsp;
+&nbsp;	/** void:hasMembership */
+&nbsp;	public static final IRI HAS_MEMBERSHIP;
+&nbsp;
+&nbsp;	/** void:hasPost */
+&nbsp;	public static final IRI HAS_POST;
+&nbsp;
+&nbsp;	/** void:hasPrimarySite */
+&nbsp;	public static final IRI HAS_PRIMARY_SITE;
+&nbsp;
+&nbsp;	/** void:hasRegisteredSite */
+&nbsp;	public static final IRI HAS_REGISTERED_SITE;
+&nbsp;
+&nbsp;	/** void:hasSite */
+&nbsp;	public static final IRI HAS_SITE;
+&nbsp;
+&nbsp;	/** void:hasSubOrganization */
+&nbsp;	public static final IRI HAS_SUB_ORGANIZATION;
+&nbsp;
+&nbsp;	/** void:hasUnit */
+&nbsp;	public static final IRI HAS_UNIT;
+&nbsp;
+&nbsp;	/** void:headOf */
+&nbsp;	public static final IRI HEAD_OF;
+&nbsp;
+&nbsp;	/** void:heldBy */
+&nbsp;	public static final IRI HELD_BY;
+&nbsp;
+&nbsp;	/** void:holds */
+&nbsp;	public static final IRI HOLDS;
+&nbsp;
+&nbsp;	/** void:identifier */
+&nbsp;	public static final IRI IDENTIFIER;
+&nbsp;
+&nbsp;	/** void:linkedTo */
+&nbsp;	public static final IRI LINKED_TO;
+&nbsp;
+&nbsp;	/** void:location */
+&nbsp;	public static final IRI LOCATION;
+&nbsp;
+&nbsp;	/** void:memberDuring */
+&nbsp;	public static final IRI MEMBER_DURING;
+&nbsp;
+&nbsp;	/** void:memberOf */
+&nbsp;	public static final IRI MEMBER_OF;
+&nbsp;
+&nbsp;	/** void:member */
+&nbsp;	public static final IRI MEMBER;
+&nbsp;
+&nbsp;	/** void:organization */
+&nbsp;	public static final IRI HAS_ORGANIZATION;
+&nbsp;
+&nbsp;	/** void:originalOrganization */
+&nbsp;	public static final IRI ORIGINAL_ORGANIZATION;
+&nbsp;
+&nbsp;	/** void:postIn */
+&nbsp;	public static final IRI POST_IN;
+&nbsp;
+&nbsp;	/** void:purpose */
+&nbsp;	public static final IRI PURPOSE;
+&nbsp;
+&nbsp;	/** void:remuneration */
+&nbsp;	public static final IRI REMUNERATION;
+&nbsp;
+&nbsp;	/** void:reportsTo */
+&nbsp;	public static final IRI REPORTS_TO;
+&nbsp;
+&nbsp;	/** void:resultedFrom */
+&nbsp;	public static final IRI RESULTED_FROM;
+&nbsp;
+&nbsp;	/** void:resultingOrganization */
+&nbsp;	public static final IRI RESULTING_ORGANIZATION;
+&nbsp;
+&nbsp;	/** void:role */
+&nbsp;	public static final IRI HAS_ROLE;
+&nbsp;
+&nbsp;	/** void:roleProperty */
+&nbsp;	public static final IRI ROLE_PROPERTY;
+&nbsp;
+&nbsp;	/** void:siteAddress */
+&nbsp;	public static final IRI SITE_ADDRESS;
+&nbsp;
+&nbsp;	/** void:siteOf */
+&nbsp;	public static final IRI SITE_OF;
+&nbsp;
+&nbsp;	/** void:subOrganizationOf */
+&nbsp;	public static final IRI SUB_ORGANIZATION_OF;
+&nbsp;
+&nbsp;	/** void:transitiveSubOrganizationOf */
+&nbsp;	public static final IRI TRANSITIVE_SUB_ORGANIZATION_OF;
+&nbsp;
+&nbsp;	/** void:unitOf */
+&nbsp;	public static final IRI UNIT_OF;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		CHANGE_EVENT = Vocabularies.createIRI(NAMESPACE, &quot;ChangeEvent&quot;);</b>
+<b class="nc">&nbsp;		FORMAL_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;FormalOrganization&quot;);</b>
+<b class="nc">&nbsp;		MEMBERSHIP = Vocabularies.createIRI(NAMESPACE, &quot;Membership&quot;);</b>
+<b class="nc">&nbsp;		ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;Organization&quot;);</b>
+<b class="nc">&nbsp;		ORGANIZATIONAL_COLLABORATION = Vocabularies.createIRI(NAMESPACE, &quot;OrganizationalCollaboration&quot;);</b>
+<b class="nc">&nbsp;		ORGANIZATIONAL_UNIT = Vocabularies.createIRI(NAMESPACE, &quot;OrganizationalUnit&quot;);</b>
+<b class="nc">&nbsp;		POST = Vocabularies.createIRI(NAMESPACE, &quot;Post&quot;);</b>
+<b class="nc">&nbsp;		ROLE = Vocabularies.createIRI(NAMESPACE, &quot;Role&quot;);</b>
+<b class="nc">&nbsp;		SITE = Vocabularies.createIRI(NAMESPACE, &quot;Site&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		BASED_AT = Vocabularies.createIRI(NAMESPACE, &quot;basedAt&quot;);</b>
+<b class="nc">&nbsp;		CHANGED_BY = Vocabularies.createIRI(NAMESPACE, &quot;changedBy&quot;);</b>
+<b class="nc">&nbsp;		CLASSIFICATION = Vocabularies.createIRI(NAMESPACE, &quot;classification&quot;);</b>
+<b class="nc">&nbsp;		HAS_MEMBER = Vocabularies.createIRI(NAMESPACE, &quot;hasMember&quot;);</b>
+<b class="nc">&nbsp;		HAS_MEMBERSHIP = Vocabularies.createIRI(NAMESPACE, &quot;hasMembership&quot;);</b>
+<b class="nc">&nbsp;		HAS_POST = Vocabularies.createIRI(NAMESPACE, &quot;hasPost&quot;);</b>
+<b class="nc">&nbsp;		HAS_PRIMARY_SITE = Vocabularies.createIRI(NAMESPACE, &quot;hasPrimarySite&quot;);</b>
+<b class="nc">&nbsp;		HAS_REGISTERED_SITE = Vocabularies.createIRI(NAMESPACE, &quot;hasRegisteredSite&quot;);</b>
+<b class="nc">&nbsp;		HAS_SITE = Vocabularies.createIRI(NAMESPACE, &quot;hasSite&quot;);</b>
+<b class="nc">&nbsp;		HAS_SUB_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;hasSubOrganization&quot;);</b>
+<b class="nc">&nbsp;		HAS_UNIT = Vocabularies.createIRI(NAMESPACE, &quot;hasUnit&quot;);</b>
+<b class="nc">&nbsp;		HEAD_OF = Vocabularies.createIRI(NAMESPACE, &quot;headOf&quot;);</b>
+<b class="nc">&nbsp;		HELD_BY = Vocabularies.createIRI(NAMESPACE, &quot;heldBy&quot;);</b>
+<b class="nc">&nbsp;		HOLDS = Vocabularies.createIRI(NAMESPACE, &quot;holds&quot;);</b>
+<b class="nc">&nbsp;		IDENTIFIER = Vocabularies.createIRI(NAMESPACE, &quot;identifier&quot;);</b>
+<b class="nc">&nbsp;		LINKED_TO = Vocabularies.createIRI(NAMESPACE, &quot;linkedTo&quot;);</b>
+<b class="nc">&nbsp;		LOCATION = Vocabularies.createIRI(NAMESPACE, &quot;location&quot;);</b>
+<b class="nc">&nbsp;		MEMBER_DURING = Vocabularies.createIRI(NAMESPACE, &quot;memberDuring&quot;);</b>
+<b class="nc">&nbsp;		MEMBER_OF = Vocabularies.createIRI(NAMESPACE, &quot;memberOf&quot;);</b>
+<b class="nc">&nbsp;		MEMBER = Vocabularies.createIRI(NAMESPACE, &quot;member&quot;);</b>
+<b class="nc">&nbsp;		HAS_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;organization&quot;);</b>
+<b class="nc">&nbsp;		ORIGINAL_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;originalOrganization&quot;);</b>
+<b class="nc">&nbsp;		POST_IN = Vocabularies.createIRI(NAMESPACE, &quot;postIn&quot;);</b>
+<b class="nc">&nbsp;		PURPOSE = Vocabularies.createIRI(NAMESPACE, &quot;purpose&quot;);</b>
+<b class="nc">&nbsp;		REMUNERATION = Vocabularies.createIRI(NAMESPACE, &quot;remuneration&quot;);</b>
+<b class="nc">&nbsp;		REPORTS_TO = Vocabularies.createIRI(NAMESPACE, &quot;reportsTo&quot;);</b>
+<b class="nc">&nbsp;		RESULTED_FROM = Vocabularies.createIRI(NAMESPACE, &quot;resultedFrom&quot;);</b>
+<b class="nc">&nbsp;		RESULTING_ORGANIZATION = Vocabularies.createIRI(NAMESPACE, &quot;resultingOrganization&quot;);</b>
+<b class="nc">&nbsp;		HAS_ROLE = Vocabularies.createIRI(NAMESPACE, &quot;role&quot;);</b>
+<b class="nc">&nbsp;		ROLE_PROPERTY = Vocabularies.createIRI(NAMESPACE, &quot;roleProperty&quot;);</b>
+<b class="nc">&nbsp;		SITE_ADDRESS = Vocabularies.createIRI(NAMESPACE, &quot;siteAddress&quot;);</b>
+<b class="nc">&nbsp;		SITE_OF = Vocabularies.createIRI(NAMESPACE, &quot;siteOf&quot;);</b>
+<b class="nc">&nbsp;		SUB_ORGANIZATION_OF = Vocabularies.createIRI(NAMESPACE, &quot;subOrganizationOf&quot;);</b>
+<b class="nc">&nbsp;		TRANSITIVE_SUB_ORGANIZATION_OF = Vocabularies.createIRI(NAMESPACE, &quot;transitiveSubOrganizationOf&quot;);</b>
+<b class="nc">&nbsp;		UNIT_OF = Vocabularies.createIRI(NAMESPACE, &quot;unitOf&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

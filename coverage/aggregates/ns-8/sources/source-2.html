@@ -1,0 +1,456 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DataSetGenerator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.benchmark.rio.util</a>
+</div>
+
+<h1>Coverage Summary for Class: DataSetGenerator (org.eclipse.rdf4j.benchmark.rio.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DataSetGenerator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/75)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/136)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.benchmark.rio.util;
+&nbsp;
+&nbsp;import java.io.BufferedReader;
+&nbsp;import java.io.FileReader;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Random;
+&nbsp;import java.util.concurrent.atomic.AtomicInteger;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;
+&nbsp;/**
+&nbsp; * Synthetic dataset generator.
+&nbsp; *
+&nbsp; * @author Tomas Kovachev t.kovachev1996@gmail.com
+&nbsp; */
+&nbsp;public class DataSetGenerator {
+&nbsp;	public static final String NAMESPACE = &quot;http://example.com/gererator/&quot;;
+&nbsp;	private static final String WORD_DIR = &quot;generated-data/words.txt&quot;;
+&nbsp;	private static final int TOTAL_PREDS = 500;
+&nbsp;	private static final int AVG_GRAPH_SIZE = 500;
+&nbsp;	private final ValueFactory factory;
+&nbsp;	private final StringBuilder valueBuilder;
+<b class="nc">&nbsp;	private final AtomicInteger contextCount = new AtomicInteger(0);</b>
+<b class="nc">&nbsp;	private final AtomicInteger maxCurrentContextCount = new AtomicInteger(0);</b>
+&nbsp;	private ArrayList&lt;String&gt; dictionary;
+&nbsp;	private ArrayList&lt;IRI&gt; predicateIRIs;
+&nbsp;	private ArrayList&lt;IRI&gt; contextIRIs;
+&nbsp;	private Random randomResource;
+&nbsp;	private Random randomProbability;
+&nbsp;	private BNode prevBNode;
+&nbsp;	private IRI currentContext;
+&nbsp;	private int totalWords;
+&nbsp;	private int avgWordSize;
+&nbsp;
+<b class="nc">&nbsp;	public DataSetGenerator() {</b>
+<b class="nc">&nbsp;		this.factory = SimpleValueFactory.getInstance();</b>
+<b class="nc">&nbsp;		this.valueBuilder = new StringBuilder();</b>
+<b class="nc">&nbsp;		this.randomResource = new Random(64);</b>
+<b class="nc">&nbsp;		this.randomProbability = new Random(64);</b>
+<b class="nc">&nbsp;		this.avgWordSize = 0;</b>
+<b class="nc">&nbsp;		fetchWords();</b>
+<b class="nc">&nbsp;		generatePredicateList();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void generateStatements(RDFHandler handler, int percentBNodes, int percentLiterals, int textMinLength,
+&nbsp;			int textMaxLength, int totalStatements, boolean isTextOnly, boolean withContext) {
+<b class="nc">&nbsp;		if (!(percentBNodes + percentLiterals &lt;= 100 &amp;&amp; totalStatements &gt; 0 &amp;&amp; textMaxLength &gt; 0</b>
+&nbsp;				&amp;&amp; textMinLength &lt; textMaxLength)) {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Invalid data set variables&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (withContext) {</b>
+<b class="nc">&nbsp;			generateContextList(totalStatements);</b>
+<b class="nc">&nbsp;			writeBinaryStatementsWithContext(handler, percentBNodes, percentLiterals, textMinLength, textMaxLength,</b>
+&nbsp;					totalStatements, isTextOnly);
+<b class="nc">&nbsp;			maxCurrentContextCount.set(0);</b>
+<b class="nc">&nbsp;			contextCount.set(0);</b>
+<b class="nc">&nbsp;			currentContext = null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeBinaryStatementsWithoutContext(handler, percentBNodes, percentLiterals, textMinLength,</b>
+&nbsp;					textMaxLength,
+&nbsp;					totalStatements, isTextOnly);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		prevBNode = null;</b>
+<b class="nc">&nbsp;		randomResource = new Random(64);</b>
+<b class="nc">&nbsp;		randomProbability = new Random(64);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeBinaryStatementsWithContext(RDFHandler handler, int percentBNodes, int percentLiterals,
+&nbsp;			int textMinLength, int textMaxLength, int totalStatements, boolean isTextOnly) {
+<b class="nc">&nbsp;		handler.startRDF();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; totalStatements; i++) {</b>
+<b class="nc">&nbsp;			handler.handleStatement(</b>
+<b class="nc">&nbsp;					fetchStatementWithContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,</b>
+&nbsp;							percentLiterals));
+&nbsp;
+&nbsp;		}
+<b class="nc">&nbsp;		handler.endRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeBinaryStatementsWithoutContext(RDFHandler handler, int percentBNodes, int percentLiterals,
+&nbsp;			int textMinLength, int textMaxLength, int totalStatements, boolean isTextOnly) {
+<b class="nc">&nbsp;		handler.startRDF();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; totalStatements; i++) {</b>
+<b class="nc">&nbsp;			handler.handleStatement(</b>
+<b class="nc">&nbsp;					fetchStatementWithoutContext(isTextOnly, textMinLength, textMaxLength, percentBNodes,</b>
+&nbsp;							percentLiterals));
+&nbsp;
+&nbsp;		}
+<b class="nc">&nbsp;		handler.endRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Statement fetchStatementWithContext(boolean isTextOnly, int textMinLength, int textMaxLength,
+&nbsp;			int percentBNodes, int percentLiterals) {
+<b class="nc">&nbsp;		if (prevBNode != null) {</b>
+&nbsp;			// should not have nested statement to bnode with different context
+<b class="nc">&nbsp;			Statement statement = generateStatement(prevBNode, currentContext, isTextOnly, textMinLength, textMaxLength,</b>
+&nbsp;					percentLiterals, true);
+<b class="nc">&nbsp;			if (getPercentProbability() &gt;= percentBNodes) {</b>
+<b class="nc">&nbsp;				prevBNode = null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return statement;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getPercentProbability() &lt; percentBNodes) {</b>
+<b class="nc">&nbsp;			updateContext();</b>
+<b class="nc">&nbsp;			prevBNode = createBNode();</b>
+<b class="nc">&nbsp;			return generateStatement(prevBNode, currentContext, isTextOnly, textMinLength, textMaxLength,</b>
+&nbsp;					percentLiterals, false);
+&nbsp;		} else {
+<b class="nc">&nbsp;			updateContext();</b>
+<b class="nc">&nbsp;			return generateStatement(null, currentContext, isTextOnly, textMinLength, textMaxLength,</b>
+&nbsp;					percentLiterals, false);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Statement fetchStatementWithoutContext(boolean isTextOnly, int textMinLength, int textMaxLength,
+&nbsp;			int percentBNodes, int percentLiterals) {
+<b class="nc">&nbsp;		if (prevBNode != null) {</b>
+&nbsp;			// add nested statement to blank node
+<b class="nc">&nbsp;			Statement statement = generateStatement(prevBNode, null, isTextOnly, textMinLength, textMaxLength,</b>
+&nbsp;					percentLiterals, true);
+<b class="nc">&nbsp;			if (getPercentProbability() &gt;= percentBNodes) {</b>
+<b class="nc">&nbsp;				prevBNode = null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return statement;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getPercentProbability() &lt; percentBNodes) {</b>
+<b class="nc">&nbsp;			prevBNode = createBNode();</b>
+<b class="nc">&nbsp;			return generateStatement(prevBNode, null, isTextOnly, textMinLength, textMaxLength, percentLiterals,</b>
+&nbsp;					false);
+&nbsp;		} else {
+<b class="nc">&nbsp;			return generateStatement(null, null, isTextOnly, textMinLength, textMaxLength, percentLiterals, false);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void updateContext() {
+<b class="nc">&nbsp;		if (contextCount.get() &lt; maxCurrentContextCount.get()) {</b>
+<b class="nc">&nbsp;			contextCount.incrementAndGet();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			resetContext();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void resetContext() {
+<b class="nc">&nbsp;		maxCurrentContextCount.set(randomResource.nextInt(1800) + 200);</b>
+<b class="nc">&nbsp;		contextCount.set(0);</b>
+<b class="nc">&nbsp;		currentContext = fetchRandomContext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Statement generateStatement(BNode bNode, IRI context, boolean isTextOnly, int textMinLength,
+&nbsp;			int textMaxLength, int percentLiterals, boolean isBNodeSubj) {
+<b class="nc">&nbsp;		if (context != null) {</b>
+<b class="nc">&nbsp;			return createStatementWithContext(bNode, isTextOnly, textMinLength, textMaxLength, percentLiterals,</b>
+&nbsp;					isBNodeSubj, context);
+&nbsp;		} else {
+<b class="nc">&nbsp;			return createStatementWithoutContext(bNode, isTextOnly, textMinLength, textMaxLength, percentLiterals,</b>
+&nbsp;					isBNodeSubj);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Statement createStatementWithContext(BNode bNode, boolean isTextOnly, int textMinLength,
+&nbsp;			int textMaxLength,
+&nbsp;			int percentLiterals, boolean isBNodeSubj, IRI context) {
+<b class="nc">&nbsp;		boolean shouldCreateLiteral = getPercentProbability() &lt; percentLiterals;</b>
+<b class="nc">&nbsp;		if (shouldCreateLiteral &amp;&amp; bNode == null) {</b>
+<b class="nc">&nbsp;			return factory.createStatement(generateIri(), fetchRandomPredicate(),</b>
+<b class="nc">&nbsp;					generateLiteral(isTextOnly, textMinLength, textMaxLength), context);</b>
+&nbsp;
+<b class="nc">&nbsp;		} else if (shouldCreateLiteral &amp;&amp; isBNodeSubj) {</b>
+<b class="nc">&nbsp;			return factory.createStatement(bNode, fetchRandomPredicate(),</b>
+<b class="nc">&nbsp;					generateLiteral(isTextOnly, textMinLength, textMaxLength), context);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (bNode == null) {</b>
+<b class="nc">&nbsp;				return factory.createStatement(generateIri(), fetchRandomPredicate(),</b>
+<b class="nc">&nbsp;						generateIri(), context);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return factory.createStatement(generateIri(), fetchRandomPredicate(),</b>
+&nbsp;						bNode, context);
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Statement createStatementWithoutContext(BNode bNode, boolean isTextOnly, int textMinLength,
+&nbsp;			int textMaxLength,
+&nbsp;			int percentLiterals, boolean isBNodeSubj) {
+<b class="nc">&nbsp;		boolean shouldCreateLiteral = getPercentProbability() &lt; percentLiterals;</b>
+<b class="nc">&nbsp;		if (shouldCreateLiteral &amp;&amp; bNode == null) {</b>
+<b class="nc">&nbsp;			return factory.createStatement(generateIri(), fetchRandomPredicate(),</b>
+<b class="nc">&nbsp;					generateLiteral(isTextOnly, textMinLength, textMaxLength));</b>
+<b class="nc">&nbsp;		} else if (shouldCreateLiteral &amp;&amp; isBNodeSubj) {</b>
+<b class="nc">&nbsp;			return factory.createStatement(bNode, fetchRandomPredicate(),</b>
+<b class="nc">&nbsp;					generateLiteral(isTextOnly, textMinLength, textMaxLength));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (bNode == null) {</b>
+<b class="nc">&nbsp;				return factory.createStatement(generateIri(), fetchRandomPredicate(),</b>
+<b class="nc">&nbsp;						generateIri());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return factory.createStatement(generateIri(), fetchRandomPredicate(),</b>
+&nbsp;						bNode);
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI fetchRandomPredicate() {
+<b class="nc">&nbsp;		return predicateIRIs.get(getPredicateIndex());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI fetchRandomContext() {
+<b class="nc">&nbsp;		return contextIRIs.get(getContextIndex());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Literal generateLiteral(boolean isTextOnly, int minLength, int maxLength) {
+<b class="nc">&nbsp;		if (isTextOnly) {</b>
+<b class="nc">&nbsp;			return createStringLiteral(minLength, maxLength);</b>
+&nbsp;		} else {
+&nbsp;			// 50% chance to generate Num or String Literal
+<b class="nc">&nbsp;			if (getPercentProbability() &lt; 50) {</b>
+<b class="nc">&nbsp;				return createNumberLiteral();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return createStringLiteral(minLength, maxLength);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Literal createNumberLiteral() {
+<b class="nc">&nbsp;		int i = randomResource.nextInt(4);</b>
+<b class="nc">&nbsp;		switch (i) {</b>
+&nbsp;		case 0:
+<b class="nc">&nbsp;			return factory.createLiteral(randomResource.nextDouble());</b>
+&nbsp;		case 1:
+<b class="nc">&nbsp;			return factory.createLiteral(randomResource.nextFloat());</b>
+&nbsp;		case 2:
+<b class="nc">&nbsp;			return factory.createLiteral(randomResource.nextInt());</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			return factory.createLiteral(randomResource.nextLong());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Literal createStringLiteral(int minLength, int maxLength) {
+<b class="nc">&nbsp;		valueBuilder.setLength(0);</b>
+<b class="nc">&nbsp;		valueBuilder.append(dictionary.get(getDictionaryIndex()));</b>
+&nbsp;		String value;
+<b class="nc">&nbsp;		if (valueBuilder.length() &gt; maxLength) {</b>
+<b class="nc">&nbsp;			value = valueBuilder.substring(0, maxLength);</b>
+<b class="nc">&nbsp;		} else if (valueBuilder.length() &gt; minLength) {</b>
+<b class="nc">&nbsp;			value = valueBuilder.toString();</b>
+&nbsp;		} else {
+&nbsp;			// need to append more chars
+<b class="nc">&nbsp;			int diffMinMax = maxLength - minLength;</b>
+<b class="nc">&nbsp;			int addMaxWords = diffMinMax / avgWordSize;</b>
+&nbsp;			// randomize the length of literal so not too large or too small
+<b class="nc">&nbsp;			int wordsToAdd = randomResource.nextInt(addMaxWords) + 1;</b>
+<b class="nc">&nbsp;			while (valueBuilder.length() &lt; minLength) {</b>
+<b class="nc">&nbsp;				for (int i = 0; i &lt; wordsToAdd; i++) {</b>
+<b class="nc">&nbsp;					valueBuilder.append(dictionary.get(getDictionaryIndex())).append(&quot; &quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (valueBuilder.length() &gt; maxLength) {</b>
+<b class="nc">&nbsp;				value = valueBuilder.substring(0, maxLength);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				value = valueBuilder.toString();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return factory.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int getDictionaryIndex() {
+<b class="nc">&nbsp;		return randomResource.nextInt(totalWords);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private BNode createBNode() {
+<b class="nc">&nbsp;		return factory.createBNode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void fetchWords() {
+<b class="nc">&nbsp;		dictionary = new ArrayList&lt;&gt;(1024);</b>
+<b class="nc">&nbsp;		try (BufferedReader reader = new BufferedReader(</b>
+&nbsp;				new FileReader(
+<b class="nc">&nbsp;						Objects.requireNonNull(this.getClass().getClassLoader().getResource(WORD_DIR)).getFile()))) {</b>
+<b class="nc">&nbsp;			reader.lines().forEach(line -&gt; {</b>
+<b class="nc">&nbsp;				avgWordSize += line.length();</b>
+<b class="nc">&nbsp;				dictionary.add(line);</b>
+&nbsp;			});
+<b class="nc">&nbsp;			totalWords = dictionary.size();</b>
+<b class="nc">&nbsp;			avgWordSize /= totalWords;</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			e.printStackTrace();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int getPredicateIndex() {
+<b class="nc">&nbsp;		return randomResource.nextInt(TOTAL_PREDS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void generatePredicateList() {
+<b class="nc">&nbsp;		predicateIRIs = new ArrayList&lt;&gt;(1024);</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; TOTAL_PREDS; i++) {</b>
+<b class="nc">&nbsp;			predicateIRIs.add(generateIri());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI generateIri() {
+<b class="nc">&nbsp;		return factory.createIRI(NAMESPACE, &quot;daf&quot; + Math.abs(randomResource.nextLong()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int getContextIndex() {
+<b class="nc">&nbsp;		return randomResource.nextInt(contextIRIs.size());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void generateContextList(int totalStatements) {
+<b class="nc">&nbsp;		contextIRIs = new ArrayList&lt;&gt;(1024);</b>
+<b class="nc">&nbsp;		int totalContexts = totalStatements / AVG_GRAPH_SIZE;</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; totalContexts; i++) {</b>
+<b class="nc">&nbsp;			contextIRIs.add(generateIri());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private int getPercentProbability() {
+<b class="nc">&nbsp;		return randomProbability.nextInt(101);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

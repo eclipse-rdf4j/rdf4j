@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > ModelFactory</title>
+  <title>Coverage Report > Statement</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.model</a>
 </div>
 
-<h1>Coverage Summary for Class: ModelFactory (org.eclipse.rdf4j.model)</h1>
+<h1>Coverage Summary for Class: Statement (org.eclipse.rdf4j.model)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">ModelFactory</td>
+  <td class="name">Statement</td>
 </tr>
 
 </table>
@@ -50,17 +50,69 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.model;
 &nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;
 &nbsp;/**
-&nbsp; * Factory to create empty {@link Model} implementations.
+&nbsp; * An RDF statement, with optional associated context. A statement can have an associated context in specific cases, for
+&nbsp; * example when fetched from a repository.
+&nbsp; * &lt;p&gt;
+&nbsp; * Additional utility functionality for working with {@code Statement} objects is available in the
+&nbsp; * {@code org.eclipse.rdf4j.model.util.Statements} utility class.
 &nbsp; *
-&nbsp; * @author James Leigh
+&nbsp; * @implNote In order to ensure interoperability of concrete classes implementing this interface,
+&nbsp; *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+&nbsp; *           specs.
 &nbsp; */
-&nbsp;public interface ModelFactory {
+&nbsp;public interface Statement extends Serializable {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * @return a newly created {@link Model}
+&nbsp;	 * Gets the subject of this statement.
+&nbsp;	 *
+&nbsp;	 * @return The statement&#39;s subject.
 &nbsp;	 */
-&nbsp;	Model createEmptyModel();
+&nbsp;	Resource getSubject();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the predicate of this statement.
+&nbsp;	 *
+&nbsp;	 * @return The statement&#39;s predicate.
+&nbsp;	 */
+&nbsp;	IRI getPredicate();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the object of this statement.
+&nbsp;	 *
+&nbsp;	 * @return The statement&#39;s object.
+&nbsp;	 */
+&nbsp;	Value getObject();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the context of this statement.
+&nbsp;	 *
+&nbsp;	 * @return The statement&#39;s context, or &lt;var&gt;null&lt;/var&gt; in case of the null context or if not applicable.
+&nbsp;	 */
+&nbsp;	Resource getContext();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares this statement to another object.
+&nbsp;	 *
+&nbsp;	 * @param other the object to compare this statement to
+&nbsp;	 *
+&nbsp;	 * @return {@code true} if the other object is an instance of {@code Statement} and if their
+&nbsp;	 *         {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates}, {@linkplain #getObject()
+&nbsp;	 *         objects} and {@linkplain #getContext() contexts} are equal; {@code false} otherwise
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	boolean equals(Object other);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the hash code of this statement.
+&nbsp;	 *
+&nbsp;	 * @return a hash code for this statement computed as {@link java.util.Objects#hash Objects.hash}(
+&nbsp;	 *         {@link #getSubject()}, {@link #getPredicate()}, {@link #getObject()}, {@link #getContext()})
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	int hashCode();
 &nbsp;
 &nbsp;}
 </code>
@@ -86,7 +138,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

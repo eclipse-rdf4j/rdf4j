@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RepositoryResolver</title>
+  <title>Coverage Report > RepositoryResolverClient</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository</a>
 </div>
 
-<h1>Coverage Summary for Class: RepositoryResolver (org.eclipse.rdf4j.repository)</h1>
+<h1>Coverage Summary for Class: RepositoryResolverClient (org.eclipse.rdf4j.repository)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RepositoryResolver</td>
+  <td class="name">RepositoryResolverClient</td>
 </tr>
 
 </table>
@@ -50,17 +50,15 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.repository;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-&nbsp;
 &nbsp;/**
-&nbsp; * Gets local repositories using a simple identifier string.
+&nbsp; * Interface used by factory classes that need access to other repositories by their id&#39;s.
 &nbsp; *
 &nbsp; * @author Dale Visser
 &nbsp; * @since 2.3
 &nbsp; */
-&nbsp;public interface RepositoryResolver {
+&nbsp;public interface RepositoryResolverClient {
 &nbsp;
-&nbsp;	Repository getRepository(String memberID) throws RepositoryException, RepositoryConfigException;
+&nbsp;	void setRepositoryResolver(RepositoryResolver resolver);
 &nbsp;}
 </code>
 </pre>
@@ -85,7 +83,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

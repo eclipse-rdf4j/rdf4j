@@ -1,0 +1,175 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SortedRecordCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: SortedRecordCache (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SortedRecordCache</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.BTree;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.RecordComparator;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+&nbsp;
+&nbsp;/**
+&nbsp; * A cache for fixed size byte array records. This cache uses a temporary file to store the records. This file is
+&nbsp; * deleted upon calling {@link #discard()}.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;@SuppressWarnings(&quot;deprecation&quot;)
+&nbsp;final class SortedRecordCache extends AbstractRecordCache {
+&nbsp;
+&nbsp;	/*------------*
+&nbsp;	 * Attributes *
+&nbsp;	 *------------*/
+&nbsp;
+&nbsp;	private final BTree btree;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public SortedRecordCache(File cacheDir, int recordSize, RecordComparator comparator) throws IOException {
+<b class="nc">&nbsp;		this(cacheDir, recordSize, Long.MAX_VALUE, comparator);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SortedRecordCache(File cacheDir, int recordSize, long maxRecords, RecordComparator comparator)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		super(maxRecords);</b>
+<b class="nc">&nbsp;		btree = new BTree(cacheDir, &quot;txncache&quot;, 4096, recordSize, comparator);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void storeRecordInternal(byte[] record) throws IOException {
+<b class="nc">&nbsp;		btree.insert(record);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected RecordIterator getRecordsInternal() {
+<b class="nc">&nbsp;		return btree.iterateAll();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void clearInternal() throws IOException {
+<b class="nc">&nbsp;		btree.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void discard() throws IOException {
+<b class="nc">&nbsp;		btree.delete();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

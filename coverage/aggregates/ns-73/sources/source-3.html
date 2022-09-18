@@ -1,0 +1,320 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > OrderComparator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.util</a>
+</div>
+
+<h1>Coverage Summary for Class: OrderComparator (org.eclipse.rdf4j.query.algebra.evaluation.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">OrderComparator</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    88.9%
+  </span>
+  <span class="absValue">
+    (8/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.2%
+  </span>
+  <span class="absValue">
+    (26/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.1%
+  </span>
+  <span class="absValue">
+    (51/76)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.util;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.OrderElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link Comparator} on {@link BindingSet}s that imposes a total ordering by examining supplied {@link Order}
+&nbsp; * elements (i.e. the elements of an ORDER BY clause), falling back on a custom predictable ordering for BindingSet
+&nbsp; * elements if no ordering is established on the basis of the Order elements.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class OrderComparator implements Comparator&lt;BindingSet&gt; {
+&nbsp;
+<b class="fc">&nbsp;	private final static Logger logger = LoggerFactory.getLogger(OrderComparator.class);</b>
+&nbsp;
+&nbsp;	private final ValueComparator cmp;
+&nbsp;
+&nbsp;	private final Comparator&lt;BindingSet&gt; bindingContentsComparator;
+&nbsp;
+&nbsp;	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator cmp,
+<b class="fc">&nbsp;			QueryEvaluationContext context) {</b>
+<b class="fc">&nbsp;		this.cmp = cmp;</b>
+<b class="fc">&nbsp;		this.bindingContentsComparator = precompileComparator(strategy, order, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Comparator&lt;BindingSet&gt; precompileComparator(EvaluationStrategy strategy, Order order,
+&nbsp;			QueryEvaluationContext context) {
+&nbsp;
+<b class="fc">&nbsp;		return order.getElements()</b>
+<b class="fc">&nbsp;				.stream()</b>
+<b class="fc">&nbsp;				.map(element -&gt; {</b>
+<b class="fc">&nbsp;					boolean ascending = element.isAscending();</b>
+<b class="fc">&nbsp;					ValueExpr expr = element.getExpr();</b>
+&nbsp;
+<b class="fc">&nbsp;					if (expr instanceof Var) {</b>
+&nbsp;						// Here we optimize for the most common case where the ORDER BY clause uses Var(s) e.g. &quot;ORDER
+&nbsp;						// BY ?a&quot;
+&nbsp;
+<b class="fc">&nbsp;						Function&lt;BindingSet, Value&gt; getValue = context.getValue(((Var) expr).getName());</b>
+&nbsp;
+<b class="fc">&nbsp;						return (Comparator&lt;BindingSet&gt;) (o1, o2) -&gt; {</b>
+<b class="fc">&nbsp;							Value v1 = getValue.apply(o1);</b>
+<b class="fc">&nbsp;							Value v2 = getValue.apply(o2);</b>
+&nbsp;
+<b class="fc">&nbsp;							int compare = cmp.compare(v1, v2);</b>
+<b class="fc">&nbsp;							return ascending ? compare : -compare;</b>
+&nbsp;						};
+&nbsp;					} else {
+<b class="fc">&nbsp;						QueryValueEvaluationStep prepared = strategy.precompile(expr, context);</b>
+&nbsp;
+<b class="fc">&nbsp;						return (Comparator&lt;BindingSet&gt;) (o1, o2) -&gt; {</b>
+<b class="fc">&nbsp;							Value v1 = null;</b>
+<b class="fc">&nbsp;							Value v2 = null;</b>
+&nbsp;
+&nbsp;							try {
+<b class="fc">&nbsp;								v1 = prepared.evaluate(o1);</b>
+<b class="fc">&nbsp;							} catch (ValueExprEvaluationException ignored) {</b>
+<b class="nc">&nbsp;							}</b>
+&nbsp;
+&nbsp;							try {
+<b class="fc">&nbsp;								v2 = prepared.evaluate(o2);</b>
+<b class="fc">&nbsp;							} catch (ValueExprEvaluationException ignored) {</b>
+<b class="nc">&nbsp;							}</b>
+&nbsp;
+<b class="fc">&nbsp;							int compare = cmp.compare(v1, v2);</b>
+<b class="pc">&nbsp;							return ascending ? compare : -compare;</b>
+&nbsp;						};
+&nbsp;					}
+&nbsp;				})
+<b class="fc">&nbsp;				.reduce(Comparator::thenComparing)</b>
+<b class="fc">&nbsp;				.orElse((o1, o2) -&gt; 0);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int compare(BindingSet o1, BindingSet o2) {
+&nbsp;		try {
+<b class="fc">&nbsp;			int comparedContents = bindingContentsComparator.compare(o1, o2);</b>
+<b class="fc">&nbsp;			if (comparedContents != 0) {</b>
+<b class="fc">&nbsp;				return comparedContents;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// On the basis of the order clause elements the two binding sets are
+&nbsp;			// unordered.
+&nbsp;			// We now need to impose a total ordering (as per the
+&nbsp;			// contract of java.util.Comparator). We order by
+&nbsp;			// size first, then by binding names, then finally by values.
+&nbsp;
+&nbsp;			// null check
+<b class="pc">&nbsp;			if (o1 == null || o2 == null) {</b>
+<b class="nc">&nbsp;				if (o1 == null) {</b>
+<b class="nc">&nbsp;					return o2 == null ? 0 : 1;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return -1;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (o2.size() != o1.size()) {</b>
+<b class="fc">&nbsp;				return o1.size() &lt; o2.size() ? 1 : -1;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// we create an ordered list of binding names (using natural string order) to use for
+&nbsp;			// consistent iteration over binding names and binding values.
+&nbsp;			List&lt;String&gt; o1bindingNamesOrdered;
+&nbsp;			List&lt;String&gt; o2bindingNamesOrdered;
+&nbsp;
+<b class="pc">&nbsp;			if (o1 instanceof ArrayBindingSet &amp;&amp; o2 instanceof ArrayBindingSet) {</b>
+<b class="fc">&nbsp;				o1bindingNamesOrdered = ((ArrayBindingSet) o1).getSortedBindingNames();</b>
+<b class="fc">&nbsp;				o2bindingNamesOrdered = ((ArrayBindingSet) o2).getSortedBindingNames();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				o1bindingNamesOrdered = getSortedBindingNames(o1.getBindingNames());</b>
+<b class="nc">&nbsp;				o2bindingNamesOrdered = null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// binding set sizes are equal. compare on binding names.
+<b class="pc">&nbsp;			if ((o2bindingNamesOrdered != null &amp;&amp; !sortedEquals(o1bindingNamesOrdered, o2bindingNamesOrdered))</b>
+<b class="pc">&nbsp;					|| (!o1.getBindingNames().equals(o2.getBindingNames()))) {</b>
+&nbsp;
+<b class="nc">&nbsp;				if (o2bindingNamesOrdered == null) {</b>
+<b class="nc">&nbsp;					o2bindingNamesOrdered = getSortedBindingNames(o2.getBindingNames());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				for (int i = 0; i &lt; o1bindingNamesOrdered.size(); i++) {</b>
+<b class="nc">&nbsp;					String o1bn = o1bindingNamesOrdered.get(i);</b>
+<b class="nc">&nbsp;					String o2bn = o2bindingNamesOrdered.get(i);</b>
+<b class="nc">&nbsp;					int compare = o1bn.compareTo(o2bn);</b>
+<b class="nc">&nbsp;					if (compare != 0) {</b>
+<b class="nc">&nbsp;						return compare;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// binding names equal. compare on all values.
+<b class="fc">&nbsp;			for (String bindingName : o1bindingNamesOrdered) {</b>
+<b class="fc">&nbsp;				final Value v1 = o1.getValue(bindingName);</b>
+<b class="fc">&nbsp;				final Value v2 = o2.getValue(bindingName);</b>
+&nbsp;
+<b class="fc">&nbsp;				final int compare = cmp.compare(v1, v2);</b>
+<b class="fc">&nbsp;				if (compare != 0) {</b>
+<b class="fc">&nbsp;					return compare;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			return 0;</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException | IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			logger.debug(e.getMessage(), e);</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean sortedEquals(List&lt;String&gt; o1bindingNamesOrdered, List&lt;String&gt; o2bindingNamesOrdered) {
+<b class="pc">&nbsp;		if (o1bindingNamesOrdered.size() != o2bindingNamesOrdered.size()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; o1bindingNamesOrdered.size(); i++) {</b>
+<b class="pc">&nbsp;			if (!o1bindingNamesOrdered.get(i).equals(o2bindingNamesOrdered.get(i))) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static List&lt;String&gt; getSortedBindingNames(Set&lt;String&gt; bindingNames) {
+<b class="nc">&nbsp;		if (bindingNames.size() == 1) {</b>
+<b class="nc">&nbsp;			return Collections.singletonList(bindingNames.iterator().next());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ArrayList&lt;String&gt; list = new ArrayList&lt;&gt;(bindingNames);</b>
+<b class="nc">&nbsp;		Collections.sort(list);</b>
+<b class="nc">&nbsp;		return list;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

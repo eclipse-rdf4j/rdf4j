@@ -1,0 +1,530 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EndpointFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.endpoint</a>
+</div>
+
+<h1>Coverage Summary for Class: EndpointFactory (org.eclipse.rdf4j.federated.endpoint)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EndpointFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/69)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">EndpointFactory$DefaultRDFHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/76)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.endpoint;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileReader;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.FedXFactory;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.NativeRepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.NativeStoreProvider;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.RemoteRepositoryProvider;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.RemoteRepositoryRepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.RepositoryEndpointProvider;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.RepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryProvider;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLProvider;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXException;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepository;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.federated.util.Vocabulary;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.TreeModel;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolver;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility class providing various methods to create Endpoints to be used as federation members.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+<b class="nc">&nbsp;public class EndpointFactory {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(EndpointFactory.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SPARQL endpoint using the the provided information.
+&nbsp;	 *
+&nbsp;	 * @param name     a descriptive name, e.g. http://dbpedia
+&nbsp;	 * @param endpoint the URL of the SPARQL endpoint, e.g. http://dbpedia.org/sparql
+&nbsp;	 *
+&nbsp;	 * @return an initialized {@link EndpointBase} containing the repository
+&nbsp;	 *
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static Endpoint loadSPARQLEndpoint(String name, String endpoint) throws FedXException {
+&nbsp;
+<b class="nc">&nbsp;		SPARQLProvider repProvider = new SPARQLProvider();</b>
+<b class="nc">&nbsp;		return repProvider.loadEndpoint(new SPARQLRepositoryInformation(name, endpoint));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SPARQL endpoint using the the provided information and the host of the url as name.
+&nbsp;	 *
+&nbsp;	 * @param endpoint the URL of the SPARQL endpoint, e.g. http://dbpedia.org/sparql
+&nbsp;	 *
+&nbsp;	 * @return an initialized {@link EndpointBase} containing the repository
+&nbsp;	 *
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static Endpoint loadSPARQLEndpoint(String endpoint) throws FedXException {
+&nbsp;		try {
+<b class="nc">&nbsp;			String id = new URL(endpoint).getHost();</b>
+<b class="nc">&nbsp;			if (id.equals(&quot;localhost&quot;)) {</b>
+<b class="nc">&nbsp;				id = id + &quot;_&quot; + new URL(endpoint).getPort();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return loadSPARQLEndpoint(&quot;http://&quot; + id, endpoint);</b>
+<b class="nc">&nbsp;		} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;			throw new FedXException(&quot;Malformed URL: &quot; + endpoint);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName) throws FedXException {
+<b class="nc">&nbsp;		return loadRemoteRepository(repositoryServer, repositoryName, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Endpoint loadRemoteRepository(String repositoryServer, String repositoryName, boolean writable)
+&nbsp;			throws FedXException {
+<b class="nc">&nbsp;		RemoteRepositoryProvider repProvider = new RemoteRepositoryProvider();</b>
+<b class="nc">&nbsp;		RemoteRepositoryRepositoryInformation info = new RemoteRepositoryRepositoryInformation(repositoryServer,</b>
+&nbsp;				repositoryName);
+<b class="nc">&nbsp;		info.setWritable(writable);</b>
+<b class="nc">&nbsp;		return repProvider.loadEndpoint(info);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load a {@link ResolvableEndpoint}
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The federation must be initialized with a {@link RepositoryResolver} ( see
+&nbsp;	 * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with
+&nbsp;	 * the id provided by {@link Endpoint#getId()}
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note that the name is set to &quot;http://&quot; + repositoryId
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param repositoryId the repository identifier
+&nbsp;	 * @return the configured {@link Endpoint}
+&nbsp;	 * @see ResolvableRepositoryProvider
+&nbsp;	 * @see ResolvableRepositoryInformation
+&nbsp;	 */
+&nbsp;	public static Endpoint loadResolvableRepository(String repositoryId) {
+<b class="nc">&nbsp;		return loadResolvableRepository(repositoryId, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load a {@link ResolvableEndpoint}
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The federation must be initialized with a {@link RepositoryResolver} ( see
+&nbsp;	 * {@link FedXFactory#withRepositoryResolver(RepositoryResolver)}) and this resolver must offer a Repository with
+&nbsp;	 * the id provided by {@link Endpoint#getId()}
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note that the name is set to &quot;http://&quot; + repositoryId
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param repositoryId the repository identifier
+&nbsp;	 * @param writable     whether to configure the endpoint as writable.
+&nbsp;	 * @return the configured {@link Endpoint}
+&nbsp;	 * @see ResolvableRepositoryProvider
+&nbsp;	 * @see ResolvableRepositoryInformation
+&nbsp;	 */
+&nbsp;	public static Endpoint loadResolvableRepository(String repositoryId, boolean writable) {
+<b class="nc">&nbsp;		ResolvableRepositoryProvider repProvider = new ResolvableRepositoryProvider();</b>
+<b class="nc">&nbsp;		ResolvableRepositoryInformation info = new ResolvableRepositoryInformation(repositoryId);</b>
+<b class="nc">&nbsp;		info.setWritable(writable);</b>
+<b class="nc">&nbsp;		return repProvider.loadEndpoint(info);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load an {@link Endpoint} for a given (configured) Repository.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Note that {@link EndpointType} is set to {@link EndpointType#Other}
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the repository is already initialized, it is assumed that the lifecycle is managed externally. Otherwise, FedX
+&nbsp;	 * will make sure to take care for the lifecycle of the repository, i.e. initialize and shutdown.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param id         the identifier, e.g. &quot;myRepository&quot;
+&nbsp;	 * @param repository the constructed repository
+&nbsp;	 * @return the initialized endpoint
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static Endpoint loadEndpoint(String id, Repository repository)
+&nbsp;			throws FedXException {
+<b class="nc">&nbsp;		RepositoryEndpointProvider repProvider = new RepositoryEndpointProvider(repository);</b>
+<b class="nc">&nbsp;		String name = &quot;http://&quot; + id;</b>
+<b class="nc">&nbsp;		String location = &quot;http://unknown&quot;;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			location = repository.getDataDir().getAbsolutePath();</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Failed to use data dir as location, using unknown instead: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			logger.trace(&quot;Details:&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return repProvider.loadEndpoint(new RepositoryInformation(id, name, location, EndpointType.Other));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a NativeStore endpoint using the provided information.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the repository location denotes an absolute path, the native store directory must already exist. If a relative
+&nbsp;	 * path is used, the repository is created on the fly (if necessary).
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param name     a descriptive name, e.g. http://dbpedia
+&nbsp;	 * @param location the location of the data store, either absolute or relative in a &quot;repositories&quot; subfolder
+&nbsp;	 *                 {@link FedXRepository#getDataDir()}
+&nbsp;	 *
+&nbsp;	 * @return an initialized endpoint containing the repository
+&nbsp;	 *
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static Endpoint loadNativeEndpoint(String name, File location) throws FedXException {
+&nbsp;
+<b class="nc">&nbsp;		File baseDir = null; // not required</b>
+<b class="nc">&nbsp;		NativeStoreProvider repProvider = new NativeStoreProvider(baseDir);</b>
+<b class="nc">&nbsp;		return repProvider.loadEndpoint(new NativeRepositoryInformation(name, location.getAbsolutePath()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a {@link NativeStore} endpoint using the provided information and the file location as name.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the repository location denotes an absolute path, the native store directory must already exist. If a relative
+&nbsp;	 * path is used, the repository is created on the fly (if necessary).
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param location the location of the data store
+&nbsp;	 *
+&nbsp;	 * @return an initialized endpoint containing the repository
+&nbsp;	 *
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static Endpoint loadNativeEndpoint(File location) throws FedXException {
+<b class="nc">&nbsp;		return loadNativeEndpoint(&quot;http://&quot; + location.getName(), location);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Utility function to load federation members from a data configuration file.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A data configuration file provides information about federation members in form of turtle. Currently the types
+&nbsp;	 * NativeStore, ResolvableEndpoint and SPARQLEndpoint are supported. For details please refer to the documentation
+&nbsp;	 * in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
+&nbsp;	 * {@link SPARQLRepositoryInformation}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param dataConfig
+&nbsp;	 *
+&nbsp;	 * @return a list of initialized endpoints, i.e. the federation members
+&nbsp;	 *
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static List&lt;Endpoint&gt; loadFederationMembers(File dataConfig, File fedXBaseDir) throws FedXException {
+&nbsp;
+<b class="nc">&nbsp;		if (!dataConfig.exists()) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(&quot;File does not exist: &quot; + dataConfig.getAbsolutePath());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Model graph = new TreeModel();</b>
+<b class="nc">&nbsp;		RDFParser parser = Rio.createParser(RDFFormat.TURTLE);</b>
+<b class="nc">&nbsp;		RDFHandler handler = new DefaultRDFHandler(graph);</b>
+<b class="nc">&nbsp;		parser.setRDFHandler(handler);</b>
+<b class="nc">&nbsp;		try (FileReader fr = new FileReader(dataConfig)) {</b>
+<b class="nc">&nbsp;			parser.parse(fr, Vocabulary.FEDX.NAMESPACE);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new FedXException(&quot;Unable to parse dataconfig &quot; + dataConfig + &quot;:&quot; + e.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return loadFederationMembers(graph, fedXBaseDir);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Utility function to load federation members from a model.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Currently the types NativeStore, ResolvableEndpoint and SPARQLEndpoint are supported. For details please refer to
+&nbsp;	 * the documentation in {@link NativeRepositoryInformation}, {@link ResolvableRepositoryInformation} and
+&nbsp;	 * {@link SPARQLRepositoryInformation}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param members
+&nbsp;	 * @param baseDir
+&nbsp;	 * @return list of endpoints
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public static List&lt;Endpoint&gt; loadFederationMembers(Model members, File baseDir) throws FedXException {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Endpoint&gt; res = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (Statement st : members.getStatements(null, Vocabulary.FEDX.STORE, null)) {</b>
+<b class="nc">&nbsp;			Endpoint e = loadEndpoint(members, st.getSubject(), st.getObject(), baseDir);</b>
+<b class="nc">&nbsp;			res.add(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Endpoint loadEndpoint(Model graph, Resource repNode, Value repType, File baseDir)
+&nbsp;			throws FedXException {
+&nbsp;
+&nbsp;		// NativeStore =&gt; RDF4J native store implementation
+<b class="nc">&nbsp;		if (repType.equals(FedXUtil.literal(&quot;NativeStore&quot;))) {</b>
+<b class="nc">&nbsp;			NativeStoreProvider repProvider = new NativeStoreProvider(baseDir);</b>
+<b class="nc">&nbsp;			return repProvider.loadEndpoint(new NativeRepositoryInformation(graph, repNode));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// SPARQL Repository =&gt; SPARQLRepository
+<b class="nc">&nbsp;		else if (repType.equals(FedXUtil.literal(&quot;SPARQLEndpoint&quot;))) {</b>
+<b class="nc">&nbsp;			SPARQLProvider repProvider = new SPARQLProvider();</b>
+<b class="nc">&nbsp;			return repProvider.loadEndpoint(new SPARQLRepositoryInformation(graph, repNode));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Remote Repository
+<b class="nc">&nbsp;		else if (repType.equals(FedXUtil.literal(&quot;RemoteRepository&quot;))) {</b>
+<b class="nc">&nbsp;			RemoteRepositoryProvider repProvider = new RemoteRepositoryProvider();</b>
+<b class="nc">&nbsp;			return repProvider.loadEndpoint(new RemoteRepositoryRepositoryInformation(graph, repNode));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Resolvable Repository
+<b class="nc">&nbsp;		else if (repType.equals(FedXUtil.literal(&quot;ResolvableRepository&quot;))) {</b>
+<b class="nc">&nbsp;			ResolvableRepositoryProvider repProvider = new ResolvableRepositoryProvider();</b>
+<b class="nc">&nbsp;			return repProvider.loadEndpoint(new ResolvableRepositoryInformation(graph, repNode));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// other generic type
+<b class="nc">&nbsp;		else if (repType.equals(FedXUtil.literal(&quot;Other&quot;))) {</b>
+&nbsp;
+&nbsp;			// TODO add reflection techniques to allow for flexibility
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;Operation not yet supported for generic type.&quot;);</b>
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new FedXRuntimeException(&quot;Repository type not supported: &quot; + repType.stringValue());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a unique id for the provided SPARQL Endpoint, e.g
+&nbsp;	 *
+&nbsp;	 * http://dbpedia.org/ =&gt; %type%_dbpedia.org
+&nbsp;	 *
+&nbsp;	 * @param endpointID
+&nbsp;	 * @param type       the repository type, e.g. native, sparql, etc
+&nbsp;	 *
+&nbsp;	 * @return the ID for the SPARQL endpoint
+&nbsp;	 */
+&nbsp;	public static String getId(String endpointID, String type) {
+<b class="nc">&nbsp;		String id = endpointID.replace(&quot;http://&quot;, &quot;&quot;);</b>
+<b class="nc">&nbsp;		id = id.replace(&quot;/&quot;, &quot;_&quot;);</b>
+<b class="nc">&nbsp;		return type + &quot;_&quot; + id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static class DefaultRDFHandler implements RDFHandler {
+&nbsp;
+&nbsp;		protected final Model graph;
+&nbsp;
+&nbsp;		public DefaultRDFHandler(Model graph) {
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.graph = graph;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void endRDF() throws RDFHandlerException {
+&nbsp;			// no-op
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void handleComment(String comment) throws RDFHandlerException {
+&nbsp;			// no-op
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void handleNamespace(String prefix, String uri)
+&nbsp;				throws RDFHandlerException {
+&nbsp;			// no-op
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;			graph.add(st);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void startRDF() throws RDFHandlerException {
+&nbsp;			// no-op
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

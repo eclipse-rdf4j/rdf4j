@@ -1,0 +1,309 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailSourceEvaluationStrategyFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.endpoint.provider</a>
+</div>
+
+<h1>Coverage Summary for Class: SailSourceEvaluationStrategyFactory (org.eclipse.rdf4j.federated.endpoint.provider)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailSourceEvaluationStrategyFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailSourceEvaluationStrategyFactory$SailSourceEvaluationStrategy</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.endpoint.provider;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link EvaluationStrategyFactory} which allows the evaluation of {@link PrecompiledQueryNode} without prior
+&nbsp; * optimization.
+&nbsp; * &lt;p&gt;
+&nbsp; * All other types of {@link TupleExpr} are optimized and evaluated through the configured delegate strategy, i.e.
+&nbsp; * typically the one provided by the sail itself.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see NativeStoreProvider
+&nbsp; */
+&nbsp;/* package */ class SailSourceEvaluationStrategyFactory implements EvaluationStrategyFactory {
+&nbsp;
+&nbsp;	private final EvaluationStrategyFactory delegate;
+&nbsp;
+&nbsp;	public SailSourceEvaluationStrategyFactory(EvaluationStrategyFactory delegate) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setQuerySolutionCacheThreshold(long threshold) {
+<b class="nc">&nbsp;		delegate.setQuerySolutionCacheThreshold(threshold);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long getQuerySolutionCacheThreshold() {
+<b class="nc">&nbsp;		return delegate.getQuerySolutionCacheThreshold();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+<b class="nc">&nbsp;		delegate.setOptimizerPipeline(pipeline);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Optional&lt;QueryOptimizerPipeline&gt; getOptimizerPipeline() {
+<b class="nc">&nbsp;		return delegate.getOptimizerPipeline();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
+&nbsp;			EvaluationStatistics evaluationStatistics) {
+<b class="nc">&nbsp;		EvaluationStrategy delegateStrategy = delegate.createEvaluationStrategy(dataset, tripleSource,</b>
+&nbsp;				evaluationStatistics);
+<b class="nc">&nbsp;		return new SailSourceEvaluationStrategy(delegateStrategy, dataset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@link EvaluationStrategy} that can handle {@link PrecompiledQueryNode} without prior optimization. All other
+&nbsp;	 * {@link TupleExpr} are handled in the respective delegate.
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private static class SailSourceEvaluationStrategy implements EvaluationStrategy {
+&nbsp;
+&nbsp;		private final EvaluationStrategy delegate;
+&nbsp;		private final Dataset dataset;
+&nbsp;
+&nbsp;		public SailSourceEvaluationStrategy(EvaluationStrategy delegate, Dataset dataset) {
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.delegate = delegate;</b>
+<b class="nc">&nbsp;			this.dataset = dataset;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.getService(serviceUrl);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
+<b class="nc">&nbsp;			delegate.setOptimizerPipeline(pipeline);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;			if (expr instanceof PrecompiledQueryNode) {</b>
+<b class="nc">&nbsp;				return optimizePreparedQuery((PrecompiledQueryNode) expr, bindings);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return delegate.optimize(expr, evaluationStatistics, bindings);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(Service expr, String serviceUri,
+&nbsp;				CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; bindings) throws QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.evaluate(expr, serviceUri, bindings);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(TupleExpr expr, BindingSet bindings)
+&nbsp;				throws QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.evaluate(expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Value evaluate(ValueExpr expr, BindingSet bindings)
+&nbsp;				throws ValueExprEvaluationException, QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.evaluate(expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isTrue(ValueExpr expr, BindingSet bindings)
+&nbsp;				throws ValueExprEvaluationException, QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.isTrue(expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isTrue(QueryValueEvaluationStep expr, BindingSet bindings)
+&nbsp;				throws ValueExprEvaluationException, QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.isTrue(expr, bindings);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected TupleExpr optimizePreparedQuery(PrecompiledQueryNode preparedQuery, BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;			TupleExpr actualQuery = preparedQuery.getQuery();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (bindings != null) {</b>
+<b class="nc">&nbsp;				new BindingAssignerOptimizer().optimize(actualQuery, dataset, bindings);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return actualQuery;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

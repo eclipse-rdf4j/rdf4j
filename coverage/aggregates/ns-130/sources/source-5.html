@@ -1,0 +1,371 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryEvaluator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.util</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryEvaluator (org.eclipse.rdf4j.workbench.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryEvaluator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/91)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.util;
+&nbsp;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Evaluates queries for QueryServlet.
+&nbsp; */
+&nbsp;public final class QueryEvaluator {
+&nbsp;
+&nbsp;	private static final String INFO = &quot;info&quot;;
+&nbsp;
+<b class="nc">&nbsp;	public static final QueryEvaluator INSTANCE = new QueryEvaluator();</b>
+&nbsp;
+&nbsp;	private static final String ACCEPT = &quot;Accept&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private QueryEvaluator() {</b>
+&nbsp;		// do nothing
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the query submitted with the given request.
+&nbsp;	 *
+&nbsp;	 * @param builder   used to build the response
+&nbsp;	 * @param resp      the response object
+&nbsp;	 * @param out       the output writer
+&nbsp;	 * @param xslPath   style sheet path
+&nbsp;	 * @param con       connection to repository
+&nbsp;	 * @param queryText the query text, having been pulled using
+&nbsp;	 *                  {@link org.eclipse.rdf4j.workbench.commands.QueryServlet} from one of three request parameters:
+&nbsp;	 *                  &quot;query&quot;, &quot;queryhash&quot; or &quot;saved&quot;
+&nbsp;	 * @param req       the request object
+&nbsp;	 * @param cookies   used to deal with browser cookies
+&nbsp;	 * @throws BadRequestException if there&#39;s a problem getting request parameters or issuing the repository query
+&nbsp;	 * @throws RDF4JException      if there&#39;s a problem preparing the query
+&nbsp;	 */
+&nbsp;	public void extractQueryAndEvaluate(final TupleResultBuilder builder, final HttpServletResponse resp,
+&nbsp;			final OutputStream out, final String xslPath, final RepositoryConnection con, String queryText,
+&nbsp;			final WorkbenchRequest req, final CookieHandler cookies) throws BadRequestException, RDF4JException {
+<b class="nc">&nbsp;		final QueryLanguage queryLn = QueryLanguage.valueOf(req.getParameter(&quot;queryLn&quot;));</b>
+<b class="nc">&nbsp;		Query query = QueryFactory.prepareQuery(con, queryLn, queryText);</b>
+<b class="nc">&nbsp;		boolean evaluateCookie = false;</b>
+<b class="nc">&nbsp;		int offset = req.getInt(&quot;offset&quot;);</b>
+<b class="nc">&nbsp;		int limit = req.getInt(&quot;limit_query&quot;);</b>
+<b class="nc">&nbsp;		boolean paged = limit &gt; 0;</b>
+<b class="nc">&nbsp;		if (query instanceof GraphQuery || query instanceof TupleQuery) {</b>
+<b class="nc">&nbsp;			final int know_total = req.getInt(&quot;know_total&quot;);</b>
+<b class="nc">&nbsp;			evaluateCookie = know_total &lt;= 0;</b>
+<b class="nc">&nbsp;			if (!evaluateCookie) {</b>
+<b class="nc">&nbsp;				cookies.addTotalResultCountCookie(req, resp, know_total);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (paged) {</b>
+<b class="nc">&nbsp;				PagedQuery pagedQuery = new PagedQuery(queryText, queryLn, limit, offset);</b>
+<b class="nc">&nbsp;				if (pagedQuery.isPaged()) {</b>
+<b class="nc">&nbsp;					offset = pagedQuery.getOffset();</b>
+<b class="nc">&nbsp;					limit = pagedQuery.getLimit();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (!evaluateCookie) {</b>
+<b class="nc">&nbsp;					query = QueryFactory.prepareQuery(con, queryLn, pagedQuery.toString());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (req.isParameterPresent(&quot;infer&quot;)) {</b>
+<b class="nc">&nbsp;			final boolean infer = Boolean.parseBoolean(req.getParameter(&quot;infer&quot;));</b>
+<b class="nc">&nbsp;			query.setIncludeInferred(infer);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.evaluate(builder, out, xslPath, req, resp, cookies, query, evaluateCookie, paged, offset, limit);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/***
+&nbsp;	 * Evaluate a tuple query, and create an XML results document. This method completes writing of the response. !paged
+&nbsp;	 * means use all results.
+&nbsp;	 *
+&nbsp;	 * @param builder     response builder helper for generating the XML response to the client, which &lt;em&gt;must not&lt;/em&gt;
+&nbsp;	 *                    have had start() called on it
+&nbsp;	 * @param xslPath     needed to begin writing response body after writing result count cookie
+&nbsp;	 * @param req         needed to write result count cookie
+&nbsp;	 * @param resp        needed to write result count cookie
+&nbsp;	 * @param cookies     needed to write result count cookie
+&nbsp;	 * @param query       the query to be evaluated
+&nbsp;	 * @param writeCookie whether to write the total result count cookie
+&nbsp;	 * @param paged       whether to display a limited subset
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 */
+&nbsp;	public void evaluateTupleQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
+&nbsp;			HttpServletResponse resp, CookieHandler cookies, final TupleQuery query, boolean writeCookie, boolean paged,
+&nbsp;			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
+<b class="nc">&nbsp;		final TupleQueryResult result = query.evaluate();</b>
+<b class="nc">&nbsp;		final String[] names = result.getBindingNames().toArray(new String[0]);</b>
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; bindings = Iterations.asList(result);</b>
+<b class="nc">&nbsp;		if (writeCookie) {</b>
+<b class="nc">&nbsp;			cookies.addTotalResultCountCookie(req, resp, bindings.size());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.transform(xslPath, &quot;tuple.xsl&quot;);</b>
+<b class="nc">&nbsp;		builder.start();</b>
+<b class="nc">&nbsp;		builder.variables(names);</b>
+<b class="nc">&nbsp;		builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;		final List&lt;Object&gt; values = new ArrayList&lt;&gt;(names.length);</b>
+<b class="nc">&nbsp;		if (paged &amp;&amp; writeCookie) {</b>
+&nbsp;			// Only in this case do we have paged results, but were given the full
+&nbsp;			// query. Just-in-case parameter massaging below to avoid array index
+&nbsp;			// issues.
+<b class="nc">&nbsp;			int fromIndex = Math.min(0, offset);</b>
+<b class="nc">&nbsp;			bindings = bindings.subList(fromIndex, Math.max(fromIndex, Math.min(offset + limit, bindings.size())));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (BindingSet set : bindings) {</b>
+<b class="nc">&nbsp;			addResult(builder, names, values, set);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		builder.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void addResult(final TupleResultBuilder builder, final String[] names, final List&lt;Object&gt; values,
+&nbsp;			BindingSet set) throws QueryResultHandlerException {
+<b class="nc">&nbsp;		values.clear();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; names.length; i++) {</b>
+<b class="nc">&nbsp;			values.add(set.getValue(names[i]));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.result(values.toArray());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/***
+&nbsp;	 * Evaluate a tuple query, and create an XML results document. It is still necessary to call end() on the builder
+&nbsp;	 * after calling this method.
+&nbsp;	 *
+&nbsp;	 * @param builder response builder helper for generating the XML response to the client, which &lt;em&gt;must&lt;/em&gt; have
+&nbsp;	 *                had start() called on it
+&nbsp;	 * @param query   the query to be evaluated
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 */
+&nbsp;	public void evaluateTupleQuery(final TupleResultBuilder builder, final TupleQuery query)
+&nbsp;			throws QueryEvaluationException, QueryResultHandlerException {
+<b class="nc">&nbsp;		try (TupleQueryResult result = query.evaluate()) {</b>
+<b class="nc">&nbsp;			final String[] names = result.getBindingNames().toArray(new String[0]);</b>
+<b class="nc">&nbsp;			builder.variables(names);</b>
+<b class="nc">&nbsp;			builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;			final List&lt;Object&gt; values = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			while (result.hasNext()) {</b>
+<b class="nc">&nbsp;				final BindingSet set = result.next();</b>
+<b class="nc">&nbsp;				addResult(builder, names, values, set);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/***
+&nbsp;	 * Evaluate a graph query, and create an XML results document.
+&nbsp;	 *
+&nbsp;	 * @param builder     response builder helper for generating the XML response to the client, which &lt;em&gt;must not&lt;/em&gt;
+&nbsp;	 *                    have had start() called on it
+&nbsp;	 * @param xslPath     needed to begin writing response body after writing result count cookie
+&nbsp;	 * @param req         needed to write result count cookie
+&nbsp;	 * @param resp        needed to write result count cookie
+&nbsp;	 * @param cookies     needed to write result count cookie
+&nbsp;	 * @param query       the query to be evaluated
+&nbsp;	 * @param writeCookie whether to write the total result count cookie
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 */
+&nbsp;	private void evaluateGraphQuery(final TupleResultBuilder builder, String xslPath, WorkbenchRequest req,
+&nbsp;			HttpServletResponse resp, CookieHandler cookies, final GraphQuery query, boolean writeCookie, boolean paged,
+&nbsp;			int offset, int limit) throws QueryEvaluationException, QueryResultHandlerException {
+<b class="nc">&nbsp;		List&lt;Statement&gt; statements = Iterations.asList(query.evaluate());</b>
+<b class="nc">&nbsp;		if (writeCookie) {</b>
+<b class="nc">&nbsp;			cookies.addTotalResultCountCookie(req, resp, statements.size());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.transform(xslPath, &quot;graph.xsl&quot;);</b>
+<b class="nc">&nbsp;		builder.start();</b>
+<b class="nc">&nbsp;		builder.variables(&quot;subject&quot;, &quot;predicate&quot;, &quot;object&quot;);</b>
+<b class="nc">&nbsp;		builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;		if (paged &amp;&amp; writeCookie) {</b>
+&nbsp;			// Only in this case do we have paged results, but were given the full
+&nbsp;			// query. Just-in-case parameter massaging below to avoid array index
+&nbsp;			// issues.
+<b class="nc">&nbsp;			int fromIndex = Math.min(0, offset);</b>
+<b class="nc">&nbsp;			statements = statements.subList(fromIndex,</b>
+<b class="nc">&nbsp;					Math.max(fromIndex, Math.min(offset + limit, statements.size())));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (Statement statement : statements) {</b>
+<b class="nc">&nbsp;			builder.result(statement.getSubject(), statement.getPredicate(), statement.getObject(),</b>
+<b class="nc">&nbsp;					statement.getContext());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		builder.end();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void evaluateGraphQuery(final RDFWriter writer, final GraphQuery query)
+&nbsp;			throws QueryEvaluationException, RDFHandlerException {
+<b class="nc">&nbsp;		query.evaluate(writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void evaluateBooleanQuery(final TupleResultBuilder builder, final BooleanQuery query)
+&nbsp;			throws QueryEvaluationException, QueryResultHandlerException {
+<b class="nc">&nbsp;		final boolean result = query.evaluate();</b>
+<b class="nc">&nbsp;		builder.link(List.of(INFO));</b>
+<b class="nc">&nbsp;		builder.bool(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void evaluate(final TupleResultBuilder builder, final OutputStream out, final String xslPath,
+&nbsp;			final WorkbenchRequest req, HttpServletResponse resp, CookieHandler cookies, final Query query,
+&nbsp;			boolean writeCookie, boolean paged, int offset, int limit) throws RDF4JException, BadRequestException {
+<b class="nc">&nbsp;		if (query instanceof TupleQuery) {</b>
+<b class="nc">&nbsp;			this.evaluateTupleQuery(builder, xslPath, req, resp, cookies, (TupleQuery) query, writeCookie, paged,</b>
+&nbsp;					offset, limit);
+&nbsp;		} else {
+<b class="nc">&nbsp;			final RDFFormat format = req.isParameterPresent(ACCEPT)</b>
+<b class="nc">&nbsp;					? Rio.getWriterFormatForMIMEType(req.getParameter(ACCEPT)).orElse(null)</b>
+<b class="nc">&nbsp;					: null;</b>
+<b class="nc">&nbsp;			if (query instanceof GraphQuery) {</b>
+<b class="nc">&nbsp;				GraphQuery graphQuery = (GraphQuery) query;</b>
+<b class="nc">&nbsp;				if (null == format) {</b>
+<b class="nc">&nbsp;					this.evaluateGraphQuery(builder, xslPath, req, resp, cookies, graphQuery, writeCookie, paged,</b>
+&nbsp;							offset, limit);
+&nbsp;				} else {
+<b class="nc">&nbsp;					this.evaluateGraphQuery(Rio.createWriter(format, out), graphQuery);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (query instanceof BooleanQuery) {</b>
+<b class="nc">&nbsp;				builder.transform(xslPath, &quot;boolean.xsl&quot;);</b>
+<b class="nc">&nbsp;				builder.startBoolean();</b>
+<b class="nc">&nbsp;				this.evaluateBooleanQuery(builder, (BooleanQuery) query);</b>
+<b class="nc">&nbsp;				builder.endBoolean();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new BadRequestException(&quot;Unknown query type: &quot; + query.getClass().getSimpleName());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

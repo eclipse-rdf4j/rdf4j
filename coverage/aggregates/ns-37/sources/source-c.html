@@ -1,0 +1,312 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > IndependentJoingroupBindingsIteration3</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: IndependentJoingroupBindingsIteration3 (org.eclipse.rdf4j.federated.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">IndependentJoingroupBindingsIteration3</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/49)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">IndependentJoingroupBindingsIteration3$BindingInfo</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/55)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * Inserts original bindings into the result.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class IndependentJoingroupBindingsIteration3 extends LookAheadIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	// a pattern matcher for the binding resolver, pattern: myVar_%outerID%#bindingId, e.g. name_0#0
+<b class="nc">&nbsp;	protected static final Pattern pattern = Pattern.compile(&quot;(.*)_(.*)_(.*)&quot;);</b>
+&nbsp;
+&nbsp;	protected final List&lt;BindingSet&gt; bindings;
+&nbsp;	protected final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter;
+<b class="nc">&nbsp;	protected ArrayList&lt;BindingSet&gt; result = null;</b>
+<b class="nc">&nbsp;	protected int currentIdx = 0;</b>
+&nbsp;
+&nbsp;	public IndependentJoingroupBindingsIteration3(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+<b class="nc">&nbsp;			List&lt;BindingSet&gt; bindings) {</b>
+<b class="nc">&nbsp;		this.bindings = bindings;</b>
+<b class="nc">&nbsp;		this.iter = iter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet getNextElement() throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			result = computeResult();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (currentIdx &gt;= result.size()) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result.get(currentIdx++);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected ArrayList&lt;BindingSet&gt; computeResult() throws QueryEvaluationException {
+&nbsp;
+&nbsp;		// underlying arraylist serves as map, index corresponds to bindings index (i.e. at most bindings.size() - 1)
+&nbsp;		// a_res[0] = { v_0#0-1; v_0#0-2; ... }
+&nbsp;		// a_res[1] = { v_0#1-1; v_0#1-2; ... }
+<b class="nc">&nbsp;		ArrayList&lt;LinkedList&lt;BindingInfo&gt;&gt; a_res = new ArrayList&lt;&gt;(bindings.size());</b>
+<b class="nc">&nbsp;		ArrayList&lt;LinkedList&lt;BindingInfo&gt;&gt; b_res = new ArrayList&lt;&gt;(bindings.size());</b>
+&nbsp;
+&nbsp;		// we assume that each binding returns at least one result for each statement
+&nbsp;		// =&gt; create lists in advance to avoid checking later on
+<b class="nc">&nbsp;		for (int i = 0; i &lt; bindings.size(); i++) {</b>
+<b class="nc">&nbsp;			a_res.add(new LinkedList&lt;&gt;());</b>
+<b class="nc">&nbsp;			b_res.add(new LinkedList&lt;&gt;());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// assumes that bindingset of iteration has exactly one binding
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			BindingSet bIn = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (bIn.size() != 1) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(</b>
+<b class="nc">&nbsp;						&quot;For this optimization a bindingset needs to have exactly one binding, it has &quot; + bIn.size()</b>
+&nbsp;								+ &quot;: &quot; + bIn);
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Binding b = bIn.getBinding(bIn.getBindingNames().iterator().next());</b>
+&nbsp;
+&nbsp;			// name is something like myVar_%outerID%_bindingId, e.g. name_0_0
+<b class="nc">&nbsp;			Matcher m = pattern.matcher(b.getName());</b>
+<b class="nc">&nbsp;			if (!m.find()) {</b>
+<b class="nc">&nbsp;				throw new QueryEvaluationException(&quot;Unexpected pattern for binding name: &quot; + b.getName());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			BindingInfo bInfo = new BindingInfo(m.group(1), Integer.parseInt(m.group(3)), b.getValue());</b>
+<b class="nc">&nbsp;			int bIndex = Integer.parseInt(m.group(2));</b>
+&nbsp;
+&nbsp;//			int tmp = b.getName().indexOf(&quot;_&quot;);
+&nbsp;//			String pattern = b.getName().substring(tmp+1);
+&nbsp;//			String split[] = pattern.split(&quot;_&quot;);
+&nbsp;//
+&nbsp;//			int bIndex = Integer.parseInt(split[0]);
+&nbsp;//			int bindingsIdx = Integer.parseInt(split[1]);
+&nbsp;//			BindingInfo bInfo = new BindingInfo(b.getName().substring(0, tmp), bindingsIdx, b.getValue());
+&nbsp;
+&nbsp;			// add a new binding info to the correct result list
+<b class="nc">&nbsp;			if (bIndex == 0) {</b>
+<b class="nc">&nbsp;				a_res.get(bInfo.bindingsIdx).add(bInfo);</b>
+<b class="nc">&nbsp;			} else if (bIndex == 1) {</b>
+<b class="nc">&nbsp;				b_res.get(bInfo.bindingsIdx).add(bInfo);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new RuntimeException(&quot;Unexpected binding value.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// TODO think about a better upper bound or use linked list
+<b class="nc">&nbsp;		ArrayList&lt;BindingSet&gt; res = new ArrayList&lt;&gt;(2 * bindings.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int a_idx = 0; a_idx &lt; a_res.size(); a_idx++) {</b>
+<b class="nc">&nbsp;			LinkedList&lt;BindingInfo&gt; a_list = a_res.get(a_idx);</b>
+<b class="nc">&nbsp;			for (BindingInfo a : a_list) {</b>
+<b class="nc">&nbsp;				for (BindingInfo b : b_res.get(a_idx)) {</b>
+<b class="nc">&nbsp;					QueryBindingSet newB = new QueryBindingSet(bindings.size() + 2);</b>
+<b class="nc">&nbsp;					newB.addBinding(a.name, a.value);</b>
+<b class="nc">&nbsp;					newB.addBinding(b.name, b.value);</b>
+<b class="nc">&nbsp;					newB.addAll(bindings.get(a.bindingsIdx));</b>
+<b class="nc">&nbsp;					res.add(newB);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			iter.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected class BindingInfo {
+&nbsp;		public final String name;
+&nbsp;		public final int bindingsIdx;
+&nbsp;		public final Value value;
+&nbsp;
+<b class="nc">&nbsp;		public BindingInfo(String name, int bindingsIdx, Value value) {</b>
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			this.name = name;</b>
+<b class="nc">&nbsp;			this.bindingsIdx = bindingsIdx;</b>
+<b class="nc">&nbsp;			this.value = value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return name + &quot;:&quot; + value.stringValue();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,632 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementMatcher</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementMatcher (org.eclipse.rdf4j.sail.shacl.ast)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementMatcher</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/126)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/133)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">StatementMatcher$StableRandomVariableProvider</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/39)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">StatementMatcher$Variable</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/168)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/195)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SHACL;
+&nbsp;
+&nbsp;public class StatementMatcher {
+&nbsp;
+&nbsp;	private final String subjectName;
+&nbsp;	private final Resource subjectValue;
+&nbsp;
+&nbsp;	private final String predicateName;
+&nbsp;	private final IRI predicateValue;
+&nbsp;
+&nbsp;	private final String objectName;
+&nbsp;	private final Value objectValue;
+&nbsp;	private final Set&lt;String&gt; varNames;
+&nbsp;
+&nbsp;	public StatementMatcher(String subjectName, Resource subjectValue, String predicateName, IRI predicateValue,
+<b class="nc">&nbsp;			String objectName, Value objectValue) {</b>
+<b class="nc">&nbsp;		this.subjectName = subjectName;</b>
+<b class="nc">&nbsp;		this.subjectValue = subjectValue;</b>
+<b class="nc">&nbsp;		this.predicateName = predicateName;</b>
+<b class="nc">&nbsp;		this.predicateValue = predicateValue;</b>
+<b class="nc">&nbsp;		this.objectName = objectName;</b>
+<b class="nc">&nbsp;		this.objectValue = objectValue;</b>
+<b class="nc">&nbsp;		this.varNames = calculateVarNames(subjectName, predicateName, objectName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Set&lt;String&gt; calculateVarNames(String subjectName, String predicateName, String objectName) {
+<b class="nc">&nbsp;		if (subjectName != null) {</b>
+<b class="nc">&nbsp;			if (predicateName != null) {</b>
+<b class="nc">&nbsp;				if (objectName != null) {</b>
+<b class="nc">&nbsp;					return Set.of(subjectName, predicateName, objectName);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return Set.of(subjectName, predicateName);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (objectName != null) {</b>
+<b class="nc">&nbsp;					return Set.of(subjectName, objectName);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return Set.of(subjectName);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (predicateName != null) {</b>
+<b class="nc">&nbsp;				if (objectName != null) {</b>
+<b class="nc">&nbsp;					return Set.of(predicateName, objectName);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return Set.of(predicateName);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (objectName != null) {</b>
+<b class="nc">&nbsp;					return Set.of(objectName);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return Set.of();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public StatementMatcher(Variable subject, Variable predicate, Variable object) {</b>
+<b class="nc">&nbsp;		this.subjectName = subject == null ? null : subject.name;</b>
+<b class="nc">&nbsp;		this.subjectValue = subject == null ? null : (Resource) subject.value;</b>
+<b class="nc">&nbsp;		this.predicateName = predicate == null ? null : predicate.name;</b>
+<b class="nc">&nbsp;		this.predicateValue = predicate == null ? null : (IRI) predicate.value;</b>
+<b class="nc">&nbsp;		this.objectName = object == null ? null : object.name;</b>
+<b class="nc">&nbsp;		this.objectValue = object == null ? null : object.value;</b>
+<b class="nc">&nbsp;		this.varNames = calculateVarNames(subjectName, predicateName, objectName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static List&lt;StatementMatcher&gt; reduce(Set&lt;String&gt; varNames, List&lt;StatementMatcher&gt; statementMatchers) {
+<b class="nc">&nbsp;		statementMatchers = statementMatchers</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.map(s -&gt; {</b>
+<b class="nc">&nbsp;					String subjectName = s.subjectName;</b>
+<b class="nc">&nbsp;					if (subjectName != null &amp;&amp; !varNames.contains(subjectName)) {</b>
+<b class="nc">&nbsp;						subjectName = null;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					String predicateName = s.predicateName;</b>
+<b class="nc">&nbsp;					if (predicateName != null &amp;&amp; !varNames.contains(predicateName)) {</b>
+<b class="nc">&nbsp;						predicateName = null;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					String objectName = s.objectName;</b>
+<b class="nc">&nbsp;					if (objectName != null &amp;&amp; !varNames.contains(objectName)) {</b>
+<b class="nc">&nbsp;						objectName = null;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return new StatementMatcher(subjectName, s.subjectValue, predicateName, s.predicateValue,</b>
+&nbsp;							objectName, s.objectValue);
+&nbsp;
+&nbsp;				})
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;StatementMatcher&gt; wildcardMatchers = statementMatchers</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.filter(s -&gt; s.subjectIsWildcard() || s.predicateIsWildcard() || s.objectIsWildcard())</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (wildcardMatchers.isEmpty()) {</b>
+<b class="nc">&nbsp;			return statementMatchers;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return statementMatchers</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.filter(s -&gt; {</b>
+<b class="nc">&nbsp;					for (StatementMatcher statementMatcher : wildcardMatchers) {</b>
+<b class="nc">&nbsp;						if (statementMatcher != s &amp;&amp; statementMatcher.covers(s)) {</b>
+<b class="nc">&nbsp;							return false;</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				})
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean covers(StatementMatcher s) {
+&nbsp;
+<b class="nc">&nbsp;		if (subjectIsWildcard()) {</b>
+<b class="nc">&nbsp;			if (s.subjectName != null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (!Objects.equals(subjectName, s.subjectName)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (!Objects.equals(subjectValue, s.subjectValue)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (predicateIsWildcard()) {</b>
+<b class="nc">&nbsp;			if (s.predicateName != null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (!Objects.equals(predicateName, s.predicateName)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (!Objects.equals(predicateValue, s.predicateValue)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (objectIsWildcard()) {</b>
+<b class="nc">&nbsp;			return s.objectName == null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (!Objects.equals(objectName, s.objectName)) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return Objects.equals(objectValue, s.objectValue);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getSubjectName() {
+<b class="nc">&nbsp;		return subjectName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource getSubjectValue() {
+<b class="nc">&nbsp;		return subjectValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean subjectIsWildcard() {
+<b class="nc">&nbsp;		return subjectName == null &amp;&amp; subjectValue == null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getPredicateName() {
+<b class="nc">&nbsp;		return predicateName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getPredicateValue() {
+<b class="nc">&nbsp;		return predicateValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean predicateIsWildcard() {
+<b class="nc">&nbsp;		return predicateName == null &amp;&amp; predicateValue == null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getObjectName() {
+<b class="nc">&nbsp;		return objectName;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value getObjectValue() {
+<b class="nc">&nbsp;		return objectValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean objectIsWildcard() {
+<b class="nc">&nbsp;		return objectName == null &amp;&amp; objectValue == null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		StatementMatcher that = (StatementMatcher) o;</b>
+<b class="nc">&nbsp;		return Objects.equals(subjectName, that.subjectName) &amp;&amp;</b>
+<b class="nc">&nbsp;				Objects.equals(subjectValue, that.subjectValue) &amp;&amp;</b>
+<b class="nc">&nbsp;				Objects.equals(predicateName, that.predicateName) &amp;&amp;</b>
+<b class="nc">&nbsp;				Objects.equals(predicateValue, that.predicateValue) &amp;&amp;</b>
+<b class="nc">&nbsp;				Objects.equals(objectName, that.objectName) &amp;&amp;</b>
+<b class="nc">&nbsp;				Objects.equals(objectValue, that.objectValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(subjectName, subjectValue, predicateName, predicateValue, objectName, objectValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getSparqlValuesDecl() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(&quot;VALUES ( &quot;);</b>
+<b class="nc">&nbsp;		if (subjectName != null) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;?&quot;).append(subjectName).append(&quot; &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (predicateName != null) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;?&quot;).append(predicateName).append(&quot; &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (objectName != null) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;?&quot;).append(objectName).append(&quot; &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		sb.append(&quot;){}\n&quot;);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;String&gt; getVarNames() {
+<b class="nc">&nbsp;		return varNames;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static class StableRandomVariableProvider {
+&nbsp;
+&nbsp;		// We just need a random base that isn&#39;t used elsewhere in the ShaclSail, but we don&#39;t want it to be stable so
+&nbsp;		// we can compare the SPARQL queries where these variables are used
+<b class="nc">&nbsp;		private static final String BASE = UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;) + &quot;_&quot;;</b>
+&nbsp;		private final String prefix;
+&nbsp;
+&nbsp;		// Best effort to store the highest value of all counters
+<b class="nc">&nbsp;		private static volatile int max = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		private int counter = -1;</b>
+&nbsp;
+&nbsp;		public Variable next() {
+<b class="nc">&nbsp;			counter++;</b>
+&nbsp;
+&nbsp;			// this isn&#39;t really threadsafe, but that is ok because the variable is just used as a guide
+<b class="nc">&nbsp;			if (counter &gt; max) {</b>
+<b class="nc">&nbsp;				max = counter;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return current();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Variable current() {
+<b class="nc">&nbsp;			if (counter &lt; 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;next() has not been called&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return new Variable(prefix + BASE + counter + &quot;_&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public StableRandomVariableProvider() {</b>
+<b class="nc">&nbsp;			this.prefix = &quot;&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public StableRandomVariableProvider(String prefix) {</b>
+<b class="nc">&nbsp;			this.prefix = prefix;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Normalize the use of random variables in a SPARQL query so that the numbering of queries starts at 0 in
+&nbsp;		 * increments of one.
+&nbsp;		 *
+&nbsp;		 * @param inputQuery the query string that should be normalized
+&nbsp;		 * @return a normalized query string
+&nbsp;		 */
+&nbsp;		public static String normalize(String inputQuery) {
+<b class="nc">&nbsp;			if (!inputQuery.contains(BASE)) {</b>
+<b class="nc">&nbsp;				return inputQuery;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// We don&#39;t want to go too high for performance reasons, so capping it at 100.
+<b class="nc">&nbsp;			int max = Math.min(100, StableRandomVariableProvider.max);</b>
+&nbsp;
+<b class="nc">&nbsp;			int lowest = max;</b>
+<b class="nc">&nbsp;			int highest = 0;</b>
+<b class="nc">&nbsp;			boolean incrementsOfOne = true;</b>
+<b class="nc">&nbsp;			int prev = -1;</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt;= max; i++) {</b>
+<b class="nc">&nbsp;				if (inputQuery.contains(BASE + i + &quot;_&quot;)) {</b>
+<b class="nc">&nbsp;					lowest = Math.min(lowest, i);</b>
+<b class="nc">&nbsp;					highest = Math.max(highest, i);</b>
+<b class="nc">&nbsp;					if (prev &gt;= 0 &amp;&amp; prev + 1 != i) {</b>
+<b class="nc">&nbsp;						incrementsOfOne = false;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					prev = i;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (lowest == 0 &amp;&amp; incrementsOfOne) {</b>
+<b class="nc">&nbsp;				return inputQuery;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return normalizeRange(inputQuery, lowest, highest);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private static String normalizeRange(String inputQuery, int lowest, int highest) {
+&nbsp;
+<b class="nc">&nbsp;			String normalizedQuery = inputQuery;</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt;= highest; i++) {</b>
+<b class="nc">&nbsp;				if (!normalizedQuery.contains(BASE + i + &quot;_&quot;)) {</b>
+<b class="nc">&nbsp;					for (int j = Math.max(i + 1, lowest); j &lt;= highest; j++) {</b>
+<b class="nc">&nbsp;						if (normalizedQuery.contains(BASE + j + &quot;_&quot;)) {</b>
+<b class="nc">&nbsp;							normalizedQuery = normalizedQuery.replace(BASE + j + &quot;_&quot;, BASE + i + &quot;_&quot;);</b>
+<b class="nc">&nbsp;							break;</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return normalizedQuery;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static class Variable {
+<b class="nc">&nbsp;		public static final Variable VALUE = new Variable(&quot;value&quot;);</b>
+&nbsp;
+&nbsp;		String name;
+&nbsp;		Value value;
+&nbsp;
+<b class="nc">&nbsp;		public Variable(String name, Value value) {</b>
+<b class="nc">&nbsp;			this.name = name;</b>
+<b class="nc">&nbsp;			this.value = value;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public Variable(String name) {</b>
+<b class="nc">&nbsp;			this.name = name;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public Variable(Value value) {</b>
+<b class="nc">&nbsp;			this.value = value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public String getName() {
+<b class="nc">&nbsp;			return name;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Value getValue() {
+<b class="nc">&nbsp;			return value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isWildcard() {
+<b class="nc">&nbsp;			return name == null &amp;&amp; value == null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public String asSparqlVariable() {
+<b class="nc">&nbsp;			if (value != null) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException(</b>
+&nbsp;						&quot;Can not produce SPARQL variable for variables that have fixed values!&quot;);
+&nbsp;			}
+<b class="nc">&nbsp;			return &quot;?&quot; + name.replace(&quot;-&quot;, &quot;__&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean equals(Object o) {
+<b class="nc">&nbsp;			if (this == o) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Variable variable = (Variable) o;</b>
+<b class="nc">&nbsp;			return Objects.equals(name, variable.name) &amp;&amp;</b>
+<b class="nc">&nbsp;					Objects.equals(value, variable.value);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int hashCode() {
+<b class="nc">&nbsp;			return Objects.hash(name, value);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return &quot;Variable{&quot; +</b>
+&nbsp;					&quot;name=&#39;&quot; + name + &#39;\&#39;&#39; +
+&nbsp;					&quot;, value=&quot; + value +
+&nbsp;					&#39;}&#39;;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;StatementMatcher{ &quot; +</b>
+<b class="nc">&nbsp;				formatForToString(&quot;s&quot;, subjectName, subjectValue) + &quot;, &quot; +</b>
+<b class="nc">&nbsp;				formatForToString(&quot;p&quot;, predicateName, predicateValue) + &quot;, &quot; +</b>
+<b class="nc">&nbsp;				formatForToString(&quot;o&quot;, objectName, objectValue) + &quot; }&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String formatForToString(String field, String name, Value value) {
+<b class="nc">&nbsp;		if (value == null &amp;&amp; name == null) {</b>
+<b class="nc">&nbsp;			return field + &quot;[*]&quot;;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		StringBuilder ret = new StringBuilder(field).append(&quot;[&quot;);</b>
+<b class="nc">&nbsp;		if (name != null) {</b>
+<b class="nc">&nbsp;			ret.append(&quot;\&quot;&quot;).append(name).append(&quot;\&quot;&quot;).append(&quot;=&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (value == null) {</b>
+<b class="nc">&nbsp;			ret.append(&quot;*&quot;);</b>
+<b class="nc">&nbsp;		} else if (value.isIRI()) {</b>
+<b class="nc">&nbsp;			IRI iri = (IRI) value;</b>
+<b class="nc">&nbsp;			if (iri.getNamespace().equals(RDF.NAMESPACE)) {</b>
+<b class="nc">&nbsp;				ret.append(RDF.PREFIX + &quot;:&quot;).append(iri.getLocalName());</b>
+<b class="nc">&nbsp;			} else if (iri.getNamespace().equals(SHACL.NAMESPACE)) {</b>
+<b class="nc">&nbsp;				ret.append(SHACL.PREFIX + &quot;:&quot;).append(iri.getLocalName());</b>
+<b class="nc">&nbsp;			} else if (iri.getNamespace().equals(RDFS.NAMESPACE)) {</b>
+<b class="nc">&nbsp;				ret.append(RDFS.PREFIX + &quot;:&quot;).append(iri.getLocalName());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				ret.append(&quot;&lt;&quot;).append(iri).append(&quot;&gt;&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			ret.append(value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return ret.append(&quot;]&quot;).toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

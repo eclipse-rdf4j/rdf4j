@@ -1,0 +1,177 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryResultParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryResultParser (org.eclipse.rdf4j.query.resultio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">QueryResultParser</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.Collection;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.ParseErrorListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParseLocationListener;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base interface for parsers of query results in both boolean and tuple forms.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public interface QueryResultParser {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the query result format that this parser can parse.
+&nbsp;	 *
+&nbsp;	 * @return The {@link QueryResultFormat} supported by this parser.
+&nbsp;	 */
+&nbsp;	QueryResultFormat getQueryResultFormat();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the {@link QueryResultHandler} to be used when parsing query results using
+&nbsp;	 * {@link #parseQueryResult(InputStream)}.
+&nbsp;	 *
+&nbsp;	 * @param handler The {@link QueryResultHandler} to use for handling results.
+&nbsp;	 */
+&nbsp;	QueryResultParser setQueryResultHandler(QueryResultHandler handler);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the ValueFactory that the parser will use to create Value objects for the parsed query result.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory The value factory that the parser should use.
+&nbsp;	 */
+&nbsp;	QueryResultParser setValueFactory(ValueFactory valueFactory);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the ParseErrorListener that will be notified of any errors that this parser finds during parsing.
+&nbsp;	 *
+&nbsp;	 * @param el The ParseErrorListener that will be notified of errors or warnings.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	QueryResultParser setParseErrorListener(ParseErrorListener el);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the ParseLocationListener that will be notified of the parser&#39;s progress during the parse process.
+&nbsp;	 *
+&nbsp;	 * @param ll The ParseLocationListener that will be notified of the parser&#39;s progress.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	QueryResultParser setParseLocationListener(ParseLocationListener ll);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse the query results out of the given {@link InputStream} into the handler setup using
+&nbsp;	 * {@link #setQueryResultHandler(QueryResultHandler)}.
+&nbsp;	 *
+&nbsp;	 * @param in The {@link InputStream} to parse the results from.
+&nbsp;	 * @throws IOException                 If there is an exception from the InputStream.
+&nbsp;	 * @throws QueryResultParseException   If the query results are not parsable by this parser.
+&nbsp;	 * @throws QueryResultHandlerException If the {@link QueryResultHandler} set in
+&nbsp;	 *                                     {@link #setQueryResultHandler(QueryResultHandler)} throws an exception.
+&nbsp;	 */
+&nbsp;	void parseQueryResult(InputStream in) throws IOException, QueryResultParseException, QueryResultHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets all supplied parser configuration options.
+&nbsp;	 *
+&nbsp;	 * @param config a parser configuration object.
+&nbsp;	 */
+&nbsp;	QueryResultParser setParserConfig(ParserConfig config);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the current parser configuration as a single object.
+&nbsp;	 *
+&nbsp;	 * @return a parser configuration object representing the current configuration of the parser.
+&nbsp;	 */
+&nbsp;	ParserConfig getParserConfig();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return A collection of {@link RioSetting}s that are supported by this QueryResultParser.
+&nbsp;	 */
+&nbsp;	Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a setting on the parser, and return this parser object to allow chaining.
+&nbsp;	 *
+&nbsp;	 * @param setting The setting to change.
+&nbsp;	 * @param value   The value to change.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	&lt;T&gt; QueryResultParser set(RioSetting&lt;T&gt; setting, T value);
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

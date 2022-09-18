@@ -1,0 +1,1542 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ShaclSailConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl</a>
+</div>
+
+<h1>Coverage Summary for Class: ShaclSailConnection (org.eclipse.rdf4j.sail.shacl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ShaclSailConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/55)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/460)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/497)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ShaclSailConnection$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ShaclSailConnection$Settings</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/66)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ShaclSailConnection$ValidationContainer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/80)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/516)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/606)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.Callable;
+&nbsp;import java.util.concurrent.ExecutionException;
+&nbsp;import java.util.concurrent.Future;
+&nbsp;import java.util.concurrent.FutureTask;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.StampedLockManager;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnectionListener;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.UpdateContext;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationApproach;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ContextWithShapes;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.Shape;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.SingleCloseablePlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationExecutionLogger;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.results.lazy.LazyValidationReport;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.results.lazy.ValidationResultIterator;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.VerySimpleRdfsBackwardsChainingConnection;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Heshan Jayasinghe
+&nbsp; * @author Håvard Ottestad
+&nbsp; */
+<b class="nc">&nbsp;public class ShaclSailConnection extends NotifyingSailConnectionWrapper implements SailConnectionListener {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ShaclSailConnection.class);</b>
+&nbsp;
+&nbsp;	private final SailConnection previousStateConnection;
+&nbsp;	private final SailConnection serializableConnection;
+&nbsp;
+&nbsp;	private final boolean useDefaultShapesGraph;
+&nbsp;	private IRI[] shapesGraphs;
+&nbsp;
+&nbsp;	Sail addedStatements;
+&nbsp;	Sail removedStatements;
+&nbsp;
+<b class="nc">&nbsp;	private final HashSet&lt;Statement&gt; addedStatementsSet = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final HashSet&lt;Statement&gt; removedStatementsSet = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean shapeRefreshNeeded = false;</b>
+<b class="nc">&nbsp;	private boolean shapesModifiedInCurrentTransaction = false;</b>
+&nbsp;
+&nbsp;	public final ShaclSail sail;
+&nbsp;
+&nbsp;	private Stats stats;
+&nbsp;
+&nbsp;	RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+&nbsp;
+<b class="nc">&nbsp;	private boolean prepareHasBeenCalled = false;</b>
+&nbsp;
+&nbsp;	private Lock exclusiveSerializableValidationLock;
+&nbsp;	private Lock nonExclusiveSerializableValidationLock;
+&nbsp;
+&nbsp;	private StampedLockManager.Cache&lt;List&lt;ContextWithShapes&gt;&gt;.WritableState writableShapesCache;
+&nbsp;	private StampedLockManager.Cache&lt;List&lt;ContextWithShapes&gt;&gt;.ReadableState readableShapesCache;
+&nbsp;
+&nbsp;	private final SailRepositoryConnection shapesRepoConnection;
+&nbsp;
+&nbsp;	// used to determine if we are currently registered as a connection listener (getting added/removed notifications)
+<b class="nc">&nbsp;	private boolean connectionListenerActive = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private IsolationLevel currentIsolationLevel = null;</b>
+&nbsp;
+&nbsp;	private Settings transactionSettings;
+<b class="nc">&nbsp;	private TransactionSetting[] transactionSettingsRaw = new TransactionSetting[0];</b>
+&nbsp;	private volatile boolean closed;
+&nbsp;
+&nbsp;	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
+&nbsp;			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
+<b class="nc">&nbsp;		super(connection);</b>
+<b class="nc">&nbsp;		this.previousStateConnection = previousStateConnection;</b>
+<b class="nc">&nbsp;		this.shapesRepoConnection = shapesRepoConnection;</b>
+<b class="nc">&nbsp;		this.serializableConnection = serializableConnection;</b>
+<b class="nc">&nbsp;		this.sail = sail;</b>
+<b class="nc">&nbsp;		this.transactionSettings = getDefaultSettings(sail);</b>
+<b class="nc">&nbsp;		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
+&nbsp;			SailRepositoryConnection shapesRepoConnection) {
+<b class="nc">&nbsp;		super(connection);</b>
+<b class="nc">&nbsp;		this.previousStateConnection = previousStateConnection;</b>
+<b class="nc">&nbsp;		this.shapesRepoConnection = shapesRepoConnection;</b>
+<b class="nc">&nbsp;		this.serializableConnection = null;</b>
+<b class="nc">&nbsp;		this.sail = sail;</b>
+<b class="nc">&nbsp;		this.transactionSettings = getDefaultSettings(sail);</b>
+<b class="nc">&nbsp;		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
+&nbsp;			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
+<b class="nc">&nbsp;		super(connection);</b>
+<b class="nc">&nbsp;		this.previousStateConnection = null;</b>
+<b class="nc">&nbsp;		this.shapesRepoConnection = shapesRepoConnection;</b>
+<b class="nc">&nbsp;		this.serializableConnection = serializableConnection;</b>
+<b class="nc">&nbsp;		this.sail = sail;</b>
+<b class="nc">&nbsp;		this.transactionSettings = getDefaultSettings(sail);</b>
+<b class="nc">&nbsp;		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection,
+&nbsp;			SailRepositoryConnection shapesRepoConnection) {
+<b class="nc">&nbsp;		super(connection);</b>
+<b class="nc">&nbsp;		this.previousStateConnection = null;</b>
+<b class="nc">&nbsp;		this.serializableConnection = null;</b>
+<b class="nc">&nbsp;		this.shapesRepoConnection = shapesRepoConnection;</b>
+<b class="nc">&nbsp;		this.sail = sail;</b>
+<b class="nc">&nbsp;		this.transactionSettings = getDefaultSettings(sail);</b>
+<b class="nc">&nbsp;		this.useDefaultShapesGraph = sail.getShapesGraphs().contains(RDF4J.SHACL_SHAPE_GRAPH);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Settings getDefaultSettings(ShaclSail sail) {
+<b class="nc">&nbsp;		return new Settings(sail.isCacheSelectNodes(), sail.isValidationEnabled(), sail.isParallelValidation(),</b>
+&nbsp;				currentIsolationLevel);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTransactionSettings(TransactionSetting... settings) {
+<b class="nc">&nbsp;		super.setTransactionSettings(settings);</b>
+<b class="nc">&nbsp;		this.transactionSettingsRaw = settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws SailException {
+<b class="nc">&nbsp;		begin(sail.getDefaultIsolationLevel());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin(IsolationLevel level) throws SailException {
+<b class="nc">&nbsp;		if (closed) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Connection is closed&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		currentIsolationLevel = level;</b>
+&nbsp;
+<b class="nc">&nbsp;		assert addedStatements == null;</b>
+<b class="nc">&nbsp;		assert removedStatements == null;</b>
+<b class="nc">&nbsp;		assert readableShapesCache == null;</b>
+<b class="nc">&nbsp;		assert writableShapesCache == null;</b>
+<b class="nc">&nbsp;		assert nonExclusiveSerializableValidationLock == null;</b>
+<b class="nc">&nbsp;		assert exclusiveSerializableValidationLock == null;</b>
+<b class="nc">&nbsp;		assert shapesGraphs == null;</b>
+&nbsp;
+<b class="nc">&nbsp;		shapesGraphs = sail.getShapesGraphs().stream().map(g -&gt; {</b>
+<b class="nc">&nbsp;			if (g.equals(RDF4J.NIL)) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return g;</b>
+<b class="nc">&nbsp;		}).toArray(IRI[]::new);</b>
+&nbsp;
+<b class="nc">&nbsp;		stats = new Stats();</b>
+&nbsp;
+&nbsp;		// start two transactions, synchronize on underlying sail so that we get two transactions immediately
+&nbsp;		// successively
+<b class="nc">&nbsp;		synchronized (sail) {</b>
+<b class="nc">&nbsp;			super.begin(level);</b>
+<b class="nc">&nbsp;			hasStatement(null, null, null, false); // actually force a transaction to start</b>
+<b class="nc">&nbsp;			shapesRepoConnection.begin(currentIsolationLevel);</b>
+<b class="nc">&nbsp;			if (previousStateConnection != null) {</b>
+<b class="nc">&nbsp;				previousStateConnection.begin(currentIsolationLevel);</b>
+<b class="nc">&nbsp;				previousStateConnection.hasStatement(null, null, null, false); // actually force a transaction to start</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		stats.setEmptyBeforeTransaction(ConnectionHelper.isEmpty(this));</b>
+&nbsp;
+<b class="nc">&nbsp;		transactionSettings = getDefaultSettings(sail);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (stats.wasEmptyBeforeTransaction() &amp;&amp; !shouldUseSerializableValidation()) {</b>
+<b class="nc">&nbsp;			transactionSettings.switchToBulkValidation();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		transactionSettings.applyTransactionSettings(getLocalTransactionSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		assert transactionSettings.parallelValidation != null;</b>
+<b class="nc">&nbsp;		assert transactionSettings.cacheSelectedNodes != null;</b>
+<b class="nc">&nbsp;		assert transactionSettings.validationApproach != null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isBulkValidation() || !isValidationEnabled()) {</b>
+<b class="nc">&nbsp;			removeConnectionListener(this);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			addConnectionListener(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the transaction settings that are based purely on the settings based down through the begin(...) method
+&nbsp;	 *         without considering any sail level settings for things like caching or parallel validation.
+&nbsp;	 */
+&nbsp;	private Settings getLocalTransactionSettings() {
+<b class="nc">&nbsp;		return new Settings(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addConnectionListener(SailConnectionListener listener) {
+<b class="nc">&nbsp;		if (!connectionListenerActive &amp;&amp; isValidationEnabled()) {</b>
+<b class="nc">&nbsp;			super.addConnectionListener(this);</b>
+<b class="nc">&nbsp;			connectionListenerActive = true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	boolean isValidationEnabled() {
+<b class="nc">&nbsp;		return transactionSettings.getValidationApproach() != ValidationApproach.Disabled;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeConnectionListener(SailConnectionListener listener) {
+<b class="nc">&nbsp;		super.removeConnectionListener(listener);</b>
+<b class="nc">&nbsp;		connectionListenerActive = false;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private Sail getNewMemorySail() {
+<b class="nc">&nbsp;		MemoryStore sail = new MemoryStore();</b>
+<b class="nc">&nbsp;		sail.setDefaultIsolationLevel(IsolationLevels.NONE);</b>
+<b class="nc">&nbsp;		sail.init();</b>
+<b class="nc">&nbsp;		return sail;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws SailException {
+<b class="nc">&nbsp;		if (closed) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Connection is closed&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!prepareHasBeenCalled) {</b>
+<b class="nc">&nbsp;			prepare();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			long before = getTimeStamp();</b>
+<b class="nc">&nbsp;			if (previousStateConnection != null) {</b>
+<b class="nc">&nbsp;				previousStateConnection.commit();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			super.commit();</b>
+<b class="nc">&nbsp;			shapesRepoConnection.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;commit() excluding validation and cleanup took {} ms&quot;, getTimeStamp() - before);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			cleanup();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		if (useDefaultShapesGraph &amp;&amp; contexts.length == 1 &amp;&amp; RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {</b>
+<b class="nc">&nbsp;			shapesRepoConnection.add(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;			shapeRefreshNeeded = true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.addStatement(modify, subj, pred, obj, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		if (useDefaultShapesGraph &amp;&amp; contexts.length == 1 &amp;&amp; RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {</b>
+<b class="nc">&nbsp;			shapesRepoConnection.remove(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;			shapeRefreshNeeded = true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.removeStatement(modify, subj, pred, obj, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		if (useDefaultShapesGraph &amp;&amp; contexts.length == 1 &amp;&amp; RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {</b>
+<b class="nc">&nbsp;			shapesRepoConnection.add(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;			shapeRefreshNeeded = true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.addStatement(subj, pred, obj, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		if (useDefaultShapesGraph &amp;&amp; contexts.length == 1 &amp;&amp; RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {</b>
+<b class="nc">&nbsp;			shapesRepoConnection.remove(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;			shapeRefreshNeeded = true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.removeStatements(subj, pred, obj, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		if (Arrays.asList(contexts).contains(RDF4J.SHACL_SHAPE_GRAPH)) {</b>
+<b class="nc">&nbsp;			shapesRepoConnection.clear();</b>
+<b class="nc">&nbsp;			shapeRefreshNeeded = true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.clear(contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws SailException {
+<b class="nc">&nbsp;		if (closed) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Connection is closed&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			if (readableShapesCache != null) {</b>
+<b class="nc">&nbsp;				readableShapesCache.close();</b>
+<b class="nc">&nbsp;				readableShapesCache = null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (writableShapesCache != null) {</b>
+<b class="nc">&nbsp;				writableShapesCache.purge();</b>
+<b class="nc">&nbsp;				writableShapesCache.close();</b>
+<b class="nc">&nbsp;				writableShapesCache = null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (previousStateConnection != null &amp;&amp; previousStateConnection.isActive()) {</b>
+<b class="nc">&nbsp;				previousStateConnection.rollback();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				if (shapesRepoConnection.isActive()) {</b>
+<b class="nc">&nbsp;					shapesRepoConnection.rollback();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			} finally {
+&nbsp;
+<b class="nc">&nbsp;				try {</b>
+<b class="nc">&nbsp;					if (isActive()) {</b>
+<b class="nc">&nbsp;						super.rollback();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				} finally {
+<b class="nc">&nbsp;					cleanup();</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void cleanup() {
+<b class="nc">&nbsp;		long before = 0;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;				before = System.currentTimeMillis();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;Cleanup&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (addedStatements != null) {</b>
+<b class="nc">&nbsp;				if (addedStatements != sail.getBaseSail()) {</b>
+<b class="nc">&nbsp;					addedStatements.shutDown();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				addedStatements = null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (removedStatements != null) {</b>
+<b class="nc">&nbsp;				removedStatements.shutDown();</b>
+<b class="nc">&nbsp;				removedStatements = null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			addedStatementsSet.clear();</b>
+<b class="nc">&nbsp;			removedStatementsSet.clear();</b>
+<b class="nc">&nbsp;			stats = null;</b>
+<b class="nc">&nbsp;			prepareHasBeenCalled = false;</b>
+<b class="nc">&nbsp;			shapeRefreshNeeded = false;</b>
+<b class="nc">&nbsp;			shapesModifiedInCurrentTransaction = false;</b>
+&nbsp;
+<b class="nc">&nbsp;			currentIsolationLevel = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			shapesGraphs = null;</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				cleanupShapesReadWriteLock();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				cleanupReadWriteLock();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;cleanup() took {} ms&quot;, System.currentTimeMillis() - before);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void cleanupShapesReadWriteLock() {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (writableShapesCache != null) {</b>
+&nbsp;				try {
+&nbsp;					// we need to refresh the shapes cache!
+<b class="nc">&nbsp;					writableShapesCache.purge();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					writableShapesCache.close();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (readableShapesCache != null) {</b>
+<b class="nc">&nbsp;				readableShapesCache.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		writableShapesCache = null;</b>
+<b class="nc">&nbsp;		readableShapesCache = null;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void cleanupReadWriteLock() {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (exclusiveSerializableValidationLock != null) {</b>
+<b class="nc">&nbsp;				exclusiveSerializableValidationLock.release();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (nonExclusiveSerializableValidationLock != null) {</b>
+<b class="nc">&nbsp;				nonExclusiveSerializableValidationLock.release();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		exclusiveSerializableValidationLock = null;</b>
+<b class="nc">&nbsp;		nonExclusiveSerializableValidationLock = null;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private ValidationReport validate(List&lt;ContextWithShapes&gt; shapes, boolean validateEntireBaseSail)
+&nbsp;			throws InterruptedException {
+&nbsp;
+<b class="nc">&nbsp;		assert isValidationEnabled();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			try (ConnectionsGroup connectionsGroup = getConnectionsGroup()) {</b>
+<b class="nc">&nbsp;				return performValidation(shapes, validateEntireBaseSail, connectionsGroup);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			rdfsSubClassOfReasoner = null;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	void prepareValidation() throws InterruptedException {
+&nbsp;
+<b class="nc">&nbsp;		assert isValidationEnabled();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (sail.isRdfsSubClassReasoning()) {</b>
+<b class="nc">&nbsp;			rdfsSubClassOfReasoner = RdfsSubClassOfReasoner.createReasoner(this);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!isBulkValidation()) {</b>
+<b class="nc">&nbsp;			fillAddedAndRemovedStatementRepositories();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	ConnectionsGroup getConnectionsGroup() {
+&nbsp;
+<b class="nc">&nbsp;		return new ConnectionsGroup(new VerySimpleRdfsBackwardsChainingConnection(this, rdfsSubClassOfReasoner),</b>
+&nbsp;				previousStateConnection, addedStatements, removedStatements, stats,
+&nbsp;				this::getRdfsSubClassOfReasoner, transactionSettings, sail.sparqlValidation);
+&nbsp;	}
+&nbsp;
+&nbsp;	private ValidationReport performValidation(List&lt;ContextWithShapes&gt; shapes, boolean validateEntireBaseSail,
+&nbsp;			ConnectionsGroup connectionsGroup) throws InterruptedException {
+<b class="nc">&nbsp;		long beforeValidation = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;			beforeValidation = System.currentTimeMillis();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			int numberOfShapes = shapes.stream()</b>
+<b class="nc">&nbsp;					.map(ContextWithShapes::getShapes)</b>
+<b class="nc">&nbsp;					.map(List::size)</b>
+<b class="nc">&nbsp;					.mapToInt(i -&gt; i)</b>
+<b class="nc">&nbsp;					.sum();</b>
+&nbsp;
+<b class="nc">&nbsp;			Stream&lt;Callable&lt;ValidationResultIterator&gt;&gt; callableStream = shapes</b>
+<b class="nc">&nbsp;					.stream()</b>
+<b class="nc">&nbsp;					.flatMap(contextWithShapes -&gt; contextWithShapes.getShapes()</b>
+<b class="nc">&nbsp;							.stream()</b>
+<b class="nc">&nbsp;							.map(shape -&gt; new ValidationContainer(</b>
+&nbsp;									shape,
+<b class="nc">&nbsp;									shape.generatePlans(connectionsGroup,</b>
+<b class="nc">&nbsp;											new ValidationSettings(contextWithShapes.getDataGraph(),</b>
+<b class="nc">&nbsp;													sail.isLogValidationPlans(), validateEntireBaseSail,</b>
+<b class="nc">&nbsp;													sail.isPerformanceLogging()))</b>
+&nbsp;							))
+&nbsp;					)
+<b class="nc">&nbsp;					.filter(ValidationContainer::hasPlanNode)</b>
+<b class="nc">&nbsp;					.map(validationContainer -&gt; validationContainer::performValidation);</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;ValidationResultIterator&gt; validationResultIterators = new ArrayList&lt;&gt;(numberOfShapes);</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;Future&lt;ValidationResultIterator&gt;&gt; futures = Collections.emptyList();</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean parallelValidation = numberOfShapes &gt; 1 &amp;&amp; isParallelValidation();</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				futures = callableStream</b>
+<b class="nc">&nbsp;						.map(callable -&gt; {</b>
+<b class="nc">&nbsp;							if (Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;								return null;</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							if (parallelValidation) {</b>
+<b class="nc">&nbsp;								return sail.submitToExecutorService(callable);</b>
+&nbsp;							} else {
+<b class="nc">&nbsp;								FutureTask&lt;ValidationResultIterator&gt; futureTask = new FutureTask&lt;&gt;(callable);</b>
+<b class="nc">&nbsp;								futureTask.run();</b>
+<b class="nc">&nbsp;								return futureTask;</b>
+&nbsp;							}
+&nbsp;						})
+<b class="nc">&nbsp;						.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;				for (Future&lt;ValidationResultIterator&gt; future : futures) {</b>
+<b class="nc">&nbsp;					assert future != null;</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						if (!Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;							validationResultIterators.add(future.get());</b>
+&nbsp;						}
+<b class="nc">&nbsp;					} catch (ExecutionException e) {</b>
+<b class="nc">&nbsp;						Throwable cause = e.getCause();</b>
+<b class="nc">&nbsp;						if (cause instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;							throw new InterruptedException();</b>
+<b class="nc">&nbsp;						} else if (cause instanceof RuntimeException) {</b>
+<b class="nc">&nbsp;							throw ((RuntimeException) cause);</b>
+<b class="nc">&nbsp;						} else if (cause instanceof Error) {</b>
+<b class="nc">&nbsp;							throw ((Error) cause);</b>
+&nbsp;						} else {
+&nbsp;							// this should only happen if we throw a checked exception from the Callable that
+&nbsp;							// isn&#39;t handled in the if/elseif above
+<b class="nc">&nbsp;							assert false;</b>
+<b class="nc">&nbsp;							throw new IllegalStateException(cause);</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				if (Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;					throw new InterruptedException();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				for (Future&lt;ValidationResultIterator&gt; future : futures) {</b>
+<b class="nc">&nbsp;					future.cancel(true);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;				throw new InterruptedException();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return new LazyValidationReport(validationResultIterators, sail.getValidationResultsLimitTotal());</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;Actual validation and generating plans took {} ms&quot;,</b>
+<b class="nc">&nbsp;						System.currentTimeMillis() - beforeValidation);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isParallelValidation() {
+<b class="nc">&nbsp;		assert !(transactionSettings.isParallelValidation() &amp;&amp; !supportsConcurrentReads());</b>
+<b class="nc">&nbsp;		assert !(getIsolationLevel() == IsolationLevels.SERIALIZABLE &amp;&amp; transactionSettings</b>
+<b class="nc">&nbsp;				.isParallelValidation()) : &quot;Concurrent reads is buggy for SERIALIZABLE transactions.&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		return transactionSettings.isParallelValidation();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void fillAddedAndRemovedStatementRepositories() throws InterruptedException {
+&nbsp;
+<b class="nc">&nbsp;		assert !isBulkValidation();</b>
+<b class="nc">&nbsp;		assert isValidationEnabled();</b>
+&nbsp;
+<b class="nc">&nbsp;		long before = 0;</b>
+<b class="nc">&nbsp;		if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;			before = System.currentTimeMillis();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Future&lt;Object&gt;&gt; futures = Collections.emptyList();</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean parallelValidation = isParallelValidation() &amp;&amp; !addedStatementsSet.isEmpty()</b>
+<b class="nc">&nbsp;				&amp;&amp; !removedStatementsSet.isEmpty();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			futures = Stream.of(addedStatementsSet, removedStatementsSet)</b>
+<b class="nc">&nbsp;					.map(set -&gt; (Callable&lt;Object&gt;) () -&gt; {</b>
+&nbsp;
+&nbsp;						Set&lt;Statement&gt; otherSet;
+&nbsp;						Sail repository;
+<b class="nc">&nbsp;						if (set == addedStatementsSet) {</b>
+<b class="nc">&nbsp;							otherSet = removedStatementsSet;</b>
+&nbsp;
+<b class="nc">&nbsp;							if (addedStatements != null &amp;&amp; addedStatements != sail.getBaseSail()) {</b>
+<b class="nc">&nbsp;								addedStatements.shutDown();</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							addedStatements = getNewMemorySail();</b>
+<b class="nc">&nbsp;							repository = addedStatements;</b>
+&nbsp;
+<b class="nc">&nbsp;							set.forEach(stats::added);</b>
+&nbsp;
+&nbsp;						} else {
+<b class="nc">&nbsp;							otherSet = addedStatementsSet;</b>
+&nbsp;
+<b class="nc">&nbsp;							if (removedStatements != null) {</b>
+<b class="nc">&nbsp;								removedStatements.shutDown();</b>
+<b class="nc">&nbsp;								removedStatements = null;</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							removedStatements = getNewMemorySail();</b>
+<b class="nc">&nbsp;							repository = removedStatements;</b>
+&nbsp;
+<b class="nc">&nbsp;							set.forEach(stats::removed);</b>
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						try (SailConnection connection = repository.getConnection()) {</b>
+<b class="nc">&nbsp;							connection.begin(IsolationLevels.NONE);</b>
+<b class="nc">&nbsp;							set.stream()</b>
+<b class="nc">&nbsp;									.filter(statement -&gt; !otherSet.contains(statement))</b>
+<b class="nc">&nbsp;									.flatMap(statement -&gt; rdfsSubClassOfReasoner == null ? Stream.of(statement)</b>
+<b class="nc">&nbsp;											: rdfsSubClassOfReasoner.forwardChain(statement))</b>
+<b class="nc">&nbsp;									.forEach(statement -&gt; {</b>
+<b class="nc">&nbsp;										if (!Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;											connection.addStatement(statement.getSubject(),</b>
+<b class="nc">&nbsp;													statement.getPredicate(), statement.getObject(),</b>
+<b class="nc">&nbsp;													statement.getContext());</b>
+&nbsp;										}
+&nbsp;
+&nbsp;									});
+<b class="nc">&nbsp;							if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;								throw new InterruptedException();</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							connection.commit();</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;
+<b class="nc">&nbsp;						return null;</b>
+&nbsp;
+&nbsp;					})
+<b class="nc">&nbsp;					.map(callable -&gt; {</b>
+<b class="nc">&nbsp;						if (Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;							return null;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (parallelValidation) {</b>
+<b class="nc">&nbsp;							return sail.submitToExecutorService(callable);</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							FutureTask&lt;Object&gt; objectFutureTask = new FutureTask&lt;&gt;(callable);</b>
+<b class="nc">&nbsp;							objectFutureTask.run();</b>
+<b class="nc">&nbsp;							return objectFutureTask;</b>
+&nbsp;						}
+&nbsp;					})
+<b class="nc">&nbsp;					.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Future&lt;Object&gt; future : futures) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					if (!Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;						future.get();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (ExecutionException e) {</b>
+<b class="nc">&nbsp;					Throwable cause = e.getCause();</b>
+<b class="nc">&nbsp;					if (cause instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;						throw ((InterruptedException) cause);</b>
+<b class="nc">&nbsp;					} else if (cause instanceof RuntimeException) {</b>
+<b class="nc">&nbsp;						throw ((RuntimeException) cause);</b>
+<b class="nc">&nbsp;					} else if (cause instanceof Error) {</b>
+<b class="nc">&nbsp;						throw ((Error) cause);</b>
+&nbsp;					} else {
+&nbsp;						// this should only happen if we throw a checked exception from the Callable that isn&#39;t handled
+&nbsp;						// in the if/elseif above
+<b class="nc">&nbsp;						throw new IllegalStateException(cause);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			for (Future&lt;Object&gt; future : futures) {</b>
+<b class="nc">&nbsp;				future.cancel(true);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;fillAddedAndRemovedStatementRepositories() took {} ms&quot;, System.currentTimeMillis() - before);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private IsolationLevel getIsolationLevel() {
+<b class="nc">&nbsp;		return currentIsolationLevel;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	synchronized public void close() throws SailException {
+<b class="nc">&nbsp;		if (closed) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (isActive()) {</b>
+<b class="nc">&nbsp;				rollback();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				shapesRepoConnection.close();</b>
+&nbsp;
+&nbsp;			} finally {
+<b class="nc">&nbsp;				try {</b>
+<b class="nc">&nbsp;					if (previousStateConnection != null) {</b>
+<b class="nc">&nbsp;						previousStateConnection.close();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="nc">&nbsp;						if (serializableConnection != null) {</b>
+<b class="nc">&nbsp;							serializableConnection.close();</b>
+&nbsp;						}
+&nbsp;					} finally {
+&nbsp;
+<b class="nc">&nbsp;						try {</b>
+<b class="nc">&nbsp;							super.close();</b>
+&nbsp;						} finally {
+<b class="nc">&nbsp;							try {</b>
+<b class="nc">&nbsp;								sail.closeConnection();</b>
+&nbsp;							} finally {
+<b class="nc">&nbsp;								try {</b>
+<b class="nc">&nbsp;									cleanupShapesReadWriteLock();</b>
+&nbsp;								} finally {
+<b class="nc">&nbsp;									try {</b>
+<b class="nc">&nbsp;										cleanupReadWriteLock();</b>
+&nbsp;									} finally {
+<b class="nc">&nbsp;										closed = true;</b>
+<b class="nc">&nbsp;									}</b>
+&nbsp;
+<b class="nc">&nbsp;								}</b>
+<b class="nc">&nbsp;							}</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void prepare() throws SailException {
+<b class="nc">&nbsp;		if (closed) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Connection is closed&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		prepareHasBeenCalled = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		long before = 0;</b>
+<b class="nc">&nbsp;		flush();</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;				before = System.currentTimeMillis();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean useSerializableValidation = shouldUseSerializableValidation() &amp;&amp; !isBulkValidation();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (sail.isSerializableValidation()) {</b>
+<b class="nc">&nbsp;				if (useSerializableValidation) {</b>
+<b class="nc">&nbsp;					exclusiveSerializableValidationLock = sail.serializableValidationLock.getWriteLock();</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					nonExclusiveSerializableValidationLock = sail.serializableValidationLock.getReadLock();</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				assert !useSerializableValidation : &quot;ShaclSail does not have serializable validation enabled but ShaclSailConnection still attempted to use serializable validation!&quot;;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!isValidationEnabled()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Validation skipped because validation was disabled&quot;);</b>
+<b class="nc">&nbsp;				if (shapeRefreshNeeded || !connectionListenerActive) {</b>
+&nbsp;					// getting the shapes write lock will ensure that the shapes cache is refreshed when cleanup() is
+&nbsp;					// called after commit/rollback
+<b class="nc">&nbsp;					writableShapesCache = sail.getCachedShapesForWriting();</b>
+&nbsp;				}
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			assert !shapeRefreshNeeded</b>
+&nbsp;					|| !shapesModifiedInCurrentTransaction : &quot;isShapeRefreshNeeded should trigger shapesModifiedInCurrentTransaction once we have loaded the modified shapes, but shapesModifiedInCurrentTransaction should be null until then&quot;;
+&nbsp;
+<b class="nc">&nbsp;			if (!shapeRefreshNeeded &amp;&amp; !isBulkValidation() &amp;&amp; addedStatementsSet.isEmpty()</b>
+<b class="nc">&nbsp;					&amp;&amp; removedStatementsSet.isEmpty()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Nothing has changed, nothing to validate.&quot;);</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			List&lt;ContextWithShapes&gt; currentShapes = null;</b>
+<b class="nc">&nbsp;			List&lt;ContextWithShapes&gt; shapesAfterRefresh = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (shapeRefreshNeeded || !connectionListenerActive || isBulkValidation()) {</b>
+<b class="nc">&nbsp;				if (writableShapesCache == null) {</b>
+<b class="nc">&nbsp;					writableShapesCache = sail.getCachedShapesForWriting();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				shapesModifiedInCurrentTransaction = shapeRefreshNeeded;</b>
+<b class="nc">&nbsp;				shapeRefreshNeeded = false;</b>
+<b class="nc">&nbsp;				shapesAfterRefresh = sail.getShapes(shapesRepoConnection, this, shapesGraphs);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (readableShapesCache == null) {</b>
+<b class="nc">&nbsp;					readableShapesCache = sail.getCachedShapes();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (readableShapesCache != null) {</b>
+<b class="nc">&nbsp;				currentShapes = readableShapesCache.getData();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			assert currentShapes != null || shapesAfterRefresh != null;</b>
+<b class="nc">&nbsp;			assert !(currentShapes != null &amp;&amp; shapesAfterRefresh != null);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isEmpty(currentShapes) &amp;&amp; isEmpty(shapesAfterRefresh)) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Validation skipped because there are no shapes to validate&quot;);</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			stats.setEmptyIncludingCurrentTransaction(ConnectionHelper.isEmpty(this));</b>
+&nbsp;
+<b class="nc">&nbsp;			prepareValidation();</b>
+&nbsp;
+<b class="nc">&nbsp;			ValidationReport invalidTuples = null;</b>
+<b class="nc">&nbsp;			if (useSerializableValidation) {</b>
+<b class="nc">&nbsp;				synchronized (sail.singleConnectionMonitor) {</b>
+<b class="nc">&nbsp;					if (!sail.usesSingleConnection()) {</b>
+<b class="nc">&nbsp;						invalidTuples = serializableValidation(</b>
+<b class="nc">&nbsp;								shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (invalidTuples == null) {</b>
+<b class="nc">&nbsp;				invalidTuples = validate(</b>
+<b class="nc">&nbsp;						shapesAfterRefresh != null ? shapesAfterRefresh : currentShapes,</b>
+<b class="nc">&nbsp;						shapesModifiedInCurrentTransaction || isBulkValidation());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean valid = invalidTuples.conforms();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!valid) {</b>
+<b class="nc">&nbsp;				throw new ShaclSailValidationException(invalidTuples);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			throw ShaclSail.convertToSailException(e);</b>
+&nbsp;		} finally {
+&nbsp;
+<b class="nc">&nbsp;			if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;prepare() including validation (excluding flushing and super.prepare()) took {} ms&quot;,</b>
+<b class="nc">&nbsp;						System.currentTimeMillis() - before);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// if the thread has been interrupted we should try to return quickly
+<b class="nc">&nbsp;			if (!Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;				shapesRepoConnection.prepare();</b>
+<b class="nc">&nbsp;				if (previousStateConnection != null) {</b>
+<b class="nc">&nbsp;					previousStateConnection.prepare();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				super.prepare();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isEmpty(List&lt;ContextWithShapes&gt; shapesList) {
+<b class="nc">&nbsp;		if (shapesList == null) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (ContextWithShapes shapesWithContext : shapesList) {</b>
+<b class="nc">&nbsp;			if (!shapesWithContext.getShapes().isEmpty()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean shouldUseSerializableValidation() {
+<b class="nc">&nbsp;		return serializableConnection != null &amp;&amp; sail.isSerializableValidation()</b>
+&nbsp;				&amp;&amp; currentIsolationLevel == IsolationLevels.SNAPSHOT;
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isBulkValidation() {
+<b class="nc">&nbsp;		return transactionSettings.getValidationApproach() == ValidationApproach.Bulk;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ValidationReport serializableValidation(List&lt;ContextWithShapes&gt; shapesAfterRefresh)
+&nbsp;			throws InterruptedException {
+&nbsp;		try {
+<b class="nc">&nbsp;			try (ConnectionsGroup connectionsGroup = new ConnectionsGroup(</b>
+&nbsp;					new VerySimpleRdfsBackwardsChainingConnection(serializableConnection, rdfsSubClassOfReasoner), null,
+&nbsp;					addedStatements, removedStatements, stats, this::getRdfsSubClassOfReasoner, transactionSettings,
+&nbsp;					sail.sparqlValidation)) {
+&nbsp;
+<b class="nc">&nbsp;				connectionsGroup.getBaseConnection().begin(IsolationLevels.SNAPSHOT);</b>
+&nbsp;				// actually force a transaction to start
+<b class="nc">&nbsp;				connectionsGroup.getBaseConnection().hasStatement(null, null, null, false);</b>
+&nbsp;
+<b class="nc">&nbsp;				stats.setEmptyBeforeTransaction(ConnectionHelper.isEmpty(connectionsGroup.getBaseConnection()));</b>
+&nbsp;
+<b class="nc">&nbsp;				try (SailConnection connection = addedStatements.getConnection()) {</b>
+<b class="nc">&nbsp;					SailConnection baseConnection = connectionsGroup.getBaseConnection();</b>
+<b class="nc">&nbsp;					ConnectionHelper.transferStatements(connection, baseConnection::addStatement);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				try (SailConnection connection = removedStatements.getConnection()) {</b>
+<b class="nc">&nbsp;					SailConnection baseConnection = connectionsGroup.getBaseConnection();</b>
+<b class="nc">&nbsp;					ConnectionHelper.transferStatements(connection, baseConnection::removeStatements);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				serializableConnection.flush();</b>
+&nbsp;
+<b class="nc">&nbsp;				return performValidation(shapesAfterRefresh, shapesModifiedInCurrentTransaction || isBulkValidation(),</b>
+&nbsp;						connectionsGroup);
+&nbsp;
+<b class="nc">&nbsp;			} finally {</b>
+<b class="nc">&nbsp;				serializableConnection.rollback();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			rdfsSubClassOfReasoner = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void statementAdded(Statement statement) {
+<b class="nc">&nbsp;		if (prepareHasBeenCalled) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Detected changes after prepare() has been called.&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		checkIfShapesRefreshIsNeeded(statement);</b>
+<b class="nc">&nbsp;		boolean add = addedStatementsSet.add(statement);</b>
+<b class="nc">&nbsp;		if (!add) {</b>
+<b class="nc">&nbsp;			removedStatementsSet.remove(statement);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		checkTransactionalValidationLimit();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void statementRemoved(Statement statement) {
+<b class="nc">&nbsp;		if (prepareHasBeenCalled) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Detected changes after prepare() has been called.&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		checkIfShapesRefreshIsNeeded(statement);</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean add = removedStatementsSet.add(statement);</b>
+<b class="nc">&nbsp;		if (!add) {</b>
+<b class="nc">&nbsp;			addedStatementsSet.remove(statement);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		checkTransactionalValidationLimit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void checkIfShapesRefreshIsNeeded(Statement statement) {
+&nbsp;
+<b class="nc">&nbsp;		if (!shapeRefreshNeeded) {</b>
+<b class="nc">&nbsp;			for (IRI shapesGraph : shapesGraphs) {</b>
+<b class="nc">&nbsp;				if (Objects.equals(statement.getContext(), shapesGraph)) {</b>
+<b class="nc">&nbsp;					shapeRefreshNeeded = true;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void checkTransactionalValidationLimit() {
+<b class="nc">&nbsp;		if ((addedStatementsSet.size() + removedStatementsSet.size()) &gt; sail.getTransactionalValidationLimit()) {</b>
+<b class="nc">&nbsp;			if (shouldUseSerializableValidation()) {</b>
+<b class="nc">&nbsp;				logger.debug(</b>
+&nbsp;						&quot;Transaction size limit exceeded, could not switch to bulk validation because serializable validation is enabled.&quot;);
+&nbsp;			} else {
+<b class="nc">&nbsp;				logger.debug(&quot;Transaction size limit exceeded, reverting to bulk validation.&quot;);</b>
+<b class="nc">&nbsp;				removeConnectionListener(this);</b>
+<b class="nc">&nbsp;				Settings bulkValidation = getLocalTransactionSettings();</b>
+<b class="nc">&nbsp;				bulkValidation.setValidationApproach(ShaclSail.TransactionSettings.ValidationApproach.Bulk);</b>
+<b class="nc">&nbsp;				getTransactionSettings().applyTransactionSettings(bulkValidation);</b>
+<b class="nc">&nbsp;				removedStatementsSet.clear();</b>
+<b class="nc">&nbsp;				addedStatementsSet.clear();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public RdfsSubClassOfReasoner getRdfsSubClassOfReasoner() {
+<b class="nc">&nbsp;		return rdfsSubClassOfReasoner;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Statement, SailException&gt; getStatements(Resource subj, IRI pred, Value obj,
+&nbsp;			boolean includeInferred, Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		if (useDefaultShapesGraph &amp;&amp; contexts.length == 1 &amp;&amp; RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {</b>
+<b class="nc">&nbsp;			return ConnectionHelper</b>
+<b class="nc">&nbsp;					.getCloseableIteration(shapesRepoConnection.getStatements(subj, pred, obj, includeInferred));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return super.getStatements(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+&nbsp;			throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		if (useDefaultShapesGraph &amp;&amp; contexts.length == 1 &amp;&amp; RDF4J.SHACL_SHAPE_GRAPH.equals(contexts[0])) {</b>
+<b class="nc">&nbsp;			return shapesRepoConnection.hasStatement(subj, pred, obj, includeInferred);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return super.hasStatement(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValidationReport revalidate() {
+&nbsp;
+<b class="nc">&nbsp;		if (!isActive()) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;No active transaction!&quot;);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			return validate(sail.getShapes(shapesRepoConnection, this, shapesGraphs), true);</b>
+<b class="nc">&nbsp;		} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;			throw ShaclSail.convertToSailException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	Settings getTransactionSettings() {
+<b class="nc">&nbsp;		return transactionSettings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private long getTimeStamp() {
+<b class="nc">&nbsp;		if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;			return System.currentTimeMillis();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private class ValidationContainer {
+&nbsp;		private final Shape shape;
+&nbsp;		private final PlanNode planNode;
+&nbsp;		private final ValidationExecutionLogger validationExecutionLogger;
+&nbsp;
+<b class="nc">&nbsp;		public ValidationContainer(Shape shape, PlanNode planNode) {</b>
+<b class="nc">&nbsp;			this.shape = shape;</b>
+<b class="nc">&nbsp;			this.validationExecutionLogger = ValidationExecutionLogger</b>
+<b class="nc">&nbsp;					.getInstance(sail.isGlobalLogValidationExecution());</b>
+<b class="nc">&nbsp;			if (!(planNode instanceof EmptyNode)) {</b>
+<b class="nc">&nbsp;				this.planNode = new SingleCloseablePlanNode(planNode);</b>
+<b class="nc">&nbsp;				this.planNode.receiveLogger(validationExecutionLogger);</b>
+&nbsp;
+&nbsp;			} else {
+<b class="nc">&nbsp;				this.planNode = planNode;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public Shape getShape() {
+<b class="nc">&nbsp;			return shape;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public PlanNode getPlanNode() {
+<b class="nc">&nbsp;			return planNode;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean hasPlanNode() {
+<b class="nc">&nbsp;			return !(planNode instanceof EmptyNode);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public ValidationResultIterator performValidation() {
+<b class="nc">&nbsp;			long before = getTimeStamp();</b>
+&nbsp;
+<b class="nc">&nbsp;			handlePreLogging();</b>
+&nbsp;
+<b class="nc">&nbsp;			ValidationResultIterator validationResults = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			try (CloseableIteration&lt;? extends ValidationTuple, SailException&gt; iterator = planNode.iterator()) {</b>
+<b class="nc">&nbsp;				validationResults = new ValidationResultIterator(iterator,</b>
+<b class="nc">&nbsp;						sail.getEffectiveValidationResultsLimitPerConstraint());</b>
+<b class="nc">&nbsp;				return validationResults;</b>
+<b class="nc">&nbsp;			} finally {</b>
+<b class="nc">&nbsp;				handlePostLogging(before, validationResults);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void handlePreLogging() {
+<b class="nc">&nbsp;			if (validationExecutionLogger.isEnabled()) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;Start execution of plan:\n{}\n&quot;, getShape().toString());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void handlePostLogging(long before, ValidationResultIterator validationResults) {
+<b class="nc">&nbsp;			if (validationExecutionLogger.isEnabled()) {</b>
+<b class="nc">&nbsp;				validationExecutionLogger.flush();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (validationResults != null) {</b>
+&nbsp;
+<b class="nc">&nbsp;				if (sail.isPerformanceLogging()) {</b>
+<b class="nc">&nbsp;					long after = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;					logger.info(&quot;Execution of plan took {} ms for:\n{}\n&quot;,</b>
+<b class="nc">&nbsp;							(after - before),</b>
+<b class="nc">&nbsp;							getShape().toString());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (validationExecutionLogger.isEnabled()) {</b>
+<b class="nc">&nbsp;					logger.info(&quot;Finished execution of plan:\n{}\n&quot;,</b>
+<b class="nc">&nbsp;							getShape().toString());</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (sail.isLogValidationViolations()) {</b>
+<b class="nc">&nbsp;					if (!validationResults.conforms()) {</b>
+<b class="nc">&nbsp;						List&lt;ValidationTuple&gt; tuples = validationResults.getTuples();</b>
+&nbsp;
+<b class="nc">&nbsp;						logger.info(</b>
+&nbsp;								&quot;SHACL not valid. The following experimental debug results were produced:\n\t\t{}\n\n{}\n&quot;,
+<b class="nc">&nbsp;								tuples.stream()</b>
+<b class="nc">&nbsp;										.map(ValidationTuple::toString)</b>
+<b class="nc">&nbsp;										.collect(Collectors.joining(&quot;\n\t\t&quot;)),</b>
+<b class="nc">&nbsp;								getShape().toString()</b>
+&nbsp;
+&nbsp;						);
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public static class Settings {</b>
+&nbsp;
+&nbsp;		private ValidationApproach validationApproach;
+&nbsp;		private Boolean cacheSelectedNodes;
+&nbsp;		private Boolean parallelValidation;
+&nbsp;		private IsolationLevel isolationLevel;
+<b class="nc">&nbsp;		transient private Settings previous = null;</b>
+&nbsp;
+&nbsp;		@Deprecated(since = &quot;4.0.0&quot;, forRemoval = true)
+<b class="nc">&nbsp;		public Settings() {</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Settings(boolean cacheSelectNodes, boolean validationEnabled, boolean parallelValidation,
+<b class="nc">&nbsp;				IsolationLevel isolationLevel) {</b>
+<b class="nc">&nbsp;			this.cacheSelectedNodes = cacheSelectNodes;</b>
+<b class="nc">&nbsp;			if (!validationEnabled) {</b>
+<b class="nc">&nbsp;				validationApproach = ValidationApproach.Disabled;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				this.validationApproach = ValidationApproach.Auto;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			this.parallelValidation = parallelValidation;</b>
+<b class="nc">&nbsp;			this.isolationLevel = isolationLevel;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public Settings(ShaclSailConnection connection) {</b>
+&nbsp;
+<b class="nc">&nbsp;			TransactionSetting[] transactionSettingsRaw = connection.transactionSettingsRaw;</b>
+<b class="nc">&nbsp;			assert transactionSettingsRaw != null;</b>
+&nbsp;
+<b class="nc">&nbsp;			ValidationApproach validationApproach = null;</b>
+<b class="nc">&nbsp;			Boolean cacheSelectedNodes = null;</b>
+<b class="nc">&nbsp;			Boolean parallelValidation = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (TransactionSetting transactionSetting : transactionSettingsRaw) {</b>
+<b class="nc">&nbsp;				if (transactionSetting instanceof ValidationApproach) {</b>
+<b class="nc">&nbsp;					validationApproach = (ValidationApproach) transactionSetting;</b>
+<b class="nc">&nbsp;				} else if (transactionSetting instanceof ShaclSail.TransactionSettings.PerformanceHint) {</b>
+<b class="nc">&nbsp;					switch (((ShaclSail.TransactionSettings.PerformanceHint) transactionSetting)) {</b>
+&nbsp;					case ParallelValidation:
+<b class="nc">&nbsp;						parallelValidation = true;</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					case SerialValidation:
+<b class="nc">&nbsp;						parallelValidation = false;</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					case CacheDisabled:
+<b class="nc">&nbsp;						cacheSelectedNodes = false;</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					case CacheEnabled:
+<b class="nc">&nbsp;						cacheSelectedNodes = true;</b>
+&nbsp;						break;
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			this.validationApproach = validationApproach;</b>
+<b class="nc">&nbsp;			this.cacheSelectedNodes = cacheSelectedNodes;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!connection.supportsConcurrentReads()) {</b>
+<b class="nc">&nbsp;				this.parallelValidation = false;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				this.parallelValidation = parallelValidation;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		private Settings(Settings settings) {</b>
+<b class="nc">&nbsp;			this.validationApproach = settings.validationApproach;</b>
+<b class="nc">&nbsp;			this.cacheSelectedNodes = settings.cacheSelectedNodes;</b>
+<b class="nc">&nbsp;			this.parallelValidation = settings.parallelValidation;</b>
+<b class="nc">&nbsp;			this.isolationLevel = settings.isolationLevel;</b>
+<b class="nc">&nbsp;			this.previous = settings.previous;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public ValidationApproach getValidationApproach() {
+<b class="nc">&nbsp;			return validationApproach;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isCacheSelectNodes() {
+<b class="nc">&nbsp;			return cacheSelectedNodes;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isParallelValidation() {
+<b class="nc">&nbsp;			return parallelValidation;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public IsolationLevel getIsolationLevel() {
+<b class="nc">&nbsp;			return isolationLevel;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		static ValidationApproach getMostSignificantValidationApproach(
+&nbsp;				ValidationApproach base,
+&nbsp;				ValidationApproach overriding) {
+<b class="nc">&nbsp;			if (base == null &amp;&amp; overriding == null) {</b>
+<b class="nc">&nbsp;				return ValidationApproach.Auto;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return ValidationApproach.getHighestPriority(base, overriding);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		void applyTransactionSettings(Settings transactionSettingsLocal) {
+&nbsp;
+<b class="nc">&nbsp;			previous = new Settings(this);</b>
+&nbsp;
+&nbsp;			// get the most significant validation approach first (eg. if validation is disabled on the sail level, then
+&nbsp;			// validation can not be enabled on the transaction level
+<b class="nc">&nbsp;			validationApproach = getMostSignificantValidationApproach(validationApproach,</b>
+&nbsp;					transactionSettingsLocal.validationApproach);
+&nbsp;
+&nbsp;			// apply restrictions first
+<b class="nc">&nbsp;			if (validationApproach == ValidationApproach.Bulk) {</b>
+<b class="nc">&nbsp;				cacheSelectedNodes = false;</b>
+<b class="nc">&nbsp;				parallelValidation = false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// override settings
+<b class="nc">&nbsp;			if (transactionSettingsLocal.parallelValidation != null) {</b>
+<b class="nc">&nbsp;				parallelValidation = transactionSettingsLocal.parallelValidation;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (transactionSettingsLocal.cacheSelectedNodes != null) {</b>
+<b class="nc">&nbsp;				cacheSelectedNodes = transactionSettingsLocal.cacheSelectedNodes;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			assert transactionSettingsLocal.isolationLevel == null;</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return &quot;Settings{&quot; +</b>
+&nbsp;					&quot;validationApproach=&quot; + validationApproach +
+&nbsp;					&quot;, cacheSelectedNodes=&quot; + cacheSelectedNodes +
+&nbsp;					&quot;, parallelValidation=&quot; + parallelValidation +
+&nbsp;					&quot;, isolationLevel=&quot; + isolationLevel +
+&nbsp;					&#39;}&#39;;
+&nbsp;		}
+&nbsp;
+&nbsp;		public void switchToBulkValidation() {
+<b class="nc">&nbsp;			ValidationApproach newValidationApproach = getMostSignificantValidationApproach(validationApproach,</b>
+&nbsp;					ValidationApproach.Bulk);
+&nbsp;
+<b class="nc">&nbsp;			if (newValidationApproach != this.validationApproach) {</b>
+<b class="nc">&nbsp;				this.validationApproach = newValidationApproach;</b>
+<b class="nc">&nbsp;				parallelValidation = false;</b>
+<b class="nc">&nbsp;				cacheSelectedNodes = false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void setValidationApproach(ValidationApproach validationApproach) {
+<b class="nc">&nbsp;			this.validationApproach = validationApproach;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void setCacheSelectedNodes(Boolean cacheSelectedNodes) {
+<b class="nc">&nbsp;			this.cacheSelectedNodes = cacheSelectedNodes;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void setParallelValidation(Boolean parallelValidation) {
+<b class="nc">&nbsp;			this.parallelValidation = parallelValidation;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void setIsolationLevel(IsolationLevel isolationLevel) {
+<b class="nc">&nbsp;			this.isolationLevel = isolationLevel;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

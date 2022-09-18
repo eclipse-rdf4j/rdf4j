@@ -1,0 +1,341 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ProtocolUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server</a>
+</div>
+
+<h1>Coverage Summary for Class: ProtocolUtil (org.eclipse.rdf4j.http.server)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ProtocolUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/81)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server;
+&nbsp;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
+&nbsp;import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorType;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utilities to help with the transition between HTTP requests/responses and values expected by the protocol.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class ProtocolUtil {</b>
+&nbsp;
+&nbsp;	public static Value parseValueParam(HttpServletRequest request, String paramName, ValueFactory vf)
+&nbsp;			throws ClientHTTPException {
+<b class="nc">&nbsp;		String paramValue = request.getParameter(paramName);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return Protocol.decodeValue(paramValue, vf);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+&nbsp;					&quot;Invalid value for parameter &#39;&quot; + paramName + &quot;&#39;: &quot; + paramValue);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Resource parseResourceParam(HttpServletRequest request, String paramName, ValueFactory vf)
+&nbsp;			throws ClientHTTPException {
+<b class="nc">&nbsp;		String paramValue = request.getParameter(paramName);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return Protocol.decodeResource(paramValue, vf);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+&nbsp;					&quot;Invalid value for parameter &#39;&quot; + paramName + &quot;&#39;: &quot; + paramValue);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static IRI parseURIParam(HttpServletRequest request, String paramName, ValueFactory vf)
+&nbsp;			throws ClientHTTPException {
+<b class="nc">&nbsp;		String paramValue = request.getParameter(paramName);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return Protocol.decodeURI(paramValue, vf);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+&nbsp;					&quot;Invalid value for parameter &#39;&quot; + paramName + &quot;&#39;: &quot; + paramValue);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static IRI parseGraphParam(HttpServletRequest request, ValueFactory vf) throws ClientHTTPException {
+<b class="nc">&nbsp;		String paramValue = request.getParameter(Protocol.GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		if (paramValue == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			return Protocol.decodeURI(&quot;&lt;&quot; + paramValue + &quot;&gt;&quot;, vf);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+&nbsp;					&quot;Invalid value for parameter &#39;&quot; + Protocol.GRAPH_PARAM_NAME + &quot;&#39;: &quot; + paramValue);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static Resource[] parseContextParam(HttpServletRequest request, String paramName, ValueFactory vf)
+&nbsp;			throws ClientHTTPException {
+<b class="nc">&nbsp;		String[] paramValues = request.getParameterValues(paramName);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return Protocol.decodeContexts(paramValues, vf);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+<b class="nc">&nbsp;					&quot;Invalid value for parameter &#39;&quot; + paramName + &quot;&#39;: &quot; + e.getMessage());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean parseBooleanParam(HttpServletRequest request, String paramName, boolean defaultValue) {
+<b class="nc">&nbsp;		String paramValue = request.getParameter(paramName);</b>
+<b class="nc">&nbsp;		if (paramValue == null) {</b>
+<b class="nc">&nbsp;			return defaultValue;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return Boolean.parseBoolean(paramValue);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static long parseLongParam(HttpServletRequest request, String paramName, long defaultValue)
+&nbsp;			throws ClientHTTPException {
+<b class="nc">&nbsp;		String paramValue = request.getParameter(paramName);</b>
+<b class="nc">&nbsp;		if (paramValue == null) {</b>
+<b class="nc">&nbsp;			return defaultValue;</b>
+&nbsp;		} else {
+&nbsp;			try {
+<b class="nc">&nbsp;				return Long.parseLong(paramValue);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+<b class="nc">&nbsp;						&quot;Invalid value for parameter &#39;&quot; + paramName + &quot;&#39;: &quot; + e.getMessage());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Logs all request parameters of the supplied request.
+&nbsp;	 */
+&nbsp;	public static void logRequestParameters(HttpServletRequest request) {
+<b class="nc">&nbsp;		Logger logger = LoggerFactory.getLogger(ProtocolUtil.class);</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+&nbsp;			@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;			Enumeration&lt;String&gt; paramNames = request.getParameterNames();</b>
+<b class="nc">&nbsp;			while (paramNames.hasMoreElements()) {</b>
+<b class="nc">&nbsp;				String name = paramNames.nextElement();</b>
+<b class="nc">&nbsp;				for (String value : request.getParameterValues(name)) {</b>
+<b class="nc">&nbsp;					logger.debug(&quot;{}=\&quot;{}\&quot;&quot;, name, value);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static &lt;FF extends FileFormat, S&gt; S getAcceptableService(HttpServletRequest request,
+&nbsp;			HttpServletResponse response, FileFormatServiceRegistry&lt;FF, S&gt; serviceRegistry) throws ClientHTTPException {
+&nbsp;		// Accept-parameter takes precedence over request headers
+<b class="nc">&nbsp;		String mimeType = request.getParameter(Protocol.ACCEPT_PARAM_NAME);</b>
+<b class="nc">&nbsp;		boolean hasAcceptParam = mimeType != null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (mimeType == null) {</b>
+&nbsp;			// Find an acceptable MIME type based on the request headers
+<b class="nc">&nbsp;			logAcceptableFormats(request);</b>
+&nbsp;
+<b class="nc">&nbsp;			Collection&lt;String&gt; mimeTypes = new LinkedHashSet&lt;&gt;(16);</b>
+&nbsp;			// Prefer the default mime types, explicitly before non-default
+<b class="nc">&nbsp;			for (FileFormat format : serviceRegistry.getKeys()) {</b>
+<b class="nc">&nbsp;				mimeTypes.add(format.getDefaultMIMEType());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			for (FileFormat format : serviceRegistry.getKeys()) {</b>
+<b class="nc">&nbsp;				mimeTypes.addAll(format.getMIMETypes());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			mimeType = HttpServerUtil.selectPreferredMIMEType(mimeTypes.iterator(), request);</b>
+&nbsp;
+<b class="nc">&nbsp;			response.setHeader(&quot;Vary&quot;, &quot;Accept&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (mimeType != null) {</b>
+<b class="nc">&nbsp;			Optional&lt;FF&gt; format = serviceRegistry.getFileFormatForMIMEType(mimeType);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (format.isPresent()) {</b>
+<b class="nc">&nbsp;				return serviceRegistry.get(format.get()).get();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hasAcceptParam) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.UNSUPPORTED_FILE_FORMAT, mimeType);</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+&nbsp;		} else {
+&nbsp;			// No acceptable format was found, send 406 as required by RFC 2616
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_NOT_ACCEPTABLE, &quot;No acceptable file format found.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the {@link Protocol#TIMEOUT_PARAM_NAME} parameter from the request and (if present) parses it into an
+&nbsp;	 * integer value.
+&nbsp;	 *
+&nbsp;	 * @param request the {@link HttpServletRequest} to read the parameter from
+&nbsp;	 * @return the value of the timeout parameter as an integer (representing the timeout time in seconds), or 0 if no
+&nbsp;	 *         timeout parameter is specified in the request.
+&nbsp;	 * @throws ClientHTTPException if the value of the timeout parameter is not a valid integer.
+&nbsp;	 */
+&nbsp;	public static int parseTimeoutParam(HttpServletRequest request) throws ClientHTTPException {
+<b class="nc">&nbsp;		final String timeoutParam = request.getParameter(Protocol.TIMEOUT_PARAM_NAME);</b>
+<b class="nc">&nbsp;		int maxExecutionTime = 0;</b>
+<b class="nc">&nbsp;		if (timeoutParam != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				maxExecutionTime = Integer.parseInt(timeoutParam);</b>
+<b class="nc">&nbsp;			} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Invalid timeout value: &quot; + timeoutParam);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return maxExecutionTime;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static void logAcceptableFormats(HttpServletRequest request) {
+<b class="nc">&nbsp;		Logger logger = LoggerFactory.getLogger(ProtocolUtil.class);</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			StringBuilder acceptable = new StringBuilder(64);</b>
+&nbsp;
+&nbsp;			@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;			Enumeration&lt;String&gt; acceptHeaders = request.getHeaders(&quot;Accept&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			while (acceptHeaders.hasMoreElements()) {</b>
+<b class="nc">&nbsp;				acceptable.append(acceptHeaders.nextElement());</b>
+&nbsp;
+<b class="nc">&nbsp;				if (acceptHeaders.hasMoreElements()) {</b>
+<b class="nc">&nbsp;					acceptable.append(&#39;,&#39;);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;Acceptable formats: &quot; + acceptable);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

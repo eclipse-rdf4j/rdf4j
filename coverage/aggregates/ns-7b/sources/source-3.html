@@ -1,0 +1,281 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BaseDeclProcessor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: BaseDeclProcessor (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BaseDeclProcessor</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (14/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    73.5%
+  </span>
+  <span class="absValue">
+    (25/34)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">BaseDeclProcessor$RelativeIRIResolver</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (6/8)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (14/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    73.8%
+  </span>
+  <span class="absValue">
+    (31/42)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBaseDecl;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteData;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRIFunc;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertData;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnparsedQuadDataBlock;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Resolves relative URIs in a query model using either an external base URI or using the base URI specified in the
+&nbsp; * query model itself. The former takes precedence over the latter.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; *
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+<b class="nc">&nbsp;public class BaseDeclProcessor {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Resolves relative URIs in the supplied query model using either the specified &lt;var&gt;externalBaseURI&lt;/var&gt; or, if
+&nbsp;	 * this parameter is &lt;var&gt;null&lt;/var&gt;, the base URI specified in the query model itself.
+&nbsp;	 *
+&nbsp;	 * @param qc              The query model to resolve relative URIs in.
+&nbsp;	 * @param externalBaseURI The external base URI to use for resolving relative URIs, or &lt;var&gt;null&lt;/var&gt; if the base
+&nbsp;	 *                        URI that is specified in the query model should be used.
+&nbsp;	 * @throws IllegalArgumentException If an external base URI is specified that is not an absolute URI.
+&nbsp;	 * @throws MalformedQueryException  If the base URI specified in the query model is not an absolute URI.
+&nbsp;	 */
+&nbsp;	public static void process(ASTOperationContainer qc, String externalBaseURI) throws MalformedQueryException {
+<b class="fc">&nbsp;		ParsedIRI parsedBaseURI = null;</b>
+&nbsp;
+&nbsp;		// Use the query model&#39;s own base URI, if available
+<b class="fc">&nbsp;		ASTBaseDecl baseDecl = qc.getBaseDecl();</b>
+<b class="fc">&nbsp;		if (baseDecl != null) {</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				parsedBaseURI = new ParsedIRI(baseDecl.getIRI());</b>
+<b class="nc">&nbsp;			} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="pc">&nbsp;			if (!parsedBaseURI.isAbsolute()) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(&quot;BASE IRI is not an absolute IRI: &quot; + externalBaseURI);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		} else if (externalBaseURI != null) {</b>
+&nbsp;			// Use external base URI if the query doesn&#39;t contain one itself
+&nbsp;			try {
+<b class="fc">&nbsp;				parsedBaseURI = new ParsedIRI(externalBaseURI);</b>
+<b class="nc">&nbsp;			} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="pc">&nbsp;			if (!parsedBaseURI.isAbsolute()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Supplied base URI is not an absolute IRI: &quot; + externalBaseURI);</b>
+&nbsp;			}
+&nbsp;		} else {
+&nbsp;			// FIXME: use the &quot;Default Base URI&quot;?
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (parsedBaseURI != null) {</b>
+<b class="fc">&nbsp;			ASTUnparsedQuadDataBlock dataBlock = null;</b>
+<b class="fc">&nbsp;			if (qc.getOperation() instanceof ASTInsertData) {</b>
+<b class="fc">&nbsp;				ASTInsertData insertData = (ASTInsertData) qc.getOperation();</b>
+<b class="fc">&nbsp;				dataBlock = insertData.jjtGetChild(ASTUnparsedQuadDataBlock.class);</b>
+&nbsp;
+<b class="fc">&nbsp;			} else if (qc.getOperation() instanceof ASTDeleteData) {</b>
+<b class="fc">&nbsp;				ASTDeleteData deleteData = (ASTDeleteData) qc.getOperation();</b>
+<b class="fc">&nbsp;				dataBlock = deleteData.jjtGetChild(ASTUnparsedQuadDataBlock.class);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (dataBlock != null) {</b>
+<b class="fc">&nbsp;				final String baseURIDeclaration = &quot;BASE &lt;&quot; + parsedBaseURI + &quot;&gt; \n&quot;;</b>
+<b class="fc">&nbsp;				dataBlock.setDataBlock(baseURIDeclaration + dataBlock.getDataBlock());</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				RelativeIRIResolver visitor = new RelativeIRIResolver(parsedBaseURI);</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					qc.jjtAccept(visitor, null);</b>
+<b class="nc">&nbsp;				} catch (VisitorException e) {</b>
+<b class="nc">&nbsp;					throw new MalformedQueryException(e);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class RelativeIRIResolver extends AbstractASTVisitor {
+&nbsp;
+&nbsp;		private final ParsedIRI parsedBaseURI;
+&nbsp;
+<b class="fc">&nbsp;		public RelativeIRIResolver(ParsedIRI parsedBaseURI) {</b>
+<b class="fc">&nbsp;			this.parsedBaseURI = parsedBaseURI;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTIRI node, Object data) throws VisitorException {
+<b class="fc">&nbsp;			node.setValue(parsedBaseURI.resolve(node.getValue()));</b>
+&nbsp;
+<b class="fc">&nbsp;			return super.visit(node, data);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTIRIFunc node, Object data) throws VisitorException {
+<b class="fc">&nbsp;			node.setBaseURI(parsedBaseURI.toString());</b>
+<b class="fc">&nbsp;			return super.visit(node, data);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTServiceGraphPattern node, Object data) throws VisitorException {
+<b class="nc">&nbsp;			node.setBaseURI(parsedBaseURI.toString());</b>
+<b class="nc">&nbsp;			return super.visit(node, data);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

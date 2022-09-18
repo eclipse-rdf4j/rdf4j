@@ -1,0 +1,226 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXQueueCursor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.concurrent</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXQueueCursor (org.eclipse.rdf4j.federated.evaluation.concurrent)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXQueueCursor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.concurrent;
+&nbsp;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.util.concurrent.ArrayBlockingQueue;
+&nbsp;import java.util.concurrent.BlockingQueue;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.impl.QueueCursor;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Specialized variants of {@link QueueCursor} which avoids converting any exception if it is already of
+&nbsp; * type{@link QueryEvaluationException}.
+&nbsp; *
+&nbsp; * @param &lt;T&gt;
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+<b class="nc">&nbsp;public class FedXQueueCursor&lt;T&gt; extends QueueCursor&lt;CloseableIteration&lt;T, QueryEvaluationException&gt;&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FedXQueueCursor.class);</b>
+&nbsp;
+&nbsp;	public static &lt;T&gt; FedXQueueCursor&lt;T&gt; create(int capacity, WeakReference&lt;?&gt; callerReference) {
+<b class="nc">&nbsp;		assert callerReference == null;</b>
+<b class="nc">&nbsp;		return create(capacity);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static &lt;T&gt; FedXQueueCursor&lt;T&gt; create(int capacity) {
+<b class="nc">&nbsp;		BlockingQueue&lt;CloseableIteration&lt;T, QueryEvaluationException&gt;&gt; queue = new ArrayBlockingQueue&lt;&gt;(capacity,</b>
+&nbsp;				false);
+<b class="nc">&nbsp;		return new FedXQueueCursor&lt;&gt;(queue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reference to the queue such that we can access it in {@link #handleClose()}. This is required to make sure that
+&nbsp;	 * we can close the non-consumed iterations from the queue. Note that the private queue of the super class is not
+&nbsp;	 * accessible.
+&nbsp;	 */
+&nbsp;	private final BlockingQueue&lt;CloseableIteration&lt;T, QueryEvaluationException&gt;&gt; queueRef;
+&nbsp;
+&nbsp;	private FedXQueueCursor(BlockingQueue&lt;CloseableIteration&lt;T, QueryEvaluationException&gt;&gt; queue) {
+<b class="nc">&nbsp;		super(queue);</b>
+<b class="nc">&nbsp;		this.queueRef = queue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected QueryEvaluationException convert(Exception e) {
+<b class="nc">&nbsp;		if (e instanceof QueryEvaluationException) {</b>
+<b class="nc">&nbsp;			return (QueryEvaluationException) e;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return super.convert(e);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleClose() throws QueryEvaluationException {
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Throwable throwable = null;</b>
+&nbsp;
+&nbsp;			// consume all remaining elements from the queue and make sure to close them
+&nbsp;			// Note: unfortunately we cannot access &quot;afterLast&quot; of the super class
+&nbsp;			// =&gt; thus have to make a check whether the polled object is actually a
+&nbsp;			// closable iteration
+<b class="nc">&nbsp;			while (!queueRef.isEmpty()) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					Object take = queueRef.poll();</b>
+<b class="nc">&nbsp;					if (take instanceof CloseableIteration) {</b>
+<b class="nc">&nbsp;						((CloseableIteration&lt;?, ?&gt;) take).close();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (Throwable t) {</b>
+<b class="nc">&nbsp;					if (t instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;						Thread.currentThread().interrupt();</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (throwable != null) {</b>
+<b class="nc">&nbsp;						t.addSuppressed(throwable);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					throwable = t;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;			done(); // re-add after-last</b>
+&nbsp;
+<b class="nc">&nbsp;			if (throwable != null) {</b>
+<b class="nc">&nbsp;				if (throwable instanceof RuntimeException) {</b>
+<b class="nc">&nbsp;					throw ((RuntimeException) throwable);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (throwable instanceof Error) {</b>
+<b class="nc">&nbsp;					throw ((Error) throwable);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throw new SailException(throwable);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			super.handleClose();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

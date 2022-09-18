@@ -1,0 +1,641 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GenericPlanNode</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.explanation</a>
+</div>
+
+<h1>Coverage Summary for Class: GenericPlanNode (org.eclipse.rdf4j.query.explanation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GenericPlanNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/110)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/206)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.explanation;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.apache.commons.text.StringEscapeUtils;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;
+&nbsp;import com.fasterxml.jackson.annotation.JsonIgnore;
+&nbsp;
+&nbsp;/**
+&nbsp; * This is an experimental feature. The interface may be changed, moved or potentially removed in a future release.
+&nbsp; *
+&nbsp; * The interface is used to implement query explanations (query plan)
+&nbsp; *
+&nbsp; * @since 3.2.0
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;public class GenericPlanNode {
+&nbsp;
+&nbsp;	public static final String UNKNOWN = &quot;UNKNOWN&quot;;
+&nbsp;
+&nbsp;	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+<b class="nc">&nbsp;	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;);</b>
+<b class="nc">&nbsp;	private final static AtomicLong uniqueIdSuffix = new AtomicLong();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final static String newLine = System.getProperty(&quot;line.separator&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private final String id = &quot;UUID_&quot; + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet();</b>
+&nbsp;
+&nbsp;	// The name of the node, eg. &quot;Join&quot; or &quot;Join (HashJoinIteration)&quot;.
+&nbsp;	private String type;
+&nbsp;
+&nbsp;	// Retrieving the explanation timed out while the query was executed.
+&nbsp;	private Boolean timedOut;
+&nbsp;
+&nbsp;	// The cost estimate that the query planner calculated for this node. Value has no meaning outside of this
+&nbsp;	// explanation and is only used to compare and order the nodes in the query plan.
+&nbsp;	private Double costEstimate;
+&nbsp;
+&nbsp;	// The number of results that this node was estimated to produce.
+&nbsp;	private Double resultSizeEstimate;
+&nbsp;
+&nbsp;	// The actual number of results that this node produced while the query was executed.
+&nbsp;	private Long resultSizeActual;
+&nbsp;
+&nbsp;	// The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
+&nbsp;	// selfTimeActual is the amount of time that this node used by itself (eg. totalTimeActual - sum of
+&nbsp;	// plans[0..n].totalTimeActual)
+&nbsp;	private Double totalTimeActual;
+&nbsp;
+&nbsp;	// true if this node introduces a new scope
+&nbsp;	private Boolean newScope;
+&nbsp;
+&nbsp;	// the name of the algorithm used as an annotation to the node type
+&nbsp;	private String algorithm;
+&nbsp;
+&nbsp;	// Child plans for this node
+<b class="nc">&nbsp;	private List&lt;GenericPlanNode&gt; plans = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	public GenericPlanNode() {</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public GenericPlanNode(String type) {</b>
+<b class="nc">&nbsp;		this.type = type;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getType() {
+<b class="nc">&nbsp;		return type;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setType(String type) {
+<b class="nc">&nbsp;		this.type = type;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;GenericPlanNode&gt; getPlans() {
+<b class="nc">&nbsp;		return plans.isEmpty() ? null : plans; // for simplified json</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPlans(List&lt;GenericPlanNode&gt; plans) {
+<b class="nc">&nbsp;		this.plans = plans;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addPlans(GenericPlanNode... children) {
+<b class="nc">&nbsp;		this.plans.addAll(Arrays.asList(children));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The cost estimate that the query planner calculated for this node. Value has no meaning outside of this
+&nbsp;	 * explanation and is only used to compare and order the nodes in the query plan.
+&nbsp;	 *
+&nbsp;	 * @return a cost estimate as a double value
+&nbsp;	 */
+&nbsp;	public Double getCostEstimate() {
+<b class="nc">&nbsp;		return costEstimate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setCostEstimate(Double costEstimate) {
+<b class="nc">&nbsp;		if (costEstimate &gt;= 0) {</b>
+<b class="nc">&nbsp;			this.costEstimate = costEstimate;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The number of results that this node was estimated to produce.
+&nbsp;	 *
+&nbsp;	 * @return result size estimate
+&nbsp;	 */
+&nbsp;	public Double getResultSizeEstimate() {
+<b class="nc">&nbsp;		return resultSizeEstimate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setResultSizeEstimate(Double resultSizeEstimate) {
+<b class="nc">&nbsp;		if (resultSizeEstimate &gt;= 0) {</b>
+<b class="nc">&nbsp;			this.resultSizeEstimate = resultSizeEstimate;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The actual number of results that this node produced while the query was executed.
+&nbsp;	 *
+&nbsp;	 * @return number of results that this query produced
+&nbsp;	 */
+&nbsp;	public Long getResultSizeActual() {
+<b class="nc">&nbsp;		return resultSizeActual;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setResultSizeActual(Long resultSizeActual) {
+<b class="nc">&nbsp;		if (resultSizeActual &gt;= 0) {</b>
+<b class="nc">&nbsp;			this.resultSizeActual = resultSizeActual;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
+&nbsp;	 *
+&nbsp;	 * @return time in milliseconds that was used to execute the query
+&nbsp;	 */
+&nbsp;	public Double getTotalTimeActual() {
+&nbsp;		// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child plans
+&nbsp;		// (recursively). We need this value to calculate the selfTimeActual.
+<b class="nc">&nbsp;		if (totalTimeActual == null) {</b>
+<b class="nc">&nbsp;			double sum = plans.stream()</b>
+<b class="nc">&nbsp;					.map(GenericPlanNode::getTotalTimeActual)</b>
+<b class="nc">&nbsp;					.filter(Objects::nonNull)</b>
+<b class="nc">&nbsp;					.mapToDouble(d -&gt; d)</b>
+<b class="nc">&nbsp;					.sum();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (sum &gt; 0) {</b>
+<b class="nc">&nbsp;				return sum;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return totalTimeActual;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setTotalTimeActual(Double totalTimeActual) {
+<b class="nc">&nbsp;		if (totalTimeActual &gt;= 0) {</b>
+<b class="nc">&nbsp;			this.totalTimeActual = totalTimeActual;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setTimedOut(Boolean timedOut) {
+<b class="nc">&nbsp;		this.timedOut = timedOut;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Boolean getTimedOut() {
+<b class="nc">&nbsp;		return timedOut;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The time that this node used by itself (eg. totalTimeActual - sum of plans[0..n].totalTimeActual)
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public Double getSelfTimeActual() {
+&nbsp;
+<b class="nc">&nbsp;		if (totalTimeActual == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		double childTime = plans</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.map(GenericPlanNode::getTotalTimeActual)</b>
+<b class="nc">&nbsp;				.filter(Objects::nonNull)</b>
+<b class="nc">&nbsp;				.mapToDouble(t -&gt; t)</b>
+<b class="nc">&nbsp;				.sum();</b>
+&nbsp;
+<b class="nc">&nbsp;		return totalTimeActual - childTime;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if this node introduces a new scope
+&nbsp;	 */
+&nbsp;	public Boolean isNewScope() {
+<b class="nc">&nbsp;		return newScope;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setNewScope(boolean newScope) {
+<b class="nc">&nbsp;		if (newScope) {</b>
+<b class="nc">&nbsp;			this.newScope = true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.newScope = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Join nodes can use various algorithms for joining data.
+&nbsp;	 *
+&nbsp;	 * @return the name of the algorithm.
+&nbsp;	 */
+&nbsp;	public String getAlgorithm() {
+<b class="nc">&nbsp;		return algorithm;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setAlgorithm(String algorithm) {
+<b class="nc">&nbsp;		this.algorithm = algorithm;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static final int prettyBoxDrawingType = 0;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Human readable string. Do not attempt to parse this.
+&nbsp;	 *
+&nbsp;	 * @return an unparsable string
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return getHumanReadable(0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param prettyBoxDrawingType for deciding if we should use single or double walled character for drawing the
+&nbsp;	 *                             connectors between nodes in the query plan. Eg. ├ or ╠ and ─ o
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private String getHumanReadable(int prettyBoxDrawingType) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (timedOut != null &amp;&amp; timedOut) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;Timed out while retrieving explanation! Explanation may be incomplete!&quot;).append(newLine);</b>
+<b class="nc">&nbsp;			sb.append(&quot;You can change the timeout by setting .setMaxExecutionTime(...) on your query.&quot;)</b>
+<b class="nc">&nbsp;					.append(newLine)</b>
+<b class="nc">&nbsp;					.append(newLine);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		sb.append(type);</b>
+<b class="nc">&nbsp;		if (newScope != null &amp;&amp; newScope) {</b>
+<b class="nc">&nbsp;			sb.append(&quot; (new scope)&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (algorithm != null) {</b>
+<b class="nc">&nbsp;			sb.append(&quot; (&quot;).append(algorithm).append(&quot;)&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		appendCostAnnotation(sb);</b>
+<b class="nc">&nbsp;		sb.append(newLine);</b>
+&nbsp;
+&nbsp;		// we use box-drawing characters to &quot;group&quot; nodes in the plan visually when there are exactly two child plans
+&nbsp;		// and
+&nbsp;		// the child plans contain child plans
+<b class="nc">&nbsp;		if (plans.size() == 2 &amp;&amp; plans.stream().anyMatch(p -&gt; !p.plans.isEmpty())) {</b>
+&nbsp;
+&nbsp;			String start;
+&nbsp;			String horizontal;
+&nbsp;			String vertical;
+&nbsp;			String end;
+&nbsp;
+<b class="nc">&nbsp;			if (prettyBoxDrawingType % 2 == 0) {</b>
+<b class="nc">&nbsp;				start = &quot;╠&quot;;</b>
+<b class="nc">&nbsp;				horizontal = &quot;══&quot;;</b>
+<b class="nc">&nbsp;				vertical = &quot;║&quot;;</b>
+<b class="nc">&nbsp;				end = &quot;╚&quot;;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				start = &quot;├&quot;;</b>
+<b class="nc">&nbsp;				horizontal = &quot;──&quot;;</b>
+<b class="nc">&nbsp;				vertical = &quot;│&quot;;</b>
+<b class="nc">&nbsp;				end = &quot;└&quot;;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			String left = plans.get(0).getHumanReadable(prettyBoxDrawingType + 1);</b>
+<b class="nc">&nbsp;			String right = plans.get(1).getHumanReadable(prettyBoxDrawingType + 1);</b>
+&nbsp;			{
+<b class="nc">&nbsp;				String[] split = left.split(newLine);</b>
+<b class="nc">&nbsp;				sb.append(start).append(horizontal).append(split[0]).append(newLine);</b>
+<b class="nc">&nbsp;				for (int i = 1; i &lt; split.length; i++) {</b>
+<b class="nc">&nbsp;					sb.append(vertical).append(&quot;  &quot;).append(split[i]).append(newLine);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			{
+<b class="nc">&nbsp;				String[] split = right.split(newLine);</b>
+<b class="nc">&nbsp;				sb.append(end).append(horizontal).append(split[0]).append(newLine);</b>
+<b class="nc">&nbsp;				for (int i = 1; i &lt; split.length; i++) {</b>
+<b class="nc">&nbsp;					sb.append(&quot;   &quot;).append(split[i]).append(newLine);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			plans.forEach(</b>
+<b class="nc">&nbsp;					child -&gt; sb.append(Arrays.stream(child.getHumanReadable(prettyBoxDrawingType + 1).split(newLine))</b>
+<b class="nc">&nbsp;							.map(c -&gt; &quot;   &quot; + c)</b>
+<b class="nc">&nbsp;							.reduce((a, b) -&gt; a + newLine + b)</b>
+<b class="nc">&nbsp;							.orElse(&quot;&quot;) + newLine));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
+&nbsp;	 */
+&nbsp;	static private String toHumanReadableNumber(Double number) {
+&nbsp;		String humanReadbleString;
+<b class="nc">&nbsp;		if (number == null) {</b>
+<b class="nc">&nbsp;			humanReadbleString = UNKNOWN;</b>
+<b class="nc">&nbsp;		} else if (number == Double.POSITIVE_INFINITY) {</b>
+<b class="nc">&nbsp;			humanReadbleString = &quot;∞&quot;;</b>
+<b class="nc">&nbsp;		} else if (number &gt; 1_000_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(number / 100_000) / 10.0 + &quot;M&quot;;</b>
+<b class="nc">&nbsp;		} else if (number &gt; 1_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(number / 100) / 10.0 + &quot;K&quot;;</b>
+<b class="nc">&nbsp;		} else if (number &gt;= 0) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(number) + &quot;&quot;;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			humanReadbleString = UNKNOWN;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return humanReadbleString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
+&nbsp;	 */
+&nbsp;	static private String toHumanReadableNumber(Long number) {
+&nbsp;		String humanReadbleString;
+<b class="nc">&nbsp;		if (number == null) {</b>
+<b class="nc">&nbsp;			humanReadbleString = UNKNOWN;</b>
+<b class="nc">&nbsp;		} else if (number == Double.POSITIVE_INFINITY) {</b>
+<b class="nc">&nbsp;			humanReadbleString = &quot;∞&quot;;</b>
+<b class="nc">&nbsp;		} else if (number &gt; 1_000_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = number / 100_000 / 10.0 + &quot;M&quot;;</b>
+<b class="nc">&nbsp;		} else if (number &gt; 1_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = number / 100 / 10.0 + &quot;K&quot;;</b>
+<b class="nc">&nbsp;		} else if (number &gt;= 0) {</b>
+<b class="nc">&nbsp;			humanReadbleString = number + &quot;&quot;;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			humanReadbleString = UNKNOWN;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return humanReadbleString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return Human readable time.
+&nbsp;	 */
+&nbsp;	static private String toHumanReadableTime(Double millis) {
+&nbsp;		String humanReadbleString;
+&nbsp;
+<b class="nc">&nbsp;		if (millis == null) {</b>
+<b class="nc">&nbsp;			humanReadbleString = UNKNOWN;</b>
+<b class="nc">&nbsp;		} else if (millis &gt; 1_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(millis / 100) / 10.0 + &quot;s&quot;;</b>
+<b class="nc">&nbsp;		} else if (millis &gt;= 100) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(millis) + &quot;ms&quot;;</b>
+<b class="nc">&nbsp;		} else if (millis &gt;= 10) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(millis * 10) / 10.0 + &quot;ms&quot;;</b>
+<b class="nc">&nbsp;		} else if (millis &gt;= 1) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(millis * 100) / 100.0 + &quot;ms&quot;;</b>
+<b class="nc">&nbsp;		} else if (millis &gt;= 0) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(millis * 1000) / 1000.0 + &quot;ms&quot;;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			humanReadbleString = UNKNOWN;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return humanReadbleString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void appendCostAnnotation(StringBuilder sb) {
+<b class="nc">&nbsp;		String costs = Stream.of(</b>
+<b class="nc">&nbsp;				&quot;costEstimate=&quot; + toHumanReadableNumber(getCostEstimate()),</b>
+<b class="nc">&nbsp;				&quot;resultSizeEstimate=&quot; + toHumanReadableNumber(getResultSizeEstimate()),</b>
+<b class="nc">&nbsp;				&quot;resultSizeActual=&quot; + toHumanReadableNumber(getResultSizeActual()),</b>
+<b class="nc">&nbsp;				&quot;totalTimeActual=&quot; + toHumanReadableTime(getTotalTimeActual()),</b>
+<b class="nc">&nbsp;				&quot;selfTimeActual=&quot; + toHumanReadableTime(getSelfTimeActual()))</b>
+<b class="nc">&nbsp;				.filter(s -&gt; !s.endsWith(UNKNOWN)) // simple but hacky way of removing essentially null values</b>
+<b class="nc">&nbsp;				.reduce((a, b) -&gt; a + &quot;, &quot; + b)</b>
+<b class="nc">&nbsp;				.orElse(&quot;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!costs.isEmpty()) {</b>
+<b class="nc">&nbsp;			sb.append(&quot; (&quot;).append(costs).append(&quot;)&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public String toDot() {
+&nbsp;
+<b class="nc">&nbsp;		return toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static double getMaxTotalTime(GenericPlanNode genericPlanNode) {
+<b class="nc">&nbsp;		return Math.max(genericPlanNode.getTotalTimeActual() != null ? genericPlanNode.getTotalTimeActual() : 0,</b>
+<b class="nc">&nbsp;				genericPlanNode.plans.stream().mapToDouble(GenericPlanNode::getMaxTotalTime).max().orElse(0));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static double getMaxSelfTime(GenericPlanNode genericPlanNode) {
+<b class="nc">&nbsp;		return Math.max(genericPlanNode.getSelfTimeActual() != null ? genericPlanNode.getSelfTimeActual() : 0,</b>
+<b class="nc">&nbsp;				genericPlanNode.plans.stream().mapToDouble(GenericPlanNode::getMaxSelfTime).max().orElse(0));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static double getMaxResultSizeActual(GenericPlanNode genericPlanNode) {
+<b class="nc">&nbsp;		return Math.max(genericPlanNode.getResultSizeActual() != null ? genericPlanNode.getResultSizeActual() : 0,</b>
+<b class="nc">&nbsp;				genericPlanNode.plans.stream().mapToDouble(GenericPlanNode::getMaxResultSizeActual).max().orElse(0));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String toDotInternal(double maxResultSizeActual, double maxTotalTime, double maxSelfTime) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		sb.append(&quot;   &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (newScope != null &amp;&amp; newScope) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;subgraph cluster_&quot;)</b>
+<b class="nc">&nbsp;					.append(getID())</b>
+<b class="nc">&nbsp;					.append(&quot; {&quot;)</b>
+<b class="nc">&nbsp;					.append(newLine)</b>
+<b class="nc">&nbsp;					.append(&quot;   color=grey&quot;)</b>
+<b class="nc">&nbsp;					.append(newLine);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String resultSizeActualColor = getProportionalRedColor(maxResultSizeActual, getResultSizeActual());</b>
+<b class="nc">&nbsp;		String totalTimeColor = getProportionalRedColor(maxTotalTime, getTotalTimeActual());</b>
+<b class="nc">&nbsp;		String selfTimeColor = getProportionalRedColor(maxSelfTime, getSelfTimeActual());</b>
+&nbsp;
+<b class="nc">&nbsp;		sb</b>
+<b class="nc">&nbsp;				.append(getID())</b>
+<b class="nc">&nbsp;				.append(&quot; [label=&quot;)</b>
+<b class="nc">&nbsp;				.append(&quot;&lt;&lt;table BORDER=\&quot;0\&quot; CELLBORDER=\&quot;1\&quot; CELLSPACING=\&quot;0\&quot; CELLPADDING=\&quot;3\&quot; &gt;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(Stream.of(</b>
+<b class="nc">&nbsp;				&quot;&lt;tr&gt;&lt;td COLSPAN=\&quot;2\&quot; BGCOLOR=\&quot;&quot; + totalTimeColor + &quot;\&quot;&gt;&lt;U&gt;&quot; + StringEscapeUtils.escapeHtml4(type)</b>
+&nbsp;						+ &quot;&lt;/U&gt;&lt;/td&gt;&lt;/tr&gt;&quot;,
+<b class="nc">&nbsp;				&quot;&lt;tr&gt;&lt;td&gt;Algorithm&lt;/td&gt;&lt;td&gt;&quot; + (algorithm != null ? algorithm : UNKNOWN) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;,</b>
+<b class="nc">&nbsp;				&quot;&lt;tr&gt;&lt;td&gt;&lt;B&gt;New scope&lt;/B&gt;&lt;/td&gt;&lt;td&gt;&quot; + (newScope != null &amp;&amp; newScope ? &quot;&lt;B&gt;true&lt;/B&gt;&quot; : UNKNOWN)</b>
+&nbsp;						+ &quot;&lt;/td&gt;&lt;/tr&gt;&quot;,
+<b class="nc">&nbsp;				&quot;&lt;tr&gt;&lt;td&gt;Cost estimate&lt;/td&gt;&lt;td&gt;&quot; + toHumanReadableNumber(getCostEstimate()) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;,</b>
+<b class="nc">&nbsp;				&quot;&lt;tr&gt;&lt;td&gt;Result size estimate&lt;/td&gt;&lt;td&gt;&quot; + toHumanReadableNumber(getResultSizeEstimate()) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;,</b>
+<b class="nc">&nbsp;				&quot;&lt;tr&gt;&lt;td &gt;Result size actual&lt;/td&gt;&lt;td&gt;&quot; + toHumanReadableNumber(getResultSizeActual()) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;,</b>
+&nbsp;//			&quot;&lt;tr&gt;&lt;td &gt;Result size actual&lt;/td&gt;&lt;td BGCOLOR=\&quot;&quot; + resultSizeActualColor + &quot;\&quot;&gt;&quot; + toHumanReadableNumber(getResultSizeActual()) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;,
+&nbsp;				&quot;&lt;tr&gt;&lt;td &gt;Total time actual&lt;/td&gt;&lt;td BGCOLOR=\&quot;&quot; + totalTimeColor + &quot;\&quot;&gt;&quot;
+<b class="nc">&nbsp;						+ toHumanReadableTime(getTotalTimeActual()) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;,</b>
+&nbsp;				&quot;&lt;tr&gt;&lt;td &gt;Self time actual&lt;/td&gt;&lt;td BGCOLOR=\&quot;&quot; + selfTimeColor + &quot;\&quot;&gt;&quot;
+<b class="nc">&nbsp;						+ toHumanReadableTime(getSelfTimeActual()) + &quot;&lt;/td&gt;&lt;/tr&gt;&quot;)</b>
+<b class="nc">&nbsp;				.filter(s -&gt; !s.contains(UNKNOWN)) // simple but hacky way of removing essentially null values</b>
+<b class="nc">&nbsp;				.reduce((a, b) -&gt; a + &quot; &quot; + b)</b>
+<b class="nc">&nbsp;				.orElse(&quot;&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;&lt;/table&gt;&gt;&quot;).append(&quot; shape=plaintext];&quot;).append(newLine);</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; plans.size(); i++) {</b>
+<b class="nc">&nbsp;			GenericPlanNode p = plans.get(i);</b>
+<b class="nc">&nbsp;			String linkLabel = &quot;index &quot; + i;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (plans.size() == 2) {</b>
+<b class="nc">&nbsp;				linkLabel = i == 0 ? &quot;left&quot; : &quot;right&quot;;</b>
+<b class="nc">&nbsp;			} else if (plans.size() == 1) {</b>
+<b class="nc">&nbsp;				linkLabel = &quot;&quot;;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			sb.append(&quot;   &quot;)</b>
+<b class="nc">&nbsp;					.append(getID())</b>
+<b class="nc">&nbsp;					.append(&quot; -&gt; &quot;)</b>
+<b class="nc">&nbsp;					.append(p.getID())</b>
+<b class="nc">&nbsp;					.append(&quot; [label=\&quot;&quot;)</b>
+<b class="nc">&nbsp;					.append(linkLabel)</b>
+<b class="nc">&nbsp;					.append(&quot;\&quot;]&quot;)</b>
+<b class="nc">&nbsp;					.append(&quot; ;&quot;)</b>
+<b class="nc">&nbsp;					.append(newLine);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		plans.forEach(p -&gt; sb.append(p.toDotInternal(maxResultSizeActual, maxTotalTime, maxSelfTime)));</b>
+&nbsp;
+<b class="nc">&nbsp;		if (newScope != null &amp;&amp; newScope) {</b>
+<b class="nc">&nbsp;			sb.append(newLine).append(&quot;}&quot;).append(newLine);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getProportionalRedColor(Double max, Double value) {
+<b class="nc">&nbsp;		String mainColor = &quot;#FFFFFF&quot;;</b>
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			double colorInt = Math.abs(256 / max * value - 256);</b>
+<b class="nc">&nbsp;			String hexColor = String.format(&quot;%02X&quot;, (0xFFFFFF &amp; ((int) Math.floor(colorInt))));</b>
+&nbsp;
+<b class="nc">&nbsp;			mainColor = &quot;#FF&quot; + hexColor + hexColor;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return mainColor;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getProportionalRedColor(Double max, Long value) {
+<b class="nc">&nbsp;		if (value != null) {</b>
+<b class="nc">&nbsp;			return getProportionalRedColor(max, value + 0.0);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return &quot;#FFFFFF&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@JsonIgnore
+&nbsp;	public String getID() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

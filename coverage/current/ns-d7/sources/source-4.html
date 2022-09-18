@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > NativeValue</title>
+  <title>Coverage Report > NativeResource</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.model</a>
 </div>
 
-<h1>Coverage Summary for Class: NativeValue (org.eclipse.rdf4j.sail.nativerdf.model)</h1>
+<h1>Coverage Summary for Class: NativeResource (org.eclipse.rdf4j.sail.nativerdf.model)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">NativeValue</td>
+  <td class="name">NativeResource</td>
 </tr>
 
 </table>
@@ -50,32 +50,9 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail.nativerdf.model;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.model.Value;
-&nbsp;import org.eclipse.rdf4j.sail.nativerdf.ValueStoreRevision;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
 &nbsp;
-&nbsp;public interface NativeValue extends Value {
-&nbsp;
-&nbsp;	int UNKNOWN_ID = -1;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Sets the ID that is used for this value in a specific revision of the value store.
-&nbsp;	 */
-&nbsp;	void setInternalID(int id, ValueStoreRevision revision);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Gets the ID that is used in the native store for this Value.
-&nbsp;	 *
-&nbsp;	 * @return The value&#39;s ID, or {@link #UNKNOWN_ID} if not yet set.
-&nbsp;	 */
-&nbsp;	int getInternalID();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Gets the revision of the value store that created this value. The value&#39;s internal ID is only valid when it&#39;s
-&nbsp;	 * value store revision is equal to the value store&#39;s current revision.
-&nbsp;	 *
-&nbsp;	 * @return The revision of the value store that created this value at the time it last set the value&#39;s internal ID.
-&nbsp;	 */
-&nbsp;	ValueStoreRevision getValueStoreRevision();
+&nbsp;public interface NativeResource extends NativeValue, Resource {
 &nbsp;}
 </code>
 </pre>
@@ -100,7 +77,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

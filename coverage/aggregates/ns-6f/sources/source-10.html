@@ -1,0 +1,584 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > OrderIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: OrderIterator (org.eclipse.rdf4j.query.algebra.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">OrderIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.5%
+  </span>
+  <span class="absValue">
+    (6/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.1%
+  </span>
+  <span class="absValue">
+    (15/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    71.4%
+  </span>
+  <span class="absValue">
+    (50/70)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">OrderIterator$SerializedQueue</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">OrderIterator$SerializedQueue$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">OrderIterator$SortedIterators</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    95%
+  </span>
+  <span class="absValue">
+    (19/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    93.5%
+  </span>
+  <span class="absValue">
+    (29/31)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    37%
+  </span>
+  <span class="absValue">
+    (10/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    47.2%
+  </span>
+  <span class="absValue">
+    (34/72)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    55.6%
+  </span>
+  <span class="absValue">
+    (79/142)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.ObjectInputStream;
+&nbsp;import java.io.ObjectOutputStream;
+&nbsp;import java.io.Serializable;
+&nbsp;import java.util.AbstractQueue;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map.Entry;
+&nbsp;import java.util.TreeMap;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DelayedIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LimitIteration;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Sorts the input and optionally applies limit and distinct.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class OrderIterator extends DelayedIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	private static class SerializedQueue&lt;E extends Serializable&gt; extends AbstractQueue&lt;E&gt; implements Closeable {
+&nbsp;
+&nbsp;		private final File file;
+&nbsp;
+&nbsp;		private final ObjectOutputStream output;
+&nbsp;
+&nbsp;		private ObjectInputStream input;
+&nbsp;
+&nbsp;		private int size;
+&nbsp;
+&nbsp;		private E next;
+&nbsp;
+&nbsp;		private E last;
+&nbsp;
+&nbsp;		public SerializedQueue(String prefix) throws IOException {
+<b class="nc">&nbsp;			this(prefix, null);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public SerializedQueue(String prefix, File directory) throws IOException {</b>
+<b class="nc">&nbsp;			file = File.createTempFile(prefix, &quot;&quot;, directory);</b>
+<b class="nc">&nbsp;			output = new ObjectOutputStream(new FileOutputStream(file));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public E peekLast() {
+<b class="nc">&nbsp;			return last;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean offer(E e) {
+<b class="nc">&nbsp;			if (output == null) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;			try {
+<b class="nc">&nbsp;				output.writeObject(e);</b>
+<b class="nc">&nbsp;				last = e;</b>
+<b class="nc">&nbsp;				size++;</b>
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} catch (IOException exc) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;		public E poll() {
+&nbsp;			try {
+<b class="nc">&nbsp;				if (next != null) {</b>
+<b class="nc">&nbsp;					return next;</b>
+<b class="nc">&nbsp;				} else if (input == null) {</b>
+<b class="nc">&nbsp;					output.close();</b>
+<b class="nc">&nbsp;					input = new ObjectInputStream(new FileInputStream(file));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				size--;</b>
+<b class="nc">&nbsp;				return (E) input.readObject();</b>
+<b class="nc">&nbsp;			} catch (IOException | ClassNotFoundException exc) {</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				next = null;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public E peek() {
+<b class="nc">&nbsp;			if (size &lt;= 0) {</b>
+<b class="nc">&nbsp;				return null;</b>
+<b class="nc">&nbsp;			} else if (next != null) {</b>
+<b class="nc">&nbsp;				return next;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return next = poll();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Iterator&lt;E&gt; iterator() {
+<b class="nc">&nbsp;			return new Iterator&lt;E&gt;() {</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public boolean hasNext() {
+<b class="nc">&nbsp;					return peek() != null;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public E next() {
+<b class="nc">&nbsp;					return poll();</b>
+&nbsp;				}
+&nbsp;			};
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int size() {
+<b class="nc">&nbsp;			if (next == null) {</b>
+<b class="nc">&nbsp;				return size;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return size + 1;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() throws IOException {
+<b class="nc">&nbsp;			if (output != null) {</b>
+<b class="nc">&nbsp;				output.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (input != null) {</b>
+<b class="nc">&nbsp;				input.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			file.delete();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class SortedIterators&lt;E&gt; implements Iterator&lt;E&gt; {
+&nbsp;
+&nbsp;		private final List&lt;Iterator&lt;E&gt;&gt; iterators;
+&nbsp;
+&nbsp;		private final TreeMap&lt;E, List&lt;Integer&gt;&gt; head;
+&nbsp;
+&nbsp;		private final boolean distinct;
+&nbsp;
+&nbsp;		private E next;
+&nbsp;
+<b class="fc">&nbsp;		public SortedIterators(Comparator&lt;E&gt; comparator, boolean distinct, List&lt;Iterator&lt;E&gt;&gt; iterators) {</b>
+<b class="fc">&nbsp;			this.iterators = iterators;</b>
+<b class="fc">&nbsp;			this.distinct = distinct;</b>
+<b class="fc">&nbsp;			head = new TreeMap&lt;&gt;(comparator);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() {
+<b class="fc">&nbsp;			if (next != null) {</b>
+<b class="fc">&nbsp;				return true;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				next = next();</b>
+<b class="fc">&nbsp;				return next != null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public E next() {
+<b class="fc">&nbsp;			if (next != null) {</b>
+&nbsp;				try {
+<b class="fc">&nbsp;					return next;</b>
+&nbsp;				} finally {
+<b class="fc">&nbsp;					next = null;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (head.isEmpty()) {</b>
+<b class="fc">&nbsp;				for (int i = 0, n = iterators.size(); i &lt; n; i++) {</b>
+<b class="fc">&nbsp;					advance(i);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;			if (head.isEmpty()) {</b>
+<b class="fc">&nbsp;				return null;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				Entry&lt;E, List&lt;Integer&gt;&gt; e = head.firstEntry();</b>
+<b class="fc">&nbsp;				advance(e.getValue().remove(0));</b>
+<b class="fc">&nbsp;				if (e.getValue().isEmpty()) {</b>
+<b class="fc">&nbsp;					head.remove(e.getKey());</b>
+&nbsp;				}
+<b class="fc">&nbsp;				return e.getKey();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void advance(int i) {
+<b class="fc">&nbsp;			while (iterators.get(i).hasNext()) {</b>
+<b class="fc">&nbsp;				E key = iterators.get(i).next();</b>
+<b class="fc">&nbsp;				if (!head.containsKey(key)) {</b>
+<b class="fc">&nbsp;					head.put(key, new LinkedList&lt;&gt;(List.of(i)));</b>
+<b class="fc">&nbsp;					break;</b>
+<b class="pc">&nbsp;				} else if (!distinct) {</b>
+<b class="fc">&nbsp;					head.get(key).add(i);</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter;
+&nbsp;
+&nbsp;	private final Comparator&lt;BindingSet&gt; comparator;
+&nbsp;
+&nbsp;	private final long limit;
+&nbsp;
+&nbsp;	private final boolean distinct;
+&nbsp;
+<b class="fc">&nbsp;	private final List&lt;SerializedQueue&lt;BindingSet&gt;&gt; serialized = new LinkedList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Number of items cached before internal collection is synced to disk. If set to 0, no disk-syncing is done and all
+&nbsp;	 * internal caching is kept in memory.
+&nbsp;	 */
+&nbsp;	private final long iterationSyncThreshold;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public OrderIterator(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+&nbsp;			Comparator&lt;BindingSet&gt; comparator) {
+<b class="nc">&nbsp;		this(iter, comparator, Long.MAX_VALUE, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public OrderIterator(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+&nbsp;			Comparator&lt;BindingSet&gt; comparator, long limit, boolean distinct) {
+<b class="nc">&nbsp;		this(iter, comparator, limit, distinct, Integer.MAX_VALUE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public OrderIterator(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter,
+<b class="fc">&nbsp;			Comparator&lt;BindingSet&gt; comparator, long limit, boolean distinct, long iterationSyncThreshold) {</b>
+<b class="fc">&nbsp;		this.iter = iter;</b>
+<b class="fc">&nbsp;		this.comparator = comparator;</b>
+<b class="fc">&nbsp;		this.limit = limit;</b>
+<b class="fc">&nbsp;		this.distinct = distinct;</b>
+<b class="pc">&nbsp;		this.iterationSyncThreshold = iterationSyncThreshold &gt; 0 ? iterationSyncThreshold : Integer.MAX_VALUE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Iteration&lt;BindingSet, QueryEvaluationException&gt; createIteration() throws QueryEvaluationException {
+<b class="fc">&nbsp;		BindingSet threshold = null;</b>
+<b class="fc">&nbsp;		List&lt;BindingSet&gt; list = new LinkedList&lt;&gt;();</b>
+<b class="fc">&nbsp;		int limit2 = limit &gt;= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;</b>
+<b class="fc">&nbsp;		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="pc">&nbsp;				if (list.size() &gt;= syncThreshold &amp;&amp; list.size() &lt; limit) {</b>
+<b class="nc">&nbsp;					SerializedQueue&lt;BindingSet&gt; queue = new SerializedQueue&lt;&gt;(&quot;orderiter&quot;);</b>
+<b class="nc">&nbsp;					sort(list).forEach(queue::add);</b>
+<b class="nc">&nbsp;					serialized.add(queue);</b>
+<b class="nc">&nbsp;					decrement(list.size() - queue.size());</b>
+<b class="nc">&nbsp;					list = new ArrayList&lt;&gt;(list.size());</b>
+<b class="nc">&nbsp;					if (threshold == null &amp;&amp; serialized.stream().mapToLong(SerializedQueue::size).sum() &gt;= limit) {</b>
+<b class="nc">&nbsp;						Stream&lt;BindingSet&gt; stream = serialized.stream().map(SerializedQueue::peekLast);</b>
+<b class="nc">&nbsp;						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().orElseThrow();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (list.size() &gt;= limit2 || !distinct &amp;&amp; threshold == null &amp;&amp; list.size() &gt;= limit) {</b>
+<b class="fc">&nbsp;					List&lt;BindingSet&gt; sorted = new ArrayList&lt;&gt;(limit2);</b>
+<b class="fc">&nbsp;					sort(list).forEach(sorted::add);</b>
+<b class="fc">&nbsp;					decrement(list.size() - sorted.size());</b>
+<b class="fc">&nbsp;					list = sorted;</b>
+<b class="pc">&nbsp;					if (sorted.size() &gt;= limit) {</b>
+<b class="fc">&nbsp;						threshold = sorted.get(sorted.size() - 1);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;				BindingSet next = iter.next();</b>
+<b class="fc">&nbsp;				if (threshold == null || comparator.compare(next, threshold) &lt; 0) {</b>
+<b class="fc">&nbsp;					list.add(next);</b>
+<b class="fc">&nbsp;					increment();</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			iter.close();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		List&lt;Iterator&lt;BindingSet&gt;&gt; iterators = new ArrayList&lt;&gt;(serialized.size() + 1);</b>
+<b class="fc">&nbsp;		serialized</b>
+<b class="fc">&nbsp;				.stream()</b>
+<b class="fc">&nbsp;				.map(SerializedQueue::iterator)</b>
+<b class="fc">&nbsp;				.forEach(iterators::add);</b>
+&nbsp;
+<b class="fc">&nbsp;		iterators.add(sort(list).iterator());</b>
+&nbsp;
+<b class="fc">&nbsp;		SortedIterators&lt;BindingSet&gt; iterator = new SortedIterators&lt;&gt;(comparator, distinct, iterators);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new LimitIteration&lt;&gt;(new CloseableIteratorIteration&lt;&gt;(iterator), limit);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void increment() throws QueryEvaluationException {
+&nbsp;		// give subclasses a chance to stop query evaluation
+<b class="fc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	protected void decrement(int amount) throws QueryEvaluationException {
+&nbsp;		// let subclasses know that the expected result size is smaller
+<b class="fc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	private Stream&lt;BindingSet&gt; sort(Collection&lt;BindingSet&gt; collection) {
+<b class="fc">&nbsp;		BindingSet[] array = collection.toArray(new BindingSet[collection.size()]);</b>
+<b class="fc">&nbsp;		Arrays.parallelSort(array, comparator);</b>
+<b class="fc">&nbsp;		Stream&lt;BindingSet&gt; stream = Stream.of(array);</b>
+<b class="fc">&nbsp;		if (distinct) {</b>
+<b class="fc">&nbsp;			stream = stream.distinct();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (limit &lt; Integer.MAX_VALUE) {</b>
+<b class="fc">&nbsp;			stream = stream.limit(limit);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return stream;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="fc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="fc">&nbsp;				iter.close();</b>
+&nbsp;			} finally {
+<b class="fc">&nbsp;				serialized.stream().map(queue -&gt; {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						queue.close();</b>
+<b class="nc">&nbsp;						return null;</b>
+<b class="nc">&nbsp;					} catch (IOException e) {</b>
+<b class="nc">&nbsp;						return e;</b>
+&nbsp;					}
+<b class="pc">&nbsp;				}).filter(exec -&gt; exec != null).findFirst().ifPresent(exec -&gt; {</b>
+<b class="nc">&nbsp;					throw new QueryEvaluationException(exec);</b>
+&nbsp;				});
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

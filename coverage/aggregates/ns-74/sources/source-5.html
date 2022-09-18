@@ -1,0 +1,272 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryModelTreePrinter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryModelTreePrinter (org.eclipse.rdf4j.query.algebra.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryModelTreePrinter</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (7/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.7%
+  </span>
+  <span class="absValue">
+    (14/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    68.5%
+  </span>
+  <span class="absValue">
+    (37/54)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.helpers;
+&nbsp;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+&nbsp;
+&nbsp;/**
+&nbsp; * QueryModelVisitor implementation that &quot;prints&quot; a tree representation of a query model. The tree representations is
+&nbsp; * printed to an internal character buffer and can be retrieved using {@link #getTreeString()}. As an alternative, the
+&nbsp; * static utility method {@link #printTree(QueryModelNode)} can be used.
+&nbsp; */
+&nbsp;public class QueryModelTreePrinter extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="fc">&nbsp;	private static final String LINE_SEPARATOR = System.getProperty(&quot;line.separator&quot;);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	public static String printTree(QueryModelNode node) {
+<b class="nc">&nbsp;		QueryModelTreePrinter treePrinter = new QueryModelTreePrinter();</b>
+<b class="nc">&nbsp;		node.visit(treePrinter);</b>
+<b class="nc">&nbsp;		return treePrinter.getTreeString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="fc">&nbsp;	private final String indentString = &quot;   &quot;;</b>
+&nbsp;
+&nbsp;	private final StringBuilder sb;
+&nbsp;
+<b class="fc">&nbsp;	private int indentLevel = 0;</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+<b class="fc">&nbsp;	public QueryModelTreePrinter() {</b>
+<b class="fc">&nbsp;		sb = new StringBuilder(256);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public String getTreeString() {
+<b class="fc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void meetNode(QueryModelNode node) {
+<b class="pc">&nbsp;		for (int i = 0; i &lt; indentLevel; i++) {</b>
+<b class="nc">&nbsp;			sb.append(indentString);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		sb.append(node.getSignature());</b>
+&nbsp;
+<b class="pc">&nbsp;		if (node instanceof VariableScopeChange) {</b>
+<b class="pc">&nbsp;			if (((VariableScopeChange) node).isVariableScopeChange()) {</b>
+<b class="nc">&nbsp;				sb.append(&quot; (new scope)&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (node instanceof BinaryTupleOperator) {</b>
+<b class="nc">&nbsp;			String algorithmName = ((BinaryTupleOperator) node).getAlgorithmName();</b>
+<b class="nc">&nbsp;			if (algorithmName != null) {</b>
+<b class="nc">&nbsp;				sb.append(&quot; (&quot;).append(algorithmName).append(&quot;)&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		appendCostAnnotation(node, sb);</b>
+<b class="fc">&nbsp;		sb.append(LINE_SEPARATOR);</b>
+&nbsp;
+<b class="fc">&nbsp;		indentLevel++;</b>
+&nbsp;
+<b class="fc">&nbsp;		super.meetNode(node);</b>
+&nbsp;
+<b class="fc">&nbsp;		indentLevel--;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
+&nbsp;	 */
+&nbsp;	static String toHumanReadableNumber(double number) {
+&nbsp;		String humanReadbleString;
+<b class="pc">&nbsp;		if (number == Double.POSITIVE_INFINITY) {</b>
+<b class="nc">&nbsp;			humanReadbleString = &quot;∞&quot;;</b>
+<b class="pc">&nbsp;		} else if (number &gt; 1_000_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(number / 100_000) / 10.0 + &quot;M&quot;;</b>
+<b class="pc">&nbsp;		} else if (number &gt; 1_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(number / 100) / 10.0 + &quot;K&quot;;</b>
+<b class="pc">&nbsp;		} else if (number &gt;= 0) {</b>
+<b class="nc">&nbsp;			humanReadbleString = Math.round(number) + &quot;&quot;;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			humanReadbleString = &quot;UNKNOWN&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return humanReadbleString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return Human readable time.
+&nbsp;	 */
+&nbsp;	static String toHumanReadableTime(long nanos) {
+&nbsp;		String humanReadbleString;
+&nbsp;
+<b class="pc">&nbsp;		if (nanos &gt; 1_000_000_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = nanos / 100_000_000 / 10.0 + &quot;s&quot;;</b>
+<b class="pc">&nbsp;		} else if (nanos &gt; 1_000_000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = nanos / 100_000 / 10.0 + &quot;ms&quot;;</b>
+<b class="pc">&nbsp;		} else if (nanos &gt;= 1000) {</b>
+<b class="nc">&nbsp;			humanReadbleString = nanos / 1000 / 1000.0 + &quot;ms&quot;;</b>
+<b class="pc">&nbsp;		} else if (nanos &gt;= 0) {</b>
+<b class="nc">&nbsp;			humanReadbleString = nanos + &quot;ns&quot;;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			humanReadbleString = &quot;UNKNOWN&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return humanReadbleString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void appendCostAnnotation(QueryModelNode node, StringBuilder sb) {
+<b class="fc">&nbsp;		String costs = Stream.of(</b>
+<b class="fc">&nbsp;				&quot;costEstimate=&quot; + toHumanReadableNumber(node.getCostEstimate()),</b>
+<b class="fc">&nbsp;				&quot;resultSizeEstimate=&quot; + toHumanReadableNumber(node.getResultSizeEstimate()),</b>
+<b class="fc">&nbsp;				&quot;resultSizeActual=&quot; + toHumanReadableNumber(node.getResultSizeActual()),</b>
+<b class="fc">&nbsp;				&quot;totalTimeActual=&quot; + toHumanReadableTime(node.getTotalTimeNanosActual()))</b>
+<b class="pc">&nbsp;				.filter(s -&gt; !s.endsWith(&quot;UNKNOWN&quot;))</b>
+<b class="fc">&nbsp;				.reduce((a, b) -&gt; a + &quot;, &quot; + b)</b>
+<b class="fc">&nbsp;				.orElse(&quot;&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (!costs.isEmpty()) {</b>
+<b class="nc">&nbsp;			sb.append(&quot; (&quot;).append(costs).append(&quot;)&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

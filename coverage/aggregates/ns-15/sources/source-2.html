@@ -1,0 +1,245 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ServiceRegistry</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.lang.service</a>
+</div>
+
+<h1>Coverage Summary for Class: ServiceRegistry (org.eclipse.rdf4j.common.lang.service)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ServiceRegistry</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    71.4%
+  </span>
+  <span class="absValue">
+    (5/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    73.9%
+  </span>
+  <span class="absValue">
+    (17/23)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.lang.service;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.ServiceLoader;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A registry that stores services by some key. Upon initialization, the registry searches for service description files
+&nbsp; * at &lt;var&gt;META-INF/services/&amp;lt;service class name&amp;gt;&lt;/var&gt; and initializes itself accordingly.
+&nbsp; *
+&nbsp; * @see javax.imageio.spi.ServiceRegistry
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public abstract class ServiceRegistry&lt;K, S&gt; {
+&nbsp;
+<b class="fc">&nbsp;	protected final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+<b class="fc">&nbsp;	protected Map&lt;K, S&gt; services = new ConcurrentHashMap&lt;&gt;(16, 0.75f, 1);</b>
+&nbsp;
+<b class="fc">&nbsp;	protected ServiceRegistry(Class&lt;S&gt; serviceClass) {</b>
+<b class="fc">&nbsp;		ServiceLoader&lt;S&gt; loader = java.util.ServiceLoader.load(serviceClass, serviceClass.getClassLoader());</b>
+&nbsp;
+<b class="fc">&nbsp;		Iterator&lt;S&gt; services = loader.iterator();</b>
+&nbsp;		while (true) {
+&nbsp;			try {
+<b class="fc">&nbsp;				if (services.hasNext()) {</b>
+<b class="fc">&nbsp;					S service = services.next();</b>
+&nbsp;
+<b class="fc">&nbsp;					Optional&lt;S&gt; oldService = add(service);</b>
+&nbsp;
+<b class="pc">&nbsp;					if (oldService.isPresent()) {</b>
+<b class="nc">&nbsp;						logger.warn(&quot;New service {} replaces existing service {}&quot;, service.getClass(),</b>
+<b class="nc">&nbsp;								oldService.get().getClass());</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					logger.debug(&quot;Registered service class {}&quot;, service.getClass().getName());</b>
+<b class="fc">&nbsp;				} else {</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (Error e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Failed to instantiate service&quot;, e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds a service to the registry. Any service that is currently registered for the same key (as specified by
+&nbsp;	 * {@link #getKey(Object)}) will be replaced with the new service.
+&nbsp;	 *
+&nbsp;	 * @param service The service that should be added to the registry.
+&nbsp;	 * @return The previous service that was registered for the same key, or {@link Optional#empty()} if there was no
+&nbsp;	 *         such service.
+&nbsp;	 */
+&nbsp;	public Optional&lt;S&gt; add(S service) {
+<b class="fc">&nbsp;		return Optional.ofNullable(services.put(getKey(service), service));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a service from the registry.
+&nbsp;	 *
+&nbsp;	 * @param service The service be removed from the registry.
+&nbsp;	 */
+&nbsp;	public void remove(S service) {
+<b class="nc">&nbsp;		services.remove(getKey(service));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the service for the specified key, if any.
+&nbsp;	 *
+&nbsp;	 * @param key The key identifying which service to get.
+&nbsp;	 * @return The service for the specified key, or {@link Optional#empty()} if no such service is avaiable.
+&nbsp;	 */
+&nbsp;	public Optional&lt;S&gt; get(K key) {
+<b class="fc">&nbsp;		return Optional.ofNullable(services.get(key));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether a service for the specified key is available.
+&nbsp;	 *
+&nbsp;	 * @param key The key identifying which service to search for.
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if a service for the specific key is available, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean has(K key) {
+<b class="fc">&nbsp;		return services.containsKey(key);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all registered services.
+&nbsp;	 *
+&nbsp;	 * @return An unmodifiable collection containing all registered servivces.
+&nbsp;	 */
+&nbsp;	public Collection&lt;S&gt; getAll() {
+<b class="nc">&nbsp;		return Collections.unmodifiableCollection(services.values());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the set of registered keys.
+&nbsp;	 *
+&nbsp;	 * @return An unmodifiable set containing all registered keys.
+&nbsp;	 */
+&nbsp;	public Set&lt;K&gt; getKeys() {
+<b class="fc">&nbsp;		return Collections.unmodifiableSet(services.keySet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the key for the specified service.
+&nbsp;	 *
+&nbsp;	 * @param service The service to get the key for.
+&nbsp;	 * @return The key for the specified service.
+&nbsp;	 */
+&nbsp;	protected abstract K getKey(S service);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

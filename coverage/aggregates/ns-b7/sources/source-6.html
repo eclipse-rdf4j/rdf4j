@@ -1,0 +1,176 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ObservingSailDataset</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: ObservingSailDataset (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ObservingSailDataset</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks the observed statement patterns to an
+&nbsp; * {@link SailSink#observe(Resource, IRI, Value, Resource...)} to check consistency.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;class ObservingSailDataset extends DelegatingSailDataset {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The {@link SailSink} that is tracking the statement patterns.
+&nbsp;	 */
+&nbsp;	private final SailSink observer;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link IsolationLevels#SERIALIZABLE} {@link SailDataset} that tracks consistency.
+&nbsp;	 *
+&nbsp;	 * @param delegate to be {@link SailDataset#close()} when this {@link SailDataset} is closed.
+&nbsp;	 * @param observer to be {@link SailSink#flush()} and {@link SailSink#close()} when this {@link SailDataset} is
+&nbsp;	 *                 closed.
+&nbsp;	 */
+&nbsp;	public ObservingSailDataset(SailDataset delegate, SailSink observer) {
+<b class="nc">&nbsp;		super(delegate);</b>
+<b class="nc">&nbsp;		this.observer = observer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.close();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+&nbsp;				// flush observer regardless of consistency
+<b class="nc">&nbsp;				observer.flush();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				observer.close();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Resource, SailException&gt; getContextIDs() throws SailException {
+<b class="nc">&nbsp;		observer.observe(null, null, null);</b>
+<b class="nc">&nbsp;		return super.getContextIDs();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Statement, SailException&gt; getStatements(Resource subj, IRI pred, Value obj,
+&nbsp;			Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		observer.observe(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		return super.getStatements(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

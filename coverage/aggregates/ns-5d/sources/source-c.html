@@ -1,0 +1,166 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryResult</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryResult (org.eclipse.rdf4j.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryResult</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
+&nbsp;
+&nbsp;/**
+&nbsp; * Super type of all query result types (TupleQueryResult, GraphQueryResult, etc.).
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public interface QueryResult&lt;T&gt;
+&nbsp;		extends AutoCloseable, CloseableIteration&lt;T, QueryEvaluationException&gt;, Iterable&lt;T&gt; {
+&nbsp;
+&nbsp;	@Override
+&nbsp;	default Iterator&lt;T&gt; iterator() {
+<b class="fc">&nbsp;		return new CloseableIterationIterator&lt;&gt;(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns {@code true} if the query result has more elements. (In other words, returns {@code true} if
+&nbsp;	 * {@link #next} would return an element rather than throwing a {@link NoSuchElementException}.)
+&nbsp;	 *
+&nbsp;	 * @return {@code true} if the iteration has more elements.
+&nbsp;	 * @throws QueryEvaluationException if an error occurs while executing the query.
+&nbsp;	 */
+&nbsp;	boolean hasNext() throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the next element in the query result.
+&nbsp;	 *
+&nbsp;	 * @return the next element in the query result.
+&nbsp;	 * @throws NoSuchElementException   if the iteration has no more elements or if it has been closed.
+&nbsp;	 * @throws QueryEvaluationException if an error occurs while executing the query.
+&nbsp;	 */
+&nbsp;	T next() throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * Convert the result elements to a Java {@link Stream}. Note that the consumer should take care to close the stream
+&nbsp;	 * (by calling Stream#close() or using try-with-resource) if it is not fully consumed.
+&nbsp;	 *
+&nbsp;	 * @return stream a {@link Stream} of query result elements.
+&nbsp;	 */
+&nbsp;	default Stream&lt;T&gt; stream() {
+<b class="fc">&nbsp;		return QueryResults.stream(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

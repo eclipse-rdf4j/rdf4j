@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > DelegatingRepository</title>
+  <title>Coverage Report > RepositoryResolver</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository</a>
 </div>
 
-<h1>Coverage Summary for Class: DelegatingRepository (org.eclipse.rdf4j.repository)</h1>
+<h1>Coverage Summary for Class: RepositoryResolver (org.eclipse.rdf4j.repository)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">DelegatingRepository</td>
+  <td class="name">RepositoryResolver</td>
 </tr>
 
 </table>
@@ -50,14 +50,17 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.repository;
 &nbsp;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;
 &nbsp;/**
-&nbsp; * Main interface for repositories that wrap another repository.
+&nbsp; * Gets local repositories using a simple identifier string.
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; * @since 2.3
 &nbsp; */
-&nbsp;public interface DelegatingRepository extends Repository {
+&nbsp;public interface RepositoryResolver {
 &nbsp;
-&nbsp;	Repository getDelegate();
-&nbsp;
-&nbsp;	void setDelegate(Repository delegate);
+&nbsp;	Repository getRepository(String memberID) throws RepositoryException, RepositoryConfigException;
 &nbsp;}
 </code>
 </pre>
@@ -82,7 +85,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

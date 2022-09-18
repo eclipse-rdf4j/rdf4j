@@ -1,0 +1,404 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DefaultQueryRequestHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.handler</a>
+</div>
+
+<h1>Coverage Summary for Class: DefaultQueryRequestHandler (org.eclipse.rdf4j.http.server.repository.handler)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DefaultQueryRequestHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/106)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.http.server.repository.handler;
+&nbsp;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.DEFAULT_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.INCLUDE_INFERRED_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.NAMED_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_LANGUAGE_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_PARAM_NAME;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Enumeration;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;
+&nbsp;import org.apache.commons.io.IOUtils;
+&nbsp;import org.apache.http.HttpStatus;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
+&nbsp;import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorType;
+&nbsp;import org.eclipse.rdf4j.http.server.ClientHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.HTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.BooleanQueryResultView;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.TupleQueryResultView;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterRegistry;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.web.bind.annotation.RequestMethod;
+&nbsp;import org.springframework.web.servlet.View;
+&nbsp;
+&nbsp;public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+&nbsp;	public DefaultQueryRequestHandler(RepositoryResolver repositoryResolver) {
+<b class="nc">&nbsp;		super(repositoryResolver);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Object evaluateQuery(Query query, long limit, long offset, boolean distinct) throws ClientHTTPException {
+<b class="nc">&nbsp;		if (query instanceof TupleQuery) {</b>
+<b class="nc">&nbsp;			return evaluateQuery((TupleQuery) query, limit, offset, distinct);</b>
+<b class="nc">&nbsp;		} else if (query instanceof GraphQuery) {</b>
+<b class="nc">&nbsp;			return evaluateQuery((GraphQuery) query, limit, offset, distinct);</b>
+<b class="nc">&nbsp;		} else if (query instanceof BooleanQuery) {</b>
+<b class="nc">&nbsp;			return evaluateQuery((BooleanQuery) query, limit, offset, distinct);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+<b class="nc">&nbsp;					&quot;Unsupported query type: &quot; + query.getClass().getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Boolean evaluateQuery(BooleanQuery query, long limit, long offset, boolean distinct) {
+<b class="nc">&nbsp;		return query.evaluate();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected GraphQueryResult evaluateQuery(GraphQuery query, long limit, long offset, boolean distinct) {
+<b class="nc">&nbsp;		GraphQueryResult qqr = distinct ? QueryResults.distinctResults(query.evaluate()) : query.evaluate();</b>
+<b class="nc">&nbsp;		return QueryResults.limitResults(qqr, limit, offset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected TupleQueryResult evaluateQuery(TupleQuery query, long limit, long offset, boolean distinct) {
+<b class="nc">&nbsp;		TupleQueryResult tqr = distinct ? QueryResults.distinctResults(query.evaluate()) : query.evaluate();</b>
+<b class="nc">&nbsp;		return QueryResults.limitResults(tqr, limit, offset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected View getViewFor(Query query) {
+<b class="nc">&nbsp;		if (query instanceof TupleQuery) {</b>
+<b class="nc">&nbsp;			return TupleQueryResultView.getInstance();</b>
+<b class="nc">&nbsp;		} else if (query instanceof GraphQuery) {</b>
+<b class="nc">&nbsp;			return GraphQueryResultView.getInstance();</b>
+<b class="nc">&nbsp;		} else if (query instanceof BooleanQuery) {</b>
+<b class="nc">&nbsp;			return BooleanQueryResultView.getInstance();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected FileFormatServiceRegistry&lt;? extends FileFormat, ?&gt; getResultWriterFor(Query query) {
+<b class="nc">&nbsp;		if (query instanceof TupleQuery) {</b>
+<b class="nc">&nbsp;			return TupleQueryResultWriterRegistry.getInstance();</b>
+<b class="nc">&nbsp;		} else if (query instanceof GraphQuery) {</b>
+<b class="nc">&nbsp;			return RDFWriterRegistry.getInstance();</b>
+<b class="nc">&nbsp;		} else if (query instanceof BooleanQuery) {</b>
+<b class="nc">&nbsp;			return BooleanQueryResultWriterRegistry.getInstance();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected String getQueryString(HttpServletRequest request, RequestMethod requestMethod) throws HTTPException {
+&nbsp;
+&nbsp;		String queryString;
+<b class="nc">&nbsp;		if (requestMethod == RequestMethod.POST) {</b>
+<b class="nc">&nbsp;			String mimeType = HttpServerUtil.getMIMEType(request.getContentType());</b>
+&nbsp;
+<b class="nc">&nbsp;			switch (mimeType) {</b>
+&nbsp;			case Protocol.SPARQL_QUERY_MIME_TYPE:
+&nbsp;				// The query should be the entire body
+&nbsp;				try {
+<b class="nc">&nbsp;					queryString = IOUtils.toString(request.getReader());</b>
+<b class="nc">&nbsp;				} catch (IOException e) {</b>
+<b class="nc">&nbsp;					throw new HTTPException(HttpStatus.SC_BAD_REQUEST, &quot;Error reading request message body&quot;, e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;				break;
+&nbsp;			case Protocol.FORM_MIME_TYPE:
+<b class="nc">&nbsp;				queryString = request.getParameter(QUERY_PARAM_NAME);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, &quot;Unsupported MIME type: &quot; + mimeType);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			queryString = request.getParameter(QUERY_PARAM_NAME);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (queryString == null) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Missing parameter: &quot; + QUERY_PARAM_NAME);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return queryString;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Query getQuery(HttpServletRequest request,
+&nbsp;			RepositoryConnection repositoryCon, String queryString) throws IOException, HTTPException {
+&nbsp;
+<b class="nc">&nbsp;		QueryLanguage queryLn = getQueryLanguage(request.getParameter(QUERY_LANGUAGE_PARAM_NAME));</b>
+<b class="nc">&nbsp;		String baseIRI = request.getParameter(Protocol.BASEURI_PARAM_NAME);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Query query = repositoryCon.prepareQuery(queryLn, queryString, baseIRI);</b>
+&nbsp;
+<b class="nc">&nbsp;			setQueryParameters(request, repositoryCon, query);</b>
+&nbsp;
+<b class="nc">&nbsp;			return query;</b>
+&nbsp;
+<b class="nc">&nbsp;		} catch (UnsupportedQueryLanguageException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.UNSUPPORTED_QUERY_LANGUAGE, queryLn.getName());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Repository error&quot;, e);</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_INTERNAL_SERVER_ERROR, e.getMessage());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setQueryParameters(HttpServletRequest request, RepositoryConnection repositoryCon, Query query)
+&nbsp;			throws ClientHTTPException {
+&nbsp;		// determine if inferred triples should be included in query evaluation
+<b class="nc">&nbsp;		query.setIncludeInferred(getIncludeInferred(request));</b>
+&nbsp;
+<b class="nc">&nbsp;		int maxExecutionTime = getMaxExecutionTime(request);</b>
+<b class="nc">&nbsp;		if (maxExecutionTime &gt; 0) {</b>
+<b class="nc">&nbsp;			query.setMaxExecutionTime(maxExecutionTime);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Dataset dataset = getDataset(request, repositoryCon.getValueFactory(), query);</b>
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			query.setDataset(dataset);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// determine if any variable bindings have been set on this query.
+<b class="nc">&nbsp;		Enumeration&lt;String&gt; parameterNames = request.getParameterNames();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (parameterNames.hasMoreElements()) {</b>
+<b class="nc">&nbsp;			String parameterName = parameterNames.nextElement();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (parameterName.startsWith(BINDING_PREFIX) &amp;&amp; parameterName.length() &gt; BINDING_PREFIX.length()) {</b>
+<b class="nc">&nbsp;				String bindingName = parameterName.substring(BINDING_PREFIX.length());</b>
+<b class="nc">&nbsp;				Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,</b>
+<b class="nc">&nbsp;						repositoryCon.getValueFactory());</b>
+<b class="nc">&nbsp;				query.setBinding(bindingName, bindingValue);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected int getMaxExecutionTime(HttpServletRequest request) throws ClientHTTPException {
+<b class="nc">&nbsp;		return ProtocolUtil.parseTimeoutParam(request);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean getIncludeInferred(HttpServletRequest request) throws ClientHTTPException {
+<b class="nc">&nbsp;		return getParam(request, INCLUDE_INFERRED_PARAM_NAME, true, Boolean.TYPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected SimpleDataset getDataset(HttpServletRequest request, ValueFactory valueFactory, Query query)
+&nbsp;			throws ClientHTTPException {
+&nbsp;
+<b class="nc">&nbsp;		String[] defaultGraphIRIs = request.getParameterValues(DEFAULT_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] namedGraphIRIs = request.getParameterValues(NAMED_GRAPH_PARAM_NAME);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (defaultGraphIRIs == null &amp;&amp; namedGraphIRIs == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		SimpleDataset dataset = new SimpleDataset();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (defaultGraphIRIs != null) {</b>
+<b class="nc">&nbsp;			for (String defaultGraphIRI : defaultGraphIRIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI iri = createIRIOrNull(valueFactory, defaultGraphIRI);</b>
+<b class="nc">&nbsp;					dataset.addDefaultGraph(iri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal IRI for default graph: &quot; + defaultGraphIRI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (namedGraphIRIs != null) {</b>
+<b class="nc">&nbsp;			for (String namedGraphIRI : namedGraphIRIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI iri = createIRIOrNull(valueFactory, namedGraphIRI);</b>
+<b class="nc">&nbsp;					dataset.addNamedGraph(iri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal IRI for named graph: &quot; + namedGraphIRI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return dataset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected QueryLanguage getQueryLanguage(String queryLanguageParamName) throws ClientHTTPException {
+<b class="nc">&nbsp;		if (queryLanguageParamName != null) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;query language param = {}&quot;, queryLanguageParamName);</b>
+&nbsp;
+<b class="nc">&nbsp;			QueryLanguage queryLn = QueryLanguage.valueOf(queryLanguageParamName);</b>
+<b class="nc">&nbsp;			if (queryLn == null) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Unknown query language: &quot; + queryLanguageParamName);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return queryLn;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return QueryLanguage.SPARQL;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI createIRIOrNull(ValueFactory valueFactory, String graphIRI) {
+<b class="nc">&nbsp;		if (&quot;null&quot;.equals(graphIRI)) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return valueFactory.createIRI(graphIRI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

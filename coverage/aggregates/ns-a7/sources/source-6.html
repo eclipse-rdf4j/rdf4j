@@ -1,0 +1,229 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BasicWriterSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: BasicWriterSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BasicWriterSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * A class encapsulating the basic writer settings that most writers may support.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class BasicWriterSettings {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for writer to determine whether pretty printing is preferred.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.pretty_print}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; PRETTY_PRINT = new BooleanRioSetting(&quot;org.eclipse.rdf4j.rio.pretty_print&quot;,</b>
+&nbsp;			&quot;Pretty print&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Inline blanks nodes by their value and don&#39;t write any blank node labels when this setting is true. This setting
+&nbsp;	 * should only be used when blank nodes never appear in the context and there are no blank node cycles.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * WARNING: This setting requires all triples to be processed before being written and could use a lot of memory in
+&nbsp;	 * the process and should be set to false for large RDF files.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.inline_blank_nodes}.
+&nbsp;	 *
+&nbsp;	 * @since 2.3
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; INLINE_BLANK_NODES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.inline_blank_nodes&quot;,
+&nbsp;			&quot;Use blank node property lists, collections, and anonymous nodes instead of blank node labels&quot;,
+&nbsp;			Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for writer to determine whether it should remove the xsd:string datatype from literals and
+&nbsp;	 * represent them as RDF-1.0 Plain Literals.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * In RDF-1.1, all literals that would have been Plain Literals in RDF-1.0 will be typed as xsd:string internally.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true to allow for backwards compatibility without enforcing it.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdf10_plain_literals}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; XSD_STRING_TO_PLAIN_LITERAL = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdf10_plain_literals&quot;, &quot;RDF-1.0 compatible Plain Literals&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for writer to determine whether it should omit the rdf:langString datatype from language literals
+&nbsp;	 * when serialising them.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * In RDF-1.1, all RDF-1.0 Language Literals are typed using rdf:langString in the abstract model, but this datatype
+&nbsp;	 * is not necessary for concrete syntaxes.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * In most concrete syntaxes it is either syntactically invalid or semantically ambiguous to have a language tagged
+&nbsp;	 * literal with an explicit datatype. In those cases this setting will not be used, and the rdf:langString datatype
+&nbsp;	 * will not be attached to language tagged literals.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * In particular, in RDF/XML, if rdf:langString is serialised, the language tag may not be retained when the
+&nbsp;	 * document is parsed due to the precedence rule in RDF/XML for datatype over language.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true as rdf:langString was not previously used, and should not be commonly required.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdf10_language_literals}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; RDF_LANGSTRING_TO_LANG_LITERAL = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.rdf10_language_literals&quot;, &quot;RDF-1.0 compatible Language Literals&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for writer to determine whether it should include a base directive.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.base_directive}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; BASE_DIRECTIVE = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.base_directive&quot;, &quot;Serialize base directive&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for writer to determine whether it should convert RDF-star statements to standard RDF
+&nbsp;	 * reification.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.convert_rdf_star}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; CONVERT_RDF_STAR_TO_REIFICATION = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.convert_rdf_star&quot;, &quot;Convert RDF-star statements to RDF reification&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for writer to determine whether it should encode RDF-star triple values to RDF-compatible special
+&nbsp;	 * IRIs. These IRIs start with urn:rdf4j:triple: followed by the base64-encoding of the N-Triples serialization of
+&nbsp;	 * the RDF-star triple value.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Writers that support RDF-star natively will ignore this setting and always serialize RDF-star triples.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.encode_rdf_star}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ENCODE_RDF_STAR = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.encode_rdf_star&quot;,
+&nbsp;			&quot;Encodes RDF-star triples to special IRIs for compatibility with RDF&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private default constructor.
+&nbsp;	 */
+&nbsp;	private BasicWriterSettings() {
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

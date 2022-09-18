@@ -1,0 +1,175 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TriGStarWriterFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.trigstar</a>
+</div>
+
+<h1>Coverage Summary for Class: TriGStarWriterFactory (org.eclipse.rdf4j.rio.trigstar)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TriGStarWriterFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.trigstar;
+&nbsp;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.Writer;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link RDFWriterFactory} for TriG-star writers.
+&nbsp; *
+&nbsp; * @author Pavel Mihaylov
+&nbsp; */
+<b class="nc">&nbsp;public class TriGStarWriterFactory implements RDFWriterFactory {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns {@link RDFFormat#TRIGSTAR}.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.TRIGSTAR;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a new instance of {@link TriGStarWriter}.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public RDFWriter getWriter(OutputStream out) {
+<b class="nc">&nbsp;		return new TriGStarWriter(out);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a new instance of {@link TriGStarWriter}.
+&nbsp;	 *
+&nbsp;	 * @throws URISyntaxException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public RDFWriter getWriter(OutputStream out, String baseURI) throws URISyntaxException {
+<b class="nc">&nbsp;		return new TriGStarWriter(out, new ParsedIRI(baseURI));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a new instance of {@link TriGStarWriter}.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public RDFWriter getWriter(Writer writer) {
+<b class="nc">&nbsp;		return new TriGStarWriter(writer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a new instance of {@link TriGStarWriter}.
+&nbsp;	 *
+&nbsp;	 * @throws URISyntaxException
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public RDFWriter getWriter(Writer writer, String baseURI) throws URISyntaxException {
+<b class="nc">&nbsp;		return new TriGStarWriter(writer, new ParsedIRI(baseURI));</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

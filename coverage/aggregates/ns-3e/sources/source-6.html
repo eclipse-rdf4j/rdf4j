@@ -1,0 +1,420 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryInfo</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.structures</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryInfo (org.eclipse.rdf4j.federated.structures)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryInfo</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/88)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.structures;
+&nbsp;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.atomic.AtomicInteger;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Structure to maintain query information during evaluation, is attached to algebra nodes. Each instance is uniquely
+&nbsp; * attached to the query.
+&nbsp; * &lt;p&gt;
+&nbsp; * The queryId can be used to abort tasks belonging to a particular evaluation.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class QueryInfo {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(QueryInfo.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	protected static final AtomicInteger NEXT_QUERY_ID = new AtomicInteger(1); // static id count</b>
+&nbsp;
+&nbsp;	private final BigInteger queryID;
+&nbsp;	private final String query;
+&nbsp;	private final String baseURI;
+&nbsp;
+&nbsp;	private final QueryType queryType;
+&nbsp;	private final long maxExecutionTimeMs;
+&nbsp;	private final long start;
+&nbsp;	private final boolean includeInferred;
+&nbsp;	private final Dataset dataset;
+&nbsp;
+<b class="nc">&nbsp;	private TupleQueryResultHandler resultHandler = null;</b>
+&nbsp;
+&nbsp;	private final FederationContext federationContext;
+&nbsp;
+&nbsp;	private final FederationEvalStrategy strategy;
+&nbsp;
+<b class="nc">&nbsp;	protected boolean done = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	protected Set&lt;ParallelTask&lt;?&gt;&gt; scheduledSubtasks = ConcurrentHashMap.newKeySet();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param query
+&nbsp;	 * @param queryType
+&nbsp;	 * @param maxExecutionTime  the maximum explicit query time in seconds, if 0 use
+&nbsp;	 *                          {@link org.eclipse.rdf4j.federated.FedXConfig#getEnforceMaxQueryTime()}
+&nbsp;	 * @param includeInferred   whether to include inferred statements
+&nbsp;	 * @param federationContext the {@link FederationContext}
+&nbsp;	 * @param dataset           the {@link Dataset}
+&nbsp;	 */
+&nbsp;	public QueryInfo(String query, String baseURI, QueryType queryType, int maxExecutionTime, boolean includeInferred,
+&nbsp;			FederationContext federationContext, FederationEvalStrategy strategy, Dataset dataset) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.queryID = federationContext.getQueryManager().getNextQueryId();</b>
+&nbsp;
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.query = query;</b>
+<b class="nc">&nbsp;		this.baseURI = baseURI;</b>
+<b class="nc">&nbsp;		this.queryType = queryType;</b>
+<b class="nc">&nbsp;		this.dataset = dataset;</b>
+&nbsp;
+<b class="nc">&nbsp;		int _maxExecutionTime = maxExecutionTime &lt;= 0 ? federationContext.getConfig().getEnforceMaxQueryTime()</b>
+<b class="nc">&nbsp;				: maxExecutionTime;</b>
+<b class="nc">&nbsp;		this.maxExecutionTimeMs = _maxExecutionTime * 1000;</b>
+<b class="nc">&nbsp;		this.includeInferred = includeInferred;</b>
+<b class="nc">&nbsp;		this.start = System.currentTimeMillis();</b>
+&nbsp;
+<b class="nc">&nbsp;		this.strategy = strategy;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public QueryInfo(Resource subj, IRI pred, Value obj, int maxExecutionTime, boolean includeInferred,
+&nbsp;			FederationContext federationContext, FederationEvalStrategy strategy, Dataset dataset) {
+<b class="nc">&nbsp;		this(QueryStringUtil.toString(subj, pred, obj), null, QueryType.GET_STATEMENTS, maxExecutionTime,</b>
+&nbsp;				includeInferred,
+&nbsp;				federationContext, strategy, dataset);
+&nbsp;	}
+&nbsp;
+&nbsp;	public BigInteger getQueryID() {
+<b class="nc">&nbsp;		return queryID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getQuery() {
+<b class="nc">&nbsp;		return query;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public QueryType getQueryType() {
+<b class="nc">&nbsp;		return queryType;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean getIncludeInferred() {
+<b class="nc">&nbsp;		return includeInferred;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Dataset getDataset() {
+<b class="nc">&nbsp;		return dataset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the baseURI
+&nbsp;	 */
+&nbsp;	public String getBaseURI() {
+<b class="nc">&nbsp;		return baseURI;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the {@link FederationEvalStrategy} active in the current query context
+&nbsp;	 */
+&nbsp;	public FederationEvalStrategy getStrategy() {
+<b class="nc">&nbsp;		return this.strategy;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the {@link FederationContext} in which this query is executed
+&nbsp;	 */
+&nbsp;	public FederationContext getFederationContext() {
+<b class="nc">&nbsp;		return this.federationContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the maximum remaining time in ms until the query runs into a timeout. If negative, timeout has been
+&nbsp;	 *         reached
+&nbsp;	 */
+&nbsp;	public long getMaxRemainingTimeMS() {
+<b class="nc">&nbsp;		if (maxExecutionTimeMs &lt;= 0) {</b>
+<b class="nc">&nbsp;			return Long.MAX_VALUE;</b>
+&nbsp;		}
+&nbsp;		// compute max remaining time
+&nbsp;		// Note: return 1ms as a timeout to properly get this handled in executors
+<b class="nc">&nbsp;		long runningTime = System.currentTimeMillis() - start;</b>
+<b class="nc">&nbsp;		long maxTime = maxExecutionTimeMs - runningTime;</b>
+<b class="nc">&nbsp;		if (log.isTraceEnabled()) {</b>
+<b class="nc">&nbsp;			log.trace(&quot;Applying max remaining time: &quot; + maxTime);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return maxTime;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Register a new scheduled task for this query.
+&nbsp;	 *
+&nbsp;	 * @param task
+&nbsp;	 * @throws QueryEvaluationException if the query has been aborted or closed
+&nbsp;	 */
+&nbsp;	public synchronized void registerScheduledTask(ParallelTask&lt;?&gt; task) throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (done) {</b>
+<b class="nc">&nbsp;			task.cancel();</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(&quot;Query is aborted or closed, cannot accept new tasks&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		scheduledSubtasks.add(task);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link TupleQueryResultHandler} if this query is executed using.
+&nbsp;	 * {@link TupleQuery#evaluate(TupleQueryResultHandler)}.
+&nbsp;	 *
+&nbsp;	 * @return the {@link TupleQueryResultHandler} that can be used for pass through
+&nbsp;	 * @see PassThroughTupleExpr
+&nbsp;	 */
+&nbsp;	public Optional&lt;TupleQueryResultHandler&gt; getResultHandler() {
+<b class="nc">&nbsp;		return Optional.ofNullable(resultHandler);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the {@link TupleQueryResultHandler} if the query is executed using
+&nbsp;	 * {@link TupleQuery#evaluate(TupleQueryResultHandler)} allowing for passing through results to the handler.
+&nbsp;	 *
+&nbsp;	 * @param resultHandler the {@link TupleQueryResultHandler}
+&nbsp;	 */
+&nbsp;	public void setResultHandler(TupleQueryResultHandler resultHandler) {
+<b class="nc">&nbsp;		this.resultHandler = resultHandler;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Mark the query as aborted and abort all scheduled (future) tasks known at this point in time. Also do not accept
+&nbsp;	 * any new scheduled tasks
+&nbsp;	 */
+&nbsp;	public synchronized void abort() {
+<b class="nc">&nbsp;		if (done) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		done = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		abortScheduledTasks();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Close this query. If exists, all scheduled (future) tasks known at this point in time are aborted. Also do not
+&nbsp;	 * accept any new scheduled tasks
+&nbsp;	 */
+&nbsp;	public synchronized void close() {
+&nbsp;
+<b class="nc">&nbsp;		if (done) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		done = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		closeScheduledTasks();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Abort any scheduled future tasks
+&nbsp;	 */
+&nbsp;	protected void abortScheduledTasks() {
+&nbsp;
+<b class="nc">&nbsp;		Throwable throwable = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (ParallelTask&lt;?&gt; task : scheduledSubtasks) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				task.cancel();</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				if (throwable != null) {</b>
+<b class="nc">&nbsp;					t.addSuppressed(throwable);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throwable = t;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		scheduledSubtasks.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (throwable != null) {</b>
+<b class="nc">&nbsp;			if (throwable instanceof RuntimeException) {</b>
+<b class="nc">&nbsp;				throw ((RuntimeException) throwable);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw ((Error) throwable);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void closeScheduledTasks() {
+&nbsp;
+<b class="nc">&nbsp;		Throwable throwable = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (ParallelTask&lt;?&gt; task : scheduledSubtasks) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				task.close();</b>
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				if (throwable != null) {</b>
+<b class="nc">&nbsp;					t.addSuppressed(throwable);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				throwable = t;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		scheduledSubtasks.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (throwable != null) {</b>
+<b class="nc">&nbsp;			if (throwable instanceof RuntimeException) {</b>
+<b class="nc">&nbsp;				throw ((RuntimeException) throwable);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw ((Error) throwable);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		final int prime = 31;</b>
+<b class="nc">&nbsp;		int result = 1;</b>
+<b class="nc">&nbsp;		result = prime * result + ((queryID == null) ? 0 : queryID.hashCode());</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object obj) {
+<b class="nc">&nbsp;		if (this == obj) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (obj == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getClass() != obj.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		QueryInfo other = (QueryInfo) obj;</b>
+<b class="nc">&nbsp;		if (queryID == null) {</b>
+<b class="nc">&nbsp;			return other.queryID == null;</b>
+&nbsp;		} else
+<b class="nc">&nbsp;			return queryID.equals(other.queryID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,572 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail</a>
+</div>
+
+<h1>Coverage Summary for Class: SailConnection (org.eclipse.rdf4j.sail)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (2/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (2/6)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.explanation.Explanation;
+&nbsp;
+&nbsp;/**
+&nbsp; * A connection to an RDF Sail object. A SailConnection is active from the moment it is created until it is closed. Care
+&nbsp; * should be taken to properly close SailConnections as they might block concurrent queries and/or updates on the Sail
+&nbsp; * while active, depending on the Sail-implementation that is being used.
+&nbsp; *
+&nbsp; * @author jeen
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public interface SailConnection extends AutoCloseable {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this SailConnection is open. A SailConnection is open from the moment it is created until it is
+&nbsp;	 * closed.
+&nbsp;	 *
+&nbsp;	 * @see SailConnection#close
+&nbsp;	 */
+&nbsp;	boolean isOpen() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the connection. Any updates that haven&#39;t been committed yet will be rolled back. The connection can no
+&nbsp;	 * longer be used once it is closed.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	void close() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Allows the SailConnection to bypass the standard query parser and provide its own internal {@link TupleExpr}
+&nbsp;	 * implementation. By default this method returns an empty result, signaling that it will rely on the RDF4J query
+&nbsp;	 * parser.
+&nbsp;	 *
+&nbsp;	 * @param ql      the query language.
+&nbsp;	 * @param type    indicates if the supplied query is a graph, tuple, or boolean query
+&nbsp;	 * @param query   the unparsed query string
+&nbsp;	 * @param baseURI the provided base URI. May be null or empty.
+&nbsp;	 * @return an optional TupleExpr that represents a sail-specific version of the query, which {@link #evaluate} can
+&nbsp;	 *         process. Returns {@link Optional#empty()} if the Sail does not provide its own query processing.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	default Optional&lt;TupleExpr&gt; prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
+&nbsp;			String baseURI) {
+<b class="fc">&nbsp;		return Optional.empty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates the supplied TupleExpr on the data contained in this Sail object, using the (optional) dataset and
+&nbsp;	 * supplied bindings as input parameters.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr       The tuple expression to evaluate.
+&nbsp;	 * @param dataset         The dataset to use for evaluating the query, &lt;var&gt;null&lt;/var&gt; to use the Sail&#39;s default
+&nbsp;	 *                        dataset.
+&nbsp;	 * @param bindings        A set of input parameters for the query evaluation. The keys reference variable names that
+&nbsp;	 *                        should be bound to the value they map to.
+&nbsp;	 * @param includeInferred Indicates whether inferred triples are to be considered in the query result. If false, no
+&nbsp;	 *                        inferred statements are returned; if true, inferred statements are returned if available
+&nbsp;	 * @return The TupleQueryResult.
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; evaluate(TupleExpr tupleExpr,
+&nbsp;			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the set of all unique context identifiers that are used to store statements.
+&nbsp;	 *
+&nbsp;	 * @return An iterator over the context identifiers, should not contain any duplicates.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;? extends Resource, SailException&gt; getContextIDs() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all statements from the specified contexts that have a specific subject, predicate and/or object. All three
+&nbsp;	 * parameters may be null to indicate wildcards. The &lt;var&gt;includeInferred&lt;/var&gt; parameter can be used to control
+&nbsp;	 * which statements are fetched: all statements or only the statements that have been added explicitly.
+&nbsp;	 *
+&nbsp;	 * @param subj            A Resource specifying the subject, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred            A URI specifying the predicate, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj             A Value specifying the object, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
+&nbsp;	 *                        if available
+&nbsp;	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
+&nbsp;	 *                        optional. If no contexts are specified the method operates on the entire repository. A
+&nbsp;	 *                        &lt;var&gt;null&lt;/var&gt; value can be used to match context-less statements.
+&nbsp;	 * @return The statements matching the specified pattern.
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;? extends Statement, SailException&gt; getStatements(Resource subj, IRI pred, Value obj,
+&nbsp;			boolean includeInferred, Resource... contexts) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the store contains any statements from the specified contexts that have a specific subject,
+&nbsp;	 * predicate and/or object. All three parameters may be null to indicate wildcards. The &lt;var&gt;includeInferred&lt;/var&gt;
+&nbsp;	 * parameter can be used to control which statements are checked: all statements or only the statements that have
+&nbsp;	 * been added explicitly.
+&nbsp;	 *
+&nbsp;	 * @param subj            A Resource specifying the subject, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param pred            An IRI specifying the predicate, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param obj             A Value specifying the object, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
+&nbsp;	 * @param includeInferred if false, no inferred statements are returned; if true, inferred statements are returned
+&nbsp;	 *                        if available
+&nbsp;	 * @param contexts        The context(s) to get the data from. Note that this parameter is a vararg and as such is
+&nbsp;	 *                        optional. If no contexts are specified the method operates on the entire repository. A
+&nbsp;	 *                        &lt;var&gt;null&lt;/var&gt; value can be used to match context-less statements.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; iff the store contains any statements matching the supplied criteria,
+&nbsp;	 *         &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	default boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+&nbsp;			throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; stIter = getStatements(subj, pred, obj,</b>
+&nbsp;				includeInferred, contexts)) {
+<b class="nc">&nbsp;			return stIter.hasNext();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the number of (explicit) statements in the store, or in specific contexts.
+&nbsp;	 *
+&nbsp;	 * @param contexts The context(s) to determine the size of. Note that this parameter is a vararg and as such is
+&nbsp;	 *                 optional. If no contexts are specified the method operates on the entire repository. A
+&nbsp;	 *                 &lt;var&gt;null&lt;/var&gt; value can be used to match context-less statements.
+&nbsp;	 * @return The number of explicit statements in this store, or in the specified context(s).
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	long size(Resource... contexts) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Begins a transaction requiring {@link #commit()} or {@link #rollback()} to be called to close the transaction.
+&nbsp;	 * The transaction will use the default {@link IsolationLevel} level for the SAIL, as returned by
+&nbsp;	 * {@link Sail#getDefaultIsolationLevel()}.
+&nbsp;	 *
+&nbsp;	 * @throws SailException If the connection could not start a transaction or if a transaction is already active on
+&nbsp;	 *                       this connection.
+&nbsp;	 */
+&nbsp;	void begin() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Begins a transaction with the specified {@link IsolationLevel} level, requiring {@link #commit()} or
+&nbsp;	 * {@link #rollback()} to be called to close the transaction.
+&nbsp;	 *
+&nbsp;	 * @param level the transaction isolation level on which this transaction operates.
+&nbsp;	 * @throws UnknownSailTransactionStateException If the IsolationLevel is not supported by this implementation
+&nbsp;	 * @throws SailException                        If the connection could not start a transaction, if the supplied
+&nbsp;	 *                                              transaction isolation level is not supported, or if a transaction is
+&nbsp;	 *                                              already active on this connection.
+&nbsp;	 */
+&nbsp;	void begin(IsolationLevel level) throws UnknownSailTransactionStateException, SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Pass any transaction-specific settings to the SailConnection. This method needs to be called before the
+&nbsp;	 * transaction is {@link #begin() started }.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Sail implementations can override this method to receive the transaction settings (to inspect and/or pass them
+&nbsp;	 * along to any wrapped sail objects). Remember to call &lt;code&gt;super.setTransactionSettings(settings)&lt;/code&gt; if you
+&nbsp;	 * override this method.
+&nbsp;	 *
+&nbsp;	 * @param settings the transaction settings on which the next transaction operates. It may or may not contain the
+&nbsp;	 *                 isolation level.
+&nbsp;	 * @since 3.3.0
+&nbsp;	 */
+&nbsp;	default void setTransactionSettings(TransactionSetting... settings) {
+&nbsp;
+<b class="fc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flushes any pending updates and notify changes to listeners as appropriate. This is an optional call; calling or
+&nbsp;	 * not calling this method should have no effect on the outcome of other calls. This method exists to give the
+&nbsp;	 * caller more control over the efficiency when calling {@link #prepare()}. This method may be called multiple times
+&nbsp;	 * within the same transaction.
+&nbsp;	 *
+&nbsp;	 * @throws SailException         If the updates could not be processed, for example because no transaction is
+&nbsp;	 *                               active.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void flush() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks for an error state in the active transaction that would force the transaction to be rolled back. This is
+&nbsp;	 * an optional call; calling or not calling this method should have no effect on the outcome of {@link #commit()} or
+&nbsp;	 * {@link #rollback()}. A call to this method must be followed by (in the same thread) with a call to
+&nbsp;	 * {@link #prepare()} , {@link #commit()}, {@link #rollback()}, or {@link #close()} . This method may be called
+&nbsp;	 * multiple times within the same transaction by the same thread. If this method returns normally, the caller can
+&nbsp;	 * reasonably expect that a subsequent call to {@link #commit()} will also return normally. If this method returns
+&nbsp;	 * with an exception the caller should treat the exception as if it came from a call to {@link #commit()}.
+&nbsp;	 *
+&nbsp;	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
+&nbsp;	 *                                              instance when communication between client and server fails or
+&nbsp;	 *                                              times-out). It does not indicate a problem with the integrity of the
+&nbsp;	 *                                              store.
+&nbsp;	 * @throws SailException                        If there is an active transaction and it cannot be committed.
+&nbsp;	 * @throws IllegalStateException                If the connection has been closed or prepare was already called by
+&nbsp;	 *                                              another thread.
+&nbsp;	 */
+&nbsp;	void prepare() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Commits any updates that have been performed since the last time {@link #commit()} or {@link #rollback()} was
+&nbsp;	 * called.
+&nbsp;	 *
+&nbsp;	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
+&nbsp;	 *                                              instance when communication between client and server fails or
+&nbsp;	 *                                              times-out). It does not indicate a problem with the integrity of the
+&nbsp;	 *                                              store.
+&nbsp;	 * @throws SailException                        If the SailConnection could not be committed.
+&nbsp;	 * @throws IllegalStateException                If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void commit() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Rolls back the transaction, discarding any uncommitted changes that have been made in this SailConnection.
+&nbsp;	 *
+&nbsp;	 * @throws UnknownSailTransactionStateException If the transaction state can not be determined (this can happen for
+&nbsp;	 *                                              instance when communication between client and server fails or
+&nbsp;	 *                                              times-out). It does not indicate a problem with the integrity of the
+&nbsp;	 *                                              store.
+&nbsp;	 * @throws SailException                        If the SailConnection could not be rolled back.
+&nbsp;	 * @throws IllegalStateException                If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void rollback() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates if a transaction is currently active on the connection. A transaction is active if {@link #begin()} has
+&nbsp;	 * been called, and becomes inactive after {@link #commit()} or {@link #rollback()} has been called.
+&nbsp;	 *
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; iff a transaction is active, &lt;code&gt;false&lt;/code&gt; iff no transaction is active.
+&nbsp;	 * @throws UnknownSailTransactionStateException if the transaction state can not be determined (this can happen for
+&nbsp;	 *                                              instance when communication between client and server fails or times
+&nbsp;	 *                                              out).
+&nbsp;	 */
+&nbsp;	boolean isActive() throws UnknownSailTransactionStateException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds a statement to the store.
+&nbsp;	 *
+&nbsp;	 * @param subj     The subject of the statement to add.
+&nbsp;	 * @param pred     The predicate of the statement to add.
+&nbsp;	 * @param obj      The object of the statement to add.
+&nbsp;	 * @param contexts The context(s) to add the statement to. Note that this parameter is a vararg and as such is
+&nbsp;	 *                 optional. If no contexts are specified, a context-less statement will be added.
+&nbsp;	 * @throws SailException         If the statement could not be added, for example because no transaction is active.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
+&nbsp;	 * parameters may be null to indicate wildcards.
+&nbsp;	 *
+&nbsp;	 * @param subj     The subject of the statement that should be removed, or &lt;var&gt;null&lt;/var&gt; to indicate a wildcard.
+&nbsp;	 * @param pred     The predicate of the statement that should be removed, or &lt;var&gt;null&lt;/var&gt; to indicate a wildcard.
+&nbsp;	 * @param obj      The object of the statement that should be removed , or &lt;var&gt;null&lt;/var&gt; to indicate a wildcard. *
+&nbsp;	 * @param contexts The context(s) from which to remove the statement. Note that this parameter is a vararg and as
+&nbsp;	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
+&nbsp;	 *                 &lt;var&gt;null&lt;/var&gt; value can be used to match context-less statements.
+&nbsp;	 * @throws SailException         If the statement could not be removed, for example because no transaction is
+&nbsp;	 *                               active.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Signals the start of an update operation. The given &lt;code&gt;op&lt;/code&gt; maybe passed to subsequent
+&nbsp;	 * {@link #addStatement(UpdateContext, Resource, IRI, Value, Resource...)} or
+&nbsp;	 * {@link #removeStatement(UpdateContext, Resource, IRI, Value, Resource...)} calls before
+&nbsp;	 * {@link #endUpdate(UpdateContext)} is called.
+&nbsp;	 *
+&nbsp;	 * @throws SailException
+&nbsp;	 */
+&nbsp;	void startUpdate(UpdateContext op) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds a statement to the store. Called when adding statements through a {@link UpdateExpr} operation.
+&nbsp;	 *
+&nbsp;	 * @param op       operation properties of the {@link UpdateExpr} operation producing these statements.
+&nbsp;	 * @param subj     The subject of the statement to add.
+&nbsp;	 * @param pred     The predicate of the statement to add.
+&nbsp;	 * @param obj      The object of the statement to add.
+&nbsp;	 * @param contexts The context(s) to add the statement to. Note that this parameter is a vararg and as such is
+&nbsp;	 *                 optional. If no contexts are specified, a context-less statement will be added.
+&nbsp;	 * @throws SailException         If the statement could not be added, for example because no transaction is active.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all statements matching the specified subject, predicate and object from the repository. All three
+&nbsp;	 * parameters may be null to indicate wildcards. Called when removing statements through a {@link UpdateExpr}
+&nbsp;	 * operation.
+&nbsp;	 *
+&nbsp;	 * @param op       operation properties of the {@link UpdateExpr} operation removing these statements.
+&nbsp;	 * @param subj     The subject of the statement that should be removed.
+&nbsp;	 * @param pred     The predicate of the statement that should be removed.
+&nbsp;	 * @param obj      The object of the statement that should be removed.
+&nbsp;	 * @param contexts The context(s) from which to remove the statement. Note that this parameter is a vararg and as
+&nbsp;	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
+&nbsp;	 *                 &lt;var&gt;null&lt;/var&gt; value can be used to match context-less statements.
+&nbsp;	 * @throws SailException         If the statement could not be removed, for example because no transaction is
+&nbsp;	 *                               active.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that the given &lt;code&gt;op&lt;/code&gt; will not be used in any call again. Implementations should use this to
+&nbsp;	 * flush of any temporary operation states that may have occurred.
+&nbsp;	 *
+&nbsp;	 * @param op
+&nbsp;	 * @throws SailException
+&nbsp;	 */
+&nbsp;	void endUpdate(UpdateContext op) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all statements from the specified/all contexts. If no contexts are specified the method operates on the
+&nbsp;	 * entire repository.
+&nbsp;	 *
+&nbsp;	 * @param contexts The context(s) from which to remove the statements. Note that this parameter is a vararg and as
+&nbsp;	 *                 such is optional. If no contexts are specified the method operates on the entire repository. A
+&nbsp;	 *                 &lt;var&gt;null&lt;/var&gt; value can be used to match context-less statements.
+&nbsp;	 * @throws SailException         If the statements could not be removed.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void clear(Resource... contexts) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the namespaces relevant to the data contained in this Sail object.
+&nbsp;	 *
+&nbsp;	 * @return An iterator over the relevant namespaces, should not contain any duplicates.
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;? extends Namespace, SailException&gt; getNamespaces() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the namespace that is associated with the specified prefix, if any.
+&nbsp;	 *
+&nbsp;	 * @param prefix A namespace prefix, or an empty string in case of the default namespace.
+&nbsp;	 * @return The namespace name that is associated with the specified prefix, or &lt;var&gt;null&lt;/var&gt; if there is no such
+&nbsp;	 *         namespace.
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws NullPointerException  In case &lt;var&gt;prefix&lt;/var&gt; is &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	String getNamespace(String prefix) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the prefix for a namespace.
+&nbsp;	 *
+&nbsp;	 * @param prefix The new prefix, or an empty string in case of the default namespace.
+&nbsp;	 * @param name   The namespace name that the prefix maps to.
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws NullPointerException  In case &lt;var&gt;prefix&lt;/var&gt; or &lt;var&gt;name&lt;/var&gt; is &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void setNamespace(String prefix, String name) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
+&nbsp;	 *
+&nbsp;	 * @param prefix The namespace prefix, or an empty string in case of the default namespace.
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws NullPointerException  In case &lt;var&gt;prefix&lt;/var&gt; is &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void removeNamespace(String prefix) throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes all namespace declarations from the repository.
+&nbsp;	 *
+&nbsp;	 * @throws SailException         If the Sail object encountered an error or unexpected situation internally.
+&nbsp;	 * @throws IllegalStateException If the connection has been closed.
+&nbsp;	 */
+&nbsp;	void clearNamespaces() throws SailException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates if the Sail has any statement removal operations pending (not yet {@link #flush() flushed}) for the
+&nbsp;	 * current transaction.
+&nbsp;	 *
+&nbsp;	 * @return true if any statement removal operations have not yet been flushed, false otherwise.
+&nbsp;	 * @see #flush()
+&nbsp;	 * @deprecated
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	boolean pendingRemovals();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Explain how the TupleExpr will be (or has been) executed/evaluated by returning a TupleExpr (which may or may not
+&nbsp;	 * be the provided TupleExpr) that has gone through zero or more of the stages prior to and also including execution
+&nbsp;	 * as specified by the provided level.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method is used by the Query interface.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * WARNING: This method is experimental and is subject to change or removal without warning. There is currently only
+&nbsp;	 * partial support for this method in RDF4J and and UnsupportedOperationException where support is lacking.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 *
+&nbsp;	 * @param level           the explanation level, eg. OPTIMIZED
+&nbsp;	 * @param tupleExpr       The tuple expression to evaluate. Mutable.
+&nbsp;	 * @param dataset         The dataset to use for evaluating the query, &lt;var&gt;null&lt;/var&gt; to use the Sail&#39;s default
+&nbsp;	 *                        dataset.
+&nbsp;	 * @param bindings        A set of input parameters for the query evaluation. The keys reference variable names that
+&nbsp;	 *                        should be bound to the value they map to.
+&nbsp;	 * @param includeInferred Indicates whether inferred triples are to be considered in the query result. If false, no
+&nbsp;	 *                        inferred statements are returned; if true, inferred statements are returned if available
+&nbsp;	 * @param timeoutSeconds  for explanations that require execution a timeout can be provided in seconds
+&nbsp;	 * @return The resulting tuple expression after being run through the specified level
+&nbsp;	 */
+&nbsp;	// with default implementation for backwards compatibility
+&nbsp;	@Experimental
+&nbsp;	default Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+&nbsp;			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

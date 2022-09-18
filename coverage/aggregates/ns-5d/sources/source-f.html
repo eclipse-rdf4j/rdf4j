@@ -1,0 +1,1007 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryResults</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryResults (org.eclipse.rdf4j.query)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryResults</td>
+<td class="coverageStat">
+  <span class="percent">
+    48%
+  </span>
+  <span class="absValue">
+    (12/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50.8%
+  </span>
+  <span class="absValue">
+    (64/126)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    55%
+  </span>
+  <span class="absValue">
+    (93/169)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryResults$CleanerGraphQueryResult</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">QueryResults$CleanerGraphQueryResult$CleanableState</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">QueryResults$GraphQueryResultFilter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">QueryResults$TupleQueryResultFilter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    25.5%
+  </span>
+  <span class="absValue">
+    (12/47)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    43.8%
+  </span>
+  <span class="absValue">
+    (64/146)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    38%
+  </span>
+  <span class="absValue">
+    (93/245)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query;
+&nbsp;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.lang.ref.Cleaner;
+&nbsp;import java.lang.ref.WeakReference;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ForkJoinPool;
+&nbsp;import java.util.concurrent.LinkedBlockingQueue;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LimitIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.OffsetIteration;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
+&nbsp;import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.impl.QueueCursor;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods related to query results.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class QueryResults extends Iterations {</b>
+&nbsp;
+<b class="fc">&nbsp;	private final static Cleaner cleaner = Cleaner.create();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a {@link Model} containing all elements obtained from the specified query result.
+&nbsp;	 *
+&nbsp;	 * @param iteration the source iteration to get the statements from.
+&nbsp;	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
+&nbsp;	 */
+&nbsp;	public static Model asModel(CloseableIteration&lt;? extends Statement, ? extends RDF4JException&gt; iteration)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		return asModel(iteration, new DynamicModelFactory());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a {@link Model} containing all elements obtained from the specified query result.
+&nbsp;	 *
+&nbsp;	 * @param iteration    the source iteration to get the statements from.
+&nbsp;	 * @param modelFactory the ModelFactory used to instantiate the model that gets returned.
+&nbsp;	 * @return a {@link Model} containing all statements obtained from the specified source iteration.
+&nbsp;	 */
+&nbsp;	public static Model asModel(CloseableIteration&lt;? extends Statement, ? extends RDF4JException&gt; iteration,
+&nbsp;			ModelFactory modelFactory)
+&nbsp;			throws QueryEvaluationException {
+<b class="fc">&nbsp;		Model model = modelFactory.createEmptyModel();</b>
+<b class="fc">&nbsp;		addAll(iteration, model);</b>
+<b class="fc">&nbsp;		return model;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a List containing all elements obtained from the specified {@link QueryResult}.
+&nbsp;	 *
+&nbsp;	 * @param queryResult the {@link QueryResult} to get the elements from
+&nbsp;	 * @return a List containing all elements obtained from the specified query result.
+&nbsp;	 */
+&nbsp;	public static &lt;T&gt; List&lt;T&gt; asList(QueryResult&lt;T&gt; queryResult) throws QueryEvaluationException {
+&nbsp;		// stream.collect is slightly slower than addAll for lists
+<b class="fc">&nbsp;		List&lt;T&gt; list = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// addAll closes the iteration
+<b class="fc">&nbsp;		return addAll(queryResult, list);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a Set containing all elements obtained from the specified {@link QueryResult}.
+&nbsp;	 *
+&nbsp;	 * @param queryResult the {@link QueryResult} to get the elements from
+&nbsp;	 * @return a Set containing all elements obtained from the specified query result.
+&nbsp;	 */
+&nbsp;	public static &lt;T&gt; Set&lt;T&gt; asSet(QueryResult&lt;T&gt; queryResult) throws QueryEvaluationException {
+<b class="nc">&nbsp;		try (Stream&lt;T&gt; stream = queryResult.stream()) {</b>
+<b class="nc">&nbsp;			return stream.collect(Collectors.toSet());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a list of values of a particular variable out of the QueryResult.
+&nbsp;	 *
+&nbsp;	 * @param result
+&nbsp;	 * @param var    variable for which list of values needs to be returned
+&nbsp;	 * @return a list of Values of var
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public static List&lt;Value&gt; getAllValues(TupleQueryResult result, String var) throws QueryEvaluationException {
+<b class="nc">&nbsp;		try (Stream&lt;BindingSet&gt; stream = result.stream()) {</b>
+<b class="nc">&nbsp;			return result.getBindingNames().contains(var)</b>
+<b class="nc">&nbsp;					? stream.map(bs -&gt; bs.getValue(var)).collect(Collectors.toList())</b>
+<b class="nc">&nbsp;					: Collections.emptyList();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a single element from the query result.The QueryResult is automatically closed by this method.
+&nbsp;	 *
+&nbsp;	 * @param result
+&nbsp;	 * @return a single query result element or null
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public static Statement singleResult(GraphQueryResult result) throws QueryEvaluationException {
+<b class="nc">&nbsp;		try (Stream&lt;Statement&gt; stream = result.stream()) {</b>
+<b class="nc">&nbsp;			return stream.findFirst().orElse(null);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a single element from the query result.The QueryResult is automatically closed by this method.
+&nbsp;	 *
+&nbsp;	 * @param result
+&nbsp;	 * @return a single query result element or null
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public static BindingSet singleResult(TupleQueryResult result) throws QueryEvaluationException {
+<b class="nc">&nbsp;		try (Stream&lt;BindingSet&gt; stream = result.stream()) {</b>
+<b class="nc">&nbsp;			return stream.findFirst().orElse(null);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link GraphQueryResult} that filters out any duplicate solutions from the supplied queryResult.
+&nbsp;	 *
+&nbsp;	 * @param queryResult a queryResult containing possible duplicate statements.
+&nbsp;	 * @return a {@link GraphQueryResult} with any duplicates filtered out.
+&nbsp;	 */
+&nbsp;	public static GraphQueryResult distinctResults(GraphQueryResult queryResult) {
+<b class="nc">&nbsp;		return new GraphQueryResultFilter(queryResult);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link TupleQueryResult} that filters out any duplicate solutions from the supplied queryResult.
+&nbsp;	 *
+&nbsp;	 * @param queryResult a queryResult containing possible duplicate solutions.
+&nbsp;	 * @return a {@link TupleQueryResult} with any duplicates filtered out.
+&nbsp;	 */
+&nbsp;	public static TupleQueryResult distinctResults(TupleQueryResult queryResult) {
+<b class="nc">&nbsp;		return new TupleQueryResultFilter(queryResult);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link TupleQueryResult} that returns at most the specified maximum number of solutions, starting at
+&nbsp;	 * the supplied offset.
+&nbsp;	 *
+&nbsp;	 * @param queryResult a query result possibly containing more solutions than the specified maximum.
+&nbsp;	 * @param limit       the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
+&nbsp;	 * @param offset      the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be
+&nbsp;	 *                    applied.
+&nbsp;	 * @return A {@link TupleQueryResult} that will at return at most the specified maximum number of solutions. If
+&nbsp;	 *         neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
+&nbsp;	 */
+&nbsp;	public static TupleQueryResult limitResults(TupleQueryResult queryResult, long limit, long offset) {
+<b class="nc">&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iter = queryResult;</b>
+<b class="nc">&nbsp;		if (offset &gt; 0) {</b>
+<b class="nc">&nbsp;			iter = new OffsetIteration&lt;&gt;(iter, offset);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (limit &gt; 0) {</b>
+<b class="nc">&nbsp;			iter = new LimitIteration&lt;&gt;(iter, limit);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(iter instanceof TupleQueryResult)) {</b>
+<b class="nc">&nbsp;			return new IteratingTupleQueryResult(queryResult.getBindingNames(), iter);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (TupleQueryResult) iter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link GraphQueryResult} that returns at most the specified maximum number of solutions, starting at
+&nbsp;	 * the supplied offset.
+&nbsp;	 *
+&nbsp;	 * @param queryResult a query result possibly containing more solutions than the specified maximum.
+&nbsp;	 * @param limit       the maximum number of solutions to return. If set to 0 or lower, no limit will be applied.
+&nbsp;	 * @param offset      the number of solutions to skip at the beginning. If set to 0 or lower, no offset will be
+&nbsp;	 *                    applied.
+&nbsp;	 * @return A {@link GraphQueryResult} that will at return at most the specified maximum number of solutions. If
+&nbsp;	 *         neither {@code limit} nor {@code offset} are applied, this returns the original {@code queryResult}.
+&nbsp;	 */
+&nbsp;	public static GraphQueryResult limitResults(GraphQueryResult queryResult, long limit, long offset) {
+<b class="nc">&nbsp;		CloseableIteration&lt;Statement, QueryEvaluationException&gt; iter = queryResult;</b>
+<b class="nc">&nbsp;		if (offset &gt; 0) {</b>
+<b class="nc">&nbsp;			iter = new OffsetIteration&lt;&gt;(iter, offset);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (limit &gt; 0) {</b>
+<b class="nc">&nbsp;			iter = new LimitIteration&lt;&gt;(iter, limit);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(iter instanceof GraphQueryResult)) {</b>
+<b class="nc">&nbsp;			return new IteratingGraphQueryResult(queryResult.getNamespaces(), iter);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (GraphQueryResult) iter;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an RDF document and returns it as a GraphQueryResult object, with parsing done on a separate thread in the
+&nbsp;	 * background.&lt;br&gt;
+&nbsp;	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that the resulting
+&nbsp;	 * GraphQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
+&nbsp;	 *
+&nbsp;	 * @param in      The {@link InputStream} containing the RDF document.
+&nbsp;	 * @param baseURI The base URI for the RDF document.
+&nbsp;	 * @param format  The {@link RDFFormat} of the RDF document.
+&nbsp;	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerReference argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFFormat format,
+&nbsp;			WeakReference&lt;?&gt; callerReference)
+&nbsp;			throws UnsupportedRDFormatException {
+<b class="nc">&nbsp;		return parseGraphBackground(in, baseURI, Rio.createParser(format), callerReference);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an RDF document and returns it as a GraphQueryResult object, with parsing done on a separate thread in the
+&nbsp;	 * background.&lt;br&gt;
+&nbsp;	 * IMPORTANT: As this method will spawn a new thread in the background, it is vitally important that the resulting
+&nbsp;	 * GraphQueryResult be closed consistently when it is no longer required, to prevent resource leaks.
+&nbsp;	 *
+&nbsp;	 * @param in      The {@link InputStream} containing the RDF document.
+&nbsp;	 * @param baseURI The base URI for the RDF document.
+&nbsp;	 * @param parser  The {@link RDFParser}.
+&nbsp;	 * @return A {@link GraphQueryResult} that parses in the background, and must be closed to prevent resource leaks.
+&nbsp;	 * @deprecated WeakReference&lt;?&gt; callerReference argument will be removed
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.2&quot;)
+&nbsp;	public static GraphQueryResult parseGraphBackground(InputStream in, String baseURI, RDFParser parser,
+&nbsp;			WeakReference&lt;?&gt; callerReference) {
+<b class="nc">&nbsp;		assert callerReference == null;</b>
+<b class="nc">&nbsp;		RDFFormat format = parser.getRDFFormat();</b>
+<b class="nc">&nbsp;		BackgroundGraphResult result = new BackgroundGraphResult(</b>
+&nbsp;				new QueueCursor&lt;&gt;(new LinkedBlockingQueue&lt;&gt;(1)),
+<b class="nc">&nbsp;				parser, in, format.getCharset(), baseURI);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			ForkJoinPool.commonPool().submit(result);</b>
+<b class="nc">&nbsp;		} catch (Throwable t) {</b>
+<b class="nc">&nbsp;			result.close();</b>
+<b class="nc">&nbsp;			throw t;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return new CleanerGraphQueryResult(result, cleaner);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a tuple query result to a {@link TupleQueryResultHandler}. &lt;br&gt;
+&nbsp;	 * The {@link TupleQueryResult#close()} method will always be called before this method returns. &lt;br&gt;
+&nbsp;	 * If there is an exception generated by the TupleQueryResult, {@link QueryResultHandler#endQueryResult()} will not
+&nbsp;	 * be called.
+&nbsp;	 *
+&nbsp;	 * @param tqr     The query result to report.
+&nbsp;	 * @param handler The handler to report the query result to.
+&nbsp;	 * @throws TupleQueryResultHandlerException If such an exception is thrown by the used query result writer.
+&nbsp;	 */
+&nbsp;	public static void report(TupleQueryResult tqr, QueryResultHandler handler)
+&nbsp;			throws TupleQueryResultHandlerException, QueryEvaluationException {
+&nbsp;
+<b class="pc">&nbsp;		try (tqr) {</b>
+<b class="fc">&nbsp;			handler.startQueryResult(tqr.getBindingNames());</b>
+&nbsp;
+<b class="pc">&nbsp;			while (tqr.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = tqr.next();</b>
+<b class="nc">&nbsp;				handler.handleSolution(bindingSet);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+<b class="fc">&nbsp;		handler.endQueryResult();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reports a graph query result to an {@link RDFHandler}. &lt;br&gt;
+&nbsp;	 * The {@link GraphQueryResult#close()} method will always be called before this method returns.&lt;br&gt;
+&nbsp;	 * If there is an exception generated by the GraphQueryResult, {@link RDFHandler#endRDF()} will not be called.
+&nbsp;	 *
+&nbsp;	 * @param graphQueryResult The query result to report.
+&nbsp;	 * @param rdfHandler       The handler to report the query result to.
+&nbsp;	 * @throws RDFHandlerException      If such an exception is thrown by the used RDF writer.
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public static void report(GraphQueryResult graphQueryResult, RDFHandler rdfHandler)
+&nbsp;			throws RDFHandlerException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (graphQueryResult) {</b>
+<b class="nc">&nbsp;			rdfHandler.startRDF();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Map.Entry&lt;String, String&gt; entry : graphQueryResult.getNamespaces().entrySet()) {</b>
+<b class="nc">&nbsp;				String prefix = entry.getKey();</b>
+<b class="nc">&nbsp;				String namespace = entry.getValue();</b>
+<b class="nc">&nbsp;				rdfHandler.handleNamespace(prefix, namespace);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			while (graphQueryResult.hasNext()) {</b>
+<b class="nc">&nbsp;				Statement st = graphQueryResult.next();</b>
+<b class="nc">&nbsp;				rdfHandler.handleStatement(st);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		rdfHandler.endRDF();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two tuple query results and returns {@code true} if they are equal.Tuple query results are equal if they
+&nbsp;	 * contain the same set of {@link BindingSet}s and have the same headers. Blank nodes identifiers are not relevant
+&nbsp;	 * for equality, they are matched by trying to find compatible mappings between BindingSets. Note that the method
+&nbsp;	 * consumes both query results fully.
+&nbsp;	 *
+&nbsp;	 * @param tqr1 the first {@link TupleQueryResult} to compare.
+&nbsp;	 * @param tqr2 the second {@link TupleQueryResult} to compare.
+&nbsp;	 * @return true if equal
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	public static boolean equals(TupleQueryResult tqr1, TupleQueryResult tqr2) throws QueryEvaluationException {
+<b class="fc">&nbsp;		List&lt;BindingSet&gt; list1 = Iterations.asList(tqr1);</b>
+<b class="fc">&nbsp;		List&lt;BindingSet&gt; list2 = Iterations.asList(tqr2);</b>
+&nbsp;
+&nbsp;		// Compare the number of statements in both sets
+<b class="pc">&nbsp;		if (list1.size() != list2.size()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return matchBindingSets(list1, list2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isSubset(TupleQueryResult tqr1, TupleQueryResult tqr2) throws QueryEvaluationException {
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; list1 = Iterations.asList(tqr1);</b>
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; list2 = Iterations.asList(tqr2);</b>
+&nbsp;
+&nbsp;		// Compare the number of statements in both sets
+<b class="nc">&nbsp;		if (list1.size() &gt; list2.size()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return matchBindingSets(list1, list2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two graph query results and returns {@code true} if they are equal. Two graph query results are
+&nbsp;	 * considered equal if they are isomorphic graphs. Note that the method consumes both query results fully.
+&nbsp;	 *
+&nbsp;	 * @param result1 the first query result to compare
+&nbsp;	 * @param result2 the second query result to compare.
+&nbsp;	 * @return {@code true} if the supplied graph query results are isomorphic graphs, {@code false} otherwise.
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @see Models#isomorphic(Iterable, Iterable)
+&nbsp;	 */
+&nbsp;	public static boolean equals(GraphQueryResult result1, GraphQueryResult result2) throws QueryEvaluationException {
+<b class="nc">&nbsp;		Set&lt;? extends Statement&gt; graph1 = Iterations.asSet(result1);</b>
+<b class="nc">&nbsp;		Set&lt;? extends Statement&gt; graph2 = Iterations.asSet(result2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return Models.isomorphic(graph1, graph2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean matchBindingSets(List&lt;? extends BindingSet&gt; queryResult1,
+&nbsp;			Iterable&lt;? extends BindingSet&gt; queryResult2) {
+<b class="fc">&nbsp;		return matchBindingSets(queryResult1, queryResult2, new HashMap&lt;&gt;(), 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A recursive method for finding a complete mapping between blank nodes in queryResult1 and blank nodes in
+&nbsp;	 * queryResult2. The algorithm does a depth-first search trying to establish a mapping for each blank node occurring
+&nbsp;	 * in queryResult1.
+&nbsp;	 *
+&nbsp;	 * @return true if a complete mapping has been found, false otherwise.
+&nbsp;	 */
+&nbsp;	private static boolean matchBindingSets(List&lt;? extends BindingSet&gt; queryResult1,
+&nbsp;			Iterable&lt;? extends BindingSet&gt; queryResult2, Map&lt;BNode, BNode&gt; bNodeMapping, int idx) {
+&nbsp;
+<b class="fc">&nbsp;		if (idx &lt; queryResult1.size()) {</b>
+<b class="fc">&nbsp;			BindingSet bs1 = queryResult1.get(idx);</b>
+&nbsp;
+<b class="fc">&nbsp;			List&lt;BindingSet&gt; matchingBindingSets = findMatchingBindingSets(bs1, queryResult2, bNodeMapping);</b>
+&nbsp;
+<b class="pc">&nbsp;			for (BindingSet bs2 : matchingBindingSets) {</b>
+&nbsp;				// Map bNodes in bs1 to bNodes in bs2
+<b class="fc">&nbsp;				Map&lt;BNode, BNode&gt; newBNodeMapping = new HashMap&lt;&gt;(bNodeMapping);</b>
+&nbsp;
+<b class="fc">&nbsp;				for (Binding binding : bs1) {</b>
+<b class="fc">&nbsp;					if (binding.getValue() instanceof BNode) {</b>
+<b class="fc">&nbsp;						newBNodeMapping.put((BNode) binding.getValue(), (BNode) bs2.getValue(binding.getName()));</b>
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+&nbsp;
+&nbsp;				// FIXME: this recursive implementation has a high risk of
+&nbsp;				// triggering a stack overflow
+&nbsp;
+&nbsp;				// Enter recursion
+<b class="pc">&nbsp;				if (matchBindingSets(queryResult1, queryResult2, newBNodeMapping, idx + 1)) {</b>
+&nbsp;					// models match, look no further
+<b class="fc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// All statements have been mapped successfully
+<b class="fc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static List&lt;BindingSet&gt; findMatchingBindingSets(BindingSet st, Iterable&lt;? extends BindingSet&gt; model,
+&nbsp;			Map&lt;BNode, BNode&gt; bNodeMapping) {
+<b class="fc">&nbsp;		List&lt;BindingSet&gt; result = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (BindingSet modelSt : model) {</b>
+<b class="fc">&nbsp;			if (bindingSetsMatch(st, modelSt, bNodeMapping)) {</b>
+&nbsp;				// All components possibly match
+<b class="fc">&nbsp;				result.add(modelSt);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean bindingSetsMatch(BindingSet bs1, BindingSet bs2, Map&lt;BNode, BNode&gt; bNodeMapping) {
+&nbsp;
+<b class="fc">&nbsp;		if (bs1.size() != bs2.size()) {</b>
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		for (Binding binding1 : bs1) {</b>
+<b class="fc">&nbsp;			Value value1 = binding1.getValue();</b>
+<b class="fc">&nbsp;			Value value2 = bs2.getValue(binding1.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;			if (value1 instanceof BNode &amp;&amp; value2 instanceof BNode) {</b>
+<b class="fc">&nbsp;				BNode mappedBNode = bNodeMapping.get(value1);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (mappedBNode != null) {</b>
+&nbsp;					// bNode &#39;value1&#39; was already mapped to some other bNode
+<b class="nc">&nbsp;					if (!value2.equals(mappedBNode)) {</b>
+&nbsp;						// &#39;value1&#39; and &#39;value2&#39; do not match
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+&nbsp;				} else {
+&nbsp;					// &#39;value1&#39; was not yet mapped, we need to check if &#39;value2&#39; is a
+&nbsp;					// possible mapping candidate
+<b class="pc">&nbsp;					if (bNodeMapping.containsValue(value2)) {</b>
+&nbsp;						// &#39;value2&#39; is already mapped to some other value.
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+&nbsp;				}
+<b class="fc">&nbsp;			} else {</b>
+&nbsp;				// values are not (both) bNodes
+<b class="fc">&nbsp;				if (value1 instanceof Literal &amp;&amp; value2 instanceof Literal) {</b>
+&nbsp;					// do literal value-based comparison for supported datatypes
+<b class="fc">&nbsp;					Literal leftLit = (Literal) value1;</b>
+<b class="fc">&nbsp;					Literal rightLit = (Literal) value2;</b>
+&nbsp;
+<b class="fc">&nbsp;					IRI dt1 = leftLit.getDatatype();</b>
+<b class="fc">&nbsp;					IRI dt2 = rightLit.getDatatype();</b>
+&nbsp;
+<b class="pc">&nbsp;					if (dt1 != null &amp;&amp; dt1.equals(dt2)</b>
+<b class="pc">&nbsp;							&amp;&amp; XMLDatatypeUtil.isValidValue(leftLit.getLabel(), dt1)</b>
+<b class="pc">&nbsp;							&amp;&amp; XMLDatatypeUtil.isValidValue(rightLit.getLabel(), dt2)) {</b>
+<b class="fc">&nbsp;						Integer compareResult = null;</b>
+<b class="fc">&nbsp;						if (dt1.equals(XSD.DOUBLE)) {</b>
+<b class="fc">&nbsp;							compareResult = Double.compare(leftLit.doubleValue(), rightLit.doubleValue());</b>
+<b class="pc">&nbsp;						} else if (dt1.equals(XSD.FLOAT)) {</b>
+<b class="nc">&nbsp;							compareResult = Float.compare(leftLit.floatValue(), rightLit.floatValue());</b>
+<b class="fc">&nbsp;						} else if (dt1.equals(XSD.DECIMAL)) {</b>
+<b class="fc">&nbsp;							compareResult = leftLit.decimalValue().compareTo(rightLit.decimalValue());</b>
+<b class="fc">&nbsp;						} else if (XMLDatatypeUtil.isIntegerDatatype(dt1)) {</b>
+<b class="fc">&nbsp;							compareResult = leftLit.integerValue().compareTo(rightLit.integerValue());</b>
+<b class="fc">&nbsp;						} else if (dt1.equals(XSD.BOOLEAN)) {</b>
+<b class="fc">&nbsp;							Boolean leftBool = leftLit.booleanValue();</b>
+<b class="fc">&nbsp;							Boolean rightBool = rightLit.booleanValue();</b>
+<b class="fc">&nbsp;							compareResult = leftBool.compareTo(rightBool);</b>
+<b class="fc">&nbsp;						} else if (XMLDatatypeUtil.isCalendarDatatype(dt1)) {</b>
+<b class="fc">&nbsp;							XMLGregorianCalendar left = leftLit.calendarValue();</b>
+<b class="fc">&nbsp;							XMLGregorianCalendar right = rightLit.calendarValue();</b>
+&nbsp;
+<b class="fc">&nbsp;							compareResult = left.compare(right);</b>
+&nbsp;						}
+&nbsp;
+<b class="fc">&nbsp;						if (compareResult != null) {</b>
+<b class="fc">&nbsp;							if (compareResult != 0) {</b>
+<b class="fc">&nbsp;								return false;</b>
+&nbsp;							}
+<b class="fc">&nbsp;						} else if (!value1.equals(value2)) {</b>
+<b class="fc">&nbsp;							return false;</b>
+&nbsp;						}
+<b class="pc">&nbsp;					} else if (!value1.equals(value2)) {</b>
+<b class="fc">&nbsp;						return false;</b>
+&nbsp;					}
+<b class="fc">&nbsp;				} else if (!value1.equals(value2)) {</b>
+<b class="fc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check whether two {@link BindingSet}s are compatible. Two binding sets are compatible if they have equal values
+&nbsp;	 * for each variable that is bound in both binding sets.
+&nbsp;	 *
+&nbsp;	 * @param bs1
+&nbsp;	 * @param bs2
+&nbsp;	 * @return true if compatible
+&nbsp;	 */
+&nbsp;	public static boolean bindingSetsCompatible(BindingSet bs1, BindingSet bs2) {
+<b class="fc">&nbsp;		Set&lt;String&gt; bs1BindingNames = bs1.getBindingNames();</b>
+<b class="pc">&nbsp;		if (bs1BindingNames.isEmpty()) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Set&lt;String&gt; bs2BindingNames = bs2.getBindingNames();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (String bindingName : bs1BindingNames) {</b>
+&nbsp;
+<b class="fc">&nbsp;			if (bs2BindingNames.contains(bindingName)) {</b>
+<b class="fc">&nbsp;				Value value1 = bs1.getValue(bindingName);</b>
+&nbsp;
+&nbsp;				// if a variable is unbound in one set it is compatible
+<b class="fc">&nbsp;				if (value1 != null) {</b>
+<b class="fc">&nbsp;					Value value2 = bs2.getValue(bindingName);</b>
+&nbsp;
+&nbsp;					// if a variable is unbound in one set it is compatible
+<b class="pc">&nbsp;					if (value2 != null &amp;&amp; !value1.equals(value2)) {</b>
+<b class="fc">&nbsp;						return false;</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class GraphQueryResultFilter extends AbstractCloseableIteration&lt;Statement, QueryEvaluationException&gt;
+&nbsp;			implements GraphQueryResult {
+&nbsp;
+&nbsp;		private final DistinctIteration&lt;Statement, QueryEvaluationException&gt; filter;
+&nbsp;
+&nbsp;		private final GraphQueryResult unfiltered;
+&nbsp;
+<b class="nc">&nbsp;		public GraphQueryResultFilter(GraphQueryResult wrappedResult) {</b>
+<b class="nc">&nbsp;			this.filter = new DistinctIteration&lt;&gt;(wrappedResult);</b>
+<b class="nc">&nbsp;			this.unfiltered = wrappedResult;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;			if (isClosed()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean result = filter.hasNext();</b>
+<b class="nc">&nbsp;			if (!result) {</b>
+<b class="nc">&nbsp;				close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Statement next() throws QueryEvaluationException {
+<b class="nc">&nbsp;			if (isClosed()) {</b>
+<b class="nc">&nbsp;				throw new NoSuchElementException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				return filter.next();</b>
+<b class="nc">&nbsp;			} catch (NoSuchElementException e) {</b>
+<b class="nc">&nbsp;				close();</b>
+<b class="nc">&nbsp;				throw e;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;			if (isClosed()) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				filter.remove();</b>
+<b class="nc">&nbsp;			} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;				close();</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void handleClose() throws QueryEvaluationException {
+&nbsp;			try {
+<b class="nc">&nbsp;				super.handleClose();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				filter.close();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Map&lt;String, String&gt; getNamespaces() throws QueryEvaluationException {
+<b class="nc">&nbsp;			return unfiltered.getNamespaces();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class TupleQueryResultFilter extends AbstractCloseableIteration&lt;BindingSet, QueryEvaluationException&gt;
+&nbsp;			implements TupleQueryResult {
+&nbsp;
+&nbsp;		private final DistinctIteration&lt;BindingSet, QueryEvaluationException&gt; filter;
+&nbsp;
+&nbsp;		private final TupleQueryResult unfiltered;
+&nbsp;
+<b class="nc">&nbsp;		public TupleQueryResultFilter(TupleQueryResult wrappedResult) {</b>
+<b class="nc">&nbsp;			this.filter = new DistinctIteration&lt;&gt;(wrappedResult);</b>
+<b class="nc">&nbsp;			this.unfiltered = wrappedResult;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;			if (isClosed()) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean result = filter.hasNext();</b>
+<b class="nc">&nbsp;			if (!result) {</b>
+<b class="nc">&nbsp;				close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public BindingSet next() throws QueryEvaluationException {
+<b class="nc">&nbsp;			if (isClosed()) {</b>
+<b class="nc">&nbsp;				throw new NoSuchElementException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				return filter.next();</b>
+<b class="nc">&nbsp;			} catch (NoSuchElementException e) {</b>
+<b class="nc">&nbsp;				close();</b>
+<b class="nc">&nbsp;				throw e;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;			if (isClosed()) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				filter.remove();</b>
+<b class="nc">&nbsp;			} catch (IllegalStateException e) {</b>
+<b class="nc">&nbsp;				close();</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void handleClose() throws QueryEvaluationException {
+&nbsp;			try {
+<b class="nc">&nbsp;				super.handleClose();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				filter.close();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public List&lt;String&gt; getBindingNames() throws QueryEvaluationException {
+<b class="nc">&nbsp;			return unfiltered.getBindingNames();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class CleanerGraphQueryResult implements GraphQueryResult {
+&nbsp;
+<b class="nc">&nbsp;		private static final Logger logger = LoggerFactory.getLogger(CleanerGraphQueryResult.class);</b>
+&nbsp;
+&nbsp;		private final GraphQueryResult delegate;
+&nbsp;		private final Cleaner.Cleanable cleanable;
+&nbsp;		private final CleanableState state;
+&nbsp;
+<b class="nc">&nbsp;		public CleanerGraphQueryResult(GraphQueryResult delegate, Cleaner cleaner) {</b>
+<b class="nc">&nbsp;			this.delegate = delegate;</b>
+<b class="nc">&nbsp;			this.state = new CleanableState(delegate);</b>
+<b class="nc">&nbsp;			this.cleanable = cleaner.register(this, state);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() {
+<b class="nc">&nbsp;			state.close();</b>
+<b class="nc">&nbsp;			cleanable.clean();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() {
+<b class="nc">&nbsp;			return delegate.hasNext();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Statement next() {
+<b class="nc">&nbsp;			return delegate.next();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() {
+<b class="nc">&nbsp;			delegate.remove();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Map&lt;String, String&gt; getNamespaces() throws QueryEvaluationException {
+<b class="nc">&nbsp;			return delegate.getNamespaces();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private final static class CleanableState implements Runnable {
+&nbsp;
+&nbsp;			private final GraphQueryResult iteration;
+<b class="nc">&nbsp;			private boolean closed = false;</b>
+&nbsp;
+<b class="nc">&nbsp;			public CleanableState(GraphQueryResult iteration) {</b>
+<b class="nc">&nbsp;				this.iteration = iteration;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void run() {
+<b class="nc">&nbsp;				if (!closed) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						logger.warn(</b>
+&nbsp;								&quot;Forced closing of unclosed iteration. Set the system property &#39;org.eclipse.rdf4j.repository.debug&#39; to &#39;true&#39; to get stack traces.&quot;);
+<b class="nc">&nbsp;						iteration.close();</b>
+<b class="nc">&nbsp;					} catch (Exception e) {</b>
+<b class="nc">&nbsp;						if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;							Thread.currentThread().interrupt();</b>
+&nbsp;						}
+<b class="nc">&nbsp;						throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			public void close() {
+<b class="nc">&nbsp;				closed = true;</b>
+<b class="nc">&nbsp;				iteration.close();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,208 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JoinExecutorBase</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.join</a>
+</div>
+
+<h1>Coverage Summary for Class: JoinExecutorBase (org.eclipse.rdf4j.federated.evaluation.join)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JoinExecutorBase</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.join;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutorBase;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for any join parallel join executor.
+&nbsp; *
+&nbsp; * Note that this class extends {@link LookAheadIteration} and thus any implementation of this class is applicable for
+&nbsp; * pipelining when used in a different thread (access to shared variables is synchronized).
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public abstract class JoinExecutorBase&lt;T&gt; extends ParallelExecutorBase&lt;T&gt; {
+&nbsp;
+&nbsp;	/* Constants */
+&nbsp;	protected final TupleExpr rightArg; // the right argument for the join
+&nbsp;	protected final BindingSet bindings; // the bindings
+&nbsp;
+&nbsp;	/* Variables */
+&nbsp;	protected Set&lt;String&gt; joinVars; // might be unknown (i.e. null for some implementations)
+&nbsp;	protected CloseableIteration&lt;T, QueryEvaluationException&gt; leftIter;
+&nbsp;
+&nbsp;	public JoinExecutorBase(FederationEvalStrategy strategy, CloseableIteration&lt;T, QueryEvaluationException&gt; leftIter,
+&nbsp;			TupleExpr rightArg,
+&nbsp;			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
+<b class="nc">&nbsp;		super(queryInfo);</b>
+<b class="nc">&nbsp;		this.leftIter = leftIter;</b>
+<b class="nc">&nbsp;		this.rightArg = rightArg;</b>
+<b class="nc">&nbsp;		this.bindings = bindings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected final void performExecution() throws Exception {
+&nbsp;
+<b class="nc">&nbsp;		handleBindings();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Implementations must implement this method to handle bindings.
+&nbsp;	 *
+&nbsp;	 * Use the following as a template &lt;code&gt;
+&nbsp;	 * while (!closed &amp;&amp; leftIter.hasNext()) {
+&nbsp;	 * 		// your code
+&nbsp;	 * }
+&nbsp;	 * &lt;/code&gt;
+&nbsp;	 *
+&nbsp;	 * and add results to rightQueue. Note that addResult() is implemented synchronized and thus thread safe. In case
+&nbsp;	 * you can guarantee sequential access, it is also possible to directly access rightQueue
+&nbsp;	 *
+&nbsp;	 *
+&nbsp;	 * Note that the implementation must block until the entire join is executed.
+&nbsp;	 */
+&nbsp;	protected abstract void handleBindings() throws Exception;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleClose() throws QueryEvaluationException {
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			leftIter.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected String getExecutorType() {
+<b class="nc">&nbsp;		return &quot;Join&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the join variables, might be &lt;code&gt;null&lt;/code&gt; if unknown in the concrete implementation
+&nbsp;	 */
+&nbsp;	public Set&lt;String&gt; getJoinVars() {
+<b class="nc">&nbsp;		return joinVars;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the join variables
+&nbsp;	 *
+&nbsp;	 * @param joinVars the join variables
+&nbsp;	 */
+&nbsp;	public void setJoinVars(Set&lt;String&gt; joinVars) {
+<b class="nc">&nbsp;		this.joinVars = joinVars;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

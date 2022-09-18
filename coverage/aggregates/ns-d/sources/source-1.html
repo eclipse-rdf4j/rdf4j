@@ -1,0 +1,289 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConfigurationUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.app.util</a>
+</div>
+
+<h1>Coverage Summary for Class: ConfigurationUtil (org.eclipse.rdf4j.common.app.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConfigurationUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.app.util;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.Properties;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.app.config.Configuration;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.common.io.ResourceUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Configuration helper class
+&nbsp; */
+<b class="nc">&nbsp;public class ConfigurationUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load configuration settings from the specified file.
+&nbsp;	 *
+&nbsp;	 * @param file the file to load from
+&nbsp;	 * @return the contents of the file as a String, or null if the file did not exist
+&nbsp;	 * @throws IOException if the contents of the file could not be read due to an I/O problem
+&nbsp;	 */
+&nbsp;	public static String loadConfigurationContents(File file) throws IOException {
+<b class="nc">&nbsp;		String result = null;</b>
+<b class="nc">&nbsp;		if (file.exists()) {</b>
+<b class="nc">&nbsp;			result = IOUtil.readString(file);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load configuration settings from a resource on the classpath.
+&nbsp;	 *
+&nbsp;	 * @param resourceName the name of the resource
+&nbsp;	 * @return the contents of the resources as a String, or null if the resource, nor its default, could be found
+&nbsp;	 * @throws IOException if the resource could not be read due to an I/O problem
+&nbsp;	 */
+&nbsp;	public static String loadConfigurationContents(String resourceName) throws IOException {
+<b class="nc">&nbsp;		InputStream in = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			in = ResourceUtil.getInputStream(getResourceName(resourceName));</b>
+<b class="nc">&nbsp;			if (in == null) {</b>
+<b class="nc">&nbsp;				in = ResourceUtil.getInputStream(getDefaultResourceName(resourceName));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (in != null) {</b>
+<b class="nc">&nbsp;				return IOUtil.readString(in);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (in != null) {</b>
+<b class="nc">&nbsp;				in.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load configuration properties from the specified file.
+&nbsp;	 *
+&nbsp;	 * @param file     the file to load from
+&nbsp;	 * @param defaults default properties
+&nbsp;	 * @return the contents of the file as Properties, or null if the file did not exist
+&nbsp;	 * @throws IOException if the contents of the file could not be read due to an I/O problem
+&nbsp;	 */
+&nbsp;	public static Properties loadConfigurationProperties(File file, Properties defaults) throws IOException {
+&nbsp;		Properties result;
+<b class="nc">&nbsp;		if (file.exists()) {</b>
+<b class="nc">&nbsp;			result = IOUtil.readProperties(file, defaults);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			result = new Properties(defaults);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load configuration properties from a resource on the classpath.
+&nbsp;	 *
+&nbsp;	 * @param resourceName the name of the resource
+&nbsp;	 * @param defaults     default properties
+&nbsp;	 * @return the contents of the resource as Properties
+&nbsp;	 * @throws IOException if the resource could not be read due to an I/O problem
+&nbsp;	 */
+&nbsp;	public static Properties loadConfigurationProperties(String resourceName, Properties defaults) throws IOException {
+&nbsp;		Properties result;
+&nbsp;
+<b class="nc">&nbsp;		String defaultResourceName = getDefaultResourceName(resourceName);</b>
+&nbsp;
+&nbsp;		Properties defaultResult;
+<b class="nc">&nbsp;		InputStream in = ResourceUtil.getInputStream(defaultResourceName);</b>
+<b class="nc">&nbsp;		if (in != null) {</b>
+<b class="nc">&nbsp;			defaultResult = IOUtil.readProperties(in, defaults);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			defaultResult = new Properties(defaults);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// load application-specific overrides
+<b class="nc">&nbsp;		in = ResourceUtil.getInputStream(getResourceName(resourceName));</b>
+<b class="nc">&nbsp;		if (in != null) {</b>
+<b class="nc">&nbsp;			result = IOUtil.readProperties(in, defaultResult);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			result = new Properties(defaultResult);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get full resource name
+&nbsp;	 *
+&nbsp;	 * @param resourceName relative resource name
+&nbsp;	 * @return full resource location
+&nbsp;	 */
+&nbsp;	private static String getResourceName(String resourceName) {
+<b class="nc">&nbsp;		StringBuilder result = new StringBuilder(Configuration.RESOURCES_LOCATION);</b>
+<b class="nc">&nbsp;		if (resourceName.startsWith(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;			resourceName = resourceName.substring(1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		result.append(resourceName);</b>
+<b class="nc">&nbsp;		return result.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get full resource name from default location
+&nbsp;	 *
+&nbsp;	 * @param resourceName relative resource name
+&nbsp;	 * @return full default resource location
+&nbsp;	 */
+&nbsp;	private static String getDefaultResourceName(String resourceName) {
+<b class="nc">&nbsp;		StringBuilder result = new StringBuilder(Configuration.DEFAULT_RESOURCES_LOCATION);</b>
+<b class="nc">&nbsp;		if (resourceName.startsWith(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;			resourceName = resourceName.substring(1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		result.append(resourceName);</b>
+<b class="nc">&nbsp;		return result.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Save configuration settings to a file.
+&nbsp;	 *
+&nbsp;	 * @param contents the configuration settings
+&nbsp;	 * @param file     the file to write to
+&nbsp;	 * @throws IOException if the settings could not be saved because of an I/O problem
+&nbsp;	 */
+&nbsp;	public static void saveConfigurationContents(String contents, File file) throws IOException {
+<b class="nc">&nbsp;		if (file.getParentFile().mkdirs() || file.getParentFile().canWrite()) {</b>
+<b class="nc">&nbsp;			IOUtil.writeString(contents, file);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Save configuration properties to a file.
+&nbsp;	 *
+&nbsp;	 * @param props           the configuration properties
+&nbsp;	 * @param file            the file to write to
+&nbsp;	 * @param includeDefaults
+&nbsp;	 * @throws IOException if the settings could not be saved because of an I/O problem
+&nbsp;	 */
+&nbsp;	public static void saveConfigurationProperties(Properties props, File file, boolean includeDefaults)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		if (file.getParentFile().mkdirs() || file.getParentFile().canWrite()) {</b>
+<b class="nc">&nbsp;			IOUtil.writeProperties(props, file, includeDefaults);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

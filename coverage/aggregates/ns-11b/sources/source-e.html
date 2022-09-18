@@ -1,0 +1,534 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLUpdateConformanceTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLUpdateConformanceTest (org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLUpdateConformanceTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/189)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SPARQLUpdateConformanceTest$Factory</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/189)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.text.StringUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.repository.util.Repositories;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import junit.framework.TestCase;
+&nbsp;import junit.framework.TestSuite;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SPARQL 1.1 Update test, created by reading in a W3C working-group style manifest.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; *
+&nbsp; * @deprecated since 3.3.0. Use {@link SPARQL11UpdateComplianceTest} instead.
+&nbsp; */
+&nbsp;@Deprecated
+&nbsp;public abstract class SPARQLUpdateConformanceTest extends TestCase {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	static final Logger logger = LoggerFactory.getLogger(SPARQLUpdateConformanceTest.class);</b>
+&nbsp;
+&nbsp;	protected final String testURI;
+&nbsp;
+&nbsp;	protected final String requestFileURL;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	protected Repository dataRep;
+&nbsp;
+&nbsp;	protected Repository expectedResultRepo;
+&nbsp;
+&nbsp;	private final IRI inputDefaultGraph;
+&nbsp;
+&nbsp;	private final Map&lt;String, IRI&gt; inputNamedGraphs;
+&nbsp;
+&nbsp;	private final IRI resultDefaultGraph;
+&nbsp;
+&nbsp;	private final Map&lt;String, IRI&gt; resultNamedGraphs;
+&nbsp;
+&nbsp;	protected final Dataset dataset;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public SPARQLUpdateConformanceTest(String testURI, String name, String requestFile, IRI defaultGraphURI,
+&nbsp;			Map&lt;String, IRI&gt; inputNamedGraphs, IRI resultDefaultGraphURI, Map&lt;String, IRI&gt; resultNamedGraphs) {
+<b class="nc">&nbsp;		super(name);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.testURI = testURI;</b>
+<b class="nc">&nbsp;		this.requestFileURL = requestFile;</b>
+<b class="nc">&nbsp;		this.inputDefaultGraph = defaultGraphURI;</b>
+<b class="nc">&nbsp;		this.inputNamedGraphs = inputNamedGraphs;</b>
+<b class="nc">&nbsp;		this.resultDefaultGraph = resultDefaultGraphURI;</b>
+<b class="nc">&nbsp;		this.resultNamedGraphs = resultNamedGraphs;</b>
+&nbsp;
+<b class="nc">&nbsp;		final SimpleDataset ds = new SimpleDataset();</b>
+&nbsp;
+&nbsp;		// This ensures that the repository operates in &#39;exclusive
+&nbsp;		// mode&#39;: the default graph _only_ consists of the null-context (instead
+&nbsp;		// of the entire repository).
+<b class="nc">&nbsp;		ds.addDefaultGraph(null);</b>
+<b class="nc">&nbsp;		ds.addDefaultRemoveGraph(null);</b>
+<b class="nc">&nbsp;		ds.setDefaultInsertGraph(null);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (this.inputNamedGraphs.size() &gt; 0) {</b>
+<b class="nc">&nbsp;			for (String ng : inputNamedGraphs.keySet()) {</b>
+<b class="nc">&nbsp;				IRI namedGraph = SimpleValueFactory.getInstance().createIRI(ng);</b>
+<b class="nc">&nbsp;				ds.addNamedGraph(namedGraph);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.dataset = ds;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void setUp() throws Exception {
+<b class="nc">&nbsp;		dataRep = createRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection conn = dataRep.getConnection()) {</b>
+<b class="nc">&nbsp;			conn.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (inputDefaultGraph != null) {</b>
+<b class="nc">&nbsp;				URL graphURL = new URL(inputDefaultGraph.stringValue());</b>
+<b class="nc">&nbsp;				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())</b>
+<b class="nc">&nbsp;						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (String ng : inputNamedGraphs.keySet()) {</b>
+<b class="nc">&nbsp;				URL graphURL = new URL(inputNamedGraphs.get(ng).stringValue());</b>
+<b class="nc">&nbsp;				conn.add(graphURL, null,</b>
+<b class="nc">&nbsp;						Rio.getParserFormatForFileName(graphURL.toString())</b>
+<b class="nc">&nbsp;								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),</b>
+<b class="nc">&nbsp;						dataRep.getValueFactory().createIRI(ng));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		expectedResultRepo = createRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection conn = expectedResultRepo.getConnection()) {</b>
+<b class="nc">&nbsp;			conn.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (resultDefaultGraph != null) {</b>
+<b class="nc">&nbsp;				URL graphURL = new URL(resultDefaultGraph.stringValue());</b>
+<b class="nc">&nbsp;				conn.add(graphURL, null, Rio.getParserFormatForFileName(graphURL.toString())</b>
+<b class="nc">&nbsp;						.orElseThrow(Rio.unsupportedFormat(graphURL.toString())));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (String ng : resultNamedGraphs.keySet()) {</b>
+<b class="nc">&nbsp;				URL graphURL = new URL(resultNamedGraphs.get(ng).stringValue());</b>
+<b class="nc">&nbsp;				conn.add(graphURL, null,</b>
+<b class="nc">&nbsp;						Rio.getParserFormatForFileName(graphURL.toString())</b>
+<b class="nc">&nbsp;								.orElseThrow(Rio.unsupportedFormat(graphURL.toString())),</b>
+<b class="nc">&nbsp;						dataRep.getValueFactory().createIRI(ng));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Repository createRepository() throws Exception {
+<b class="nc">&nbsp;		Repository repo = newRepository();</b>
+<b class="nc">&nbsp;		Repositories.consume(repo, con -&gt; {</b>
+<b class="nc">&nbsp;			con.clear();</b>
+<b class="nc">&nbsp;			con.clearNamespaces();</b>
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		return repo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract Repository newRepository() throws Exception;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void tearDown() throws Exception {
+<b class="nc">&nbsp;		if (dataRep != null) {</b>
+<b class="nc">&nbsp;			dataRep.shutDown();</b>
+<b class="nc">&nbsp;			dataRep = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void runTest() throws Exception {
+<b class="nc">&nbsp;		RepositoryConnection con = dataRep.getConnection();</b>
+<b class="nc">&nbsp;		RepositoryConnection erCon = expectedResultRepo.getConnection();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			String updateString = readUpdateString();</b>
+&nbsp;
+<b class="nc">&nbsp;			con.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;			Update update = con.prepareUpdate(QueryLanguage.SPARQL, updateString, requestFileURL);</b>
+<b class="nc">&nbsp;			update.setDataset(dataset);</b>
+<b class="nc">&nbsp;			update.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;			con.commit();</b>
+&nbsp;
+&nbsp;			// check default graph
+<b class="nc">&nbsp;			logger.info(&quot;checking default graph&quot;);</b>
+<b class="nc">&nbsp;			compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, (Resource) null)),</b>
+<b class="nc">&nbsp;					Iterations.asList(erCon.getStatements(null, null, null, true, (Resource) null)));</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String namedGraph : inputNamedGraphs.keySet()) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;checking named graph {}&quot;, namedGraph);</b>
+<b class="nc">&nbsp;				IRI contextURI = con.getValueFactory().createIRI(namedGraph.replaceAll(&quot;\&quot;&quot;, &quot;&quot;));</b>
+<b class="nc">&nbsp;				compareGraphs(Iterations.asList(con.getStatements(null, null, null, true, contextURI)),</b>
+<b class="nc">&nbsp;						Iterations.asList(erCon.getStatements(null, null, null, true, contextURI)));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (con.isActive()) {</b>
+<b class="nc">&nbsp;				con.rollback();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			con.close();</b>
+<b class="nc">&nbsp;			erCon.close();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void compareGraphs(Iterable&lt;? extends Statement&gt; actual, Iterable&lt;? extends Statement&gt; expected)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		if (!Models.isomorphic(expected, actual)) {</b>
+<b class="nc">&nbsp;			StringBuilder message = new StringBuilder(128);</b>
+<b class="nc">&nbsp;			message.append(&quot;\n============ &quot;);</b>
+<b class="nc">&nbsp;			message.append(getName());</b>
+<b class="nc">&nbsp;			message.append(&quot; =======================\n&quot;);</b>
+<b class="nc">&nbsp;			message.append(&quot;Expected result: \n&quot;);</b>
+<b class="nc">&nbsp;			for (Statement st : expected) {</b>
+<b class="nc">&nbsp;				message.append(st.toString());</b>
+<b class="nc">&nbsp;				message.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			message.append(&quot;=============&quot;);</b>
+<b class="nc">&nbsp;			StringUtil.appendN(&#39;=&#39;, getName().length(), message);</b>
+<b class="nc">&nbsp;			message.append(&quot;========================\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			message.append(&quot;Actual result: \n&quot;);</b>
+<b class="nc">&nbsp;			for (Statement st : actual) {</b>
+<b class="nc">&nbsp;				message.append(st.toString());</b>
+<b class="nc">&nbsp;				message.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			message.append(&quot;=============&quot;);</b>
+<b class="nc">&nbsp;			StringUtil.appendN(&#39;=&#39;, getName().length(), message);</b>
+<b class="nc">&nbsp;			message.append(&quot;========================\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.error(message.toString());</b>
+<b class="nc">&nbsp;			fail(message.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private String readUpdateString() throws IOException {
+<b class="nc">&nbsp;		try (InputStream stream = new URL(requestFileURL).openStream()) {</b>
+<b class="nc">&nbsp;			return IOUtil.readString(new InputStreamReader(stream, StandardCharsets.UTF_8));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public interface Factory {
+&nbsp;
+&nbsp;		SPARQLUpdateConformanceTest createSPARQLUpdateConformanceTest(String testURI, String name, String requestFile,
+&nbsp;				IRI defaultGraphURI, Map&lt;String, IRI&gt; inputNamedGraphs, IRI resultDefaultGraphURI,
+&nbsp;				Map&lt;String, IRI&gt; resultNamedGraphs);
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static TestSuite suite(String manifestFileURL, Factory factory) throws Exception {
+<b class="nc">&nbsp;		return suite(manifestFileURL, factory, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static TestSuite suite(String manifestFileURL, Factory factory, boolean approvedOnly) throws Exception {
+<b class="nc">&nbsp;		logger.info(&quot;Building test suite for {}&quot;, manifestFileURL);</b>
+&nbsp;
+<b class="nc">&nbsp;		TestSuite suite = new TestSuite(factory.getClass().getName());</b>
+&nbsp;
+&nbsp;		// Read manifest and create declared test cases
+<b class="nc">&nbsp;		Repository manifestRep = new SailRepository(new MemoryStore());</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = manifestRep.getConnection()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			SPARQL11ManifestTest.addTurtle(con, new URL(manifestFileURL), manifestFileURL);</b>
+&nbsp;
+<b class="nc">&nbsp;			suite.setName(getManifestName(manifestRep, con, manifestFileURL));</b>
+&nbsp;
+&nbsp;			// Extract test case information from the manifest file. Note that we
+&nbsp;			// only select those test cases that are mentioned in the list.
+<b class="nc">&nbsp;			StringBuilder query = new StringBuilder(512);</b>
+<b class="nc">&nbsp;			query.append(&quot;PREFIX mf: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt;\n &quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;PREFIX dawgt = &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-dawg#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;PREFIX qt: &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;PREFIX ut: &lt;http://www.w3.org/2009/sparql/tests/test-update#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;PREFIX sd: &lt;http://www.w3.org/ns/sparql-service-description#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;PREFIX ent: &lt;http://www.w3.org/ns/entailment/&gt; \n&quot;);</b>
+<b class="nc">&nbsp;			query.append(</b>
+&nbsp;					&quot; SELECT DISTINCT ?testURI ?testName ?result ?action ?requestFile ?defaultGraph ?resultDefaultGraph \n&quot;);
+<b class="nc">&nbsp;			query.append(&quot; WHERE { [] rdf:first ?testURI. ?testURI a mf:UpdateEvaluationTest; &quot;);</b>
+<b class="nc">&nbsp;			if (approvedOnly) {</b>
+<b class="nc">&nbsp;				query.append(&quot;                          dawgt:approval dawgt:Approved; &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			query.append(&quot;                             mf:name ?testName; &quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;                             mf:action ?action. ?action ut:request ?requestFile. &quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;  OPTIONAL {?action ut:data ?defaultGraph .} &quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;    ?testURI mf:result ?result . \n&quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;  OPTIONAL { ?result ut:data ?resultDefaultGraph }} &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleQuery testCaseQuery = con.prepareTupleQuery(query.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;			query.setLength(0);</b>
+<b class="nc">&nbsp;			query.append(&quot;PREFIX ut: &lt;http://www.w3.org/2009/sparql/tests/test-update#&gt; \n&quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot; SELECT DISTINCT ?namedGraphData ?namedGraphLabel &quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot; WHERE { ?graphDef ut:graphData [ ut:graph ?namedGraphData ; &quot;);</b>
+<b class="nc">&nbsp;			query.append(&quot;                                  rdfs:label ?namedGraphLabel].} &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleQuery namedGraphsQuery = con.prepareTupleQuery(query.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;evaluating query..&quot;);</b>
+<b class="nc">&nbsp;			TupleQueryResult testCases = testCaseQuery.evaluate();</b>
+<b class="nc">&nbsp;			while (testCases.hasNext()) {</b>
+<b class="nc">&nbsp;				BindingSet bindingSet = testCases.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				IRI testURI = (IRI) bindingSet.getValue(&quot;testURI&quot;);</b>
+<b class="nc">&nbsp;				String testName = bindingSet.getValue(&quot;testName&quot;).toString();</b>
+<b class="nc">&nbsp;				Value result = bindingSet.getValue(&quot;result&quot;);</b>
+<b class="nc">&nbsp;				Value action = bindingSet.getValue(&quot;action&quot;);</b>
+<b class="nc">&nbsp;				IRI requestFile = (IRI) bindingSet.getValue(&quot;requestFile&quot;);</b>
+<b class="nc">&nbsp;				IRI defaultGraphURI = (IRI) bindingSet.getValue(&quot;defaultGraph&quot;);</b>
+<b class="nc">&nbsp;				IRI resultDefaultGraphURI = (IRI) bindingSet.getValue(&quot;resultDefaultGraph&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;				logger.debug(&quot;found test case : {}&quot;, testName);</b>
+&nbsp;
+&nbsp;				// Query input named graphs
+<b class="nc">&nbsp;				namedGraphsQuery.setBinding(&quot;graphDef&quot;, action);</b>
+<b class="nc">&nbsp;				TupleQueryResult inputNamedGraphsResult = namedGraphsQuery.evaluate();</b>
+&nbsp;
+<b class="nc">&nbsp;				HashMap&lt;String, IRI&gt; inputNamedGraphs = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (inputNamedGraphsResult.hasNext()) {</b>
+<b class="nc">&nbsp;					while (inputNamedGraphsResult.hasNext()) {</b>
+<b class="nc">&nbsp;						BindingSet graphBindings = inputNamedGraphsResult.next();</b>
+<b class="nc">&nbsp;						IRI namedGraphData = (IRI) graphBindings.getValue(&quot;namedGraphData&quot;);</b>
+<b class="nc">&nbsp;						String namedGraphLabel = ((Literal) graphBindings.getValue(&quot;namedGraphLabel&quot;)).getLabel();</b>
+<b class="nc">&nbsp;						logger.debug(&quot; adding named graph : {}&quot;, namedGraphLabel);</b>
+<b class="nc">&nbsp;						inputNamedGraphs.put(namedGraphLabel, namedGraphData);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Query result named graphs
+<b class="nc">&nbsp;				namedGraphsQuery.setBinding(&quot;graphDef&quot;, result);</b>
+<b class="nc">&nbsp;				TupleQueryResult resultNamedGraphsResult = namedGraphsQuery.evaluate();</b>
+&nbsp;
+<b class="nc">&nbsp;				HashMap&lt;String, IRI&gt; resultNamedGraphs = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (resultNamedGraphsResult.hasNext()) {</b>
+<b class="nc">&nbsp;					while (resultNamedGraphsResult.hasNext()) {</b>
+<b class="nc">&nbsp;						BindingSet graphBindings = resultNamedGraphsResult.next();</b>
+<b class="nc">&nbsp;						IRI namedGraphData = (IRI) graphBindings.getValue(&quot;namedGraphData&quot;);</b>
+<b class="nc">&nbsp;						String namedGraphLabel = ((Literal) graphBindings.getValue(&quot;namedGraphLabel&quot;)).getLabel();</b>
+<b class="nc">&nbsp;						logger.debug(&quot; adding named graph : {}&quot;, namedGraphLabel);</b>
+<b class="nc">&nbsp;						resultNamedGraphs.put(namedGraphLabel, namedGraphData);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				SPARQLUpdateConformanceTest test = factory.createSPARQLUpdateConformanceTest(testURI.toString(),</b>
+&nbsp;						testName,
+<b class="nc">&nbsp;						requestFile.toString(), defaultGraphURI, inputNamedGraphs, resultDefaultGraphURI,</b>
+&nbsp;						resultNamedGraphs);
+&nbsp;
+<b class="nc">&nbsp;				if (test != null) {</b>
+<b class="nc">&nbsp;					suite.addTest(test);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			testCases.close();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		manifestRep.shutDown();</b>
+<b class="nc">&nbsp;		logger.info(&quot;Created test suite with &quot; + suite.countTestCases() + &quot; test cases.&quot;);</b>
+<b class="nc">&nbsp;		return suite;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static String getManifestName(Repository manifestRep, RepositoryConnection con, String manifestFileURL)
+&nbsp;			throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+&nbsp;		// Try to extract suite name from manifest file
+<b class="nc">&nbsp;		TupleQuery manifestNameQuery = con.prepareTupleQuery(</b>
+&nbsp;				&quot;SELECT ?ManifestName WHERE { ?ManifestURL rdfs:label ?ManifestName .}&quot;);
+<b class="nc">&nbsp;		manifestNameQuery.setBinding(&quot;ManifestURL&quot;, manifestRep.getValueFactory().createIRI(manifestFileURL));</b>
+<b class="nc">&nbsp;		try (TupleQueryResult manifestNames = manifestNameQuery.evaluate()) {</b>
+<b class="nc">&nbsp;			if (manifestNames.hasNext()) {</b>
+<b class="nc">&nbsp;				return manifestNames.next().getValue(&quot;ManifestName&quot;).stringValue();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// Derive name from manifest URL
+<b class="nc">&nbsp;		int lastSlashIdx = manifestFileURL.lastIndexOf(&#39;/&#39;);</b>
+<b class="nc">&nbsp;		int secLastSlashIdx = manifestFileURL.lastIndexOf(&#39;/&#39;, lastSlashIdx - 1);</b>
+<b class="nc">&nbsp;		return manifestFileURL.substring(secLastSlashIdx + 1, lastSlashIdx);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,408 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TransactionSAXParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.protocol.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: TransactionSAXParser (org.eclipse.rdf4j.http.protocol.transaction)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TransactionSAXParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/100)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/153)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.protocol.transaction;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.ClearNamespacesOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.ClearOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.RemoveNamespaceOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.RemoveStatementsOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.SPARQLUpdateOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.SetNamespaceOperation;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleBinding;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.RDFStarUtil;
+&nbsp;import org.xml.sax.SAXException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Parses an RDF transaction document into a collection of {@link TransactionOperation} objects.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Leo Sauermann
+&nbsp; */
+&nbsp;class TransactionSAXParser extends SimpleSAXAdapter {
+&nbsp;
+&nbsp;	private final ValueFactory valueFactory;
+&nbsp;
+&nbsp;	protected Collection&lt;TransactionOperation&gt; txn;
+&nbsp;
+<b class="nc">&nbsp;	private final List&lt;Value&gt; parsedValues = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private List&lt;Binding&gt; bindings;
+&nbsp;
+<b class="nc">&nbsp;	private SPARQLUpdateOperation currentSPARQLUpdate = null;</b>
+&nbsp;
+&nbsp;	private SimpleDataset currentDataset;
+&nbsp;
+&nbsp;	public TransactionSAXParser() {
+<b class="nc">&nbsp;		this(SimpleValueFactory.getInstance());</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public TransactionSAXParser(ValueFactory valueFactory) {</b>
+<b class="nc">&nbsp;		this.valueFactory = valueFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * get the parsed transaction
+&nbsp;	 *
+&nbsp;	 * @return the parsed transaction
+&nbsp;	 */
+&nbsp;	public Collection&lt;TransactionOperation&gt; getTxn() {
+<b class="nc">&nbsp;		return txn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startDocument() throws SAXException {
+<b class="nc">&nbsp;		txn = new ArrayList&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startTag(String tagName, Map&lt;String, String&gt; atts, String text) throws SAXException {
+<b class="nc">&nbsp;		if (TransactionXMLConstants.TRIPLE_TAG.equals(tagName)) {</b>
+&nbsp;			// fixes GH-3048
+<b class="nc">&nbsp;			parsedValues.add(RDFStarUtil.fromRDFEncodedValue(valueFactory.createIRI(text)));</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.URI_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			parsedValues.add(valueFactory.createIRI(text));</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.BNODE_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			parsedValues.add(valueFactory.createBNode(text));</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.LITERAL_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			String lang = atts.get(TransactionXMLConstants.LANG_ATT);</b>
+<b class="nc">&nbsp;			String datatype = atts.get(TransactionXMLConstants.DATATYPE_ATT);</b>
+<b class="nc">&nbsp;			String encoding = atts.get(TransactionXMLConstants.ENCODING_ATT);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (encoding != null &amp;&amp; &quot;base64&quot;.equalsIgnoreCase(encoding)) {</b>
+<b class="nc">&nbsp;				text = new String(javax.xml.bind.DatatypeConverter.parseBase64Binary(text));</b>
+&nbsp;			}
+&nbsp;			Literal lit;
+<b class="nc">&nbsp;			if (lang != null) {</b>
+<b class="nc">&nbsp;				lit = valueFactory.createLiteral(text, lang);</b>
+<b class="nc">&nbsp;			} else if (datatype != null) {</b>
+<b class="nc">&nbsp;				IRI dtURI = valueFactory.createIRI(datatype);</b>
+<b class="nc">&nbsp;				lit = valueFactory.createLiteral(text, dtURI);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				lit = valueFactory.createLiteral(text);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			parsedValues.add(lit);</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.NULL_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			parsedValues.add(null);</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.SET_NAMESPACE_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			String prefix = atts.get(TransactionXMLConstants.PREFIX_ATT);</b>
+<b class="nc">&nbsp;			String name = atts.get(TransactionXMLConstants.NAME_ATT);</b>
+<b class="nc">&nbsp;			txn.add(new SetNamespaceOperation(prefix, name));</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.REMOVE_NAMESPACE_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			String prefix = atts.get(TransactionXMLConstants.PREFIX_ATT);</b>
+<b class="nc">&nbsp;			txn.add(new RemoveNamespaceOperation(prefix));</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.CLEAR_NAMESPACES_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			txn.add(new ClearNamespacesOperation());</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.SPARQL_UPDATE_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			if (currentSPARQLUpdate != null) {</b>
+<b class="nc">&nbsp;				throw new SAXException(&quot;unexpected start of SPARQL Update operation&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			currentSPARQLUpdate = new SPARQLUpdateOperation();</b>
+&nbsp;
+<b class="nc">&nbsp;			String baseURI = atts.get(TransactionXMLConstants.BASE_URI_ATT);</b>
+<b class="nc">&nbsp;			boolean includeInferred = Boolean.parseBoolean(atts.get(TransactionXMLConstants.INCLUDE_INFERRED_ATT));</b>
+&nbsp;
+<b class="nc">&nbsp;			currentSPARQLUpdate.setIncludeInferred(includeInferred);</b>
+<b class="nc">&nbsp;			currentSPARQLUpdate.setBaseURI(baseURI);</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.UPDATE_STRING_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			currentSPARQLUpdate.setUpdateString(text);</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.DATASET_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			currentDataset = new SimpleDataset();</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.DEFAULT_INSERT_GRAPH.equals(tagName)) {</b>
+<b class="nc">&nbsp;			currentDataset.setDefaultInsertGraph(valueFactory.createIRI(text));</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.GRAPH_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			parsedValues.add(valueFactory.createIRI(text));</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.BINDINGS.equals(tagName)) {</b>
+<b class="nc">&nbsp;			if (bindings != null) {</b>
+<b class="nc">&nbsp;				throw new SAXException(&quot;unexpected start of SPARQL Update operation bindings&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			bindings = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.BINDING_URI.equals(tagName)</b>
+<b class="nc">&nbsp;				|| TransactionXMLConstants.BINDING_BNODE.equals(tagName)</b>
+<b class="nc">&nbsp;				|| TransactionXMLConstants.BINDING_LITERAL.equals(tagName)) {</b>
+<b class="nc">&nbsp;			if (bindings == null) {</b>
+<b class="nc">&nbsp;				throw new SAXException(&quot;unexpected start of SPARQL Update operation binding (without &lt;bindings&gt;)&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			String value = text;</b>
+<b class="nc">&nbsp;			String name = atts.get(TransactionXMLConstants.NAME_ATT);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (name != null &amp;&amp; value != null) {</b>
+&nbsp;				Value v;
+&nbsp;
+<b class="nc">&nbsp;				if (TransactionXMLConstants.BINDING_URI.equals(tagName)) {</b>
+<b class="nc">&nbsp;					v = valueFactory.createIRI(value);</b>
+<b class="nc">&nbsp;				} else if (TransactionXMLConstants.BINDING_BNODE.equals(tagName)) {</b>
+<b class="nc">&nbsp;					v = valueFactory.createBNode(value);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					String language = atts.get(TransactionXMLConstants.LANGUAGE_ATT);</b>
+<b class="nc">&nbsp;					String dataType = atts.get(TransactionXMLConstants.DATA_TYPE_ATT);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (language != null) {</b>
+<b class="nc">&nbsp;						v = valueFactory.createLiteral(value, language);</b>
+<b class="nc">&nbsp;					} else if (dataType != null) {</b>
+<b class="nc">&nbsp;						v = valueFactory.createLiteral(value, valueFactory.createIRI(dataType));</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						v = valueFactory.createLiteral(value);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				bindings.add(new SimpleBinding(name, v));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endTag(String tagName) throws SAXException {
+<b class="nc">&nbsp;		if (TransactionXMLConstants.ADD_STATEMENT_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			txn.add(createAddStatementOperation());</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.REMOVE_STATEMENTS_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			txn.add(createRemoveStatementsOperation());</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.CLEAR_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			txn.add(createClearOperation());</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.SPARQL_UPDATE_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			txn.add(currentSPARQLUpdate);</b>
+<b class="nc">&nbsp;			currentSPARQLUpdate = null;</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.DEFAULT_GRAPHS_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			for (Value parsedValue : parsedValues) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					currentDataset.addDefaultGraph((IRI) parsedValue);</b>
+<b class="nc">&nbsp;				} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;					throw new SAXException(&quot;unexpected value in default graph list: &quot; + parsedValue);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			parsedValues.clear();</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.NAMED_GRAPHS_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			for (Value parsedValue : parsedValues) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					currentDataset.addNamedGraph((IRI) parsedValue);</b>
+<b class="nc">&nbsp;				} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;					throw new SAXException(&quot;unexpected value in named graph list: &quot; + parsedValue);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			parsedValues.clear();</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.DEFAULT_REMOVE_GRAPHS_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			for (Value parsedValue : parsedValues) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					currentDataset.addDefaultRemoveGraph((IRI) parsedValue);</b>
+<b class="nc">&nbsp;				} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;					throw new SAXException(&quot;unexpected value in default remove graph list: &quot; + parsedValue);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			parsedValues.clear();</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.DATASET_TAG.equals(tagName)) {</b>
+<b class="nc">&nbsp;			currentSPARQLUpdate.setDataset(currentDataset);</b>
+<b class="nc">&nbsp;			currentDataset = null;</b>
+<b class="nc">&nbsp;		} else if (TransactionXMLConstants.BINDINGS.equals(tagName)) {</b>
+<b class="nc">&nbsp;			Binding b[] = bindings.toArray(new Binding[0]);</b>
+<b class="nc">&nbsp;			currentSPARQLUpdate.setBindings(b);</b>
+<b class="nc">&nbsp;			bindings.clear();</b>
+<b class="nc">&nbsp;			bindings = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private TransactionOperation createClearOperation() throws SAXException {
+<b class="nc">&nbsp;		Resource[] contexts = createContexts(0);</b>
+<b class="nc">&nbsp;		parsedValues.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ClearOperation(contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private TransactionOperation createAddStatementOperation() throws SAXException {
+<b class="nc">&nbsp;		if (parsedValues.size() &lt; 3) {</b>
+<b class="nc">&nbsp;			throw new SAXException(</b>
+<b class="nc">&nbsp;					&quot;At least three values required for AddStatementOperation, found: &quot; + parsedValues.size());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Resource subject = (Resource) parsedValues.get(0);</b>
+<b class="nc">&nbsp;			IRI predicate = (IRI) parsedValues.get(1);</b>
+<b class="nc">&nbsp;			Value object = parsedValues.get(2);</b>
+<b class="nc">&nbsp;			Resource[] contexts = createContexts(3);</b>
+&nbsp;
+<b class="nc">&nbsp;			parsedValues.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (subject == null || predicate == null || object == null) {</b>
+<b class="nc">&nbsp;				throw new SAXException(&quot;Subject, predicate and object cannot be null for an AddStatementOperation&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return new AddStatementOperation(subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			throw new SAXException(&quot;Invalid argument(s) for AddStatementOperation&quot;, e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private TransactionOperation createRemoveStatementsOperation() throws SAXException {
+<b class="nc">&nbsp;		if (parsedValues.size() &lt; 3) {</b>
+<b class="nc">&nbsp;			throw new SAXException(</b>
+<b class="nc">&nbsp;					&quot;At least three values required for RemoveStatementsOperation, found: &quot; + parsedValues.size());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Resource subject = (Resource) parsedValues.get(0);</b>
+<b class="nc">&nbsp;			IRI predicate = (IRI) parsedValues.get(1);</b>
+<b class="nc">&nbsp;			Value object = parsedValues.get(2);</b>
+<b class="nc">&nbsp;			Resource[] contexts = createContexts(3);</b>
+&nbsp;
+<b class="nc">&nbsp;			parsedValues.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;			return new RemoveStatementsOperation(subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			throw new SAXException(&quot;Invalid argument(s) for RemoveStatementsOperation&quot;, e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Resource[] createContexts(int startIdx) throws SAXException {
+<b class="nc">&nbsp;		List&lt;Resource&gt; contexts = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = startIdx; i &lt; parsedValues.size(); i++) {</b>
+<b class="nc">&nbsp;			Value contextCandidate = parsedValues.get(i);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (contextCandidate == null || contextCandidate instanceof Resource) {</b>
+<b class="nc">&nbsp;				contexts.add((Resource) contextCandidate);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new SAXException(&quot;Invalid context value: &quot; + contextCandidate.getClass());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return contexts.toArray(new Resource[contexts.size()]);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

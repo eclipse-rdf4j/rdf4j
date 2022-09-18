@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > Dataset</title>
+  <title>Coverage Report > QueryResultHandler</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query</a>
 </div>
 
-<h1>Coverage Summary for Class: Dataset (org.eclipse.rdf4j.query)</h1>
+<h1>Coverage Summary for Class: QueryResultHandler (org.eclipse.rdf4j.query)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">Dataset</td>
+  <td class="name">QueryResultHandler</td>
 </tr>
 
 </table>
@@ -50,47 +50,98 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query;
 &nbsp;
-&nbsp;import java.util.Set;
-&nbsp;
-&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import java.util.List;
 &nbsp;
 &nbsp;/**
-&nbsp; * Represents a dataset against which operations can be evaluated. A dataset consists of a default graph for read and
-&nbsp; * using operations, which is the &lt;a href=&quot;http://www.w3.org/TR/rdf-mt/#defmerge&quot;&gt;RDF merge&lt;/a&gt; of one or more graphs, a
-&nbsp; * set of named graphs, and a single update graph for INSERT and DELETE. See
-&nbsp; * &lt;a href=&quot;http://www.w3.org/TR/rdf-sparql-query/#rdfDataset&quot;&gt;SPARQL Query Language for RDF&lt;/a&gt; for more info.
+&nbsp; * The super class of all handlers for processing query results.
+&nbsp; * &lt;p&gt;
+&nbsp; * This interface contains methods for optionally processing both boolean and tuple results sets simultaneously, but
+&nbsp; * there are no guarantees that an implementation will be able to process these values together. If a method is not
+&nbsp; * supported then an {@link UnsupportedOperationException} will be thrown to indicate this failure. This failure may be
+&nbsp; * prevented by checking for whether the class implements {@link BooleanQueryResultHandler} or
+&nbsp; * {@link TupleQueryResultHandler}, for boolean and tuple results support respectively.
+&nbsp; * &lt;p&gt;
+&nbsp; * If both boolean and tuple results are supported but they are not able to to be processed simultaneously, then a
+&nbsp; * checked exception, either {@link BooleanQueryResultHandlerException} or {@link TupleQueryResultHandlerException},
+&nbsp; * will be thrown to indicate this failure when the relevant methods are called.
 &nbsp; *
-&nbsp; * @author Simon Schenk
-&nbsp; * @author Arjohn Kampman
-&nbsp; * @author James Leigh
+&nbsp; * @author Peter Ansell
 &nbsp; */
-&nbsp;public interface Dataset {
+&nbsp;public interface QueryResultHandler {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the default remove graph URIs of this dataset. An empty set indicates the the store&#39;s default behaviour
-&nbsp;	 * should be used, if not otherwise indicated in the operation.
+&nbsp;	 * Handles the specified boolean value.
+&nbsp;	 *
+&nbsp;	 * @param value The boolean value to handle.
+&nbsp;	 * @throws QueryResultHandlerException   If there was an error during the handling of this value. This exception may
+&nbsp;	 *                                       be thrown if the {@link #startQueryResult(List)},
+&nbsp;	 *                                       {@link #handleSolution(BindingSet)} or {@link #endQueryResult()} methods
+&nbsp;	 *                                       were called before this method was called, and the handler cannot process
+&nbsp;	 *                                       both boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException If this method is not supported
 &nbsp;	 */
-&nbsp;	Set&lt;IRI&gt; getDefaultRemoveGraphs();
+&nbsp;	void handleBoolean(boolean value) throws QueryResultHandlerException;
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the default insert graph URI of this dataset. An null value indicates that the store&#39;s default behaviour
-&nbsp;	 * should be used, if not otherwise indicated in the operation.
+&nbsp;	 * Handles the links elements which are present in SPARQL Results JSON and SPARQL Results XML documents in the
+&nbsp;	 * header.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * NOTE: If the format does not support links, it must silently ignore a call to this method.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * An accumulating handler should accumulate these links.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-results-json/#select-link&quot;&gt;&quot;link&quot;&lt;/a&gt;
+&nbsp;	 * @param linkUrls The URLs of the links to handle.
+&nbsp;	 * @throws QueryResultHandlerException If there was an error handling the set of link URLs. This error is not thrown
+&nbsp;	 *                                     in cases where links are not supported.
 &nbsp;	 */
-&nbsp;	IRI getDefaultInsertGraph();
+&nbsp;	void handleLinks(List&lt;String&gt; linkUrls) throws QueryResultHandlerException;
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the default graph URIs of this dataset. An empty default graph set and a non-empty named graph set indicates
-&nbsp;	 * that the default graph is an empty graph. However, if both the default graph set and the named graph set are
-&nbsp;	 * empty, that indicates that the store&#39;s default behaviour should be used.
+&nbsp;	 * Indicates the start of a sequence of Solutions. The supplied bindingNames are an indication of the values that
+&nbsp;	 * are in the Solutions. For example, a SPARQL query like &lt;var&gt;select ?X ?Y where { ?X ?P ?Y } &lt;/var&gt; will have
+&nbsp;	 * binding names &lt;var&gt;X&lt;/var&gt; and &lt;var&gt;Y&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param bindingNames An ordered set of binding names.
+&nbsp;	 * @throws TupleQueryResultHandlerException If there was an error during the starting of the query result handler.
+&nbsp;	 *                                          This exception may be thrown if the {@link #handleBoolean(boolean)}
+&nbsp;	 *                                          method was called before this method and the handler cannot process both
+&nbsp;	 *                                          boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException    If this method is not supported
+&nbsp;	 * @throws IllegalStateException            If the {@link #handleSolution(BindingSet)} or {@link #endQueryResult()}
+&nbsp;	 *                                          methods were called before this method and the handler cannot process
+&nbsp;	 *                                          multiple sets of tuple results simultaneously.
 &nbsp;	 */
-&nbsp;	Set&lt;IRI&gt; getDefaultGraphs();
+&nbsp;	void startQueryResult(List&lt;String&gt; bindingNames) throws TupleQueryResultHandlerException;
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the named graph URIs of this dataset. An empty named graph set and a non-empty default graph set indicates
-&nbsp;	 * that there are no named graphs. However, if both the default graph set and the named graph set are empty, that
-&nbsp;	 * indicates that the store&#39;s default behaviour should be used.
+&nbsp;	 * Indicates the end of a sequence of solutions.
+&nbsp;	 *
+&nbsp;	 * @throws TupleQueryResultHandlerException If there was an error during the ending of the query result handler.
+&nbsp;	 *                                          This exception may be thrown if the {@link #handleBoolean(boolean)}
+&nbsp;	 *                                          method was called before this method and the handler cannot process both
+&nbsp;	 *                                          boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException    If this method is not supported
+&nbsp;	 * @throws IllegalStateException            If the {@link #endQueryResult()} was previously called for this handler
+&nbsp;	 *                                          or {@link #startQueryResult(List)} was NOT called before this method.
 &nbsp;	 */
-&nbsp;	Set&lt;IRI&gt; getNamedGraphs();
+&nbsp;	void endQueryResult() throws TupleQueryResultHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles a solution.
+&nbsp;	 *
+&nbsp;	 * @param bindingSet A single set of tuple results, with binding names bound to values. Each of the binding names in
+&nbsp;	 *                   the solution must have previously been registered with the {@link #startQueryResult(List)}
+&nbsp;	 *                   method.
+&nbsp;	 * @throws TupleQueryResultHandlerException If there was an error during the handling of the query solution. This
+&nbsp;	 *                                          exception may be thrown if the {@link #handleBoolean(boolean)} method
+&nbsp;	 *                                          was called before this method and the handler cannot process both
+&nbsp;	 *                                          boolean and tuple results simultaneously.
+&nbsp;	 * @throws UnsupportedOperationException    If this method is not supported
+&nbsp;	 * @throws IllegalStateException            If the {@link #endQueryResult()} method was called before this method or
+&nbsp;	 *                                          {@link #startQueryResult(List)} was NOT called before this method.
+&nbsp;	 */
+&nbsp;	void handleSolution(BindingSet bindingSet) throws TupleQueryResultHandlerException;
 &nbsp;}
 </code>
 </pre>
@@ -115,7 +166,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

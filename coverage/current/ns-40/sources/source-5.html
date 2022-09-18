@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > WriteStrategy</title>
+  <title>Coverage Report > WriteStrategyFactory</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.write</a>
 </div>
 
-<h1>Coverage Summary for Class: WriteStrategy (org.eclipse.rdf4j.federated.write)</h1>
+<h1>Coverage Summary for Class: WriteStrategyFactory (org.eclipse.rdf4j.federated.write)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">WriteStrategy</td>
+  <td class="name">WriteStrategyFactory</td>
 </tr>
 
 </table>
@@ -39,7 +39,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <pre>
 <code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
-&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
 &nbsp; *
 &nbsp; * All rights reserved. This program and the accompanying materials
 &nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
@@ -50,89 +50,31 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.federated.write;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
-&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
-&nbsp;import org.eclipse.rdf4j.model.IRI;
-&nbsp;import org.eclipse.rdf4j.model.Resource;
-&nbsp;import org.eclipse.rdf4j.model.Value;
-&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 &nbsp;
 &nbsp;/**
-&nbsp; * Interface for the {@link WriteStrategy} that is used for writing data to the federation. The implementation can
-&nbsp; * decided upon how is data written to the underlying federation members (e.g. to a designated federation member)
+&nbsp; * Factory to create {@link WriteStrategy} instantiations.
 &nbsp; *
 &nbsp; * &lt;p&gt;
-&nbsp; * &lt;b&gt;Note:&lt;/b&gt; this is an experimental feature which is subject to change in a future version.
+&nbsp; * Implementations must have a default constructor.
 &nbsp; * &lt;/p&gt;
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
-&nbsp; * @see RepositoryWriteStrategy
-&nbsp; * @see ReadOnlyWriteStrategy
+&nbsp; *
 &nbsp; */
-&nbsp;@Experimental
-&nbsp;public interface WriteStrategy extends AutoCloseable {
-&nbsp;	/**
-&nbsp;	 * Close this write strategy (e.g. close a shared {@link RepositoryException}).
-&nbsp;	 *
-&nbsp;	 * @throws RepositoryException
-&nbsp;	 */
-&nbsp;	@Override
-&nbsp;	void close() throws RepositoryException;
+&nbsp;public interface WriteStrategyFactory {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Assign {@link TransactionSetting}s to be used for the next transaction.
+&nbsp;	 * Create the {@link WriteStrategy} using the provided context
 &nbsp;	 *
-&nbsp;	 * @param transactionSettings one or more {@link TransactionSetting}s
-&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @param members           the current federation members
+&nbsp;	 * @param federationContext the federation context
+&nbsp;	 * @return the {@link WriteStrategy}
 &nbsp;	 */
-&nbsp;	void setTransactionSettings(TransactionSetting... transactionSettings) throws RepositoryException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Begin a transaction.
-&nbsp;	 *
-&nbsp;	 * @throws RepositoryException
-&nbsp;	 */
-&nbsp;	void begin() throws RepositoryException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Commit a transaction.
-&nbsp;	 *
-&nbsp;	 * @throws RepositoryException
-&nbsp;	 */
-&nbsp;	void commit() throws RepositoryException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Rollback a transaction.
-&nbsp;	 *
-&nbsp;	 * @throws RepositoryException
-&nbsp;	 */
-&nbsp;	void rollback() throws RepositoryException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Add a statement
-&nbsp;	 *
-&nbsp;	 * @param subj
-&nbsp;	 * @param pred
-&nbsp;	 * @param obj
-&nbsp;	 * @param contexts
-&nbsp;	 * @throws RepositoryException
-&nbsp;	 */
-&nbsp;	void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws RepositoryException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Remove a statement
-&nbsp;	 *
-&nbsp;	 * @param subj
-&nbsp;	 * @param pred
-&nbsp;	 * @param obj
-&nbsp;	 * @param contexts
-&nbsp;	 * @throws RepositoryException
-&nbsp;	 */
-&nbsp;	void removeStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws RepositoryException;
-&nbsp;
-&nbsp;	void clear(Resource... contexts) throws RepositoryException;
-&nbsp;
-&nbsp;	void clearNamespaces() throws RepositoryException;
+&nbsp;	WriteStrategy create(List&lt;Endpoint&gt; members, FederationContext federationContext);
 &nbsp;}
 </code>
 </pre>
@@ -157,7 +99,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

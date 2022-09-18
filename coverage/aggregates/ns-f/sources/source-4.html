@@ -1,0 +1,323 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LockCleaner</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks.diagnostics</a>
+</div>
+
+<h1>Coverage Summary for Class: LockCleaner (org.eclipse.rdf4j.common.concurrent.locks.diagnostics)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LockCleaner</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LockCleaner$CleanableLock</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">LockCleaner$CleanableLock$State</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks.diagnostics;
+&nbsp;
+&nbsp;import java.lang.ref.Cleaner;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Properties;
+&nbsp;import org.slf4j.Logger;
+&nbsp;
+&nbsp;/**
+&nbsp; * Automatically log and release locks that are no longer referenced and will be garbage collected.
+&nbsp; *
+&nbsp; * @author Håvard M. Ottestad
+&nbsp; */
+<b class="nc">&nbsp;@InternalUseOnly</b>
+&nbsp;public class LockCleaner&lt;T extends Lock&gt; implements LockMonitoring&lt;T&gt; {
+&nbsp;
+<b class="nc">&nbsp;	private final static ConcurrentCleaner cleaner = new ConcurrentCleaner();</b>
+&nbsp;	private final Logger logger;
+&nbsp;	private final Lock.ExtendedSupplier&lt;T&gt; supplier;
+&nbsp;	private final String alias;
+&nbsp;	private final boolean stacktrace;
+&nbsp;
+<b class="nc">&nbsp;	public LockCleaner(boolean stacktrace, String alias, Logger logger, Lock.ExtendedSupplier&lt;T&gt; supplier) {</b>
+<b class="nc">&nbsp;		this.stacktrace = stacktrace;</b>
+<b class="nc">&nbsp;		this.supplier = supplier;</b>
+<b class="nc">&nbsp;		this.logger = logger;</b>
+<b class="nc">&nbsp;		this.alias = alias;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Lock getLock() throws InterruptedException {
+<b class="nc">&nbsp;		return getLockInner(supplier.getLock());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Lock tryLock() {
+&nbsp;
+<b class="nc">&nbsp;		T lock = supplier.tryLock();</b>
+<b class="nc">&nbsp;		if (lock != null) {</b>
+<b class="nc">&nbsp;			return getLockInner(lock);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public T unsafeInnerLock(Lock lock) {
+<b class="nc">&nbsp;		if (lock instanceof CleanableLock) {</b>
+<b class="nc">&nbsp;			return ((CleanableLock&lt;T&gt;) lock).state.lock;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Supplied lock is not instanceof CleanableLock&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Lock register(T lock) {
+<b class="nc">&nbsp;		return getLockInner(lock);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void unregister(Lock lock) {
+<b class="nc">&nbsp;		assert !lock.isActive();</b>
+<b class="nc">&nbsp;		if (lock instanceof CleanableLock) {</b>
+<b class="nc">&nbsp;			((CleanableLock&lt;T&gt;) lock).cleanable.clean();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Supplied lock is not instanceof CleanableLock&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private CleanableLock&lt;T&gt; getLockInner(T lock) {
+<b class="nc">&nbsp;		if (stacktrace) {</b>
+<b class="nc">&nbsp;			return new CleanableLock&lt;&gt;(cleaner, lock, alias, logger, Thread.currentThread(),</b>
+<b class="nc">&nbsp;					new Throwable(&quot;\&quot;&quot; + alias + &quot;\&quot; lock acquired in &quot; + Thread.currentThread().getName()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new CleanableLock&lt;&gt;(cleaner, lock, alias, logger, null, null);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static class CleanableLock&lt;T extends Lock&gt; implements Lock {
+&nbsp;
+&nbsp;		private final Cleaner.Cleanable cleanable;
+&nbsp;		private final State&lt;T&gt; state;
+&nbsp;
+&nbsp;		public CleanableLock(ConcurrentCleaner cleaner, T lock, String alias, Logger logger, Thread thread,
+<b class="nc">&nbsp;				Throwable throwable) {</b>
+<b class="nc">&nbsp;			this.state = new State&lt;&gt;(lock, alias, logger, thread, throwable);</b>
+<b class="nc">&nbsp;			this.cleanable = cleaner.register(this, state);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isActive() {
+<b class="nc">&nbsp;			return state.lock.isActive();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void release() {
+<b class="nc">&nbsp;			state.lock.release();</b>
+<b class="nc">&nbsp;			cleanable.clean();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		static class State&lt;T extends Lock&gt; implements Runnable {
+&nbsp;
+&nbsp;			private final T lock;
+&nbsp;			private final String alias;
+&nbsp;			private final Logger logger;
+&nbsp;			private final Thread thread;
+&nbsp;			private final Throwable stack;
+&nbsp;
+<b class="nc">&nbsp;			public State(T lock, String alias, Logger logger, Thread thread, Throwable stack) {</b>
+<b class="nc">&nbsp;				this.lock = lock;</b>
+<b class="nc">&nbsp;				this.alias = alias;</b>
+<b class="nc">&nbsp;				this.logger = logger;</b>
+<b class="nc">&nbsp;				this.thread = thread;</b>
+<b class="nc">&nbsp;				this.stack = stack;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			public void run() {
+&nbsp;				// cleanup action accessing State, executed at most once
+<b class="nc">&nbsp;				if (lock.isActive()) {</b>
+&nbsp;
+<b class="nc">&nbsp;					if (stack == null) {</b>
+<b class="nc">&nbsp;						logger.warn(&quot;\&quot;{}\&quot; lock abandoned; consider setting the {} system property&quot;, alias,</b>
+&nbsp;								Properties.TRACK_LOCKS);
+&nbsp;					} else {
+<b class="nc">&nbsp;						logger.warn(&quot;\&quot;{}\&quot; lock abandoned; lock was acquired in {}&quot;, alias, thread.getName(), stack);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					lock.release();</b>
+&nbsp;
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,562 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TriXParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.trix</a>
+</div>
+
+<h1>Coverage Summary for Class: TriXParser (org.eclipse.rdf4j.rio.trix)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TriXParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/83)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TriXParser$TriXSAXHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/57)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/140)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.trix;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.BNODE_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.CONTEXT_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.DATATYPE_ATT;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.LANGUAGE_ATT;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.PLAIN_LITERAL_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.TRIPLE_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.TYPED_LITERAL_TAG;
+&nbsp;import static org.eclipse.rdf4j.rio.trix.TriXConstants.URI_TAG;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.io.input.BOMInputStream;
+&nbsp;import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
+&nbsp;import org.eclipse.rdf4j.common.xml.SimpleSAXParser;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.TriXParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.XMLReaderBasedParser;
+&nbsp;import org.xml.sax.ErrorHandler;
+&nbsp;import org.xml.sax.InputSource;
+&nbsp;import org.xml.sax.Locator;
+&nbsp;import org.xml.sax.SAXException;
+&nbsp;import org.xml.sax.SAXParseException;
+&nbsp;import org.xml.sax.XMLReader;
+&nbsp;
+&nbsp;/**
+&nbsp; * A parser that can parse RDF files that are in the &lt;a href=&quot;http://www.w3.org/2004/03/trix/&quot;&gt;TriX format&lt;/a&gt; .
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class TriXParser extends XMLReaderBasedParser implements ErrorHandler {</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	private SimpleSAXParser saxParser;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TriXParser that will use a {@link SimpleValueFactory} to create objects for resources, bNodes,
+&nbsp;	 * literals and statements.
+&nbsp;	 */
+&nbsp;	public TriXParser() {
+<b class="nc">&nbsp;		this(SimpleValueFactory.getInstance());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TriXParser that will use the supplied ValueFactory to create objects for resources, bNodes,
+&nbsp;	 * literals and statements.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory A ValueFactory.
+&nbsp;	 */
+&nbsp;	public TriXParser(ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.TRIX;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+&nbsp;		// Override to add TriX/XML specific supported settings
+<b class="nc">&nbsp;		Set&lt;RioSetting&lt;?&gt;&gt; results = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		results.addAll(getCompulsoryXmlPropertySettings());</b>
+<b class="nc">&nbsp;		results.addAll(getCompulsoryXmlFeatureSettings());</b>
+<b class="nc">&nbsp;		results.addAll(getOptionalXmlPropertySettings());</b>
+<b class="nc">&nbsp;		results.addAll(getOptionalXmlFeatureSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		results.add(XMLParserSettings.CUSTOM_XML_READER);</b>
+<b class="nc">&nbsp;		results.add(XMLParserSettings.FAIL_ON_MISMATCHED_TAGS);</b>
+<b class="nc">&nbsp;		results.add(XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);</b>
+<b class="nc">&nbsp;		results.add(TriXParserSettings.FAIL_ON_INVALID_STATEMENT);</b>
+<b class="nc">&nbsp;		results.add(TriXParserSettings.FAIL_ON_MISSING_DATATYPE);</b>
+<b class="nc">&nbsp;		return results;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		if (in == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Input stream cannot be &#39;null&#39;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		InputSource inputSource = new InputSource(new BOMInputStream(in, false));</b>
+<b class="nc">&nbsp;		if (baseURI != null) {</b>
+<b class="nc">&nbsp;			inputSource.setSystemId(baseURI);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		parse(inputSource);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		if (reader == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Reader cannot be &#39;null&#39;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		InputSource inputSource = new InputSource(reader);</b>
+<b class="nc">&nbsp;		if (baseURI != null) {</b>
+<b class="nc">&nbsp;			inputSource.setSystemId(baseURI);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		parse(inputSource);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void parse(InputSource inputStreamOrReader) throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		clear();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;				rdfHandler.startRDF();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			XMLReader xmlReader = getXMLReader();</b>
+<b class="nc">&nbsp;			xmlReader.setErrorHandler(this);</b>
+&nbsp;
+<b class="nc">&nbsp;			saxParser = new SimpleSAXParser(xmlReader);</b>
+<b class="nc">&nbsp;			saxParser.setPreserveWhitespace(true);</b>
+<b class="nc">&nbsp;			saxParser.setListener(new TriXSAXHandler());</b>
+&nbsp;
+<b class="nc">&nbsp;			saxParser.parse(inputStreamOrReader);</b>
+<b class="nc">&nbsp;		} catch (SAXParseException e) {</b>
+<b class="nc">&nbsp;			Exception wrappedExc = e.getException();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (wrappedExc == null) {</b>
+<b class="nc">&nbsp;				reportFatalError(e, e.getLineNumber(), e.getColumnNumber());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				reportFatalError(wrappedExc, e.getLineNumber(), e.getColumnNumber());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (SAXException e) {</b>
+<b class="nc">&nbsp;			Exception wrappedExc = e.getException();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (wrappedExc == null) {</b>
+<b class="nc">&nbsp;				reportFatalError(e);</b>
+<b class="nc">&nbsp;			} else if (wrappedExc instanceof RDFParseException) {</b>
+<b class="nc">&nbsp;				throw (RDFParseException) wrappedExc;</b>
+<b class="nc">&nbsp;			} else if (wrappedExc instanceof RDFHandlerException) {</b>
+<b class="nc">&nbsp;				throw (RDFHandlerException) wrappedExc;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				reportFatalError(wrappedExc);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			clear();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;			rdfHandler.endRDF();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Literal createLiteral(String label, String lang, IRI datatype) throws RDFParseException {
+<b class="nc">&nbsp;		Locator locator = saxParser.getLocator();</b>
+<b class="nc">&nbsp;		if (locator != null) {</b>
+<b class="nc">&nbsp;			return createLiteral(label, lang, datatype, locator.getLineNumber(), locator.getColumnNumber());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return createLiteral(label, lang, datatype, -1, -1);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line- and column number information to the
+&nbsp;	 * error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportWarning(String msg) {
+<b class="nc">&nbsp;		Locator locator = saxParser.getLocator();</b>
+<b class="nc">&nbsp;		if (locator != null) {</b>
+<b class="nc">&nbsp;			reportWarning(msg, locator.getLineNumber(), locator.getColumnNumber());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			reportWarning(msg, -1, -1);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line- and column number information
+&nbsp;	 * to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportError(String msg, RioSetting&lt;Boolean&gt; setting) throws RDFParseException {
+<b class="nc">&nbsp;		Locator locator = saxParser.getLocator();</b>
+<b class="nc">&nbsp;		if (locator != null) {</b>
+<b class="nc">&nbsp;			reportError(msg, locator.getLineNumber(), locator.getColumnNumber(), setting);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			reportError(msg, -1, -1, setting);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line- and column number information to the
+&nbsp;	 * error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportFatalError(String msg) throws RDFParseException {
+<b class="nc">&nbsp;		Locator locator = saxParser.getLocator();</b>
+<b class="nc">&nbsp;		if (locator != null) {</b>
+<b class="nc">&nbsp;			reportFatalError(msg, locator.getLineNumber(), locator.getColumnNumber());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			reportFatalError(msg, -1, -1);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line- and column number information to
+&nbsp;	 * the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportFatalError(Exception e) throws RDFParseException {
+<b class="nc">&nbsp;		Locator locator = saxParser.getLocator();</b>
+<b class="nc">&nbsp;		if (locator != null) {</b>
+<b class="nc">&nbsp;			reportFatalError(e, locator.getLineNumber(), locator.getColumnNumber());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			reportFatalError(e, -1, -1);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*----------------------------*
+&nbsp;	 * Inner class TriXSAXHandler *
+&nbsp;	 *----------------------------*/
+&nbsp;
+&nbsp;	private class TriXSAXHandler extends SimpleSAXAdapter {
+&nbsp;
+&nbsp;		private Resource currentContext;
+&nbsp;
+&nbsp;		private boolean parsingContext;
+&nbsp;
+&nbsp;		private final List&lt;Value&gt; valueList;
+&nbsp;
+<b class="nc">&nbsp;		public TriXSAXHandler() {</b>
+<b class="nc">&nbsp;			currentContext = null;</b>
+<b class="nc">&nbsp;			valueList = new ArrayList&lt;&gt;(3);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void startTag(String tagName, Map&lt;String, String&gt; atts, String text) throws SAXException {
+&nbsp;			try {
+<b class="nc">&nbsp;				if (tagName.equals(URI_TAG)) {</b>
+<b class="nc">&nbsp;					valueList.add(createURI(text));</b>
+<b class="nc">&nbsp;				} else if (tagName.equals(BNODE_TAG)) {</b>
+<b class="nc">&nbsp;					valueList.add(createNode(text));</b>
+<b class="nc">&nbsp;				} else if (tagName.equals(PLAIN_LITERAL_TAG)) {</b>
+<b class="nc">&nbsp;					String lang = atts.get(LANGUAGE_ATT);</b>
+<b class="nc">&nbsp;					valueList.add(createLiteral(text, lang, null));</b>
+<b class="nc">&nbsp;				} else if (tagName.equals(TYPED_LITERAL_TAG)) {</b>
+<b class="nc">&nbsp;					String datatype = atts.get(DATATYPE_ATT);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (datatype == null) {</b>
+<b class="nc">&nbsp;						reportError(DATATYPE_ATT + &quot; attribute missing for typed literal&quot;,</b>
+&nbsp;								TriXParserSettings.FAIL_ON_MISSING_DATATYPE);
+<b class="nc">&nbsp;						valueList.add(createLiteral(text, null, null));</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						IRI dtURI = createURI(datatype);</b>
+<b class="nc">&nbsp;						valueList.add(createLiteral(text, null, dtURI));</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (tagName.equals(TRIPLE_TAG)) {</b>
+<b class="nc">&nbsp;					if (parsingContext) {</b>
+&nbsp;						try {
+&nbsp;							// First triple in a context, valueList can contain
+&nbsp;							// context information
+<b class="nc">&nbsp;							if (valueList.size() &gt; 1) {</b>
+<b class="nc">&nbsp;								reportError(&quot;At most 1 resource can be specified for the context&quot;,</b>
+&nbsp;										TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+<b class="nc">&nbsp;							} else if (valueList.size() == 1) {</b>
+&nbsp;								try {
+<b class="nc">&nbsp;									currentContext = (Resource) valueList.get(0);</b>
+<b class="nc">&nbsp;								} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;									reportError(&quot;Context identifier should be a URI or blank node&quot;,</b>
+&nbsp;											TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+<b class="nc">&nbsp;								}</b>
+&nbsp;							}
+&nbsp;						} finally {
+<b class="nc">&nbsp;							parsingContext = false;</b>
+<b class="nc">&nbsp;							valueList.clear();</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (tagName.equals(CONTEXT_TAG)) {</b>
+<b class="nc">&nbsp;					parsingContext = true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;				throw new SAXException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void endTag(String tagName) throws SAXException {
+&nbsp;			try {
+<b class="nc">&nbsp;				if (tagName.equals(TRIPLE_TAG)) {</b>
+<b class="nc">&nbsp;					reportStatement();</b>
+<b class="nc">&nbsp;				} else if (tagName.equals(CONTEXT_TAG)) {</b>
+<b class="nc">&nbsp;					currentContext = null;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RDFParseException | RDFHandlerException e) {</b>
+<b class="nc">&nbsp;				throw new SAXException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void reportStatement() throws RDFParseException, RDFHandlerException {
+&nbsp;			try {
+<b class="nc">&nbsp;				if (valueList.size() != 3) {</b>
+<b class="nc">&nbsp;					reportError(&quot;exactly 3 values are required for a triple&quot;,</b>
+&nbsp;							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+&nbsp;				Resource subj;
+&nbsp;				IRI pred;
+&nbsp;				Value obj;
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					subj = (Resource) valueList.get(0);</b>
+<b class="nc">&nbsp;				} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;					reportError(&quot;First value for a triple should be a URI or blank node&quot;,</b>
+&nbsp;							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+&nbsp;					return;
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					pred = (IRI) valueList.get(1);</b>
+<b class="nc">&nbsp;				} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;					reportError(&quot;Second value for a triple should be a URI&quot;,</b>
+&nbsp;							TriXParserSettings.FAIL_ON_INVALID_STATEMENT);
+&nbsp;					return;
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				obj = valueList.get(2);</b>
+&nbsp;
+<b class="nc">&nbsp;				Statement st = createStatement(subj, pred, obj, currentContext);</b>
+<b class="nc">&nbsp;				if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;					rdfHandler.handleStatement(st);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				valueList.clear();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	} // end inner class TriXSAXHandler
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Implementation of SAX ErrorHandler.warning
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void warning(SAXParseException exception) throws SAXException {
+<b class="nc">&nbsp;		this.reportWarning(exception.getMessage());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Implementation of SAX ErrorHandler.error
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void error(SAXParseException exception) throws SAXException {
+&nbsp;		try {
+<b class="nc">&nbsp;			this.reportError(exception.getMessage(), XMLParserSettings.FAIL_ON_SAX_NON_FATAL_ERRORS);</b>
+<b class="nc">&nbsp;		} catch (RDFParseException rdfpe) {</b>
+<b class="nc">&nbsp;			throw new SAXException(rdfpe);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Implementation of SAX ErrorHandler.fatalError
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void fatalError(SAXParseException exception) throws SAXException {
+&nbsp;		try {
+<b class="nc">&nbsp;			this.reportFatalError(exception.getMessage());</b>
+<b class="nc">&nbsp;		} catch (RDFParseException rdfpe) {</b>
+<b class="nc">&nbsp;			throw new SAXException(rdfpe);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

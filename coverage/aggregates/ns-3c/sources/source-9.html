@@ -1,0 +1,557 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SourceSelection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: SourceSelection (org.eclipse.rdf4j.federated.optimizer)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SourceSelection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/51)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SourceSelection$CheckTaskPair</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SourceSelection$ParallelCheckTask</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SourceSelection$SourceSelectionExecutorWithLatch</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/114)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.optimizer;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.CopyOnWriteArrayList;
+&nbsp;import java.util.concurrent.CountDownLatch;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementSource;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionCache.StatementSourceAssurance;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
+&nbsp;import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
+&nbsp;import org.eclipse.rdf4j.federated.exception.OptimizationException;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.structures.SubQuery;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Perform source selection during optimization
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class SourceSelection {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(SourceSelection.class);</b>
+&nbsp;
+&nbsp;	protected final List&lt;Endpoint&gt; endpoints;
+&nbsp;	protected final SourceSelectionCache cache;
+&nbsp;	protected final QueryInfo queryInfo;
+&nbsp;
+<b class="nc">&nbsp;	public SourceSelection(List&lt;Endpoint&gt; endpoints, SourceSelectionCache cache, QueryInfo queryInfo) {</b>
+<b class="nc">&nbsp;		this.endpoints = endpoints;</b>
+<b class="nc">&nbsp;		this.cache = cache;</b>
+<b class="nc">&nbsp;		this.queryInfo = queryInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Map statements to their sources. Use synchronized access!
+&nbsp;	 */
+<b class="nc">&nbsp;	protected Map&lt;StatementPattern, List&lt;StatementSource&gt;&gt; stmtToSources = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Perform source selection for the provided statements using cache or remote ASK queries.
+&nbsp;	 *
+&nbsp;	 * Remote ASK queries are evaluated in parallel using the concurrency infrastructure of FedX. Note, that this method
+&nbsp;	 * is blocking until every source is resolved.
+&nbsp;	 *
+&nbsp;	 * The statement patterns are replaced by appropriate annotations in this optimization.
+&nbsp;	 *
+&nbsp;	 * @param stmts
+&nbsp;	 */
+&nbsp;	public void doSourceSelection(List&lt;StatementPattern&gt; stmts) {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;CheckTaskPair&gt; remoteCheckTasks = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// for each statement determine the relevant sources
+<b class="nc">&nbsp;		for (StatementPattern stmt : stmts) {</b>
+&nbsp;
+&nbsp;			// jump over the statement (e.g. if the same pattern is used in two union branches)
+<b class="nc">&nbsp;			if (stmtToSources.containsKey(stmt)) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			stmtToSources.put(stmt, new ArrayList&lt;&gt;());</b>
+&nbsp;
+<b class="nc">&nbsp;			SubQuery q = new SubQuery(stmt, queryInfo.getDataset());</b>
+&nbsp;
+&nbsp;			// check for each current federation member (cache or remote ASK)
+<b class="nc">&nbsp;			for (Endpoint e : endpoints) {</b>
+<b class="nc">&nbsp;				StatementSourceAssurance a = cache.getAssurance(q, e);</b>
+<b class="nc">&nbsp;				if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {</b>
+<b class="nc">&nbsp;					addSource(stmt, new StatementSource(e.getId(), StatementSourceType.REMOTE));</b>
+<b class="nc">&nbsp;				} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {</b>
+<b class="nc">&nbsp;					remoteCheckTasks.add(new CheckTaskPair(e, stmt, queryInfo));</b>
+<b class="nc">&nbsp;				} else if (a == StatementSourceAssurance.NONE) {</b>
+&nbsp;					// cannot provide any statements
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new IllegalStateException(&quot;Unexpected statement source assurance: &quot; + a);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// if remote checks are necessary, execute them using the concurrency
+&nbsp;		// infrastructure and block until everything is resolved
+<b class="nc">&nbsp;		if (remoteCheckTasks.size() &gt; 0) {</b>
+<b class="nc">&nbsp;			SourceSelectionExecutorWithLatch.run(this, remoteCheckTasks, cache);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// iterate over input statements, BGP might be uses twice
+&nbsp;		// resulting in the same entry in stmtToSources
+<b class="nc">&nbsp;		for (StatementPattern stmt : stmts) {</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;StatementSource&gt; sources = stmtToSources.get(stmt);</b>
+&nbsp;
+&nbsp;			// if more than one source -&gt; StatementSourcePattern
+&nbsp;			// exactly one source -&gt; OwnedStatementSourcePattern
+&nbsp;			// otherwise: No resource seems to provide results
+&nbsp;
+<b class="nc">&nbsp;			if (sources.size() &gt; 1) {</b>
+<b class="nc">&nbsp;				StatementSourcePattern stmtNode = new StatementSourcePattern(stmt, queryInfo);</b>
+<b class="nc">&nbsp;				for (StatementSource s : sources) {</b>
+<b class="nc">&nbsp;					stmtNode.addStatementSource(s);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				stmt.replaceWith(stmtNode);</b>
+<b class="nc">&nbsp;			} else if (sources.size() == 1) {</b>
+<b class="nc">&nbsp;				stmt.replaceWith(new ExclusiveStatement(stmt, sources.get(0), queryInfo));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;					log.debug(&quot;Statement &quot; + QueryStringUtil.toString(stmt)</b>
+&nbsp;							+ &quot; does not produce any results at the provided sources, replacing node with EmptyStatementPattern.&quot;);
+&nbsp;				}
+<b class="nc">&nbsp;				stmt.replaceWith(new EmptyStatementPattern(stmt));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a set of relevant sources for this query.
+&nbsp;	 *
+&nbsp;	 * @return the relevant sources
+&nbsp;	 */
+&nbsp;	public Set&lt;Endpoint&gt; getRelevantSources() {
+<b class="nc">&nbsp;		Set&lt;Endpoint&gt; endpoints = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (List&lt;StatementSource&gt; sourceList : stmtToSources.values()) {</b>
+<b class="nc">&nbsp;			for (StatementSource source : sourceList) {</b>
+<b class="nc">&nbsp;				endpoints</b>
+<b class="nc">&nbsp;						.add(queryInfo.getFederationContext().getEndpointManager().getEndpoint(source.getEndpointID()));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return endpoints;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add a source to the given statement in the map (synchronized through map)
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param source
+&nbsp;	 */
+&nbsp;	protected void addSource(StatementPattern stmt, StatementSource source) {
+&nbsp;		// The list for the stmt mapping is already initialized
+<b class="nc">&nbsp;		List&lt;StatementSource&gt; sources = stmtToSources.get(stmt);</b>
+<b class="nc">&nbsp;		synchronized (sources) {</b>
+<b class="nc">&nbsp;			sources.add(source);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static class SourceSelectionExecutorWithLatch implements ParallelExecutor&lt;BindingSet&gt; {
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Execute the given list of tasks in parallel, and block the thread until all tasks are completed.
+&nbsp;		 * Synchronization is achieved by means of a latch. Results are added to the map of the source selection
+&nbsp;		 * instance. Errors are reported as {@link OptimizationException} instances.
+&nbsp;		 *
+&nbsp;		 * @param tasks
+&nbsp;		 */
+&nbsp;		public static void run(SourceSelection sourceSelection, List&lt;CheckTaskPair&gt; tasks, SourceSelectionCache cache) {
+<b class="nc">&nbsp;			new SourceSelectionExecutorWithLatch(sourceSelection).executeRemoteSourceSelection(tasks, cache);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private final SourceSelection sourceSelection;
+&nbsp;		private final ControlledWorkerScheduler&lt;BindingSet&gt; scheduler;
+&nbsp;		private CountDownLatch latch;
+<b class="nc">&nbsp;		private boolean finished = false;</b>
+<b class="nc">&nbsp;		protected List&lt;Exception&gt; errors = new CopyOnWriteArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		private SourceSelectionExecutorWithLatch(SourceSelection sourceSelection) {</b>
+<b class="nc">&nbsp;			this.sourceSelection = sourceSelection;</b>
+&nbsp;			// TODO simpler access pattern
+<b class="nc">&nbsp;			this.scheduler = sourceSelection.queryInfo.getFederationContext().getManager().getJoinScheduler();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Execute the given list of tasks in parallel, and block the thread until all tasks are completed.
+&nbsp;		 * Synchronization is achieved by means of a latch
+&nbsp;		 *
+&nbsp;		 * @param tasks
+&nbsp;		 */
+&nbsp;		private void executeRemoteSourceSelection(List&lt;CheckTaskPair&gt; tasks, SourceSelectionCache cache) {
+<b class="nc">&nbsp;			if (tasks.isEmpty()) {</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			latch = new CountDownLatch(tasks.size());</b>
+<b class="nc">&nbsp;			for (CheckTaskPair task : tasks) {</b>
+<b class="nc">&nbsp;				scheduler.schedule(new ParallelCheckTask(task.e, task.t, task.queryInfo, this));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				boolean completed = latch.await(getQueryInfo().getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);</b>
+<b class="nc">&nbsp;				if (!completed) {</b>
+<b class="nc">&nbsp;					throw new OptimizationException(&quot;Source selection has run into a timeout&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;				log.debug(&quot;Error during source selection. Thread got interrupted.&quot;);</b>
+<b class="nc">&nbsp;				errors.add(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			finished = true;</b>
+&nbsp;
+&nbsp;			// check for errors:
+<b class="nc">&nbsp;			if (errors.size() &gt; 0) {</b>
+<b class="nc">&nbsp;				StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;				sb.append(</b>
+<b class="nc">&nbsp;						errors.size() + &quot; errors were reported while optimizing query &quot; + getQueryInfo().getQueryID());</b>
+&nbsp;
+<b class="nc">&nbsp;				for (Exception e : errors) {</b>
+<b class="nc">&nbsp;					sb.append(&quot;\n&quot; + ExceptionUtil.getExceptionString(&quot;Error occured&quot;, e));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				log.debug(sb.toString());</b>
+&nbsp;
+<b class="nc">&nbsp;				Exception ex = errors.get(0);</b>
+<b class="nc">&nbsp;				errors.clear();</b>
+<b class="nc">&nbsp;				if (ex instanceof OptimizationException) {</b>
+<b class="nc">&nbsp;					throw (OptimizationException) ex;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				throw new OptimizationException(ex.getMessage(), ex);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void run() {
+&nbsp;			/* not needed */
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void addResult(CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res) {
+<b class="nc">&nbsp;			latch.countDown();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void toss(Exception e) {
+<b class="nc">&nbsp;			latch.countDown();</b>
+<b class="nc">&nbsp;			errors.add(e);</b>
+<b class="nc">&nbsp;			getQueryInfo().abort();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void done() {
+&nbsp;			/* not needed */
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isFinished() {
+<b class="nc">&nbsp;			return finished;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public QueryInfo getQueryInfo() {
+<b class="nc">&nbsp;			return sourceSelection.queryInfo;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected class CheckTaskPair {
+&nbsp;		public final Endpoint e;
+&nbsp;		public final StatementPattern t;
+&nbsp;		public final QueryInfo queryInfo;
+&nbsp;
+<b class="nc">&nbsp;		public CheckTaskPair(Endpoint e, StatementPattern t, QueryInfo queryInfo) {</b>
+<b class="nc">&nbsp;			this.e = e;</b>
+<b class="nc">&nbsp;			this.t = t;</b>
+<b class="nc">&nbsp;			this.queryInfo = queryInfo;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Task for sending an ASK request to the endpoints (for source selection)
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 */
+&nbsp;	protected static class ParallelCheckTask extends ParallelTaskBase&lt;BindingSet&gt; {
+&nbsp;
+&nbsp;		protected final Endpoint endpoint;
+&nbsp;		protected final StatementPattern stmt;
+&nbsp;		protected final SourceSelectionExecutorWithLatch control;
+&nbsp;		protected final QueryInfo queryInfo;
+&nbsp;
+&nbsp;		public ParallelCheckTask(Endpoint endpoint, StatementPattern stmt, QueryInfo queryInfo,
+<b class="nc">&nbsp;				SourceSelectionExecutorWithLatch control) {</b>
+<b class="nc">&nbsp;			this.endpoint = endpoint;</b>
+<b class="nc">&nbsp;			this.stmt = stmt;</b>
+<b class="nc">&nbsp;			this.queryInfo = queryInfo;</b>
+<b class="nc">&nbsp;			this.control = control;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; performTaskInternal() throws Exception {
+&nbsp;			try {
+<b class="nc">&nbsp;				TripleSource t = endpoint.getTripleSource();</b>
+&nbsp;				boolean hasResults;
+<b class="nc">&nbsp;				hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo, queryInfo.getDataset());</b>
+&nbsp;
+<b class="nc">&nbsp;				SourceSelection sourceSelection = control.sourceSelection;</b>
+<b class="nc">&nbsp;				sourceSelection.cache.updateInformation(new SubQuery(stmt, queryInfo.getDataset()), endpoint,</b>
+&nbsp;						hasResults);
+&nbsp;
+<b class="nc">&nbsp;				if (hasResults) {</b>
+<b class="nc">&nbsp;					sourceSelection.addSource(stmt, new StatementSource(endpoint.getId(), StatementSourceType.REMOTE));</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				return null;</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				throw new OptimizationException(</b>
+<b class="nc">&nbsp;						&quot;Error checking results for endpoint &quot; + endpoint.getId() + &quot;: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ParallelExecutor&lt;BindingSet&gt; getControl() {
+<b class="nc">&nbsp;			return control;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void cancel() {
+<b class="nc">&nbsp;			control.latch.countDown();</b>
+<b class="nc">&nbsp;			super.cancel();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

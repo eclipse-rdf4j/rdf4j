@@ -1,0 +1,301 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryModelVisitor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryModelVisitor (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryModelVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;/**
+&nbsp; * An interface for query model visitors, implementing the Visitor pattern. Core query model nodes will call their
+&nbsp; * type-specific method when {@link QueryModelNode#visit(QueryModelVisitor)} is called. The method
+&nbsp; * {@link #meetOther(QueryModelNode)} is provided as a hook for foreign query model nodes.
+&nbsp; */
+&nbsp;public interface QueryModelVisitor&lt;X extends Exception&gt; {
+&nbsp;
+&nbsp;	void meet(QueryRoot node) throws X;
+&nbsp;
+&nbsp;	void meet(Add add) throws X;
+&nbsp;
+&nbsp;	void meet(And node) throws X;
+&nbsp;
+&nbsp;	void meet(ArbitraryLengthPath node) throws X;
+&nbsp;
+&nbsp;	void meet(Avg node) throws X;
+&nbsp;
+&nbsp;	void meet(BindingSetAssignment node) throws X;
+&nbsp;
+&nbsp;	void meet(BNodeGenerator node) throws X;
+&nbsp;
+&nbsp;	void meet(Bound node) throws X;
+&nbsp;
+&nbsp;	void meet(Clear clear) throws X;
+&nbsp;
+&nbsp;	void meet(Coalesce node) throws X;
+&nbsp;
+&nbsp;	void meet(Compare node) throws X;
+&nbsp;
+&nbsp;	void meet(CompareAll node) throws X;
+&nbsp;
+&nbsp;	void meet(CompareAny node) throws X;
+&nbsp;
+&nbsp;	void meet(DescribeOperator node) throws X;
+&nbsp;
+&nbsp;	void meet(Copy copy) throws X;
+&nbsp;
+&nbsp;	void meet(Count node) throws X;
+&nbsp;
+&nbsp;	void meet(Create create) throws X;
+&nbsp;
+&nbsp;	void meet(Datatype node) throws X;
+&nbsp;
+&nbsp;	void meet(DeleteData deleteData) throws X;
+&nbsp;
+&nbsp;	void meet(Difference node) throws X;
+&nbsp;
+&nbsp;	void meet(Distinct node) throws X;
+&nbsp;
+&nbsp;	void meet(EmptySet node) throws X;
+&nbsp;
+&nbsp;	void meet(Exists node) throws X;
+&nbsp;
+&nbsp;	void meet(Extension node) throws X;
+&nbsp;
+&nbsp;	void meet(ExtensionElem node) throws X;
+&nbsp;
+&nbsp;	void meet(Filter node) throws X;
+&nbsp;
+&nbsp;	void meet(FunctionCall node) throws X;
+&nbsp;
+&nbsp;	void meet(AggregateFunctionCall node) throws X;
+&nbsp;
+&nbsp;	void meet(Group node) throws X;
+&nbsp;
+&nbsp;	void meet(GroupConcat node) throws X;
+&nbsp;
+&nbsp;	void meet(GroupElem node) throws X;
+&nbsp;
+&nbsp;	void meet(If node) throws X;
+&nbsp;
+&nbsp;	void meet(In node) throws X;
+&nbsp;
+&nbsp;	void meet(InsertData insertData) throws X;
+&nbsp;
+&nbsp;	void meet(Intersection node) throws X;
+&nbsp;
+&nbsp;	void meet(IRIFunction node) throws X;
+&nbsp;
+&nbsp;	void meet(IsBNode node) throws X;
+&nbsp;
+&nbsp;	void meet(IsLiteral node) throws X;
+&nbsp;
+&nbsp;	void meet(IsNumeric node) throws X;
+&nbsp;
+&nbsp;	void meet(IsResource node) throws X;
+&nbsp;
+&nbsp;	void meet(IsURI node) throws X;
+&nbsp;
+&nbsp;	void meet(Join node) throws X;
+&nbsp;
+&nbsp;	void meet(Label node) throws X;
+&nbsp;
+&nbsp;	void meet(Lang node) throws X;
+&nbsp;
+&nbsp;	void meet(LangMatches node) throws X;
+&nbsp;
+&nbsp;	void meet(LeftJoin node) throws X;
+&nbsp;
+&nbsp;	@Deprecated(forRemoval = true)
+&nbsp;	void meet(Like node) throws X;
+&nbsp;
+&nbsp;	void meet(Load load) throws X;
+&nbsp;
+&nbsp;	void meet(LocalName node) throws X;
+&nbsp;
+&nbsp;	void meet(MathExpr node) throws X;
+&nbsp;
+&nbsp;	void meet(Max node) throws X;
+&nbsp;
+&nbsp;	void meet(Min node) throws X;
+&nbsp;
+&nbsp;	void meet(Modify modify) throws X;
+&nbsp;
+&nbsp;	void meet(Move move) throws X;
+&nbsp;
+&nbsp;	void meet(MultiProjection node) throws X;
+&nbsp;
+&nbsp;	void meet(Namespace node) throws X;
+&nbsp;
+&nbsp;	void meet(Not node) throws X;
+&nbsp;
+&nbsp;	void meet(Or node) throws X;
+&nbsp;
+&nbsp;	void meet(Order node) throws X;
+&nbsp;
+&nbsp;	void meet(OrderElem node) throws X;
+&nbsp;
+&nbsp;	void meet(Projection node) throws X;
+&nbsp;
+&nbsp;	void meet(ProjectionElem node) throws X;
+&nbsp;
+&nbsp;	void meet(ProjectionElemList node) throws X;
+&nbsp;
+&nbsp;	void meet(Reduced node) throws X;
+&nbsp;
+&nbsp;	void meet(Regex node) throws X;
+&nbsp;
+&nbsp;	void meet(SameTerm node) throws X;
+&nbsp;
+&nbsp;	void meet(Sample node) throws X;
+&nbsp;
+&nbsp;	void meet(Service node) throws X;
+&nbsp;
+&nbsp;	void meet(SingletonSet node) throws X;
+&nbsp;
+&nbsp;	void meet(Slice node) throws X;
+&nbsp;
+&nbsp;	void meet(StatementPattern node) throws X;
+&nbsp;
+&nbsp;	void meet(Str node) throws X;
+&nbsp;
+&nbsp;	void meet(Sum node) throws X;
+&nbsp;
+&nbsp;	void meet(Union node) throws X;
+&nbsp;
+&nbsp;	void meet(ValueConstant node) throws X;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 */
+&nbsp;	void meet(ListMemberOperator node) throws X;
+&nbsp;
+&nbsp;	void meet(Var node) throws X;
+&nbsp;
+&nbsp;	void meet(ZeroLengthPath node) throws X;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
+&nbsp;	 *           implementations are expected to override.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	default void meet(TripleRef node) throws X {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
+&nbsp;	 *           implementations are expected to override.
+&nbsp;	 * @since 3.2.0
+&nbsp;	 */
+&nbsp;	default void meet(ValueExprTripleRef node) throws X {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	void meetOther(QueryModelNode node) throws X;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

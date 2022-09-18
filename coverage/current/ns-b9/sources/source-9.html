@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > DelegatingSailImplConfig</title>
+  <title>Coverage Report > SailImplConfig</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail.config</a>
 </div>
 
-<h1>Coverage Summary for Class: DelegatingSailImplConfig (org.eclipse.rdf4j.sail.config)</h1>
+<h1>Coverage Summary for Class: SailImplConfig (org.eclipse.rdf4j.sail.config)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">DelegatingSailImplConfig</td>
+  <td class="name">SailImplConfig</td>
 </tr>
 
 </table>
@@ -50,12 +50,31 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail.config;
 &nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;
 &nbsp;/**
+&nbsp; * Configuration of a Sail implementation.
+&nbsp; *
 &nbsp; * @author Arjohn Kampman
 &nbsp; */
-&nbsp;public interface DelegatingSailImplConfig extends SailImplConfig {
+&nbsp;public interface SailImplConfig {
 &nbsp;
-&nbsp;	SailImplConfig getDelegate();
+&nbsp;	String getType();
+&nbsp;
+&nbsp;	long getIterationCacheSyncThreshold();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Validates this configuration. A {@link SailConfigException} is thrown when the configuration is invalid. The
+&nbsp;	 * exception should contain an error message that indicates why the configuration is invalid.
+&nbsp;	 *
+&nbsp;	 * @throws SailConfigException If the configuration is invalid.
+&nbsp;	 */
+&nbsp;	void validate() throws SailConfigException;
+&nbsp;
+&nbsp;	Resource export(Model graph);
+&nbsp;
+&nbsp;	void parse(Model graph, Resource implNode) throws SailConfigException;
 &nbsp;}
 </code>
 </pre>
@@ -80,7 +99,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

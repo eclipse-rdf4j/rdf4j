@@ -1,0 +1,1493 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PreprocessedQuerySerializer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql.experimental</a>
+</div>
+
+<h1>Coverage Summary for Class: PreprocessedQuerySerializer (org.eclipse.rdf4j.queryrender.sparql.experimental)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PreprocessedQuerySerializer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/98)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/206)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/533)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">PreprocessedQuerySerializer$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">PreprocessedQuerySerializer$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">PreprocessedQuerySerializer$NonIriFunctions</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/104)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/206)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/558)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql.experimental;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.StringReader;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.StringUtils;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Add;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Avg;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Clear;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Coalesce;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAll;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAny;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Copy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Count;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Create;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DeleteData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Group;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupConcat;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.In;
+&nbsp;import org.eclipse.rdf4j.query.algebra.InsertData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsResource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Label;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LangMatches;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Load;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LocalName;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Max;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Min;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Modify;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Move;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Namespace;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.OrderElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sample;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Slice;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sum;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.queryrender.RenderUtils;
+&nbsp;import org.eclipse.rdf4j.queryrender.sparql.experimental.SerializableParsedTupleQuery.QueryModifier;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+&nbsp;
+&nbsp;import com.google.common.collect.Lists;
+&nbsp;import com.google.common.collect.Maps;
+&nbsp;import com.google.common.collect.Sets;
+&nbsp;
+&nbsp;/**
+&nbsp; * This class processes a {@link SerializableParsedTupleQuery} and renders it as a SPARQL string.
+&nbsp; *
+&nbsp; * @author Andriy Nikolov
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;class PreprocessedQuerySerializer extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enumeration of standard SPARQL 1.1 functions that are neither recognized by RDF4J as special value expressions
+&nbsp;	 * nor defined as IRI functions in the &lt;i&gt;fn:&lt;/i&gt; namespace (see {@link FNFunction}).
+&nbsp;	 *
+&nbsp;	 */
+<b class="nc">&nbsp;	protected enum NonIriFunctions {</b>
+<b class="nc">&nbsp;		STRLANG,</b>
+<b class="nc">&nbsp;		STRDT,</b>
+<b class="nc">&nbsp;		UUID,</b>
+<b class="nc">&nbsp;		STRUUID,</b>
+<b class="nc">&nbsp;		RAND,</b>
+<b class="nc">&nbsp;		NOW,</b>
+<b class="nc">&nbsp;		TZ,</b>
+<b class="nc">&nbsp;		MD5,</b>
+<b class="nc">&nbsp;		SHA1,</b>
+<b class="nc">&nbsp;		SHA256,</b>
+<b class="nc">&nbsp;		SHA384,</b>
+<b class="nc">&nbsp;		SHA512;</b>
+&nbsp;
+&nbsp;		public static boolean contains(String token) {
+&nbsp;			try {
+<b class="nc">&nbsp;				valueOf(token.toUpperCase());</b>
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;Projection, SerializableParsedTupleQuery&gt; queriesByProjection = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private AbstractSerializableParsedQuery currentQueryProfile = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	private SerializableParsedUpdate currentUpdate = null;</b>
+&nbsp;
+&nbsp;	protected StringBuilder builder;
+&nbsp;
+<b class="nc">&nbsp;	private final Map&lt;AbstractSerializableParsedQuery, Set&lt;String&gt;&gt; renderedExtensionElements = Maps.newHashMap();</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean insideFunction = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	public PreprocessedQuerySerializer() {</b>
+<b class="nc">&nbsp;		this.builder = new StringBuilder();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Serializes a {@link SerializableParsedTupleQuery} passed as an input.
+&nbsp;	 *
+&nbsp;	 * @param query a parsed tuple query previously produced by {@link ParsedQueryPreprocessor}
+&nbsp;	 * @return string SPARQL serialization of the query
+&nbsp;	 */
+&nbsp;	public String serialize(SerializableParsedTupleQuery query) {
+&nbsp;
+<b class="nc">&nbsp;		this.builder = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		this.queriesByProjection.putAll(query.subQueriesByProjection);</b>
+&nbsp;
+<b class="nc">&nbsp;		processTupleQuery(query);</b>
+&nbsp;
+<b class="nc">&nbsp;		return builder.toString().trim();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Serializes a {@link SerializableParsedBooleanQuery} passed as an input.
+&nbsp;	 *
+&nbsp;	 * @param query a parsed tuple query previously produced by {@link ParsedQueryPreprocessor}
+&nbsp;	 * @return string SPARQL serialization of the query
+&nbsp;	 */
+&nbsp;	public String serialize(SerializableParsedBooleanQuery query) {
+&nbsp;
+<b class="nc">&nbsp;		this.builder = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		this.queriesByProjection.putAll(query.subQueriesByProjection);</b>
+&nbsp;
+<b class="nc">&nbsp;		processBooleanQuery(query);</b>
+&nbsp;
+<b class="nc">&nbsp;		return builder.toString().trim();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String serialize(SerializableParsedConstructQuery query) {
+<b class="nc">&nbsp;		this.builder = new StringBuilder();</b>
+<b class="nc">&nbsp;		this.queriesByProjection.putAll(query.subQueriesByProjection);</b>
+<b class="nc">&nbsp;		if (query.describe) {</b>
+<b class="nc">&nbsp;			processDescribeQuery(query);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			processConstructQuery(query);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return builder.toString().trim();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String serialize(SerializableParsedUpdate update) {
+<b class="nc">&nbsp;		this.builder = new StringBuilder();</b>
+<b class="nc">&nbsp;		this.queriesByProjection.putAll(update.subQueriesByProjection);</b>
+&nbsp;
+<b class="nc">&nbsp;		processUpdate(update);</b>
+&nbsp;
+<b class="nc">&nbsp;		return builder.toString().trim();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processDatasetClause(Dataset dataset) {
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			for (IRI defaultGraph : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;				builder.append(&quot;FROM &quot;);</b>
+<b class="nc">&nbsp;				this.meet(defaultGraph);</b>
+<b class="nc">&nbsp;				builder.append(&quot; \n&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			for (IRI namedGraph : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				builder.append(&quot;FROM NAMED &quot;);</b>
+<b class="nc">&nbsp;				this.meet(namedGraph);</b>
+<b class="nc">&nbsp;				builder.append(&quot; \n&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processBooleanQuery(SerializableParsedBooleanQuery query) {
+<b class="nc">&nbsp;		renderedExtensionElements.put(query, Sets.newHashSet());</b>
+<b class="nc">&nbsp;		this.currentQueryProfile = query;</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot;ASK &quot;);</b>
+<b class="nc">&nbsp;		processDatasetClause(query.dataset);</b>
+<b class="nc">&nbsp;		builder.append(&quot;WHERE &quot;);</b>
+<b class="nc">&nbsp;		builder.append(&quot;{ \n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.meetWhereClause(query.whereClause);</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot; }\n &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (query.bindings != null) {</b>
+<b class="nc">&nbsp;			this.meet(query.bindings);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processDescribeQuery(SerializableParsedConstructQuery query) {
+<b class="nc">&nbsp;		renderedExtensionElements.put(query, Sets.newHashSet());</b>
+<b class="nc">&nbsp;		this.currentQueryProfile = query;</b>
+<b class="nc">&nbsp;		builder.append(&quot;DESCRIBE &quot;);</b>
+<b class="nc">&nbsp;		for (ProjectionElemList pr : query.projection.getProjections()) {</b>
+<b class="nc">&nbsp;			pr.visit(this);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		processDatasetClause(query.dataset);</b>
+&nbsp;
+<b class="nc">&nbsp;		if ((query.whereClause != null) &amp;&amp; !(query.whereClause instanceof SingletonSet)) {</b>
+&nbsp;
+<b class="nc">&nbsp;			builder.append(&quot;WHERE { \n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			this.meetWhereClause(query.whereClause);</b>
+&nbsp;
+<b class="nc">&nbsp;			builder.append(&quot; }\n &quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (query.limit != null) {</b>
+<b class="nc">&nbsp;			this.writeLimit(query.limit);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (query.bindings != null) {</b>
+<b class="nc">&nbsp;			this.meet(query.bindings);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processConstructQuery(SerializableParsedConstructQuery query) {
+<b class="nc">&nbsp;		renderedExtensionElements.put(query, Sets.newHashSet());</b>
+<b class="nc">&nbsp;		this.currentQueryProfile = query;</b>
+<b class="nc">&nbsp;		builder.append(&quot;CONSTRUCT { \n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.meet(query.projection);</b>
+<b class="nc">&nbsp;		builder.append(&quot;} &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		processDatasetClause(query.dataset);</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot;WHERE { \n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.meetWhereClause(query.whereClause);</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot; }\n &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (query.orderBy != null) {</b>
+<b class="nc">&nbsp;			this.meet(query.orderBy);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (query.limit != null) {</b>
+<b class="nc">&nbsp;			this.writeLimit(query.limit);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (query.bindings != null) {</b>
+<b class="nc">&nbsp;			this.meet(query.bindings);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processUpdate(SerializableParsedUpdate update) {
+<b class="nc">&nbsp;		this.currentUpdate = update;</b>
+<b class="nc">&nbsp;		renderedExtensionElements.put(update, Sets.newHashSet());</b>
+<b class="nc">&nbsp;		update.updateExpr.visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void processTupleQuery(SerializableParsedTupleQuery query) {
+<b class="nc">&nbsp;		renderedExtensionElements.put(query, Sets.newHashSet());</b>
+&nbsp;
+<b class="nc">&nbsp;		final AbstractSerializableParsedQuery prevQuery = this.currentQueryProfile;</b>
+<b class="nc">&nbsp;		this.currentQueryProfile = query;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (query.projection != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;SELECT &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (query.modifier != null) {</b>
+<b class="nc">&nbsp;				if (query.modifier.equals(QueryModifier.DISTINCT)) {</b>
+<b class="nc">&nbsp;					builder.append(&quot;DISTINCT &quot;);</b>
+<b class="nc">&nbsp;				} else if (query.modifier.equals(QueryModifier.REDUCED)) {</b>
+<b class="nc">&nbsp;					builder.append(&quot;REDUCED &quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			this.meet(query.projection.getProjectionElemList());</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;			processDatasetClause(query.dataset);</b>
+<b class="nc">&nbsp;			builder.append(&quot;WHERE &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;{ \n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		this.meetWhereClause(query.whereClause);</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot; }\n &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (query.groupBy != null) {</b>
+<b class="nc">&nbsp;			this.meet(query.groupBy);</b>
+<b class="nc">&nbsp;			if (query.having != null) {</b>
+<b class="nc">&nbsp;				builder.append(&quot;HAVING (&quot;);</b>
+<b class="nc">&nbsp;				query.having.getCondition().visit(this);</b>
+<b class="nc">&nbsp;				builder.append(&quot;) &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (query.orderBy != null) {</b>
+<b class="nc">&nbsp;			this.meet(query.orderBy);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (query.limit != null) {</b>
+<b class="nc">&nbsp;			this.writeLimit(query.limit);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (query.bindings != null) {</b>
+<b class="nc">&nbsp;			this.meet(query.bindings);</b>
+<b class="nc">&nbsp;			builder.append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.currentQueryProfile = prevQuery;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Serializes the TupleExpr serving as a WHERE clause of the query.
+&nbsp;	 *
+&nbsp;	 * @param whereClause a TupleExpr representing a WHERE clause
+&nbsp;	 */
+&nbsp;	public void meetWhereClause(TupleExpr whereClause) {
+&nbsp;		// The whereClause cannot be null for full queries,
+&nbsp;		// but can be null when we only render a TupleExpr,
+&nbsp;		// e.g., a VALUES clause without any graph patterns.
+<b class="nc">&nbsp;		if (whereClause != null) {</b>
+<b class="nc">&nbsp;			whereClause.visit(this);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(QueryRoot node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Add node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;ADD &quot;);</b>
+<b class="nc">&nbsp;		if (node.isSilent()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;SILENT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (node.getSourceGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(node.getSourceGraph());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;DEFAULT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;TO &quot;);</b>
+<b class="nc">&nbsp;		if (node.getDestinationGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(node.getDestinationGraph());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;DEFAULT &quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(And node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; &amp;&amp; &quot;);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ArbitraryLengthPath node) throws RuntimeException {
+<b class="nc">&nbsp;		PropertyPathSerializer serializer = new PropertyPathSerializer();</b>
+<b class="nc">&nbsp;		builder.append(&quot;\t&quot;);</b>
+<b class="nc">&nbsp;		builder.append(serializer.serialize(node, currentQueryProfile));</b>
+<b class="nc">&nbsp;		builder.append(&quot;\n&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Avg node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsAggregationFunction(&quot;AVG&quot;, node.getArg(), node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void meet(Value node) {
+<b class="nc">&nbsp;		builder.append(RenderUtils.toSPARQL(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(BindingSetAssignment node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;String&gt; bindingNames = new ArrayList&lt;&gt;(node.getBindingNames());</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot;VALUES (&quot;);</b>
+<b class="nc">&nbsp;		for (String var : bindingNames) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;			builder.append(var);</b>
+<b class="nc">&nbsp;			builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot;) { &quot;);</b>
+<b class="nc">&nbsp;		for (BindingSet bs : node.getBindingSets()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;			for (String s : bindingNames) {</b>
+<b class="nc">&nbsp;				if (bs.getValue(s) != null) {</b>
+<b class="nc">&nbsp;					this.meet(bs.getValue(s));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					builder.append(&quot;UNDEF &quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			builder.append(&quot;) &quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		builder.append(&quot; } &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(BNodeGenerator node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;BNODE&quot;, Lists.newArrayList());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Bound node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;BOUND&quot;, node.getArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Clear clear) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;CLEAR &quot;);</b>
+<b class="nc">&nbsp;		if (clear.isSilent()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;SILENT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (clear.getGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(clear.getGraph());</b>
+<b class="nc">&nbsp;		} else if (clear.getScope() != null) {</b>
+<b class="nc">&nbsp;			switch (clear.getScope()) {</b>
+&nbsp;			case DEFAULT_CONTEXTS:
+<b class="nc">&nbsp;				builder.append(&quot;DEFAULT&quot;);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case NAMED_CONTEXTS:
+<b class="nc">&nbsp;				builder.append(&quot;NAMED&quot;);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			default:
+&nbsp;
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;ALL&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Coalesce node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;COALESCE&quot;, node.getArguments());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Compare node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		builder.append(node.getOperator().getSymbol());</b>
+<b class="nc">&nbsp;		builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAll node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAny node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Copy node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;COPY &quot;);</b>
+<b class="nc">&nbsp;		if (node.isSilent()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;SILENT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (node.getSourceGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(node.getSourceGraph());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;DEFAULT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;TO &quot;);</b>
+<b class="nc">&nbsp;		if (node.getDestinationGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(node.getDestinationGraph());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;DEFAULT &quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Count node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsAggregationFunction(&quot;COUNT&quot;, node.getArg(), node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Create create) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;CREATE &quot;);</b>
+<b class="nc">&nbsp;		if (create.isSilent()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;SILENT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (create.getGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(create.getGraph());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Datatype node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;DATATYPE&quot;, node.getArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(DeleteData deleteData) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;DELETE DATA { \n&quot;);</b>
+<b class="nc">&nbsp;		meetUpdateDataBlock(deleteData.getDataBlock());</b>
+<b class="nc">&nbsp;		builder.append(&quot;} &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Difference node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;{\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot;}\n MINUS\n{\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		builder.append(&quot;}\n&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Distinct node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(EmptySet node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Exists node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;EXISTS {&quot;);</b>
+<b class="nc">&nbsp;		node.getSubQuery().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot;} &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Extension node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getArg().visit(this);</b>
+<b class="nc">&nbsp;		for (ExtensionElem element : node.getElements()) {</b>
+<b class="nc">&nbsp;			if (!isTautologicalExtensionElem(element)</b>
+<b class="nc">&nbsp;					&amp;&amp; !isExtensionElemAlreadyRendered(element)) {</b>
+<b class="nc">&nbsp;				builder.append(&quot;\tBIND (&quot;);</b>
+<b class="nc">&nbsp;				element.visit(this);</b>
+<b class="nc">&nbsp;				builder.append(&quot;) . \n&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean isExtensionElemAlreadyRendered(ExtensionElem element) {
+<b class="nc">&nbsp;		Set&lt;String&gt; alreadyRenderedList = this.renderedExtensionElements.get(this.currentQueryProfile);</b>
+<b class="nc">&nbsp;		if (alreadyRenderedList != null) {</b>
+<b class="nc">&nbsp;			return alreadyRenderedList.contains(element.getName());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void setExtensionElemAlreadyRendered(ExtensionElem element) {
+<b class="nc">&nbsp;		Set&lt;String&gt; alreadyRenderedList = this.renderedExtensionElements.get(this.currentQueryProfile);</b>
+<b class="nc">&nbsp;		if (alreadyRenderedList == null) {</b>
+<b class="nc">&nbsp;			alreadyRenderedList = Sets.newHashSet();</b>
+<b class="nc">&nbsp;			this.renderedExtensionElements.put(this.currentQueryProfile, alreadyRenderedList);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		alreadyRenderedList.add(element.getName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ExtensionElem node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getExpr().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; AS ?&quot;);</b>
+<b class="nc">&nbsp;		builder.append(node.getName());</b>
+<b class="nc">&nbsp;		setExtensionElemAlreadyRendered(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Filter node) throws RuntimeException {
+<b class="nc">&nbsp;		boolean isHaving = false;</b>
+<b class="nc">&nbsp;		if (currentQueryProfile instanceof SerializableParsedTupleQuery) {</b>
+<b class="nc">&nbsp;			isHaving = node.equals(((SerializableParsedTupleQuery) currentQueryProfile).having);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (currentQueryProfile == null || !isHaving) {</b>
+<b class="nc">&nbsp;			node.getArg().visit(this);</b>
+<b class="nc">&nbsp;			builder.append(&quot; FILTER &quot;);</b>
+<b class="nc">&nbsp;			builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;			node.getCondition().visit(this);</b>
+<b class="nc">&nbsp;			builder.append(&quot;) &quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(FunctionCall node) throws RuntimeException {
+&nbsp;		// RDF4J doesn&#39;t recognize CONCAT as a built-in function,
+&nbsp;		// but assumes that it has the default URI namespace.
+&nbsp;		// This leads to failures when sending the query to other triple stores
+&nbsp;		// like Blazegraph
+<b class="nc">&nbsp;		writeAsFunction(getFunctionNameAsString(node), node.getArgs());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Group node) throws RuntimeException {
+<b class="nc">&nbsp;		if (!node.getGroupBindingNames().isEmpty()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GROUP BY &quot;);</b>
+<b class="nc">&nbsp;			for (String name : node.getGroupBindingNames()) {</b>
+<b class="nc">&nbsp;				builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;				builder.append(name);</b>
+<b class="nc">&nbsp;				builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(GroupConcat node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;GROUP_CONCAT(&quot;);</b>
+<b class="nc">&nbsp;		if (node.isDistinct()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;DISTINCT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		node.getArg().visit(this);</b>
+<b class="nc">&nbsp;		if (node.getSeparator() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;;separator=&quot;);</b>
+<b class="nc">&nbsp;			node.getSeparator().visit(this);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;) &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(GroupElem node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(If node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;IF&quot;,</b>
+<b class="nc">&nbsp;				Lists.newArrayList(node.getCondition(), node.getResult(), node.getAlternative()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(In node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(InsertData insertData) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;INSERT DATA { \n&quot;);</b>
+<b class="nc">&nbsp;		meetUpdateDataBlock(insertData.getDataBlock());</b>
+<b class="nc">&nbsp;		builder.append(&quot;} &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void meetUpdateDataBlock(String dataBlock) throws RuntimeException {
+<b class="nc">&nbsp;		RDFParser parser = Rio.createParser(RDFFormat.TRIG);</b>
+&nbsp;
+<b class="nc">&nbsp;		parser.setRDFHandler(new AbstractRDFHandler() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;				PreprocessedQuerySerializer.this.meet(st.getSubject());</b>
+<b class="nc">&nbsp;				builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;				PreprocessedQuerySerializer.this.meet(st.getPredicate());</b>
+<b class="nc">&nbsp;				builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;				PreprocessedQuerySerializer.this.meet(st.getObject());</b>
+<b class="nc">&nbsp;				builder.append(&quot; . \n&quot;);</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		if (!StringUtils.isEmpty(dataBlock)) {</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				parser.parse(new StringReader(dataBlock), &quot;&quot;);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+&nbsp;				// No-op
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Intersection node) throws RuntimeException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Unsupported operator: Intersection&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IRIFunction node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;IRI&quot;, node.getArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsBNode node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;isBlank&quot;, node.getArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsLiteral node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;isLITERAL&quot;, node.getArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsNumeric node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;isNUMERIC&quot;, node.getArg());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsResource node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;isRESOURCE&quot;, node.getArg());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsURI node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;isURI&quot;, node.getArg());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Join node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Label node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;LABEL&quot;, node.getArg());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Lang node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;LANG&quot;, node.getArg());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LangMatches node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;langMatches&quot;, Lists.newArrayList(node.getLeftArg(), node.getRightArg()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LeftJoin node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; OPTIONAL { &quot;);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		if (node.hasCondition()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot; FILTER (&quot;);</b>
+<b class="nc">&nbsp;			node.getCondition().visit(this);</b>
+<b class="nc">&nbsp;			builder.append(&quot;)&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;} &quot;);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ListMemberOperator node) throws RuntimeException {
+<b class="nc">&nbsp;		Iterator&lt;ValueExpr&gt; argIter = node.getArguments().iterator();</b>
+<b class="nc">&nbsp;		ValueExpr operand = argIter.next();</b>
+<b class="nc">&nbsp;		operand.visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; IN (&quot;);</b>
+<b class="nc">&nbsp;		if (argIter.hasNext()) {</b>
+<b class="nc">&nbsp;			argIter.next().visit(this);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		while (argIter.hasNext()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;, &quot;);</b>
+<b class="nc">&nbsp;			argIter.next().visit(this);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;) &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Load load) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;LOAD &quot;);</b>
+<b class="nc">&nbsp;		if (load.isSilent()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;SILENT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		meet(load.getSource());</b>
+<b class="nc">&nbsp;		if (load.getGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot; INTO GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(load.getGraph());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LocalName node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(MathExpr node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(node.getOperator().getSymbol());</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot;) &quot;);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Max node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsAggregationFunction(&quot;MAX&quot;, node.getArg(), node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Min node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsAggregationFunction(&quot;MIN&quot;, node.getArg(), node.isDistinct());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Modify modify) throws RuntimeException {
+<b class="nc">&nbsp;		renderedExtensionElements.put(this.currentUpdate, Sets.newHashSet());</b>
+<b class="nc">&nbsp;		if (modify.getDeleteExpr() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;DELETE { \n&quot;);</b>
+<b class="nc">&nbsp;			modify.getDeleteExpr().visit(this);</b>
+<b class="nc">&nbsp;			builder.append(&quot; } \n&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (modify.getInsertExpr() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;INSERT { \n&quot;);</b>
+<b class="nc">&nbsp;			modify.getInsertExpr().visit(this);</b>
+<b class="nc">&nbsp;			builder.append(&quot; } \n&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (modify.getWhereExpr() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot; WHERE { \n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			this.meetWhereClause(modify.getWhereExpr());</b>
+&nbsp;
+<b class="nc">&nbsp;			builder.append(&quot; }\n &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (this.currentUpdate.limit != null) {</b>
+<b class="nc">&nbsp;				this.writeLimit(this.currentUpdate.limit);</b>
+<b class="nc">&nbsp;				builder.append(&quot;\n&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (this.currentUpdate.bindings != null) {</b>
+<b class="nc">&nbsp;				this.meet(this.currentUpdate.bindings);</b>
+<b class="nc">&nbsp;				builder.append(&quot;\n&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Move node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;MOVE &quot;);</b>
+<b class="nc">&nbsp;		if (node.isSilent()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;SILENT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (node.getSourceGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(node.getSourceGraph());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;DEFAULT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;TO &quot;);</b>
+<b class="nc">&nbsp;		if (node.getDestinationGraph() != null) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			meet(node.getDestinationGraph());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;DEFAULT &quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(MultiProjection node) throws RuntimeException {
+<b class="nc">&nbsp;		Map&lt;String, ValueExpr&gt; valueMap = Maps.newHashMap();</b>
+<b class="nc">&nbsp;		if (node.getArg() instanceof Extension) {</b>
+<b class="nc">&nbsp;			Extension ext = (Extension) node.getArg();</b>
+<b class="nc">&nbsp;			ext.getElements()</b>
+<b class="nc">&nbsp;					.stream()</b>
+<b class="nc">&nbsp;					.filter(elem -&gt; (elem.getExpr() instanceof ValueExpr))</b>
+<b class="nc">&nbsp;					.forEach(elem -&gt; valueMap.put(elem.getName(),</b>
+<b class="nc">&nbsp;							(ValueExpr) elem.getExpr()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (ProjectionElemList proj : node.getProjections()) {</b>
+<b class="nc">&nbsp;			for (ProjectionElem elem : proj.getElements()) {</b>
+<b class="nc">&nbsp;				if (valueMap.containsKey(elem.getName())) {</b>
+<b class="nc">&nbsp;					ValueExpr expr = valueMap.get(elem.getName());</b>
+<b class="nc">&nbsp;					if (expr instanceof BNodeGenerator) {</b>
+<b class="nc">&nbsp;						builder.append(&quot;_:&quot; + elem.getName());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						valueMap.get(elem.getName()).visit(this);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					builder.append(&quot;?&quot; + elem.getName());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				builder.append(&quot; &quot;);</b>
+&nbsp;				// elem.getSourceExpression().getExpr().visit(this);
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			builder.append(&quot; . \n&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// throw new UnsupportedOperationException(&quot;Only SELECT queries are supported&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Namespace node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Not node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;!&quot;);</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Or node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; || &quot;);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Order node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		if (!node.getElements().isEmpty()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;ORDER BY &quot;);</b>
+<b class="nc">&nbsp;			for (OrderElem elem : node.getElements()) {</b>
+<b class="nc">&nbsp;				elem.visit(this);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(OrderElem node) throws RuntimeException {
+<b class="nc">&nbsp;		if (!node.isAscending()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;DESC(&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		node.getExpr().visit(this);</b>
+<b class="nc">&nbsp;		if (!node.isAscending()) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;)&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot; &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Projection node) throws RuntimeException {
+<b class="nc">&nbsp;		boolean isCurrentMainProjection = false;</b>
+<b class="nc">&nbsp;		if (this.currentQueryProfile instanceof SerializableParsedTupleQuery) {</b>
+<b class="nc">&nbsp;			isCurrentMainProjection = node.equals(((SerializableParsedTupleQuery) this.currentQueryProfile).projection);</b>
+<b class="nc">&nbsp;		} else if (this.currentQueryProfile instanceof SerializableParsedBooleanQuery) {</b>
+<b class="nc">&nbsp;			isCurrentMainProjection = node</b>
+<b class="nc">&nbsp;					.equals(((SerializableParsedBooleanQuery) this.currentQueryProfile).projection);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (currentQueryProfile == null || !isCurrentMainProjection) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;{ &quot;);</b>
+<b class="nc">&nbsp;			this.processTupleQuery(this.queriesByProjection.get(node));</b>
+<b class="nc">&nbsp;			builder.append(&quot; } &quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ProjectionElem node) throws RuntimeException {
+<b class="nc">&nbsp;		if (node.getSourceExpression() == null) {</b>
+<b class="nc">&nbsp;			boolean isDescribe = false;</b>
+<b class="nc">&nbsp;			if ((this.currentQueryProfile instanceof SerializableParsedConstructQuery)) {</b>
+<b class="nc">&nbsp;				isDescribe = ((SerializableParsedConstructQuery) this.currentQueryProfile).describe;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (node.getProjectionAlias().isEmpty() || node.getProjectionAlias().get().equals(node.getName())) {</b>
+<b class="nc">&nbsp;				if (isDescribe &amp;&amp; this.currentQueryProfile.extensionElements.containsKey(node.getName())) {</b>
+<b class="nc">&nbsp;					ExtensionElem elem = this.currentQueryProfile.extensionElements.get(node.getName());</b>
+<b class="nc">&nbsp;					elem.getExpr().visit(this);</b>
+<b class="nc">&nbsp;					builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;					builder.append(node.getName());</b>
+<b class="nc">&nbsp;					builder.append(&quot; &quot;);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;				builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;				builder.append(node.getName());</b>
+<b class="nc">&nbsp;				builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;				builder.append(&quot;AS &quot;);</b>
+<b class="nc">&nbsp;				builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;				builder.append(node.getProjectionAlias());</b>
+<b class="nc">&nbsp;				builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;				builder.append(&quot;) &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			if (!isTautologicalExtensionElem(node.getSourceExpression())) {</b>
+<b class="nc">&nbsp;				builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;				node.getSourceExpression().visit(this);</b>
+<b class="nc">&nbsp;				builder.append(&quot;) &quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;				builder.append(node.getName());</b>
+<b class="nc">&nbsp;				builder.append(&quot; &quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ProjectionElemList node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Reduced node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;REDUCED &quot;);</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Regex node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;REGEX&quot;,</b>
+<b class="nc">&nbsp;				Lists.newArrayList(node.getLeftArg(), node.getRightArg(), node.getFlagsArg()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(SameTerm node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;sameTerm&quot;, Lists.newArrayList(node.getLeftArg(), node.getRightArg()));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Sample node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsAggregationFunction(&quot;SAMPLE&quot;, node.getArg(), node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Service node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;SERVICE &quot;);</b>
+<b class="nc">&nbsp;		node.getServiceRef().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; { \n&quot;);</b>
+<b class="nc">&nbsp;		node.getServiceExpr().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot;} \n&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(SingletonSet node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;{ } \n&quot;);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Slice node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getArg().visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(StatementPattern node) throws RuntimeException {
+<b class="nc">&nbsp;		boolean isInContext = node.getContextVar() != null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isInContext) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			node.getContextVar().visit(this);</b>
+<b class="nc">&nbsp;			builder.append(&quot; { &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		builder.append(&quot;\t&quot;);</b>
+<b class="nc">&nbsp;		node.getSubjectVar().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		node.getPredicateVar().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		node.getObjectVar().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot; . \n&quot;);</b>
+<b class="nc">&nbsp;		if (isInContext) {</b>
+<b class="nc">&nbsp;			builder.append(&quot; } \n&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Str node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsFunction(&quot;STR&quot;, node.getArg());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Sum node) throws RuntimeException {
+<b class="nc">&nbsp;		writeAsAggregationFunction(&quot;SUM&quot;, node.getArg(), node.isDistinct());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Union node) throws RuntimeException {
+<b class="nc">&nbsp;		builder.append(&quot;{\n&quot;);</b>
+<b class="nc">&nbsp;		node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot;}\n UNION\n{\n&quot;);</b>
+<b class="nc">&nbsp;		node.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;		builder.append(&quot;}\n&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ValueConstant node) throws RuntimeException {
+<b class="nc">&nbsp;		this.meet(node.getValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Var node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		if (node.hasValue()) {</b>
+<b class="nc">&nbsp;			this.meet(node.getValue());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (node.isAnonymous()) {</b>
+<b class="nc">&nbsp;				if (currentQueryProfile.extensionElements.containsKey(node.getName())) {</b>
+<b class="nc">&nbsp;					ExtensionElem elem = currentQueryProfile.extensionElements.get(node.getName());</b>
+<b class="nc">&nbsp;					elem.getExpr().visit(this);</b>
+<b class="nc">&nbsp;				} else if (currentQueryProfile.nonAnonymousVars.containsKey(node.getName())) {</b>
+<b class="nc">&nbsp;					builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;					builder.append(node.getName());</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					builder.append(&quot;_:&quot;);</b>
+<b class="nc">&nbsp;					builder.append(node.getName());</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				builder.append(&quot;?&quot;);</b>
+<b class="nc">&nbsp;				builder.append(node.getName());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ZeroLengthPath node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;//    @Override
+&nbsp;//    public void meetOther(QueryModelNode node) throws RuntimeException {
+&nbsp;//        if (node instanceof NaryJoin) {
+&nbsp;//            NaryJoin joinNode = (NaryJoin)node;
+&nbsp;//            for (TupleExpr arg : joinNode.getArgs()) {
+&nbsp;//                arg.visit(this);
+&nbsp;//            }
+&nbsp;//
+&nbsp;//        } else {
+&nbsp;//            super.meetOther(node);
+&nbsp;//        }
+&nbsp;//    }
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A special case check: we project a variable from a subquery that has the same name We must avoid writing SELECT
+&nbsp;	 * (?x as ?x) WHERE { { SELECT ?x WHERE { ... } } }
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private boolean isTautologicalExtensionElem(ExtensionElem val) {
+<b class="nc">&nbsp;		String varName = val.getName();</b>
+<b class="nc">&nbsp;		if (val.getExpr() instanceof Var) {</b>
+<b class="nc">&nbsp;			return (((Var) val.getExpr()).getName().equals(varName));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeAsFunction(String name, ValueExpr arg) {
+<b class="nc">&nbsp;		builder.append(name);</b>
+<b class="nc">&nbsp;		builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		boolean prevInsideFunction = insideFunction;</b>
+<b class="nc">&nbsp;		insideFunction = true;</b>
+<b class="nc">&nbsp;		arg.visit(this);</b>
+<b class="nc">&nbsp;		insideFunction = prevInsideFunction;</b>
+<b class="nc">&nbsp;		builder.append(&quot;) &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeAsFunction(String name, List&lt;ValueExpr&gt; args) {
+<b class="nc">&nbsp;		builder.append(name);</b>
+<b class="nc">&nbsp;		builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		boolean prevInsideFunction = insideFunction;</b>
+<b class="nc">&nbsp;		insideFunction = true;</b>
+<b class="nc">&nbsp;		if (!args.isEmpty()) {</b>
+<b class="nc">&nbsp;			args.get(0).visit(this);</b>
+<b class="nc">&nbsp;			for (int i = 1; i &lt; args.size(); i++) {</b>
+<b class="nc">&nbsp;				if (args.get(i) != null) {</b>
+<b class="nc">&nbsp;					builder.append(&quot;,&quot;);</b>
+<b class="nc">&nbsp;					args.get(i).visit(this);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		insideFunction = prevInsideFunction;</b>
+<b class="nc">&nbsp;		builder.append(&quot;) &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeLimit(Slice node) throws RuntimeException {
+<b class="nc">&nbsp;		if (node.getLimit() &gt; -1) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;LIMIT &quot;);</b>
+<b class="nc">&nbsp;			builder.append(node.getLimit());</b>
+<b class="nc">&nbsp;			builder.append(&quot; &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (node.getOffset() &gt; 0) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;OFFSET &quot;);</b>
+<b class="nc">&nbsp;			builder.append(node.getOffset());</b>
+<b class="nc">&nbsp;			builder.append(&quot; &quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeAsAggregationFunction(String name, ValueExpr arg, boolean distinct) {
+<b class="nc">&nbsp;		builder.append(name);</b>
+<b class="nc">&nbsp;		builder.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;		if (distinct) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;DISTINCT &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		boolean prevInsideFunction = insideFunction;</b>
+<b class="nc">&nbsp;		insideFunction = true;</b>
+<b class="nc">&nbsp;		if (arg != null) {</b>
+<b class="nc">&nbsp;			arg.visit(this);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder.append(&quot;*&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		insideFunction = prevInsideFunction;</b>
+<b class="nc">&nbsp;		builder.append(&quot;) &quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected String getFunctionNameAsString(FunctionCall expr) {
+<b class="nc">&nbsp;		String uri = expr.getURI();</b>
+<b class="nc">&nbsp;		if (StringUtils.isEmpty(uri)) {</b>
+<b class="nc">&nbsp;			return uri;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Optional&lt;FNFunction&gt; fnfunc = FNFunction.byUri(uri);</b>
+<b class="nc">&nbsp;		if (fnfunc.isPresent()) {</b>
+<b class="nc">&nbsp;			return fnfunc.get().getName();</b>
+<b class="nc">&nbsp;		} else if (NonIriFunctions.contains(uri)) {</b>
+<b class="nc">&nbsp;			return uri;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return &quot;&lt;&quot; + uri + &quot;&gt;&quot;;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

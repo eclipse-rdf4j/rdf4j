@@ -1,0 +1,378 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FOAF</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: FOAF (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FOAF</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    98.7%
+  </span>
+  <span class="absValue">
+    (76/77)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for FOAF primitives and for the FOAF namespace.&lt;br&gt;
+&nbsp; * Resources here are defined according to the FOAF specs on
+&nbsp; * &lt;a href=&quot;http://xmlns.com/foaf/spec/&quot;&gt;http://xmlns.com/foaf/spec/&lt;/a&gt;, version 0.99, 14 January 2014
+&nbsp; */
+<b class="nc">&nbsp;public class FOAF {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The FOAF namespace: http://xmlns.com/foaf/0.1/
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://xmlns.com/foaf/0.1/&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The recommended prefix for the FOAF namespace: &quot;foaf&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;foaf&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the FOAF namespace.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// ----- Classes ------
+&nbsp;	public final static IRI AGENT;
+&nbsp;
+&nbsp;	public final static IRI DOCUMENT;
+&nbsp;
+&nbsp;	public final static IRI GROUP;
+&nbsp;
+&nbsp;	public final static IRI IMAGE;
+&nbsp;
+&nbsp;	public final static IRI LABEL_PROPERTY;
+&nbsp;
+&nbsp;	public final static IRI ONLINE_ACCOUNT;
+&nbsp;
+&nbsp;	public final static IRI ONLINE_CHAT_ACCOUNT;
+&nbsp;
+&nbsp;	public final static IRI ONLINE_ECOMMERCE_ACCOUNT;
+&nbsp;
+&nbsp;	public final static IRI ONLINE_GAMING_ACCOUNT;
+&nbsp;
+&nbsp;	public final static IRI ORGANIZATION;
+&nbsp;
+&nbsp;	public final static IRI PERSON;
+&nbsp;
+&nbsp;	public final static IRI PERSONAL_PROFILE_DOCUMENT;
+&nbsp;
+&nbsp;	public final static IRI PROJECT;
+&nbsp;
+&nbsp;	// ----- Properties ------
+&nbsp;	public final static IRI ACCOUNT;
+&nbsp;
+&nbsp;	public final static IRI ACCOUNT_NAME;
+&nbsp;
+&nbsp;	public final static IRI ACCOUNT_SERVICE_HOMEPAGE;
+&nbsp;
+&nbsp;	public final static IRI AGE;
+&nbsp;
+&nbsp;	public final static IRI AIM_CHAT_ID;
+&nbsp;
+&nbsp;	public final static IRI BASED_NEAR;
+&nbsp;
+&nbsp;	public final static IRI BIRTHDAY;
+&nbsp;
+&nbsp;	public final static IRI CURRENT_PROJECT;
+&nbsp;
+&nbsp;	public final static IRI DEPICTION;
+&nbsp;
+&nbsp;	public final static IRI DEPICTS;
+&nbsp;
+&nbsp;	public final static IRI DNA_CHECKSUM;
+&nbsp;
+&nbsp;	public final static IRI FAMILY_NAME;
+&nbsp;
+&nbsp;	/** @deprecated Use FAMILY_NAME instead for new statements */
+&nbsp;	@Deprecated
+&nbsp;	public final static IRI FAMILYNAME;
+&nbsp;
+&nbsp;	public final static IRI FIRST_NAME;
+&nbsp;
+&nbsp;	public final static IRI FOCUS;
+&nbsp;
+&nbsp;	public final static IRI FUNDED_BY;
+&nbsp;
+&nbsp;	public final static IRI GEEKCODE;
+&nbsp;
+&nbsp;	public final static IRI GENDER;
+&nbsp;
+&nbsp;	public final static IRI GIVEN_NAME;
+&nbsp;
+&nbsp;	/** @deprecated Use GIVEN_NAME instead for new statements */
+&nbsp;	@Deprecated
+&nbsp;	public final static IRI GIVENNAME;
+&nbsp;
+&nbsp;	public final static IRI HOLDS_ACCOUNT;
+&nbsp;
+&nbsp;	public final static IRI HOMEPAGE;
+&nbsp;
+&nbsp;	public final static IRI ICQ_CHAT_ID;
+&nbsp;
+&nbsp;	public final static IRI IMG;
+&nbsp;
+&nbsp;	public final static IRI INTEREST;
+&nbsp;
+&nbsp;	public final static IRI IS_PRIMARY_TOPIC_OF;
+&nbsp;
+&nbsp;	public final static IRI JABBER_ID;
+&nbsp;
+&nbsp;	public final static IRI KNOWS;
+&nbsp;
+&nbsp;	public final static IRI LAST_NAME;
+&nbsp;
+&nbsp;	public final static IRI LOGO;
+&nbsp;
+&nbsp;	public final static IRI MADE;
+&nbsp;
+&nbsp;	public final static IRI MAKER;
+&nbsp;
+&nbsp;	public static final IRI MBOX;
+&nbsp;
+&nbsp;	public static final IRI MBOX_SHA1SUM;
+&nbsp;
+&nbsp;	public static final IRI MEMBER;
+&nbsp;
+&nbsp;	public static final IRI MEMBERSHIP_CLASS;
+&nbsp;
+&nbsp;	public static final IRI MSN_CHAT_ID;
+&nbsp;
+&nbsp;	public static final IRI MYERS_BRIGGS;
+&nbsp;
+&nbsp;	public final static IRI NAME;
+&nbsp;
+&nbsp;	public final static IRI NICK;
+&nbsp;
+&nbsp;	public final static IRI OPENID;
+&nbsp;
+&nbsp;	public final static IRI PAGE;
+&nbsp;
+&nbsp;	public final static IRI PAST_PROJECT;
+&nbsp;
+&nbsp;	public final static IRI PHONE;
+&nbsp;
+&nbsp;	public final static IRI PLAN;
+&nbsp;
+&nbsp;	public final static IRI PRIMARY_TOPIC;
+&nbsp;
+&nbsp;	public final static IRI PUBLICATIONS;
+&nbsp;
+&nbsp;	public final static IRI SCHOOL_HOMEPAGE;
+&nbsp;
+&nbsp;	public final static IRI SHA1;
+&nbsp;
+&nbsp;	public final static IRI SKYPE_ID;
+&nbsp;
+&nbsp;	public final static IRI STATUS;
+&nbsp;
+&nbsp;	public final static IRI SURNAME;
+&nbsp;
+&nbsp;	public final static IRI THEME;
+&nbsp;
+&nbsp;	public final static IRI THUMBNAIL;
+&nbsp;
+&nbsp;	public final static IRI TIPJAR;
+&nbsp;
+&nbsp;	public final static IRI TITLE;
+&nbsp;
+&nbsp;	public final static IRI TOPIC;
+&nbsp;
+&nbsp;	public final static IRI TOPIC_INTEREST;
+&nbsp;
+&nbsp;	public final static IRI WEBLOG;
+&nbsp;
+&nbsp;	public final static IRI WORK_INFO_HOMEPAGE;
+&nbsp;
+&nbsp;	public final static IRI WORKPLACE_HOMEPAGE;
+&nbsp;
+&nbsp;	public final static IRI YAHOO_CHAT_ID;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+&nbsp;		// ----- Classes ------
+<b class="fc">&nbsp;		AGENT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;Agent&quot;);</b>
+<b class="fc">&nbsp;		DOCUMENT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;Document&quot;);</b>
+<b class="fc">&nbsp;		GROUP = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;Group&quot;);</b>
+<b class="fc">&nbsp;		IMAGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;Image&quot;);</b>
+<b class="fc">&nbsp;		LABEL_PROPERTY = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;LabelProperty&quot;);</b>
+<b class="fc">&nbsp;		ONLINE_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;OnlineAccount&quot;);</b>
+<b class="fc">&nbsp;		ONLINE_CHAT_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;OnlineChatAccount&quot;);</b>
+<b class="fc">&nbsp;		ONLINE_ECOMMERCE_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;OnlineEcommerceAccount&quot;);</b>
+<b class="fc">&nbsp;		ONLINE_GAMING_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;OnlineGamingAccount&quot;);</b>
+<b class="fc">&nbsp;		ORGANIZATION = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;Organization&quot;);</b>
+<b class="fc">&nbsp;		PERSON = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;Person&quot;);</b>
+<b class="fc">&nbsp;		PERSONAL_PROFILE_DOCUMENT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;PersonalProfileDocument&quot;);</b>
+<b class="fc">&nbsp;		PROJECT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;Project&quot;);</b>
+&nbsp;
+&nbsp;		// ----- Properties ------
+<b class="fc">&nbsp;		ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;account&quot;);</b>
+<b class="fc">&nbsp;		ACCOUNT_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;accountName&quot;);</b>
+<b class="fc">&nbsp;		ACCOUNT_SERVICE_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;accountServiceHomepage&quot;);</b>
+<b class="fc">&nbsp;		AGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;age&quot;);</b>
+<b class="fc">&nbsp;		AIM_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;aimChatID&quot;);</b>
+<b class="fc">&nbsp;		BASED_NEAR = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;based_near&quot;);</b>
+<b class="fc">&nbsp;		BIRTHDAY = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;birthday&quot;);</b>
+<b class="fc">&nbsp;		CURRENT_PROJECT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;currentProject&quot;);</b>
+<b class="fc">&nbsp;		DEPICTION = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;depiction&quot;);</b>
+<b class="fc">&nbsp;		DEPICTS = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;depicts&quot;);</b>
+<b class="fc">&nbsp;		DNA_CHECKSUM = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;dnaChecksum&quot;);</b>
+<b class="fc">&nbsp;		FAMILY_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;familyName&quot;);</b>
+<b class="fc">&nbsp;		FAMILYNAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;family_name&quot;);</b>
+<b class="fc">&nbsp;		FIRST_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;firstName&quot;);</b>
+<b class="fc">&nbsp;		FOCUS = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;focus&quot;);</b>
+<b class="fc">&nbsp;		FUNDED_BY = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;fundedBy&quot;);</b>
+<b class="fc">&nbsp;		GEEKCODE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;geekcode&quot;);</b>
+<b class="fc">&nbsp;		GENDER = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;gender&quot;);</b>
+<b class="fc">&nbsp;		GIVEN_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;givenName&quot;);</b>
+<b class="fc">&nbsp;		GIVENNAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;givenname&quot;);</b>
+<b class="fc">&nbsp;		HOLDS_ACCOUNT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;holdsAccount&quot;);</b>
+<b class="fc">&nbsp;		HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;homepage&quot;);</b>
+<b class="fc">&nbsp;		ICQ_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;icqChatID&quot;);</b>
+<b class="fc">&nbsp;		IMG = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;img&quot;);</b>
+<b class="fc">&nbsp;		INTEREST = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;interest&quot;);</b>
+<b class="fc">&nbsp;		IS_PRIMARY_TOPIC_OF = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;isPrimaryTopicOf&quot;);</b>
+<b class="fc">&nbsp;		JABBER_ID = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;jabberID&quot;);</b>
+<b class="fc">&nbsp;		KNOWS = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;knows&quot;);</b>
+<b class="fc">&nbsp;		LAST_NAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;lastName&quot;);</b>
+<b class="fc">&nbsp;		LOGO = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;logo&quot;);</b>
+<b class="fc">&nbsp;		MADE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;made&quot;);</b>
+<b class="fc">&nbsp;		MAKER = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;maker&quot;);</b>
+<b class="fc">&nbsp;		MBOX = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;mbox&quot;);</b>
+<b class="fc">&nbsp;		MBOX_SHA1SUM = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;mbox_sha1sum&quot;);</b>
+<b class="fc">&nbsp;		MEMBER = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;member&quot;);</b>
+<b class="fc">&nbsp;		MEMBERSHIP_CLASS = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;membershipClass&quot;);</b>
+<b class="fc">&nbsp;		MSN_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;msnChatID&quot;);</b>
+<b class="fc">&nbsp;		MYERS_BRIGGS = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;myersBriggs&quot;);</b>
+<b class="fc">&nbsp;		NAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;name&quot;);</b>
+<b class="fc">&nbsp;		NICK = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;nick&quot;);</b>
+<b class="fc">&nbsp;		OPENID = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;openid&quot;);</b>
+<b class="fc">&nbsp;		PAGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;page&quot;);</b>
+<b class="fc">&nbsp;		PAST_PROJECT = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;pastProject&quot;);</b>
+<b class="fc">&nbsp;		PHONE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;phone&quot;);</b>
+<b class="fc">&nbsp;		PLAN = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;plan&quot;);</b>
+<b class="fc">&nbsp;		PRIMARY_TOPIC = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;primaryTopic&quot;);</b>
+<b class="fc">&nbsp;		PUBLICATIONS = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;publications&quot;);</b>
+<b class="fc">&nbsp;		SCHOOL_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;schoolHomepage&quot;);</b>
+<b class="fc">&nbsp;		SHA1 = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;sha1&quot;);</b>
+<b class="fc">&nbsp;		SKYPE_ID = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;skypeID&quot;);</b>
+<b class="fc">&nbsp;		STATUS = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;status&quot;);</b>
+<b class="fc">&nbsp;		SURNAME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;surname&quot;);</b>
+<b class="fc">&nbsp;		THEME = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;theme&quot;);</b>
+<b class="fc">&nbsp;		THUMBNAIL = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;thumbnail&quot;);</b>
+<b class="fc">&nbsp;		TIPJAR = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;tipjar&quot;);</b>
+<b class="fc">&nbsp;		TITLE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;title&quot;);</b>
+<b class="fc">&nbsp;		TOPIC = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;topic&quot;);</b>
+<b class="fc">&nbsp;		TOPIC_INTEREST = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;topic_interest&quot;);</b>
+<b class="fc">&nbsp;		WEBLOG = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;weblog&quot;);</b>
+<b class="fc">&nbsp;		WORK_INFO_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;workInfoHomepage&quot;);</b>
+<b class="fc">&nbsp;		WORKPLACE_HOMEPAGE = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;workplaceHomepage&quot;);</b>
+<b class="fc">&nbsp;		YAHOO_CHAT_ID = Vocabularies.createIRI(FOAF.NAMESPACE, &quot;yahooChatID&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

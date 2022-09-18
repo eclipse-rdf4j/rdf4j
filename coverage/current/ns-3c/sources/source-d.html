@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > FedXCostModel</title>
+  <title>Coverage Report > FedXOptimizer</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.optimizer</a>
 </div>
 
-<h1>Coverage Summary for Class: FedXCostModel (org.eclipse.rdf4j.federated.optimizer)</h1>
+<h1>Coverage Summary for Class: FedXOptimizer (org.eclipse.rdf4j.federated.optimizer)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">FedXCostModel</td>
+  <td class="name">FedXOptimizer</td>
 </tr>
 
 </table>
@@ -39,7 +39,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <pre>
 <code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
-&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
 &nbsp; *
 &nbsp; * All rights reserved. This program and the accompanying materials
 &nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
@@ -50,26 +50,23 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.federated.optimizer;
 &nbsp;
-&nbsp;import java.util.Set;
-&nbsp;
 &nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
 &nbsp;
 &nbsp;/**
-&nbsp; * Interface for a cost model used in {@link StatementGroupAndJoinOptimizer}.
+&nbsp; * Interface for any FedX optimizer
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
 &nbsp; *
 &nbsp; */
-&nbsp;public interface FedXCostModel {
+&nbsp;public interface FedXOptimizer {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Return the estimated cost for the given {@link TupleExpr}
+&nbsp;	 * Optimize the provided tuple expression
 &nbsp;	 *
 &nbsp;	 * @param tupleExpr
-&nbsp;	 * @param joinVars
-&nbsp;	 * @return the cost associated to the tupleExpr
 &nbsp;	 */
-&nbsp;	double estimateCost(TupleExpr tupleExpr, Set&lt;String&gt; joinVars);
+&nbsp;	void optimize(TupleExpr tupleExpr);
+&nbsp;
 &nbsp;}
 </code>
 </pre>
@@ -94,7 +91,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

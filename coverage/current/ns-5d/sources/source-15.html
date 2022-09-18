@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > TupleQuery</title>
+  <title>Coverage Report > Dataset</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query</a>
 </div>
 
-<h1>Coverage Summary for Class: TupleQuery (org.eclipse.rdf4j.query)</h1>
+<h1>Coverage Summary for Class: Dataset (org.eclipse.rdf4j.query)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">TupleQuery</td>
+  <td class="name">Dataset</td>
 </tr>
 
 </table>
@@ -50,12 +50,47 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query;
 &nbsp;
-&nbsp;public interface TupleQuery extends Query {
+&nbsp;import java.util.Set;
 &nbsp;
-&nbsp;	TupleQueryResult evaluate() throws QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
 &nbsp;
-&nbsp;	void evaluate(TupleQueryResultHandler handler)
-&nbsp;			throws QueryEvaluationException, TupleQueryResultHandlerException;
+&nbsp;/**
+&nbsp; * Represents a dataset against which operations can be evaluated. A dataset consists of a default graph for read and
+&nbsp; * using operations, which is the &lt;a href=&quot;http://www.w3.org/TR/rdf-mt/#defmerge&quot;&gt;RDF merge&lt;/a&gt; of one or more graphs, a
+&nbsp; * set of named graphs, and a single update graph for INSERT and DELETE. See
+&nbsp; * &lt;a href=&quot;http://www.w3.org/TR/rdf-sparql-query/#rdfDataset&quot;&gt;SPARQL Query Language for RDF&lt;/a&gt; for more info.
+&nbsp; *
+&nbsp; * @author Simon Schenk
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public interface Dataset {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the default remove graph URIs of this dataset. An empty set indicates the the store&#39;s default behaviour
+&nbsp;	 * should be used, if not otherwise indicated in the operation.
+&nbsp;	 */
+&nbsp;	Set&lt;IRI&gt; getDefaultRemoveGraphs();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the default insert graph URI of this dataset. An null value indicates that the store&#39;s default behaviour
+&nbsp;	 * should be used, if not otherwise indicated in the operation.
+&nbsp;	 */
+&nbsp;	IRI getDefaultInsertGraph();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the default graph URIs of this dataset. An empty default graph set and a non-empty named graph set indicates
+&nbsp;	 * that the default graph is an empty graph. However, if both the default graph set and the named graph set are
+&nbsp;	 * empty, that indicates that the store&#39;s default behaviour should be used.
+&nbsp;	 */
+&nbsp;	Set&lt;IRI&gt; getDefaultGraphs();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the named graph URIs of this dataset. An empty named graph set and a non-empty default graph set indicates
+&nbsp;	 * that there are no named graphs. However, if both the default graph set and the named graph set are empty, that
+&nbsp;	 * indicates that the store&#39;s default behaviour should be used.
+&nbsp;	 */
+&nbsp;	Set&lt;IRI&gt; getNamedGraphs();
 &nbsp;}
 </code>
 </pre>
@@ -80,7 +115,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

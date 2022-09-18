@@ -1,0 +1,379 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ReadCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.extensiblestore</a>
+</div>
+
+<h1>Coverage Summary for Class: ReadCache (org.eclipse.rdf4j.sail.extensiblestore)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ReadCache</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/35)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ReadCache$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ReadCache$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.extensiblestore;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.cache.Cache;
+&nbsp;import com.google.common.cache.CacheBuilder;
+&nbsp;
+&nbsp;public class ReadCache implements DataStructureInterface {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ReadCache.class);</b>
+&nbsp;
+&nbsp;	DataStructureInterface delegate;
+&nbsp;
+<b class="nc">&nbsp;	final int STATEMENTS_PER_CACHE_ITEM_LIMIT = 100000;</b>
+&nbsp;
+&nbsp;	// A soft values-based cache of unlimited size. We currently handle retention and removal manually.
+<b class="nc">&nbsp;	Cache&lt;PartialStatement, List&lt;ExtensibleStatement&gt;&gt; cache = CacheBuilder.newBuilder().softValues().build();</b>
+&nbsp;
+&nbsp;	// The cache ticket is incremented every time the cache is cleared. A getStatements operation retrieves the current
+&nbsp;	// cacheTicket when the iteration is opened. When the iteration is closed it checks the retrieved ticket against the
+&nbsp;	// currentTicket, if they are the same then the statements can be cached. If the tickets don&#39;t match it means that
+&nbsp;	// there was a write operation at some point after the iteration was opened, and the statements accumulated in the
+&nbsp;	// iteration are stale and can not be cached.
+<b class="nc">&nbsp;	private volatile long cacheTicket = Long.MIN_VALUE;</b>
+&nbsp;
+<b class="nc">&nbsp;	public ReadCache(DataStructureInterface delegate) {</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(ExtensibleStatement statement) {
+<b class="nc">&nbsp;		delegate.addStatement(statement);</b>
+<b class="nc">&nbsp;		clearCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeStatement(ExtensibleStatement statement) {
+<b class="nc">&nbsp;		delegate.removeStatement(statement);</b>
+<b class="nc">&nbsp;		clearCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; getStatements(Resource subject,
+&nbsp;			IRI predicate,
+&nbsp;			Value object, boolean inferred, Resource... context) {
+&nbsp;
+<b class="nc">&nbsp;		PartialStatement partialStatement = new PartialStatement(subject, predicate, object, inferred, context);</b>
+<b class="nc">&nbsp;		CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; cached = getCached(partialStatement);</b>
+<b class="nc">&nbsp;		if (cached != null) {</b>
+<b class="nc">&nbsp;			logger.trace(&quot;cache hit&quot;);</b>
+<b class="nc">&nbsp;			return cached;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		long localCacheTicket = cacheTicket;</b>
+&nbsp;
+<b class="nc">&nbsp;		return new CloseableIteration&lt;&gt;() {</b>
+&nbsp;
+<b class="nc">&nbsp;			final CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; statements = delegate.getStatements(</b>
+&nbsp;					subject,
+&nbsp;					predicate, object, inferred, context);
+<b class="nc">&nbsp;			List&lt;ExtensibleStatement&gt; cache = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean hasNext() throws SailException {
+<b class="nc">&nbsp;				return statements.hasNext();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public ExtensibleStatement next() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;				ExtensibleStatement next = statements.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (cache != null) {</b>
+<b class="nc">&nbsp;					cache.add(next);</b>
+<b class="nc">&nbsp;					if (cache.size() &gt; STATEMENTS_PER_CACHE_ITEM_LIMIT) {</b>
+<b class="nc">&nbsp;						cache = null;</b>
+<b class="nc">&nbsp;						logger.trace(&quot;cache limit&quot;);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				return next;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void remove() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void close() throws SailException {
+<b class="nc">&nbsp;				if (!statements.hasNext()) {</b>
+<b class="nc">&nbsp;					submitToCache(localCacheTicket, partialStatement, cache);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					logger.trace(&quot;iteration was not fully consumed before being closed and could not be cached&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				statements.close();</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	synchronized private CloseableIteration&lt;? extends ExtensibleStatement, SailException&gt; getCached(
+&nbsp;			PartialStatement partialStatement) {
+<b class="nc">&nbsp;		List&lt;ExtensibleStatement&gt; statements = cache.getIfPresent(partialStatement);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (statements != null) {</b>
+&nbsp;
+<b class="nc">&nbsp;			return new LookAheadIteration&lt;ExtensibleStatement, SailException&gt;() {</b>
+<b class="nc">&nbsp;				final Iterator&lt;ExtensibleStatement&gt; iterator = statements.iterator();</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				protected ExtensibleStatement getNextElement() throws SailException {
+<b class="nc">&nbsp;					if (iterator.hasNext()) {</b>
+<b class="nc">&nbsp;						return iterator.next();</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return null;</b>
+&nbsp;				}
+&nbsp;			};
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushForReading() {
+<b class="nc">&nbsp;		delegate.flushForReading();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() {
+<b class="nc">&nbsp;		delegate.init();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(boolean inferred, Resource[] contexts) {
+<b class="nc">&nbsp;		delegate.clear(inferred, contexts);</b>
+<b class="nc">&nbsp;		clearCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushForCommit() {
+<b class="nc">&nbsp;		delegate.flushForCommit();</b>
+<b class="nc">&nbsp;		clearCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean removeStatementsByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource[] contexts) {
+<b class="nc">&nbsp;		boolean removed = delegate.removeStatementsByQuery(subj, pred, obj, inferred, contexts);</b>
+<b class="nc">&nbsp;		clearCache();</b>
+<b class="nc">&nbsp;		return removed;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	synchronized public void clearCache() {
+<b class="nc">&nbsp;		cache.invalidateAll();</b>
+&nbsp;		// overflow is not a problem since we use == to compare in submitToCache
+<b class="nc">&nbsp;		cacheTicket++;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	synchronized public void submitToCache(Long localCacheTicket, PartialStatement partialStatement,
+&nbsp;			List&lt;ExtensibleStatement&gt; statements) {
+<b class="nc">&nbsp;		if (localCacheTicket == cacheTicket &amp;&amp; statements != null) {</b>
+<b class="nc">&nbsp;			cache.put(partialStatement, statements);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long getEstimatedSize() {
+<b class="nc">&nbsp;		return delegate.getEstimatedSize();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

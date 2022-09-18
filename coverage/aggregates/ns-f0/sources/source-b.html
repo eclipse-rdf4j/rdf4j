@@ -1,0 +1,2079 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SpinParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spin</a>
+</div>
+
+<h1>Coverage Summary for Class: SpinParser (org.eclipse.rdf4j.spin)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SpinParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/39)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/171)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/316)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SpinParser$DataVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SpinParser$Input</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SpinParser$SpinVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/372)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/768)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/87)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/547)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1115)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.spin;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.SortedSet;
+&nbsp;import java.util.TreeSet;
+&nbsp;import java.util.concurrent.ExecutionException;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.AFN;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FN;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.OWL;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SESAME;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SP;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SPIN;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SPL;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Avg;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Clear;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Coalesce;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Count;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Create;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DeleteData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Group;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupConcat;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.InsertData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Load;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LocalName;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Max;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Min;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Modify;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.OrderElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sample;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Slice;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sum;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
+&nbsp;import org.eclipse.rdf4j.spin.function.FunctionParser;
+&nbsp;import org.eclipse.rdf4j.spin.function.KnownFunctionParser;
+&nbsp;import org.eclipse.rdf4j.spin.function.KnownTupleFunctionParser;
+&nbsp;import org.eclipse.rdf4j.spin.function.SpinFunctionParser;
+&nbsp;import org.eclipse.rdf4j.spin.function.SpinTupleFunctionAsFunctionParser;
+&nbsp;import org.eclipse.rdf4j.spin.function.SpinTupleFunctionParser;
+&nbsp;import org.eclipse.rdf4j.spin.function.SpinxFunctionParser;
+&nbsp;import org.eclipse.rdf4j.spin.function.TupleFunctionParser;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.base.Function;
+&nbsp;import com.google.common.cache.Cache;
+&nbsp;import com.google.common.cache.CacheBuilder;
+&nbsp;import com.google.common.collect.Sets;
+&nbsp;
+&nbsp;public class SpinParser {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SpinParser.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Set&lt;IRI&gt; QUERY_TYPES = Sets.newHashSet(SP.SELECT_CLASS, SP.CONSTRUCT_CLASS, SP.ASK_CLASS,</b>
+&nbsp;			SP.DESCRIBE_CLASS);
+&nbsp;
+<b class="nc">&nbsp;	private static final Set&lt;IRI&gt; UPDATE_TYPES = Sets.newHashSet(SP.MODIFY_CLASS, SP.DELETE_WHERE_CLASS,</b>
+&nbsp;			SP.INSERT_DATA_CLASS, SP.DELETE_DATA_CLASS, SP.LOAD_CLASS, SP.CLEAR_CLASS, SP.CREATE_CLASS, SP.DROP_CLASS);
+&nbsp;
+<b class="nc">&nbsp;	private static final Set&lt;IRI&gt; COMMAND_TYPES = Sets.union(QUERY_TYPES, UPDATE_TYPES);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Set&lt;IRI&gt; NON_TEMPLATES = Sets.newHashSet(RDFS.RESOURCE, SP.SYSTEM_CLASS, SP.COMMAND_CLASS,</b>
+&nbsp;			SP.QUERY_CLASS, SP.UPDATE_CLASS, SPIN.MODULES_CLASS, SPIN.TEMPLATES_CLASS, SPIN.ASK_TEMPLATES_CLASS,
+&nbsp;			SPIN.SELECT_TEMPLATES_CLASS, SPIN.CONSTRUCT_TEMPLATES_CLASS, SPIN.UPDATE_TEMPLATES_CLASS, SPIN.RULE_CLASS);
+&nbsp;
+<b class="nc">&nbsp;	private static final Set&lt;IRI&gt; TEMPLATE_TYPES = Sets.newHashSet(SPIN.ASK_TEMPLATE_CLASS, SPIN.SELECT_TEMPLATE_CLASS,</b>
+&nbsp;			SPIN.CONSTRUCT_TEMPLATE_CLASS, SPIN.UPDATE_TEMPLATE_CLASS);
+&nbsp;
+<b class="nc">&nbsp;	public enum Input {</b>
+<b class="nc">&nbsp;		TEXT_FIRST(true, true),</b>
+<b class="nc">&nbsp;		TEXT_ONLY(true, false),</b>
+<b class="nc">&nbsp;		RDF_FIRST(false, true),</b>
+<b class="nc">&nbsp;		RDF_ONLY(false, false);</b>
+&nbsp;
+&nbsp;		final boolean textFirst;
+&nbsp;
+&nbsp;		final boolean canFallback;
+&nbsp;
+<b class="nc">&nbsp;		Input(boolean textFirst, boolean canFallback) {</b>
+<b class="nc">&nbsp;			this.textFirst = textFirst;</b>
+<b class="nc">&nbsp;			this.canFallback = canFallback;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private final Input input;
+&nbsp;
+&nbsp;	private final Function&lt;IRI, String&gt; wellKnownVars;
+&nbsp;
+&nbsp;	private final Function&lt;IRI, String&gt; wellKnownFunctions;
+&nbsp;
+&nbsp;	private List&lt;FunctionParser&gt; functionParsers;
+&nbsp;
+&nbsp;	private List&lt;TupleFunctionParser&gt; tupleFunctionParsers;
+&nbsp;
+<b class="nc">&nbsp;	private boolean strictFunctionChecking = true;</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Cache&lt;IRI, Template&gt; templateCache = CacheBuilder.newBuilder().maximumSize(100).build();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Cache&lt;IRI, Map&lt;IRI, Argument&gt;&gt; argumentCache = CacheBuilder.newBuilder().maximumSize(100).build();</b>
+&nbsp;
+&nbsp;	public SpinParser() {
+<b class="nc">&nbsp;		this(Input.TEXT_FIRST);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SpinParser(Input input) {
+<b class="nc">&nbsp;		this(input, SpinWellKnownVars.INSTANCE::getName, SpinWellKnownFunctions.INSTANCE::getName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SpinParser(Input input, Function&lt;IRI, String&gt; wellKnownVarsMapper,
+<b class="nc">&nbsp;			Function&lt;IRI, String&gt; wellKnownFuncMapper) {</b>
+<b class="nc">&nbsp;		this.input = input;</b>
+<b class="nc">&nbsp;		this.wellKnownVars = wellKnownVarsMapper;</b>
+<b class="nc">&nbsp;		this.wellKnownFunctions = wellKnownFuncMapper;</b>
+<b class="nc">&nbsp;		this.functionParsers = Arrays.&lt;FunctionParser&gt;asList(</b>
+<b class="nc">&nbsp;				new KnownFunctionParser(FunctionRegistry.getInstance(), wellKnownFunctions),</b>
+&nbsp;				new SpinTupleFunctionAsFunctionParser(this), new SpinFunctionParser(this),
+&nbsp;				new SpinxFunctionParser(this));
+<b class="nc">&nbsp;		this.tupleFunctionParsers = Arrays.&lt;TupleFunctionParser&gt;asList(</b>
+<b class="nc">&nbsp;				new KnownTupleFunctionParser(TupleFunctionRegistry.getInstance()), new SpinTupleFunctionParser(this));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;FunctionParser&gt; getFunctionParsers() {
+<b class="nc">&nbsp;		return functionParsers;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setFunctionParsers(List&lt;FunctionParser&gt; functionParsers) {
+<b class="nc">&nbsp;		this.functionParsers = functionParsers;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public List&lt;TupleFunctionParser&gt; getTupleFunctionParsers() {
+<b class="nc">&nbsp;		return tupleFunctionParsers;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setTupleFunctionParsers(List&lt;TupleFunctionParser&gt; tupleFunctionParsers) {
+<b class="nc">&nbsp;		this.tupleFunctionParsers = tupleFunctionParsers;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isStrictFunctionChecking() {
+<b class="nc">&nbsp;		return strictFunctionChecking;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setStrictFunctionChecking(boolean strictFunctionChecking) {
+<b class="nc">&nbsp;		this.strictFunctionChecking = strictFunctionChecking;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;IRI, RuleProperty&gt; parseRuleProperties(TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		Map&lt;IRI, RuleProperty&gt; rules = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		try (CloseableIteration&lt;IRI, QueryEvaluationException&gt; rulePropIter = TripleSources</b>
+<b class="nc">&nbsp;				.getSubjectURIs(RDFS.SUBPROPERTYOF, SPIN.RULE_PROPERTY, store)) {</b>
+&nbsp;
+<b class="nc">&nbsp;			while (rulePropIter.hasNext()) {</b>
+<b class="nc">&nbsp;				IRI ruleProp = rulePropIter.next();</b>
+<b class="nc">&nbsp;				RuleProperty ruleProperty = new RuleProperty(ruleProp);</b>
+&nbsp;
+<b class="nc">&nbsp;				List&lt;IRI&gt; nextRules = getNextRules(ruleProp, store);</b>
+<b class="nc">&nbsp;				ruleProperty.setNextRules(nextRules);</b>
+&nbsp;
+<b class="nc">&nbsp;				int maxIterCount = getMaxIterationCount(ruleProp, store);</b>
+<b class="nc">&nbsp;				ruleProperty.setMaxIterationCount(maxIterCount);</b>
+&nbsp;
+<b class="nc">&nbsp;				rules.put(ruleProp, ruleProperty);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return rules;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private List&lt;IRI&gt; getNextRules(Resource ruleProp, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return Iterations.asList((TripleSources.getObjectURIs(ruleProp,</b>
+&nbsp;				SPIN.NEXT_RULE_PROPERTY_PROPERTY, store)));
+&nbsp;	}
+&nbsp;
+&nbsp;	private int getMaxIterationCount(Resource ruleProp, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		Value v = TripleSources.singleValue(ruleProp, SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY, store);</b>
+<b class="nc">&nbsp;		if (v == null) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+<b class="nc">&nbsp;		} else if (v instanceof Literal) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				return ((Literal) v).intValue();</b>
+<b class="nc">&nbsp;			} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(&quot;Value for &quot; + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY</b>
+&nbsp;						+ &quot; must be of datatype &quot; + XSD.INTEGER + &quot;: &quot; + ruleProp);
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new MalformedSpinException(</b>
+&nbsp;					&quot;Non-literal value for &quot; + SPIN.RULE_PROPERTY_MAX_ITERATION_COUNT_PROPERTY + &quot;: &quot; + ruleProp);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isThisUnbound(Resource subj, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return TripleSources.booleanValue(subj, SPIN.THIS_UNBOUND_PROPERTY, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ConstraintViolation parseConstraintViolation(Resource subj, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		Value labelValue = TripleSources.singleValue(subj, RDFS.LABEL, store);</b>
+<b class="nc">&nbsp;		Value rootValue = TripleSources.singleValue(subj, SPIN.VIOLATION_ROOT_PROPERTY, store);</b>
+<b class="nc">&nbsp;		Value pathValue = TripleSources.singleValue(subj, SPIN.VIOLATION_PATH_PROPERTY, store);</b>
+<b class="nc">&nbsp;		Value valueValue = TripleSources.singleValue(subj, SPIN.VIOLATION_VALUE_PROPERTY, store);</b>
+<b class="nc">&nbsp;		Value levelValue = TripleSources.singleValue(subj, SPIN.VIOLATION_LEVEL_PROPERTY, store);</b>
+<b class="nc">&nbsp;		String label = (labelValue instanceof Literal) ? labelValue.stringValue() : null;</b>
+<b class="nc">&nbsp;		String root = (rootValue instanceof Resource) ? rootValue.stringValue() : null;</b>
+<b class="nc">&nbsp;		String path = (pathValue != null) ? pathValue.stringValue() : null;</b>
+<b class="nc">&nbsp;		String value = (valueValue != null) ? valueValue.stringValue() : null;</b>
+<b class="nc">&nbsp;		ConstraintViolationLevel level = ConstraintViolationLevel.ERROR;</b>
+<b class="nc">&nbsp;		if (levelValue != null) {</b>
+<b class="nc">&nbsp;			if (levelValue instanceof IRI) {</b>
+<b class="nc">&nbsp;				level = ConstraintViolationLevel.valueOf((IRI) levelValue);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (level == null) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(</b>
+&nbsp;						&quot;Invalid value &quot; + levelValue + &quot; for &quot; + SPIN.VIOLATION_LEVEL_PROPERTY + &quot;: &quot; + subj);
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return new ConstraintViolation(label, root, path, value, level);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedOperation parse(Resource queryResource, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return parse(queryResource, SP.COMMAND_CLASS, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedQuery parseQuery(Resource queryResource, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return (ParsedQuery) parse(queryResource, SP.QUERY_CLASS, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedGraphQuery parseConstructQuery(Resource queryResource, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return (ParsedGraphQuery) parse(queryResource, SP.CONSTRUCT_CLASS, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedTupleQuery parseSelectQuery(Resource queryResource, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return (ParsedTupleQuery) parse(queryResource, SP.SELECT_CLASS, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedBooleanQuery parseAskQuery(Resource queryResource, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return (ParsedBooleanQuery) parse(queryResource, SP.ASK_CLASS, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedDescribeQuery parseDescribeQuery(Resource queryResource, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return (ParsedDescribeQuery) parse(queryResource, SP.DESCRIBE_CLASS, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ParsedUpdate parseUpdate(Resource queryResource, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		return (ParsedUpdate) parse(queryResource, SP.UPDATE_CLASS, store);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected ParsedOperation parse(Resource queryResource, IRI queryClass, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		Boolean isQueryElseTemplate = null;</b>
+<b class="nc">&nbsp;		Set&lt;IRI&gt; possibleQueryTypes = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		Set&lt;IRI&gt; possibleTemplates = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		try (CloseableIteration&lt;IRI, QueryEvaluationException&gt; typeIter = TripleSources</b>
+<b class="nc">&nbsp;				.getObjectURIs(queryResource, RDF.TYPE, store)) {</b>
+<b class="nc">&nbsp;			while (typeIter.hasNext()) {</b>
+<b class="nc">&nbsp;				IRI type = typeIter.next();</b>
+<b class="nc">&nbsp;				if (isQueryElseTemplate == null &amp;&amp; SPIN.TEMPLATES_CLASS.equals(type)) {</b>
+<b class="nc">&nbsp;					isQueryElseTemplate = Boolean.FALSE;</b>
+<b class="nc">&nbsp;				} else if ((isQueryElseTemplate == null || isQueryElseTemplate == Boolean.TRUE)</b>
+<b class="nc">&nbsp;						&amp;&amp; COMMAND_TYPES.contains(type)) {</b>
+<b class="nc">&nbsp;					isQueryElseTemplate = Boolean.TRUE;</b>
+<b class="nc">&nbsp;					possibleQueryTypes.add(type);</b>
+<b class="nc">&nbsp;				} else if ((isQueryElseTemplate == null || isQueryElseTemplate == Boolean.FALSE)</b>
+<b class="nc">&nbsp;						&amp;&amp; !NON_TEMPLATES.contains(type)) {</b>
+<b class="nc">&nbsp;					possibleTemplates.add(type);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		ParsedOperation parsedOp;
+<b class="nc">&nbsp;		if (isQueryElseTemplate == null) {</b>
+<b class="nc">&nbsp;			throw new MalformedSpinException(String.format(&quot;Missing RDF type: %s&quot;, queryResource));</b>
+<b class="nc">&nbsp;		} else if (isQueryElseTemplate == Boolean.TRUE) {</b>
+&nbsp;			// command (query or update)
+<b class="nc">&nbsp;			if (possibleQueryTypes.size() &gt; 1) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(</b>
+&nbsp;						&quot;Incompatible RDF types for command: &quot; + queryResource + &quot; has types &quot; + possibleQueryTypes);
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			IRI queryType = possibleQueryTypes.iterator().next();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (input.textFirst) {</b>
+<b class="nc">&nbsp;				parsedOp = parseText(queryResource, queryType, store);</b>
+<b class="nc">&nbsp;				if (parsedOp == null &amp;&amp; input.canFallback) {</b>
+<b class="nc">&nbsp;					parsedOp = parseRDF(queryResource, queryType, store);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				parsedOp = parseRDF(queryResource, queryType, store);</b>
+<b class="nc">&nbsp;				if (parsedOp == null &amp;&amp; input.canFallback) {</b>
+<b class="nc">&nbsp;					parsedOp = parseText(queryResource, queryType, store);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (parsedOp == null) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Command is not parsable: %s&quot;, queryResource));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// template
+&nbsp;			Set&lt;IRI&gt; abstractTemplates;
+<b class="nc">&nbsp;			if (possibleTemplates.size() &gt; 1) {</b>
+<b class="nc">&nbsp;				abstractTemplates = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;				for (Iterator&lt;IRI&gt; iter = possibleTemplates.iterator(); iter.hasNext();) {</b>
+<b class="nc">&nbsp;					IRI t = iter.next();</b>
+<b class="nc">&nbsp;					boolean isAbstract = TripleSources.booleanValue(t, SPIN.ABSTRACT_PROPERTY, store);</b>
+<b class="nc">&nbsp;					if (isAbstract) {</b>
+<b class="nc">&nbsp;						abstractTemplates.add(t);</b>
+<b class="nc">&nbsp;						iter.remove();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				abstractTemplates = Collections.emptySet();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (possibleTemplates.isEmpty()) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Template missing RDF type: %s&quot;, queryResource));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (possibleTemplates.size() &gt; 1) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(&quot;Template has unexpected RDF types: &quot; + queryResource</b>
+&nbsp;						+ &quot; has non-abstract types &quot; + possibleTemplates);
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			IRI templateResource = (IRI) possibleTemplates.iterator().next();</b>
+<b class="nc">&nbsp;			Template tmpl = getTemplate(templateResource, queryClass, abstractTemplates, store);</b>
+<b class="nc">&nbsp;			Map&lt;IRI, Value&gt; argValues = new HashMap&lt;&gt;(2 * tmpl.getArguments().size());</b>
+<b class="nc">&nbsp;			for (Argument arg : tmpl.getArguments()) {</b>
+<b class="nc">&nbsp;				IRI argPred = (IRI) arg.getPredicate();</b>
+<b class="nc">&nbsp;				Value argValue = TripleSources.singleValue(queryResource, argPred, store);</b>
+<b class="nc">&nbsp;				argValues.put(argPred, argValue);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			parsedOp = tmpl.call(argValues);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return parsedOp;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Template getTemplate(final IRI tmplUri, final IRI queryType, final Set&lt;IRI&gt; abstractTmpls,
+&nbsp;			final TripleSource store) throws RDF4JException {
+&nbsp;		try {
+<b class="nc">&nbsp;			return templateCache.get(tmplUri, () -&gt; parseTemplateInternal(tmplUri, queryType, abstractTmpls, store));</b>
+<b class="nc">&nbsp;		} catch (ExecutionException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() instanceof RDF4JException) {</b>
+<b class="nc">&nbsp;				throw (RDF4JException) e.getCause();</b>
+<b class="nc">&nbsp;			} else if (e.getCause() instanceof RuntimeException) {</b>
+<b class="nc">&nbsp;				throw (RuntimeException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Template parseTemplateInternal(IRI tmplUri, IRI queryType, Set&lt;IRI&gt; abstractTmpls, TripleSource store)
+&nbsp;			throws RDF4JException {
+&nbsp;		Set&lt;IRI&gt; possibleTmplTypes;
+<b class="nc">&nbsp;		try (Stream&lt;IRI&gt; stream = TripleSources.getObjectURIs(tmplUri, RDF.TYPE, store).stream()) {</b>
+<b class="nc">&nbsp;			possibleTmplTypes = stream</b>
+<b class="nc">&nbsp;					.filter(TEMPLATE_TYPES::contains)</b>
+<b class="nc">&nbsp;					.collect(Collectors.toSet());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (possibleTmplTypes.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new MalformedSpinException(String.format(&quot;Template missing RDF type: %s&quot;, tmplUri));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (possibleTmplTypes.size() &gt; 1) {</b>
+<b class="nc">&nbsp;			throw new MalformedSpinException(</b>
+&nbsp;					&quot;Incompatible RDF types for template: &quot; + tmplUri + &quot; has types &quot; + possibleTmplTypes);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		IRI tmplType = possibleTmplTypes.iterator().next();</b>
+&nbsp;
+&nbsp;		Set&lt;IRI&gt; compatibleTmplTypes;
+<b class="nc">&nbsp;		if (SP.QUERY_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			compatibleTmplTypes = Sets.newHashSet(SPIN.ASK_TEMPLATE_CLASS, SPIN.SELECT_TEMPLATE_CLASS,</b>
+&nbsp;					SPIN.CONSTRUCT_TEMPLATE_CLASS);
+<b class="nc">&nbsp;		} else if (SP.UPDATE_CLASS.equals(queryType) || UPDATE_TYPES.contains(queryType)) {</b>
+<b class="nc">&nbsp;			compatibleTmplTypes = Collections.singleton(SPIN.UPDATE_TEMPLATE_CLASS);</b>
+<b class="nc">&nbsp;		} else if (SP.ASK_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			compatibleTmplTypes = Collections.singleton(SPIN.ASK_TEMPLATE_CLASS);</b>
+<b class="nc">&nbsp;		} else if (SP.SELECT_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			compatibleTmplTypes = Collections.singleton(SPIN.SELECT_TEMPLATE_CLASS);</b>
+<b class="nc">&nbsp;		} else if (SP.CONSTRUCT_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			compatibleTmplTypes = Collections.singleton(SPIN.CONSTRUCT_TEMPLATE_CLASS);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			compatibleTmplTypes = TEMPLATE_TYPES;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!compatibleTmplTypes.contains(tmplType)) {</b>
+<b class="nc">&nbsp;			throw new MalformedSpinException(</b>
+&nbsp;					&quot;Template type &quot; + tmplType + &quot; is incompatible with command type &quot; + queryType);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Template tmpl = new Template(tmplUri);</b>
+&nbsp;
+<b class="nc">&nbsp;		Value body = TripleSources.singleValue(tmplUri, SPIN.BODY_PROPERTY, store);</b>
+<b class="nc">&nbsp;		if (!(body instanceof Resource)) {</b>
+<b class="nc">&nbsp;			throw new MalformedSpinException(String.format(&quot;Template body is not a resource: %s&quot;, body));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		ParsedOperation op = parse((Resource) body, queryType, store);</b>
+<b class="nc">&nbsp;		tmpl.setParsedOperation(op);</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;IRI, Argument&gt; templateArgs = parseTemplateArguments(tmplUri, abstractTmpls, store);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;IRI&gt; orderedArgs = orderArguments(templateArgs.keySet());</b>
+<b class="nc">&nbsp;		for (IRI IRI : orderedArgs) {</b>
+<b class="nc">&nbsp;			Argument arg = templateArgs.get(IRI);</b>
+<b class="nc">&nbsp;			tmpl.addArgument(arg);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return tmpl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Map&lt;IRI, Argument&gt; parseTemplateArguments(IRI tmplUri, Set&lt;IRI&gt; abstractTmpls, TripleSource store)
+&nbsp;			throws RDF4JException {
+<b class="nc">&nbsp;		Map&lt;IRI, Argument&gt; args = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (IRI abstractTmpl : abstractTmpls) {</b>
+<b class="nc">&nbsp;			parseArguments(abstractTmpl, store, args);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		parseArguments(tmplUri, store, args);</b>
+<b class="nc">&nbsp;		return args;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public org.eclipse.rdf4j.query.algebra.evaluation.function.Function parseFunction(IRI funcUri, TripleSource store)
+&nbsp;			throws RDF4JException {
+<b class="nc">&nbsp;		for (FunctionParser functionParser : functionParsers) {</b>
+<b class="nc">&nbsp;			org.eclipse.rdf4j.query.algebra.evaluation.function.Function function = functionParser.parse(funcUri,</b>
+&nbsp;					store);
+<b class="nc">&nbsp;			if (function != null) {</b>
+<b class="nc">&nbsp;				return function;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		logger.warn(&quot;No FunctionParser for function: {}&quot;, funcUri);</b>
+<b class="nc">&nbsp;		throw new MalformedSpinException(String.format(&quot;No FunctionParser for function: %s&quot;, funcUri));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public TupleFunction parseMagicProperty(IRI propUri, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		for (TupleFunctionParser tupleFunctionParser : tupleFunctionParsers) {</b>
+<b class="nc">&nbsp;			TupleFunction tupleFunction = tupleFunctionParser.parse(propUri, store);</b>
+<b class="nc">&nbsp;			if (tupleFunction != null) {</b>
+<b class="nc">&nbsp;				return tupleFunction;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		logger.warn(&quot;No TupleFunctionParser for magic property: {}&quot;, propUri);</b>
+<b class="nc">&nbsp;		throw new MalformedSpinException(String.format(&quot;No TupleFunctionParser for magic property: %s&quot;, propUri));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;IRI, Argument&gt; parseArguments(final IRI moduleUri, final TripleSource store) throws RDF4JException {
+&nbsp;		try {
+<b class="nc">&nbsp;			return argumentCache.get(moduleUri, () -&gt; {</b>
+<b class="nc">&nbsp;				Map&lt;IRI, Argument&gt; args = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				parseArguments(moduleUri, store, args);</b>
+<b class="nc">&nbsp;				return Collections.unmodifiableMap(args);</b>
+&nbsp;			});
+<b class="nc">&nbsp;		} catch (ExecutionException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() instanceof RDF4JException) {</b>
+<b class="nc">&nbsp;				throw (RDF4JException) e.getCause();</b>
+<b class="nc">&nbsp;			} else if (e.getCause() instanceof RuntimeException) {</b>
+<b class="nc">&nbsp;				throw (RuntimeException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new RuntimeException(e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void parseArguments(IRI moduleUri, TripleSource store, Map&lt;IRI, Argument&gt; args) throws RDF4JException {
+<b class="nc">&nbsp;		try (CloseableIteration&lt;Resource, QueryEvaluationException&gt; argIter = TripleSources</b>
+<b class="nc">&nbsp;				.getObjectResources(moduleUri, SPIN.CONSTRAINT_PROPERTY, store)) {</b>
+&nbsp;
+<b class="nc">&nbsp;			while (argIter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource possibleArg = argIter.next();</b>
+<b class="nc">&nbsp;				Statement argTmpl = TripleSources.single(possibleArg, RDF.TYPE, SPL.ARGUMENT_TEMPLATE, store);</b>
+<b class="nc">&nbsp;				if (argTmpl != null) {</b>
+<b class="nc">&nbsp;					Value argPred = TripleSources.singleValue(possibleArg, SPL.PREDICATE_PROPERTY, store);</b>
+<b class="nc">&nbsp;					Value valueType = TripleSources.singleValue(possibleArg, SPL.VALUE_TYPE_PROPERTY, store);</b>
+<b class="nc">&nbsp;					boolean optional = TripleSources.booleanValue(possibleArg, SPL.OPTIONAL_PROPERTY, store);</b>
+<b class="nc">&nbsp;					Value defaultValue = TripleSources.singleValue(possibleArg, SPL.DEFAULT_VALUE_PROPERTY, store);</b>
+<b class="nc">&nbsp;					IRI argUri = (IRI) argPred;</b>
+<b class="nc">&nbsp;					args.put(argUri, new Argument(argUri, (IRI) valueType, optional, defaultValue));</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ParsedOperation parseText(Resource queryResource, IRI queryType, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		Value text = TripleSources.singleValue(queryResource, SP.TEXT_PROPERTY, store);</b>
+<b class="nc">&nbsp;		if (text != null) {</b>
+<b class="nc">&nbsp;			if (QUERY_TYPES.contains(queryType)) {</b>
+<b class="nc">&nbsp;				return QueryParserUtil.parseQuery(QueryLanguage.SPARQL, text.stringValue(), null);</b>
+<b class="nc">&nbsp;			} else if (UPDATE_TYPES.contains(queryType)) {</b>
+<b class="nc">&nbsp;				return QueryParserUtil.parseUpdate(QueryLanguage.SPARQL, text.stringValue(), null);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Unrecognised command type: %s&quot;, queryType));</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private ParsedOperation parseRDF(Resource queryResource, IRI queryType, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		if (SP.CONSTRUCT_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitConstruct(queryResource);</b>
+<b class="nc">&nbsp;			TupleExpr tupleExpr = makeQueryRootIfNeeded(visitor.getTupleExpr());</b>
+<b class="nc">&nbsp;			return new ParsedGraphQuery(tupleExpr);</b>
+<b class="nc">&nbsp;		} else if (SP.SELECT_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitSelect(queryResource);</b>
+<b class="nc">&nbsp;			return new ParsedTupleQuery(makeQueryRootIfNeeded(visitor.getTupleExpr()));</b>
+<b class="nc">&nbsp;		} else if (SP.ASK_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitAsk(queryResource);</b>
+<b class="nc">&nbsp;			return new ParsedBooleanQuery(makeQueryRootIfNeeded(visitor.getTupleExpr()));</b>
+<b class="nc">&nbsp;		} else if (SP.DESCRIBE_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitDescribe(queryResource);</b>
+<b class="nc">&nbsp;			return new ParsedDescribeQuery(makeQueryRootIfNeeded(visitor.getTupleExpr()));</b>
+<b class="nc">&nbsp;		} else if (SP.MODIFY_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitModify(queryResource);</b>
+<b class="nc">&nbsp;			ParsedUpdate parsedUpdate = new ParsedUpdate();</b>
+<b class="nc">&nbsp;			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());</b>
+<b class="nc">&nbsp;			return parsedUpdate;</b>
+<b class="nc">&nbsp;		} else if (SP.DELETE_WHERE_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitDeleteWhere(queryResource);</b>
+<b class="nc">&nbsp;			ParsedUpdate parsedUpdate = new ParsedUpdate();</b>
+<b class="nc">&nbsp;			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());</b>
+<b class="nc">&nbsp;			return parsedUpdate;</b>
+<b class="nc">&nbsp;		} else if (SP.INSERT_DATA_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitInsertData(queryResource);</b>
+<b class="nc">&nbsp;			ParsedUpdate parsedUpdate = new ParsedUpdate();</b>
+<b class="nc">&nbsp;			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());</b>
+<b class="nc">&nbsp;			return parsedUpdate;</b>
+<b class="nc">&nbsp;		} else if (SP.DELETE_DATA_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitDeleteData(queryResource);</b>
+<b class="nc">&nbsp;			ParsedUpdate parsedUpdate = new ParsedUpdate();</b>
+<b class="nc">&nbsp;			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());</b>
+<b class="nc">&nbsp;			return parsedUpdate;</b>
+<b class="nc">&nbsp;		} else if (SP.LOAD_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitLoad(queryResource);</b>
+<b class="nc">&nbsp;			ParsedUpdate parsedUpdate = new ParsedUpdate();</b>
+<b class="nc">&nbsp;			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());</b>
+<b class="nc">&nbsp;			return parsedUpdate;</b>
+<b class="nc">&nbsp;		} else if (SP.CLEAR_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitClear(queryResource);</b>
+<b class="nc">&nbsp;			ParsedUpdate parsedUpdate = new ParsedUpdate();</b>
+<b class="nc">&nbsp;			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());</b>
+<b class="nc">&nbsp;			return parsedUpdate;</b>
+<b class="nc">&nbsp;		} else if (SP.CREATE_CLASS.equals(queryType)) {</b>
+<b class="nc">&nbsp;			SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;			visitor.visitCreate(queryResource);</b>
+<b class="nc">&nbsp;			ParsedUpdate parsedUpdate = new ParsedUpdate();</b>
+<b class="nc">&nbsp;			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());</b>
+<b class="nc">&nbsp;			return parsedUpdate;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new MalformedSpinException(String.format(&quot;Unrecognised command type: %s&quot;, queryType));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleExpr makeQueryRootIfNeeded(TupleExpr tupleExpr) {
+<b class="nc">&nbsp;		if (!(tupleExpr instanceof QueryRoot)) {</b>
+<b class="nc">&nbsp;			return new QueryRoot(tupleExpr);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return tupleExpr;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public ValueExpr parseExpression(Value expr, TripleSource store) throws RDF4JException {
+<b class="nc">&nbsp;		SpinVisitor visitor = new SpinVisitor(store);</b>
+<b class="nc">&nbsp;		return visitor.visitExpression(expr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Resets/clears any cached information about the given URIs.
+&nbsp;	 *
+&nbsp;	 * @param uris if none are specified all cached information is cleared.
+&nbsp;	 */
+&nbsp;	public void reset(IRI... uris) {
+<b class="nc">&nbsp;		if (uris != null &amp;&amp; uris.length &gt; 0) {</b>
+<b class="nc">&nbsp;			Iterable&lt;?&gt; uriList = Arrays.asList(uris);</b>
+<b class="nc">&nbsp;			templateCache.invalidateAll(uriList);</b>
+<b class="nc">&nbsp;			argumentCache.invalidateAll(uriList);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			templateCache.invalidateAll();</b>
+<b class="nc">&nbsp;			argumentCache.invalidateAll();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static List&lt;IRI&gt; orderArguments(Set&lt;IRI&gt; args) {
+<b class="nc">&nbsp;		SortedSet&lt;IRI&gt; sortedArgs = new TreeSet&lt;&gt;(</b>
+<b class="nc">&nbsp;				(IRI uri1, IRI uri2) -&gt; uri1.getLocalName().compareTo(uri2.getLocalName()));</b>
+<b class="nc">&nbsp;		sortedArgs.addAll(args);</b>
+&nbsp;
+<b class="nc">&nbsp;		int numArgs = sortedArgs.size();</b>
+<b class="nc">&nbsp;		List&lt;IRI&gt; orderedArgs = new ArrayList&lt;&gt;(numArgs);</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; numArgs; i++) {</b>
+<b class="nc">&nbsp;			IRI arg = toArgProperty(i);</b>
+<b class="nc">&nbsp;			if (!sortedArgs.remove(arg)) {</b>
+<b class="nc">&nbsp;				arg = sortedArgs.first();</b>
+<b class="nc">&nbsp;				sortedArgs.remove(arg);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			orderedArgs.add(arg);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return orderedArgs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static IRI toArgProperty(int i) {
+<b class="nc">&nbsp;		switch (i) {</b>
+&nbsp;		case 1:
+<b class="nc">&nbsp;			return SP.ARG1_PROPERTY;</b>
+&nbsp;		case 2:
+<b class="nc">&nbsp;			return SP.ARG2_PROPERTY;</b>
+&nbsp;		case 3:
+<b class="nc">&nbsp;			return SP.ARG3_PROPERTY;</b>
+&nbsp;		case 4:
+<b class="nc">&nbsp;			return SP.ARG4_PROPERTY;</b>
+&nbsp;		case 5:
+<b class="nc">&nbsp;			return SP.ARG5_PROPERTY;</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			return SimpleValueFactory.getInstance().createIRI(SP.NAMESPACE, &quot;arg&quot; + i);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private class SpinVisitor {
+&nbsp;
+&nbsp;		final TripleSource store;
+&nbsp;
+&nbsp;		TupleExpr tupleRoot;
+&nbsp;
+&nbsp;		TupleExpr tupleNode;
+&nbsp;
+&nbsp;		UpdateExpr updateRoot;
+&nbsp;
+&nbsp;		Var namedGraph;
+&nbsp;
+&nbsp;		Map&lt;String, ProjectionElem&gt; projElems;
+&nbsp;
+&nbsp;		Group group;
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;Resource, String&gt; vars = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Collection&lt;AggregateOperator&gt; aggregates = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		SpinVisitor(TripleSource store) {</b>
+<b class="nc">&nbsp;			this.store = store;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public TupleExpr getTupleExpr() {
+<b class="nc">&nbsp;			return tupleRoot;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public UpdateExpr getUpdateExpr() {
+<b class="nc">&nbsp;			return updateRoot;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitConstruct(Resource construct) throws RDF4JException {
+<b class="nc">&nbsp;			Value templates = TripleSources.singleValue(construct, SP.TEMPLATES_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (!(templates instanceof Resource)) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Value of %s is not a resource&quot;, SP.TEMPLATES_PROPERTY));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			projElems = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			UnaryTupleOperator projection = visitTemplates((Resource) templates);</b>
+<b class="nc">&nbsp;			TupleExpr whereExpr = visitWhere(construct);</b>
+<b class="nc">&nbsp;			projection.setArg(whereExpr);</b>
+<b class="nc">&nbsp;			addSourceExpressions(projection, projElems.values());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitDescribe(Resource describe) throws RDF4JException {
+<b class="nc">&nbsp;			Value resultNodes = TripleSources.singleValue(describe, SP.RESULT_NODES_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (!(resultNodes instanceof Resource)) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;						String.format(&quot;Value of %s is not a resource&quot;, SP.RESULT_NODES_PROPERTY));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			projElems = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			Projection projection = visitResultNodes((Resource) resultNodes);</b>
+<b class="nc">&nbsp;			TupleExpr whereExpr = visitWhere(describe);</b>
+<b class="nc">&nbsp;			projection.setArg(whereExpr);</b>
+<b class="nc">&nbsp;			addSourceExpressions(projection, projElems.values());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitSelect(Resource select) throws RDF4JException {
+<b class="nc">&nbsp;			Value resultVars = TripleSources.singleValue(select, SP.RESULT_VARIABLES_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (!(resultVars instanceof Resource)) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;						String.format(&quot;Value of %s is not a resource&quot;, SP.RESULT_VARIABLES_PROPERTY));</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Map&lt;String, ProjectionElem&gt; oldProjElems = projElems;</b>
+<b class="nc">&nbsp;			projElems = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			Projection projection = visitResultVariables((Resource) resultVars, oldProjElems);</b>
+<b class="nc">&nbsp;			TupleExpr whereExpr = visitWhere(select);</b>
+<b class="nc">&nbsp;			projection.setArg(whereExpr);</b>
+&nbsp;
+<b class="nc">&nbsp;			Value groupBy = TripleSources.singleValue(select, SP.GROUP_BY_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (groupBy instanceof Resource) {</b>
+<b class="nc">&nbsp;				visitGroupBy((Resource) groupBy);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (group != null) {</b>
+<b class="nc">&nbsp;				group.setArg(projection.getArg());</b>
+<b class="nc">&nbsp;				projection.setArg(group);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Value having = TripleSources.singleValue(select, SP.HAVING_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (having instanceof Resource) {</b>
+<b class="nc">&nbsp;				TupleExpr havingExpr = visitHaving((Resource) having);</b>
+<b class="nc">&nbsp;				projection.setArg(havingExpr);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			addSourceExpressions(projection, projElems.values());</b>
+<b class="nc">&nbsp;			projElems = oldProjElems;</b>
+&nbsp;
+<b class="nc">&nbsp;			Value orderby = TripleSources.singleValue(select, SP.ORDER_BY_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (orderby instanceof Resource) {</b>
+<b class="nc">&nbsp;				Order order = visitOrderBy((Resource) orderby);</b>
+<b class="nc">&nbsp;				order.setArg(projection.getArg());</b>
+<b class="nc">&nbsp;				projection.setArg(order);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			boolean distinct = TripleSources.booleanValue(select, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (distinct) {</b>
+<b class="nc">&nbsp;				tupleRoot = new Distinct(tupleRoot);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			long offset = -1L;</b>
+<b class="nc">&nbsp;			Value offsetValue = TripleSources.singleValue(select, SP.OFFSET_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (offsetValue instanceof Literal) {</b>
+<b class="nc">&nbsp;				offset = ((Literal) offsetValue).longValue();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			long limit = -1L;</b>
+<b class="nc">&nbsp;			Value limitValue = TripleSources.singleValue(select, SP.LIMIT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (limitValue instanceof Literal) {</b>
+<b class="nc">&nbsp;				limit = ((Literal) limitValue).longValue();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (offset &gt; 0L || limit &gt;= 0L) {</b>
+<b class="nc">&nbsp;				Slice slice = new Slice(tupleRoot);</b>
+<b class="nc">&nbsp;				if (offset &gt; 0L) {</b>
+<b class="nc">&nbsp;					slice.setOffset(offset);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (limit &gt;= 0L) {</b>
+<b class="nc">&nbsp;					slice.setLimit(limit);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				tupleRoot = slice;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitAsk(Resource ask) throws RDF4JException {
+<b class="nc">&nbsp;			TupleExpr whereExpr = visitWhere(ask);</b>
+<b class="nc">&nbsp;			tupleRoot = new Slice(whereExpr, 0, 1);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void addSourceExpressions(UnaryTupleOperator op, Collection&lt;ProjectionElem&gt; elems) {
+<b class="nc">&nbsp;			Extension ext = null;</b>
+<b class="nc">&nbsp;			for (ProjectionElem projElem : elems) {</b>
+<b class="nc">&nbsp;				ExtensionElem extElem = projElem.getSourceExpression();</b>
+<b class="nc">&nbsp;				if (extElem != null) {</b>
+<b class="nc">&nbsp;					if (ext == null) {</b>
+<b class="nc">&nbsp;						ext = new Extension(op.getArg());</b>
+<b class="nc">&nbsp;						op.setArg(ext);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					ext.addElement(extElem);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private UnaryTupleOperator visitTemplates(Resource templates) throws RDF4JException {
+<b class="nc">&nbsp;			List&lt;ProjectionElemList&gt; projElemLists = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; iter = TripleSources.listResources(templates,</b>
+&nbsp;					store);
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = iter.next();</b>
+<b class="nc">&nbsp;				ProjectionElemList projElems = visitTemplate(r);</b>
+<b class="nc">&nbsp;				projElemLists.add(projElems);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			UnaryTupleOperator expr;
+<b class="nc">&nbsp;			if (projElemLists.size() &gt; 1) {</b>
+<b class="nc">&nbsp;				MultiProjection proj = new MultiProjection();</b>
+<b class="nc">&nbsp;				proj.setProjections(projElemLists);</b>
+<b class="nc">&nbsp;				expr = proj;</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				Projection proj = new Projection();</b>
+<b class="nc">&nbsp;				proj.setProjectionElemList(projElemLists.get(0));</b>
+<b class="nc">&nbsp;				expr = proj;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Reduced reduced = new Reduced();</b>
+<b class="nc">&nbsp;			reduced.setArg(expr);</b>
+<b class="nc">&nbsp;			tupleRoot = reduced;</b>
+<b class="nc">&nbsp;			return expr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private ProjectionElemList visitTemplate(Resource r) throws RDF4JException {
+<b class="nc">&nbsp;			ProjectionElemList projElems = new ProjectionElemList();</b>
+<b class="nc">&nbsp;			Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			projElems.addElement(createProjectionElem(subj, &quot;subject&quot;, null));</b>
+<b class="nc">&nbsp;			Value pred = TripleSources.singleValue(r, SP.PREDICATE_PROPERTY, store);</b>
+<b class="nc">&nbsp;			projElems.addElement(createProjectionElem(pred, &quot;predicate&quot;, null));</b>
+<b class="nc">&nbsp;			Value obj = TripleSources.singleValue(r, SP.OBJECT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			projElems.addElement(createProjectionElem(obj, &quot;object&quot;, null));</b>
+<b class="nc">&nbsp;			return projElems;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private Projection visitResultNodes(Resource resultNodes) throws RDF4JException {
+<b class="nc">&nbsp;			ProjectionElemList projElemList = new ProjectionElemList();</b>
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; iter = TripleSources.listResources(resultNodes,</b>
+&nbsp;					store);
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = iter.next();</b>
+<b class="nc">&nbsp;				ProjectionElem projElem = visitResultNode(r);</b>
+<b class="nc">&nbsp;				projElemList.addElement(projElem);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			Projection proj = new Projection();</b>
+<b class="nc">&nbsp;			proj.setProjectionElemList(projElemList);</b>
+&nbsp;
+<b class="nc">&nbsp;			tupleRoot = new DescribeOperator(proj);</b>
+<b class="nc">&nbsp;			return proj;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private ProjectionElem visitResultNode(Resource r) throws RDF4JException {
+<b class="nc">&nbsp;			return createProjectionElem(r, null, null);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private Projection visitResultVariables(Resource resultVars, Map&lt;String, ProjectionElem&gt; previousProjElems)
+&nbsp;				throws RDF4JException {
+<b class="nc">&nbsp;			ProjectionElemList projElemList = new ProjectionElemList();</b>
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; iter = TripleSources.listResources(resultVars,</b>
+&nbsp;					store);
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = iter.next();</b>
+<b class="nc">&nbsp;				ProjectionElem projElem = visitResultVariable(r, previousProjElems);</b>
+<b class="nc">&nbsp;				projElemList.addElement(projElem);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			Projection proj = new Projection();</b>
+<b class="nc">&nbsp;			proj.setProjectionElemList(projElemList);</b>
+&nbsp;
+<b class="nc">&nbsp;			tupleRoot = proj;</b>
+<b class="nc">&nbsp;			return proj;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private ProjectionElem visitResultVariable(Resource r, Map&lt;String, ProjectionElem&gt; previousProjElems)
+&nbsp;				throws RDF4JException {
+<b class="nc">&nbsp;			return createProjectionElem(r, null, previousProjElems);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void visitGroupBy(Resource groupby) throws RDF4JException {
+<b class="nc">&nbsp;			if (group == null) {</b>
+<b class="nc">&nbsp;				group = new Group();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; iter = TripleSources.listResources(groupby, store);</b>
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = iter.next();</b>
+<b class="nc">&nbsp;				ValueExpr groupByExpr = visitExpression(r);</b>
+<b class="nc">&nbsp;				if (!(groupByExpr instanceof Var)) {</b>
+&nbsp;					// TODO
+&nbsp;					// have to create an intermediate Var/Extension for the
+&nbsp;					// expression
+<b class="nc">&nbsp;					throw new UnsupportedOperationException(&quot;TODO!&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				group.addGroupBindingName(((Var) groupByExpr).getName());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private TupleExpr visitHaving(Resource having) throws RDF4JException {
+<b class="nc">&nbsp;			UnaryTupleOperator op = (UnaryTupleOperator) group.getParentNode();</b>
+<b class="nc">&nbsp;			op.setArg(new Extension(group));</b>
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; iter = TripleSources.listResources(having, store);</b>
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = iter.next();</b>
+<b class="nc">&nbsp;				ValueExpr havingExpr = visitExpression(r);</b>
+<b class="nc">&nbsp;				Filter filter = new Filter(op.getArg(), havingExpr);</b>
+<b class="nc">&nbsp;				op.setArg(filter);</b>
+<b class="nc">&nbsp;				op = filter;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return op;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private Order visitOrderBy(Resource orderby) throws RDF4JException {
+<b class="nc">&nbsp;			Order order = new Order();</b>
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; iter = TripleSources.listResources(orderby, store);</b>
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = iter.next();</b>
+<b class="nc">&nbsp;				OrderElem orderElem = visitOrderByCondition(r);</b>
+<b class="nc">&nbsp;				order.addElement(orderElem);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return order;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private OrderElem visitOrderByCondition(Resource r) throws RDF4JException {
+<b class="nc">&nbsp;			Value expr = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;			ValueExpr valueExpr = visitExpression(expr);</b>
+<b class="nc">&nbsp;			Statement descStmt = TripleSources.single(r, RDF.TYPE, SP.DESC_CLASS, store);</b>
+<b class="nc">&nbsp;			boolean asc = (descStmt == null);</b>
+<b class="nc">&nbsp;			return new OrderElem(valueExpr, asc);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private ProjectionElem createProjectionElem(Value v, String projName,
+&nbsp;				Map&lt;String, ProjectionElem&gt; previousProjElems) throws RDF4JException {
+&nbsp;			String varName;
+&nbsp;			ValueExpr valueExpr;
+<b class="nc">&nbsp;			Collection&lt;AggregateOperator&gt; oldAggregates = aggregates;</b>
+<b class="nc">&nbsp;			aggregates = Collections.emptyList();</b>
+<b class="nc">&nbsp;			if (v instanceof Literal) {</b>
+&nbsp;				// literal
+<b class="nc">&nbsp;				if (projName == null) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(String.format(&quot;Expected a projection var: %s&quot;, v));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				varName = TupleExprs.getConstVarName(v);</b>
+<b class="nc">&nbsp;				valueExpr = new ValueConstant(v);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				varName = getVarName((Resource) v);</b>
+<b class="nc">&nbsp;				if (varName != null) {</b>
+&nbsp;					// var
+<b class="nc">&nbsp;					Value expr = TripleSources.singleValue((Resource) v, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;					if (expr != null) {</b>
+&nbsp;						// AS
+<b class="nc">&nbsp;						aggregates = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;						valueExpr = visitExpression(expr);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						valueExpr = new Var(varName);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else {</b>
+&nbsp;					// resource
+<b class="nc">&nbsp;					if (projName == null) {</b>
+<b class="nc">&nbsp;						throw new MalformedSpinException(String.format(&quot;Expected a projection var: %s&quot;, v));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					varName = TupleExprs.getConstVarName(v);</b>
+<b class="nc">&nbsp;					valueExpr = new ValueConstant(v);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			ProjectionElem projElem = new ProjectionElem(varName, projName);</b>
+<b class="nc">&nbsp;			if (!(valueExpr instanceof Var &amp;&amp; ((Var) valueExpr).getName().equals(varName))) {</b>
+<b class="nc">&nbsp;				projElem.setSourceExpression(new ExtensionElem(valueExpr, varName));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (!aggregates.isEmpty()) {</b>
+<b class="nc">&nbsp;				projElem.setAggregateOperatorInExpression(true);</b>
+<b class="nc">&nbsp;				if (group == null) {</b>
+<b class="nc">&nbsp;					group = new Group();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				for (AggregateOperator op : aggregates) {</b>
+<b class="nc">&nbsp;					group.addGroupElement(new GroupElem(projElem.getProjectionAlias().orElse(varName), op));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;			aggregates = oldAggregates;</b>
+<b class="nc">&nbsp;			if (projElems != null) {</b>
+<b class="nc">&nbsp;				projElems.put(varName, projElem);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (previousProjElems != null) {</b>
+<b class="nc">&nbsp;				previousProjElems.remove(projName);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return projElem;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitModify(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			Value with = TripleSources.singleValue(query, SP.WITH_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (with != null) {</b>
+<b class="nc">&nbsp;				namedGraph = TupleExprs.createConstVar(with);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			SingletonSet stub = new SingletonSet();</b>
+<b class="nc">&nbsp;			tupleRoot = new QueryRoot(stub);</b>
+<b class="nc">&nbsp;			tupleNode = stub;</b>
+&nbsp;			TupleExpr deleteExpr;
+<b class="nc">&nbsp;			Value delete = TripleSources.singleValue(query, SP.DELETE_PATTERN_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (delete != null) {</b>
+<b class="nc">&nbsp;				visitDelete((Resource) delete);</b>
+<b class="nc">&nbsp;				deleteExpr = tupleNode;</b>
+<b class="nc">&nbsp;				deleteExpr.setParentNode(null);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				deleteExpr = null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			tupleRoot = new QueryRoot(stub);</b>
+<b class="nc">&nbsp;			tupleNode = stub;</b>
+&nbsp;			TupleExpr insertExpr;
+<b class="nc">&nbsp;			Value insert = TripleSources.singleValue(query, SP.INSERT_PATTERN_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (insert != null) {</b>
+<b class="nc">&nbsp;				visitInsert((Resource) insert);</b>
+<b class="nc">&nbsp;				insertExpr = tupleNode;</b>
+<b class="nc">&nbsp;				insertExpr.setParentNode(null);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				insertExpr = null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			TupleExpr whereExpr;
+<b class="nc">&nbsp;			Value where = TripleSources.singleValue(query, SP.WHERE_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (where != null) {</b>
+<b class="nc">&nbsp;				whereExpr = visitGroupGraphPattern((Resource) where);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				whereExpr = null;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			updateRoot = new Modify(deleteExpr, insertExpr, whereExpr);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitDeleteWhere(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			TupleExpr whereExpr = visitWhere(query);</b>
+<b class="nc">&nbsp;			updateRoot = new Modify(whereExpr, null, whereExpr.clone());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitInsertData(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			SingletonSet stub = new SingletonSet();</b>
+<b class="nc">&nbsp;			tupleRoot = new QueryRoot(stub);</b>
+<b class="nc">&nbsp;			tupleNode = stub;</b>
+&nbsp;			TupleExpr insertExpr;
+<b class="nc">&nbsp;			Value insert = TripleSources.singleValue(query, SP.DATA_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (!(insert instanceof Resource)) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Value of %s is not a resource&quot;, SP.DATA_PROPERTY));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			visitInsert((Resource) insert);</b>
+<b class="nc">&nbsp;			insertExpr = tupleNode;</b>
+<b class="nc">&nbsp;			insertExpr.setParentNode(null);</b>
+&nbsp;
+<b class="nc">&nbsp;			DataVisitor visitor = new DataVisitor();</b>
+<b class="nc">&nbsp;			insertExpr.visit(visitor);</b>
+<b class="nc">&nbsp;			updateRoot = new InsertData(visitor.getData());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitDeleteData(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			SingletonSet stub = new SingletonSet();</b>
+<b class="nc">&nbsp;			tupleRoot = new QueryRoot(stub);</b>
+<b class="nc">&nbsp;			tupleNode = stub;</b>
+&nbsp;			TupleExpr deleteExpr;
+<b class="nc">&nbsp;			Value delete = TripleSources.singleValue(query, SP.DATA_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (!(delete instanceof Resource)) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Value of %s is not a resource&quot;, SP.DATA_PROPERTY));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			visitDelete((Resource) delete);</b>
+<b class="nc">&nbsp;			deleteExpr = tupleNode;</b>
+<b class="nc">&nbsp;			deleteExpr.setParentNode(null);</b>
+&nbsp;
+<b class="nc">&nbsp;			DataVisitor visitor = new DataVisitor();</b>
+<b class="nc">&nbsp;			deleteExpr.visit(visitor);</b>
+<b class="nc">&nbsp;			updateRoot = new DeleteData(visitor.getData());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitLoad(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			Value document = TripleSources.singleValue(query, SP.DOCUMENT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			Value into = TripleSources.singleValue(query, SP.INTO_PROPERTY, store);</b>
+<b class="nc">&nbsp;			Load load = new Load(new ValueConstant(document));</b>
+<b class="nc">&nbsp;			load.setGraph(new ValueConstant(into));</b>
+<b class="nc">&nbsp;			boolean isSilent = TripleSources.booleanValue(query, SP.SILENT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			load.setSilent(isSilent);</b>
+<b class="nc">&nbsp;			updateRoot = load;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitClear(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			Value graph = TripleSources.singleValue(query, SP.GRAPH_IRI_PROPERTY, store);</b>
+<b class="nc">&nbsp;			Clear clear = new Clear(new ValueConstant(graph));</b>
+<b class="nc">&nbsp;			boolean isSilent = TripleSources.booleanValue(query, SP.SILENT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			clear.setSilent(isSilent);</b>
+<b class="nc">&nbsp;			updateRoot = clear;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void visitCreate(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			Value graph = TripleSources.singleValue(query, SP.GRAPH_IRI_PROPERTY, store);</b>
+<b class="nc">&nbsp;			Create create = new Create(new ValueConstant(graph));</b>
+<b class="nc">&nbsp;			boolean isSilent = TripleSources.booleanValue(query, SP.SILENT_PROPERTY, store);</b>
+<b class="nc">&nbsp;			create.setSilent(isSilent);</b>
+<b class="nc">&nbsp;			updateRoot = create;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public TupleExpr visitWhere(Resource query) throws RDF4JException {
+<b class="nc">&nbsp;			Value where = TripleSources.singleValue(query, SP.WHERE_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (!(where instanceof Resource)) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Value of %s is not a resource&quot;, SP.WHERE_PROPERTY));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return visitGroupGraphPattern((Resource) where);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public TupleExpr visitGroupGraphPattern(Resource group) throws RDF4JException {
+<b class="nc">&nbsp;			tupleNode = new SingletonSet();</b>
+<b class="nc">&nbsp;			QueryRoot groupRoot = new QueryRoot(tupleNode);</b>
+&nbsp;
+<b class="nc">&nbsp;			Map&lt;Resource, Set&lt;IRI&gt;&gt; patternTypes = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; groupIter = TripleSources.listResources(group,</b>
+&nbsp;					store);
+<b class="nc">&nbsp;			while (groupIter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = groupIter.next();</b>
+<b class="nc">&nbsp;				patternTypes.put(r, Iterations.asSet(TripleSources.getObjectURIs(r, RDF.TYPE, store)));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// first process filters
+<b class="nc">&nbsp;			TupleExpr currentNode = tupleNode;</b>
+<b class="nc">&nbsp;			SingletonSet nextNode = new SingletonSet();</b>
+<b class="nc">&nbsp;			tupleNode = nextNode;</b>
+<b class="nc">&nbsp;			for (Iterator&lt;Map.Entry&lt;Resource, Set&lt;IRI&gt;&gt;&gt; iter = patternTypes.entrySet().iterator(); iter.hasNext();) {</b>
+<b class="nc">&nbsp;				Map.Entry&lt;Resource, Set&lt;IRI&gt;&gt; entry = iter.next();</b>
+<b class="nc">&nbsp;				if (entry.getValue().contains(SP.FILTER_CLASS)) {</b>
+<b class="nc">&nbsp;					visitFilter(entry.getKey());</b>
+<b class="nc">&nbsp;					iter.remove();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			currentNode.replaceWith(tupleNode);</b>
+<b class="nc">&nbsp;			tupleNode = nextNode;</b>
+&nbsp;
+&nbsp;			// then binds
+<b class="nc">&nbsp;			currentNode = tupleNode;</b>
+<b class="nc">&nbsp;			nextNode = new SingletonSet();</b>
+<b class="nc">&nbsp;			tupleNode = nextNode;</b>
+<b class="nc">&nbsp;			for (Iterator&lt;Map.Entry&lt;Resource, Set&lt;IRI&gt;&gt;&gt; iter = patternTypes.entrySet().iterator(); iter.hasNext();) {</b>
+<b class="nc">&nbsp;				Map.Entry&lt;Resource, Set&lt;IRI&gt;&gt; entry = iter.next();</b>
+<b class="nc">&nbsp;				if (entry.getValue().contains(SP.BIND_CLASS)) {</b>
+<b class="nc">&nbsp;					visitBind(entry.getKey());</b>
+<b class="nc">&nbsp;					iter.remove();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			currentNode.replaceWith(tupleNode);</b>
+<b class="nc">&nbsp;			tupleNode = nextNode;</b>
+&nbsp;
+&nbsp;			// then anything else
+<b class="nc">&nbsp;			for (Iterator&lt;Map.Entry&lt;Resource, Set&lt;IRI&gt;&gt;&gt; iter = patternTypes.entrySet().iterator(); iter.hasNext();) {</b>
+<b class="nc">&nbsp;				Map.Entry&lt;Resource, Set&lt;IRI&gt;&gt; entry = iter.next();</b>
+<b class="nc">&nbsp;				visitPattern(entry.getKey(), entry.getValue(), groupRoot.getArg());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			TupleExpr groupExpr = groupRoot.getArg();</b>
+<b class="nc">&nbsp;			groupExpr.setParentNode(null);</b>
+<b class="nc">&nbsp;			return groupExpr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void visitInsert(Resource insert) throws RDF4JException {
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; groupIter = TripleSources.listResources(insert,</b>
+&nbsp;					store);
+<b class="nc">&nbsp;			while (groupIter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = groupIter.next();</b>
+<b class="nc">&nbsp;				Value type = TripleSources.singleValue(r, RDF.TYPE, store);</b>
+<b class="nc">&nbsp;				visitPattern(r, (type != null) ? Collections.singleton((IRI) type) : Collections.&lt;IRI&gt;emptySet(), null);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void visitDelete(Resource delete) throws RDF4JException {
+<b class="nc">&nbsp;			Iteration&lt;Resource, QueryEvaluationException&gt; groupIter = TripleSources.listResources(delete,</b>
+&nbsp;					store);
+<b class="nc">&nbsp;			while (groupIter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource r = groupIter.next();</b>
+<b class="nc">&nbsp;				Value type = TripleSources.singleValue(r, RDF.TYPE, store);</b>
+<b class="nc">&nbsp;				visitPattern(r, (type != null) ? Collections.singleton((IRI) type) : Collections.&lt;IRI&gt;emptySet(), null);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void visitPattern(Resource r, Set&lt;IRI&gt; types, TupleExpr currentGroupExpr) throws RDF4JException {
+<b class="nc">&nbsp;			TupleExpr currentNode = tupleNode;</b>
+<b class="nc">&nbsp;			Value pred = TripleSources.singleValue(r, SP.PREDICATE_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (pred != null) {</b>
+&nbsp;				// only triple patterns have sp:predicate
+<b class="nc">&nbsp;				Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Value obj = TripleSources.singleValue(r, SP.OBJECT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Scope stmtScope = (namedGraph != null) ? Scope.NAMED_CONTEXTS : Scope.DEFAULT_CONTEXTS;</b>
+<b class="nc">&nbsp;				tupleNode = new StatementPattern(stmtScope, getVar(subj), getVar(pred), getVar(obj), namedGraph);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				if (types.contains(SP.NAMED_GRAPH_CLASS)) {</b>
+<b class="nc">&nbsp;					Var oldGraph = namedGraph;</b>
+<b class="nc">&nbsp;					Value graphValue = TripleSources.singleValue(r, SP.GRAPH_NAME_NODE_PROPERTY, store);</b>
+<b class="nc">&nbsp;					namedGraph = getVar(graphValue);</b>
+<b class="nc">&nbsp;					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);</b>
+<b class="nc">&nbsp;					if (!(elements instanceof Resource)) {</b>
+<b class="nc">&nbsp;						throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;								String.format(&quot;Value of %s is not a resource&quot;, SP.ELEMENTS_PROPERTY));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					tupleNode = visitGroupGraphPattern((Resource) elements);</b>
+<b class="nc">&nbsp;					namedGraph = oldGraph;</b>
+<b class="nc">&nbsp;				} else if (types.contains(SP.UNION_CLASS)) {</b>
+<b class="nc">&nbsp;					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);</b>
+<b class="nc">&nbsp;					if (!(elements instanceof Resource)) {</b>
+<b class="nc">&nbsp;						throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;								String.format(&quot;Value of %s is not a resource&quot;, SP.ELEMENTS_PROPERTY));</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					Iteration&lt;Resource, QueryEvaluationException&gt; iter = TripleSources</b>
+<b class="nc">&nbsp;							.listResources((Resource) elements, store);</b>
+<b class="nc">&nbsp;					TupleExpr prev = null;</b>
+<b class="nc">&nbsp;					while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;						Resource entry = iter.next();</b>
+<b class="nc">&nbsp;						TupleExpr groupExpr = visitGroupGraphPattern(entry);</b>
+<b class="nc">&nbsp;						if (prev != null) {</b>
+<b class="nc">&nbsp;							groupExpr = new Union(prev, groupExpr);</b>
+<b class="nc">&nbsp;							tupleNode = groupExpr;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						prev = groupExpr;</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				} else if (types.contains(SP.OPTIONAL_CLASS)) {</b>
+<b class="nc">&nbsp;					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);</b>
+<b class="nc">&nbsp;					if (!(elements instanceof Resource)) {</b>
+<b class="nc">&nbsp;						throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;								String.format(&quot;Value of %s is not a resource&quot;, SP.ELEMENTS_PROPERTY));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);</b>
+<b class="nc">&nbsp;					LeftJoin leftJoin = new LeftJoin();</b>
+<b class="nc">&nbsp;					currentGroupExpr.replaceWith(leftJoin);</b>
+<b class="nc">&nbsp;					leftJoin.setLeftArg(currentGroupExpr);</b>
+<b class="nc">&nbsp;					leftJoin.setRightArg(groupExpr);</b>
+<b class="nc">&nbsp;					tupleNode = leftJoin;</b>
+<b class="nc">&nbsp;					currentNode = null;</b>
+<b class="nc">&nbsp;				} else if (types.contains(SP.MINUS_CLASS)) {</b>
+<b class="nc">&nbsp;					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);</b>
+<b class="nc">&nbsp;					if (!(elements instanceof Resource)) {</b>
+<b class="nc">&nbsp;						throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;								String.format(&quot;Value of %s is not a resource&quot;, SP.ELEMENTS_PROPERTY));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);</b>
+<b class="nc">&nbsp;					Difference difference = new Difference();</b>
+<b class="nc">&nbsp;					currentGroupExpr.replaceWith(difference);</b>
+<b class="nc">&nbsp;					difference.setLeftArg(currentGroupExpr);</b>
+<b class="nc">&nbsp;					difference.setRightArg(groupExpr);</b>
+<b class="nc">&nbsp;					tupleNode = difference;</b>
+<b class="nc">&nbsp;					currentNode = null;</b>
+<b class="nc">&nbsp;				} else if (types.contains(SP.SUB_QUERY_CLASS)) {</b>
+<b class="nc">&nbsp;					Value q = TripleSources.singleValue(r, SP.QUERY_PROPERTY, store);</b>
+<b class="nc">&nbsp;					TupleExpr oldRoot = tupleRoot;</b>
+<b class="nc">&nbsp;					visitSelect((Resource) q);</b>
+<b class="nc">&nbsp;					tupleNode = tupleRoot;</b>
+<b class="nc">&nbsp;					tupleRoot = oldRoot;</b>
+<b class="nc">&nbsp;				} else if (types.contains(SP.VALUES_CLASS)) {</b>
+<b class="nc">&nbsp;					BindingSetAssignment bsa = new BindingSetAssignment();</b>
+<b class="nc">&nbsp;					Set&lt;String&gt; varNames = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;					Value varNameList = TripleSources.singleValue(r, SP.VAR_NAMES_PROPERTY, store);</b>
+<b class="nc">&nbsp;					Iteration&lt;Value, QueryEvaluationException&gt; varNameIter = TripleSources</b>
+<b class="nc">&nbsp;							.list((Resource) varNameList, store);</b>
+<b class="nc">&nbsp;					while (varNameIter.hasNext()) {</b>
+<b class="nc">&nbsp;						Value v = varNameIter.next();</b>
+<b class="nc">&nbsp;						if (v instanceof Literal) {</b>
+<b class="nc">&nbsp;							varNames.add(((Literal) v).getLabel());</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					bsa.setBindingNames(varNames);</b>
+<b class="nc">&nbsp;					List&lt;BindingSet&gt; bindingSets = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;					Value bindingsList = TripleSources.singleValue(r, SP.BINDINGS_PROPERTY, store);</b>
+<b class="nc">&nbsp;					Iteration&lt;Value, QueryEvaluationException&gt; bindingsIter = TripleSources</b>
+<b class="nc">&nbsp;							.list((Resource) bindingsList, store);</b>
+<b class="nc">&nbsp;					while (bindingsIter.hasNext()) {</b>
+<b class="nc">&nbsp;						Value valueList = bindingsIter.next();</b>
+<b class="nc">&nbsp;						QueryBindingSet bs = new QueryBindingSet();</b>
+<b class="nc">&nbsp;						Iterator&lt;String&gt; nameIter = varNames.iterator();</b>
+<b class="nc">&nbsp;						Iteration&lt;Value, QueryEvaluationException&gt; valueIter = TripleSources</b>
+<b class="nc">&nbsp;								.list((Resource) valueList, store);</b>
+<b class="nc">&nbsp;						while (nameIter.hasNext() &amp;&amp; valueIter.hasNext()) {</b>
+<b class="nc">&nbsp;							String name = nameIter.next();</b>
+<b class="nc">&nbsp;							Value value = valueIter.next();</b>
+<b class="nc">&nbsp;							if (!SP.UNDEF.equals(value)) {</b>
+<b class="nc">&nbsp;								bs.addBinding(name, value);</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;						bindingSets.add(bs);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					bsa.setBindingSets(bindingSets);</b>
+<b class="nc">&nbsp;					tupleNode = bsa;</b>
+<b class="nc">&nbsp;				} else if (types.contains(RDF.LIST) || (TripleSources.singleValue(r, RDF.FIRST, store) != null)) {</b>
+<b class="nc">&nbsp;					tupleNode = visitGroupGraphPattern(r);</b>
+<b class="nc">&nbsp;				} else if (types.contains(SP.TRIPLE_PATH_CLASS)) {</b>
+<b class="nc">&nbsp;					Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);</b>
+<b class="nc">&nbsp;					Value obj = TripleSources.singleValue(r, SP.OBJECT_PROPERTY, store);</b>
+<b class="nc">&nbsp;					Resource path = (Resource) TripleSources.singleValue(r, SP.PATH_PROPERTY, store);</b>
+<b class="nc">&nbsp;					Set&lt;IRI&gt; pathTypes = Iterations.asSet(TripleSources.getObjectURIs(path, RDF.TYPE, store));</b>
+<b class="nc">&nbsp;					if (pathTypes.contains(SP.MOD_PATH_CLASS)) {</b>
+<b class="nc">&nbsp;						Resource subPath = (Resource) TripleSources.singleValue(path, SP.SUB_PATH_PROPERTY, store);</b>
+<b class="nc">&nbsp;						Literal minPath = (Literal) TripleSources.singleValue(path, SP.MOD_MIN_PROPERTY, store);</b>
+<b class="nc">&nbsp;						Literal maxPath = (Literal) TripleSources.singleValue(path, SP.MOD_MAX_PROPERTY, store);</b>
+<b class="nc">&nbsp;						if (maxPath == null || maxPath.intValue() != -2) {</b>
+<b class="nc">&nbsp;							throw new UnsupportedOperationException(&quot;Unsupported mod path&quot;);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						Var subjVar = getVar(subj);</b>
+<b class="nc">&nbsp;						Var objVar = getVar(obj);</b>
+<b class="nc">&nbsp;						tupleNode = new ArbitraryLengthPath(subjVar,</b>
+<b class="nc">&nbsp;								new StatementPattern(subjVar, getVar(subPath), objVar), objVar, minPath.longValue());</b>
+<b class="nc">&nbsp;					} else {</b>
+<b class="nc">&nbsp;						throw new UnsupportedOperationException(types.toString());</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (types.contains(SP.SERVICE_CLASS)) {</b>
+<b class="nc">&nbsp;					Value serviceUri = TripleSources.singleValue(r, SP.SERVICE_URI_PROPERTY, store);</b>
+&nbsp;
+<b class="nc">&nbsp;					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);</b>
+<b class="nc">&nbsp;					if (!(elements instanceof Resource)) {</b>
+<b class="nc">&nbsp;						throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;								String.format(&quot;Value of %s is not a resource&quot;, SP.ELEMENTS_PROPERTY));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);</b>
+&nbsp;
+<b class="nc">&nbsp;					boolean isSilent = TripleSources.booleanValue(r, SP.SILENT_PROPERTY, store);</b>
+&nbsp;					String exprString;
+&nbsp;					try {
+<b class="nc">&nbsp;						exprString = new SPARQLQueryRenderer().render(new ParsedTupleQuery(groupExpr));</b>
+<b class="nc">&nbsp;						exprString = exprString.substring(exprString.indexOf(&#39;{&#39;) + 1, exprString.lastIndexOf(&#39;}&#39;));</b>
+<b class="nc">&nbsp;					} catch (Exception e) {</b>
+<b class="nc">&nbsp;						throw new QueryEvaluationException(e);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					Map&lt;String, String&gt; prefixDecls = new HashMap&lt;&gt;(8);</b>
+<b class="nc">&nbsp;					prefixDecls.put(SP.PREFIX, SP.NAMESPACE);</b>
+<b class="nc">&nbsp;					prefixDecls.put(SPIN.PREFIX, SPIN.NAMESPACE);</b>
+<b class="nc">&nbsp;					prefixDecls.put(SPL.PREFIX, SPL.NAMESPACE);</b>
+<b class="nc">&nbsp;					Service service = new Service(getVar(serviceUri), tupleNode, exprString, prefixDecls, null,</b>
+&nbsp;							isSilent);
+<b class="nc">&nbsp;					tupleNode = service;</b>
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					throw new UnsupportedOperationException(types.toString());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (currentNode instanceof SingletonSet) {</b>
+<b class="nc">&nbsp;				currentNode.replaceWith(tupleNode);</b>
+<b class="nc">&nbsp;			} else if (currentNode != null) {</b>
+<b class="nc">&nbsp;				Join join = new Join();</b>
+<b class="nc">&nbsp;				currentNode.replaceWith(join);</b>
+<b class="nc">&nbsp;				join.setLeftArg(currentNode);</b>
+<b class="nc">&nbsp;				join.setRightArg(tupleNode);</b>
+<b class="nc">&nbsp;				tupleNode = join;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void visitFilter(Resource r) throws RDF4JException {
+<b class="nc">&nbsp;			Value expr = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;			ValueExpr valueExpr = visitExpression(expr);</b>
+<b class="nc">&nbsp;			tupleNode = new Filter(tupleNode, valueExpr);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void visitBind(Resource r) throws RDF4JException {
+<b class="nc">&nbsp;			Value expr = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;			ValueExpr valueExpr = visitExpression(expr);</b>
+<b class="nc">&nbsp;			Value varValue = TripleSources.singleValue(r, SP.VARIABLE_PROPERTY, store);</b>
+<b class="nc">&nbsp;			if (!(varValue instanceof Resource)) {</b>
+<b class="nc">&nbsp;				throw new MalformedSpinException(String.format(&quot;Value of %s is not a resource&quot;, SP.VARIABLE_PROPERTY));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String varName = getVarName((Resource) varValue);</b>
+<b class="nc">&nbsp;			tupleNode = new Extension(tupleNode, new ExtensionElem(valueExpr, varName));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private ValueExpr visitExpression(Value v) throws RDF4JException {
+&nbsp;			ValueExpr expr;
+<b class="nc">&nbsp;			if (v instanceof Literal) {</b>
+<b class="nc">&nbsp;				expr = new ValueConstant(v);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				Resource r = (Resource) v;</b>
+<b class="nc">&nbsp;				String varName = getVarName(r);</b>
+<b class="nc">&nbsp;				if (varName != null) {</b>
+<b class="nc">&nbsp;					expr = createVar(varName);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					Set&lt;IRI&gt; exprTypes = Iterations.asSet(TripleSources.getObjectURIs(r, RDF.TYPE, store));</b>
+<b class="nc">&nbsp;					exprTypes.remove(RDF.PROPERTY);</b>
+<b class="nc">&nbsp;					exprTypes.remove(RDFS.RESOURCE);</b>
+<b class="nc">&nbsp;					exprTypes.remove(RDFS.CLASS);</b>
+<b class="nc">&nbsp;					if (exprTypes.size() &gt; 1) {</b>
+<b class="nc">&nbsp;						if (exprTypes.remove(SPIN.FUNCTIONS_CLASS)) {</b>
+<b class="nc">&nbsp;							exprTypes.remove(SPIN.MODULES_CLASS);</b>
+<b class="nc">&nbsp;							if (exprTypes.size() &gt; 1) {</b>
+<b class="nc">&nbsp;								for (Iterator&lt;IRI&gt; iter = exprTypes.iterator(); iter.hasNext();) {</b>
+<b class="nc">&nbsp;									IRI f = iter.next();</b>
+<b class="nc">&nbsp;									Value abstractValue = TripleSources.singleValue(f, SPIN.ABSTRACT_PROPERTY, store);</b>
+<b class="nc">&nbsp;									if (BooleanLiteral.TRUE.equals(abstractValue)) {</b>
+<b class="nc">&nbsp;										iter.remove();</b>
+&nbsp;									}
+<b class="nc">&nbsp;								}</b>
+&nbsp;							}
+<b class="nc">&nbsp;							if (exprTypes.isEmpty()) {</b>
+<b class="nc">&nbsp;								throw new MalformedSpinException(String.format(&quot;Function missing RDF type: %s&quot;, r));</b>
+&nbsp;							}
+<b class="nc">&nbsp;						} else if (exprTypes.remove(SP.AGGREGATION_CLASS)) {</b>
+<b class="nc">&nbsp;							exprTypes.remove(SP.SYSTEM_CLASS);</b>
+<b class="nc">&nbsp;							if (exprTypes.isEmpty()) {</b>
+<b class="nc">&nbsp;								throw new MalformedSpinException(String.format(&quot;Aggregation missing RDF type: %s&quot;, r));</b>
+&nbsp;							}
+&nbsp;						} else {
+<b class="nc">&nbsp;							exprTypes = Collections.emptySet();</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					expr = null;</b>
+<b class="nc">&nbsp;					if (exprTypes.size() == 1) {</b>
+<b class="nc">&nbsp;						IRI func = exprTypes.iterator().next();</b>
+<b class="nc">&nbsp;						expr = toValueExpr(r, func);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (expr == null) {</b>
+<b class="nc">&nbsp;						expr = new ValueConstant(v);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return expr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private ValueExpr toValueExpr(Resource r, IRI func) throws RDF4JException {
+&nbsp;			ValueExpr expr;
+&nbsp;			CompareOp compareOp;
+&nbsp;			MathOp mathOp;
+<b class="nc">&nbsp;			if ((compareOp = toCompareOp(func)) != null) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 2) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new Compare(args.get(0), args.get(1), compareOp);</b>
+<b class="nc">&nbsp;			} else if ((mathOp = toMathOp(func)) != null) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 2) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new MathExpr(args.get(0), args.get(1), mathOp);</b>
+<b class="nc">&nbsp;			} else if (SP.AND.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 2) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new And(args.get(0), args.get(1));</b>
+<b class="nc">&nbsp;			} else if (SP.OR.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 2) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new Or(args.get(0), args.get(1));</b>
+<b class="nc">&nbsp;			} else if (SP.NOT.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new Not(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.COUNT_CLASS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value arg = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;				boolean distinct = TripleSources.booleanValue(r, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Count count = new Count(visitExpression(arg), distinct);</b>
+<b class="nc">&nbsp;				aggregates.add(count);</b>
+<b class="nc">&nbsp;				expr = count;</b>
+<b class="nc">&nbsp;			} else if (SP.MAX_CLASS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value arg = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;				boolean distinct = TripleSources.booleanValue(r, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Max max = new Max(visitExpression(arg), distinct);</b>
+<b class="nc">&nbsp;				aggregates.add(max);</b>
+<b class="nc">&nbsp;				expr = max;</b>
+<b class="nc">&nbsp;			} else if (SP.MIN_CLASS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value arg = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;				boolean distinct = TripleSources.booleanValue(r, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Min min = new Min(visitExpression(arg), distinct);</b>
+<b class="nc">&nbsp;				aggregates.add(min);</b>
+<b class="nc">&nbsp;				expr = min;</b>
+<b class="nc">&nbsp;			} else if (SP.SUM_CLASS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value arg = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;				boolean distinct = TripleSources.booleanValue(r, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Sum sum = new Sum(visitExpression(arg), distinct);</b>
+<b class="nc">&nbsp;				aggregates.add(sum);</b>
+<b class="nc">&nbsp;				expr = sum;</b>
+<b class="nc">&nbsp;			} else if (SP.AVG_CLASS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value arg = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;				boolean distinct = TripleSources.booleanValue(r, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Avg avg = new Avg(visitExpression(arg), distinct);</b>
+<b class="nc">&nbsp;				aggregates.add(avg);</b>
+<b class="nc">&nbsp;				expr = avg;</b>
+<b class="nc">&nbsp;			} else if (SP.GROUP_CONCAT_CLASS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value arg = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;				boolean distinct = TripleSources.booleanValue(r, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				GroupConcat groupConcat = new GroupConcat(visitExpression(arg), distinct);</b>
+<b class="nc">&nbsp;				aggregates.add(groupConcat);</b>
+<b class="nc">&nbsp;				expr = groupConcat;</b>
+<b class="nc">&nbsp;			} else if (SP.SAMPLE_CLASS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value arg = TripleSources.singleValue(r, SP.EXPRESSION_PROPERTY, store);</b>
+<b class="nc">&nbsp;				boolean distinct = TripleSources.booleanValue(r, SP.DISTINCT_PROPERTY, store);</b>
+<b class="nc">&nbsp;				Sample sample = new Sample(visitExpression(arg), distinct);</b>
+<b class="nc">&nbsp;				aggregates.add(sample);</b>
+<b class="nc">&nbsp;				expr = sample;</b>
+<b class="nc">&nbsp;			} else if (SP.EXISTS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);</b>
+<b class="nc">&nbsp;				if (!(elements instanceof Resource)) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Value of %s is not a resource&quot;, SP.ELEMENTS_PROPERTY));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				TupleExpr currentNode = tupleNode;</b>
+<b class="nc">&nbsp;				TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);</b>
+<b class="nc">&nbsp;				expr = new Exists(groupExpr);</b>
+<b class="nc">&nbsp;				tupleNode = currentNode;</b>
+<b class="nc">&nbsp;			} else if (SP.NOT_EXISTS.equals(func)) {</b>
+<b class="nc">&nbsp;				Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);</b>
+<b class="nc">&nbsp;				if (!(elements instanceof Resource)) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Value of %s is not a resource&quot;, SP.ELEMENTS_PROPERTY));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				TupleExpr currentNode = tupleNode;</b>
+<b class="nc">&nbsp;				TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);</b>
+<b class="nc">&nbsp;				expr = new Not(new Exists(groupExpr));</b>
+<b class="nc">&nbsp;				tupleNode = currentNode;</b>
+<b class="nc">&nbsp;			} else if (SP.BOUND.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new Bound((Var) args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.IF.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY, SP.ARG3_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 3) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new If(args.get(0), args.get(1), args.get(2));</b>
+<b class="nc">&nbsp;			} else if (SP.COALESCE.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func);</b>
+<b class="nc">&nbsp;				expr = new Coalesce(args);</b>
+<b class="nc">&nbsp;			} else if (SP.IS_IRI.equals(func) || SP.IS_URI.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new IsURI(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.IS_BLANK.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new IsBNode(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.IS_LITERAL.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new IsLiteral(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.IS_NUMERIC.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new IsNumeric(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.STR.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new Str(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.LANG.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new Lang(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.DATATYPE.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new Datatype(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.IRI.equals(func) || SP.URI.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new IRIFunction(args.get(0));</b>
+<b class="nc">&nbsp;			} else if (SP.BNODE.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				ValueExpr arg = (args.size() == 1) ? args.get(0) : null;</b>
+<b class="nc">&nbsp;				expr = new BNodeGenerator(arg);</b>
+<b class="nc">&nbsp;			} else if (SP.REGEX.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY, SP.ARG2_PROPERTY, SP.ARG3_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() &lt; 2) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				ValueExpr flagsArg = (args.size() == 3) ? args.get(2) : null;</b>
+<b class="nc">&nbsp;				expr = new Regex(args.get(0), args.get(1), flagsArg);</b>
+<b class="nc">&nbsp;			} else if (AFN.LOCALNAME.equals(func)) {</b>
+<b class="nc">&nbsp;				List&lt;ValueExpr&gt; args = getArgs(r, func, SP.ARG1_PROPERTY);</b>
+<b class="nc">&nbsp;				if (args.size() != 1) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Invalid number of arguments for function: %s&quot;, func));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				expr = new LocalName(args.get(0));</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				String funcName = wellKnownFunctions.apply(func);</b>
+<b class="nc">&nbsp;				if (funcName == null) {</b>
+&nbsp;					// check if it is a SPIN function
+<b class="nc">&nbsp;					Statement funcTypeStmt = TripleSources.single(func, RDF.TYPE, SPIN.FUNCTION_CLASS, store);</b>
+<b class="nc">&nbsp;					if (funcTypeStmt != null) {</b>
+<b class="nc">&nbsp;						funcName = func.stringValue();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;				// not enough information available to determine
+&nbsp;				// if it is really a function or not
+&nbsp;				// so by default we can either assume it is or it is not
+<b class="nc">&nbsp;				if (funcName == null &amp;&amp; !strictFunctionChecking) {</b>
+<b class="nc">&nbsp;					funcName = func.stringValue();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (funcName != null) {</b>
+<b class="nc">&nbsp;					List&lt;ValueExpr&gt; args = getArgs(r, func, (IRI[]) null);</b>
+<b class="nc">&nbsp;					expr = new FunctionCall(funcName, args);</b>
+<b class="nc">&nbsp;				} else {</b>
+<b class="nc">&nbsp;					expr = null;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return expr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private CompareOp toCompareOp(IRI func) {
+<b class="nc">&nbsp;			if (SP.EQ.equals(func)) {</b>
+<b class="nc">&nbsp;				return CompareOp.EQ;</b>
+<b class="nc">&nbsp;			} else if (SP.NE.equals(func)) {</b>
+<b class="nc">&nbsp;				return CompareOp.NE;</b>
+<b class="nc">&nbsp;			} else if (SP.LT.equals(func)) {</b>
+<b class="nc">&nbsp;				return CompareOp.LT;</b>
+<b class="nc">&nbsp;			} else if (SP.LE.equals(func)) {</b>
+<b class="nc">&nbsp;				return CompareOp.LE;</b>
+<b class="nc">&nbsp;			} else if (SP.GE.equals(func)) {</b>
+<b class="nc">&nbsp;				return CompareOp.GE;</b>
+<b class="nc">&nbsp;			} else if (SP.GT.equals(func)) {</b>
+<b class="nc">&nbsp;				return CompareOp.GT;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private MathOp toMathOp(IRI func) {
+<b class="nc">&nbsp;			if (SP.ADD.equals(func)) {</b>
+<b class="nc">&nbsp;				return MathOp.PLUS;</b>
+<b class="nc">&nbsp;			} else if (SP.SUB.equals(func)) {</b>
+<b class="nc">&nbsp;				return MathOp.MINUS;</b>
+<b class="nc">&nbsp;			} else if (SP.MUL.equals(func)) {</b>
+<b class="nc">&nbsp;				return MathOp.MULTIPLY;</b>
+<b class="nc">&nbsp;			} else if (SP.DIVIDE.equals(func)) {</b>
+<b class="nc">&nbsp;				return MathOp.DIVIDE;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @param knownArgs empty for vararg, null for unknown.
+&nbsp;		 */
+&nbsp;		private List&lt;ValueExpr&gt; getArgs(Resource r, IRI func, IRI... knownArgs) throws RDF4JException {
+&nbsp;			Collection&lt;IRI&gt; args;
+<b class="nc">&nbsp;			if (knownArgs != null) {</b>
+<b class="nc">&nbsp;				args = Arrays.asList(knownArgs);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				args = parseArguments(func, store).keySet();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Map&lt;IRI, ValueExpr&gt; argBindings = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			if (!args.isEmpty()) {</b>
+<b class="nc">&nbsp;				for (IRI arg : args) {</b>
+<b class="nc">&nbsp;					Value value = TripleSources.singleValue(r, arg, store);</b>
+<b class="nc">&nbsp;					if (value != null) {</b>
+<b class="nc">&nbsp;						ValueExpr argValue = visitExpression(value);</b>
+<b class="nc">&nbsp;						argBindings.put(arg, argValue);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+&nbsp;				Value value;
+<b class="nc">&nbsp;				int i = 1;</b>
+&nbsp;				do {
+<b class="nc">&nbsp;					IRI arg = toArgProperty(i++);</b>
+<b class="nc">&nbsp;					value = TripleSources.singleValue(r, arg, store);</b>
+<b class="nc">&nbsp;					if (value != null) {</b>
+<b class="nc">&nbsp;						ValueExpr argValue = visitExpression(value);</b>
+<b class="nc">&nbsp;						argBindings.put(arg, argValue);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} while (value != null);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			List&lt;ValueExpr&gt; argValues = new ArrayList&lt;&gt;(argBindings.size());</b>
+<b class="nc">&nbsp;			List&lt;IRI&gt; orderedArgs = orderArguments(argBindings.keySet());</b>
+<b class="nc">&nbsp;			for (IRI IRI : orderedArgs) {</b>
+<b class="nc">&nbsp;				ValueExpr argExpr = argBindings.get(IRI);</b>
+<b class="nc">&nbsp;				argValues.add(argExpr);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return argValues;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private String getVarName(Resource r) throws RDF4JException {
+&nbsp;			// have we already seen it
+<b class="nc">&nbsp;			String varName = vars.get(r);</b>
+&nbsp;			// is it well-known
+<b class="nc">&nbsp;			if (varName == null &amp;&amp; r instanceof IRI) {</b>
+<b class="nc">&nbsp;				varName = wellKnownVars.apply((IRI) r);</b>
+<b class="nc">&nbsp;				if (varName != null) {</b>
+<b class="nc">&nbsp;					vars.put(r, varName);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (varName == null) {</b>
+&nbsp;				// check for a varName statement
+<b class="nc">&nbsp;				Value nameValue = TripleSources.singleValue(r, SP.VAR_NAME_PROPERTY, store);</b>
+<b class="nc">&nbsp;				if (nameValue instanceof Literal) {</b>
+<b class="nc">&nbsp;					varName = ((Literal) nameValue).getLabel();</b>
+<b class="nc">&nbsp;					if (varName != null) {</b>
+<b class="nc">&nbsp;						vars.put(r, varName);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (nameValue != null) {</b>
+<b class="nc">&nbsp;					throw new MalformedSpinException(</b>
+<b class="nc">&nbsp;							String.format(&quot;Value of %s is not a literal&quot;, SP.VAR_NAME_PROPERTY));</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return varName;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private Var getVar(Value v) throws RDF4JException {
+<b class="nc">&nbsp;			Var var = null;</b>
+<b class="nc">&nbsp;			if (v instanceof Resource) {</b>
+<b class="nc">&nbsp;				String varName = getVarName((Resource) v);</b>
+<b class="nc">&nbsp;				if (varName != null) {</b>
+<b class="nc">&nbsp;					var = createVar(varName);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (var == null) {</b>
+&nbsp;				// it must be a constant then
+<b class="nc">&nbsp;				var = TupleExprs.createConstVar(v);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return var;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private Var createVar(String varName) {
+<b class="nc">&nbsp;			if (projElems != null) {</b>
+<b class="nc">&nbsp;				ProjectionElem projElem = projElems.get(varName);</b>
+<b class="nc">&nbsp;				if (projElem != null) {</b>
+<b class="nc">&nbsp;					ExtensionElem extElem = projElem.getSourceExpression();</b>
+<b class="nc">&nbsp;					if (extElem != null &amp;&amp; extElem.getExpr() instanceof Var) {</b>
+<b class="nc">&nbsp;						projElems.remove(varName);</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return new Var(varName);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class DataVisitor extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+<b class="nc">&nbsp;		final StringBuilder buf = new StringBuilder(1024);</b>
+&nbsp;
+<b class="nc">&nbsp;		DataVisitor() {</b>
+<b class="nc">&nbsp;			appendPrefix(RDF.PREFIX, RDF.NAMESPACE);</b>
+<b class="nc">&nbsp;			appendPrefix(RDFS.PREFIX, RDFS.NAMESPACE);</b>
+<b class="nc">&nbsp;			appendPrefix(RDF4J.PREFIX, RDF4J.NAMESPACE);</b>
+<b class="nc">&nbsp;			appendPrefix(SESAME.PREFIX, SESAME.NAMESPACE);</b>
+<b class="nc">&nbsp;			appendPrefix(OWL.PREFIX, OWL.NAMESPACE);</b>
+<b class="nc">&nbsp;			appendPrefix(XSD.PREFIX, XSD.NAMESPACE);</b>
+<b class="nc">&nbsp;			appendPrefix(FN.PREFIX, FN.NAMESPACE);</b>
+<b class="nc">&nbsp;			buf.append(&quot; &quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void appendPrefix(String prefix, String namespace) {
+<b class="nc">&nbsp;			buf.append(&quot;PREFIX &quot;).append(prefix).append(&quot;: &lt;&quot;).append(namespace).append(&quot;&gt; \n&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		String getData() {
+<b class="nc">&nbsp;			return buf.toString();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(StatementPattern node) throws RuntimeException {
+<b class="nc">&nbsp;			if (node.getContextVar() != null) {</b>
+<b class="nc">&nbsp;				buf.append(&quot;GRAPH &lt;&quot;).append(node.getContextVar().getValue()).append(&quot;&gt; { &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			buf.append(&quot;&lt;&quot;)</b>
+<b class="nc">&nbsp;					.append(node.getSubjectVar().getValue())</b>
+<b class="nc">&nbsp;					.append(&quot;&gt; &lt;&quot;)</b>
+<b class="nc">&nbsp;					.append(node.getPredicateVar().getValue())</b>
+<b class="nc">&nbsp;					.append(&quot;&gt; &lt;&quot;)</b>
+<b class="nc">&nbsp;					.append(node.getObjectVar().getValue())</b>
+<b class="nc">&nbsp;					.append(&quot;&gt; .&quot;);</b>
+<b class="nc">&nbsp;			if (node.getContextVar() != null) {</b>
+<b class="nc">&nbsp;				buf.append(&quot; } &quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

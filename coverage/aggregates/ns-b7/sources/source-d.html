@@ -1,0 +1,1181 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailSourceConnection</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: SailSourceConnection (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailSourceConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    60.5%
+  </span>
+  <span class="absValue">
+    (23/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    7.9%
+  </span>
+  <span class="absValue">
+    (93/1172)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.3%
+  </span>
+  <span class="absValue">
+    (205/443)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailSourceConnection$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailSourceConnection$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailSourceConnection$IncludeInferred</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    61.4%
+  </span>
+  <span class="absValue">
+    (27/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    8%
+  </span>
+  <span class="absValue">
+    (94/1174)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.8%
+  </span>
+  <span class="absValue">
+    (211/451)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
+&nbsp;import org.eclipse.rdf4j.query.explanation.Explanation;
+&nbsp;import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
+&nbsp;import org.eclipse.rdf4j.sail.UpdateContext;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.AbstractSail;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link SailConnection} implementation that is based on an {@link SailStore} .
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="fc">&nbsp;public abstract class SailSourceConnection extends AbstractNotifyingSailConnection</b>
+&nbsp;		implements InferencerConnection, FederatedServiceResolverClient {
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The state of store for outstanding operations.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Map&lt;UpdateContext, SailDataset&gt; datasets = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Outstanding changes that are underway, but not yet realized, by an active operation.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Map&lt;UpdateContext, SailSink&gt; explicitSinks = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set of explicit statements that must not be inferred.
+&nbsp;	 */
+&nbsp;	private volatile SailDataset explicitOnlyDataset;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set of inferred statements that have already been inferred earlier.
+&nbsp;	 */
+&nbsp;	private volatile SailDataset inferredOnlyDataset;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Outstanding inferred statements that are not yet flushed by a read operation.
+&nbsp;	 */
+&nbsp;	private volatile SailSink inferredOnlySink;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@link ValueFactory} used by this connection.
+&nbsp;	 */
+&nbsp;	private final ValueFactory vf;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The backing {@link SailStore} used to manage the state.
+&nbsp;	 */
+&nbsp;	private final SailStore store;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default {@link IsolationLevel} when not otherwise specified.
+&nbsp;	 */
+&nbsp;	private final IsolationLevel defaultIsolationLevel;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An {@link SailSource} of only explicit statements when in an isolated transaction.
+&nbsp;	 */
+&nbsp;	private volatile SailSource explicitOnlyBranch;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An {@link SailSource} of only inferred statements when in an isolated transaction.
+&nbsp;	 */
+&nbsp;	private volatile SailSource inferredOnlyBranch;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An {@link SailSource} of all statements when in an isolated transaction.
+&nbsp;	 */
+&nbsp;	private volatile SailSource includeInferredBranch;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@link EvaluationStrategyFactory} to use.
+&nbsp;	 */
+&nbsp;	private final EvaluationStrategyFactory evalStratFactory;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Connection specific resolver.
+&nbsp;	 */
+&nbsp;	private volatile FederatedServiceResolver federatedServiceResolver;
+&nbsp;
+&nbsp;	// The context that represents the unnamed graph
+<b class="fc">&nbsp;	static final Resource[] NULL_CTX = new Resource[] { null };</b>
+&nbsp;
+&nbsp;	// Track the result sizes generated when evaluating a query, used by explain(...)
+&nbsp;	private boolean trackResultSize;
+&nbsp;
+&nbsp;	// By default all tuple expressions are cloned before being optimized and executed. We don&#39;t want to do this for
+&nbsp;	// .explain(...) since we need to retrieve the optimized or executed plan.
+<b class="fc">&nbsp;	private boolean cloneTupleExpression = true;</b>
+&nbsp;
+&nbsp;	// Track the time used when evaluating a query, used by explain(...)
+&nbsp;	private boolean trackTime;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
+&nbsp;	 *
+&nbsp;	 * @param sail
+&nbsp;	 * @param store
+&nbsp;	 * @param resolver the FederatedServiceResolver to use with the {@link StrictEvaluationStrategy default
+&nbsp;	 *                 EvaluationStrategy}.
+&nbsp;	 */
+&nbsp;	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
+<b class="nc">&nbsp;		this(sail, store, new StrictEvaluationStrategyFactory(resolver));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
+&nbsp;	 *
+&nbsp;	 * @param sail
+&nbsp;	 * @param store
+&nbsp;	 * @param evalStratFactory the {@link EvaluationStrategyFactory} to use.
+&nbsp;	 */
+&nbsp;	protected SailSourceConnection(AbstractSail sail, SailStore store, EvaluationStrategyFactory evalStratFactory) {
+<b class="fc">&nbsp;		super(sail);</b>
+<b class="fc">&nbsp;		this.vf = sail.getValueFactory();</b>
+<b class="fc">&nbsp;		this.store = store;</b>
+<b class="fc">&nbsp;		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();</b>
+<b class="fc">&nbsp;		this.evalStratFactory = evalStratFactory;</b>
+<b class="pc">&nbsp;		this.federatedServiceResolver = (evalStratFactory instanceof StrictEvaluationStrategyFactory)</b>
+<b class="fc">&nbsp;				? ((StrictEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()</b>
+<b class="nc">&nbsp;				: null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the {@link FederatedServiceResolver} being used.
+&nbsp;	 *
+&nbsp;	 * @return null if a custom {@link EvaluationStrategyFactory} is being used.
+&nbsp;	 */
+&nbsp;	public FederatedServiceResolver getFederatedServiceResolver() {
+<b class="nc">&nbsp;		return federatedServiceResolver;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the {@link FederatedServiceResolver} to use. If a custom {@link EvaluationStrategyFactory} is being used
+&nbsp;	 * then this only has an effect if it implements {@link FederatedServiceResolverClient}.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+<b class="nc">&nbsp;		this.federatedServiceResolver = resolver;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+<b class="fc">&nbsp;		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,</b>
+<b class="fc">&nbsp;				store.getEvaluationStatistics());</b>
+<b class="pc">&nbsp;		if (federatedServiceResolver != null &amp;&amp; evalStrat instanceof FederatedServiceResolverClient) {</b>
+<b class="fc">&nbsp;			((FederatedServiceResolverClient) evalStrat).setFederatedServiceResolver(federatedServiceResolver);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return evalStrat;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; evaluateInternal(TupleExpr tupleExpr,
+&nbsp;			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+<b class="fc">&nbsp;		logger.trace(&quot;Incoming query model:\n{}&quot;, tupleExpr);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (cloneTupleExpression) {</b>
+&nbsp;			// Clone the tuple expression to allow for more aggressive optimizations
+<b class="fc">&nbsp;			tupleExpr = tupleExpr.clone();</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (!(tupleExpr instanceof QueryRoot)) {</b>
+&nbsp;			// Add a dummy root node to the tuple expressions to allow the
+&nbsp;			// optimizers to modify the actual root node
+<b class="nc">&nbsp;			tupleExpr = new QueryRoot(tupleExpr);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		SailSource branch = null;</b>
+<b class="fc">&nbsp;		SailDataset rdfDataset = null;</b>
+<b class="fc">&nbsp;		CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; iteration = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean allGood = false;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			branch = branch(IncludeInferred.fromBoolean(includeInferred));</b>
+<b class="fc">&nbsp;			rdfDataset = branch.dataset(getIsolationLevel());</b>
+&nbsp;
+<b class="fc">&nbsp;			TripleSource tripleSource = new SailDatasetTripleSource(vf, rdfDataset);</b>
+<b class="fc">&nbsp;			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);</b>
+<b class="pc">&nbsp;			if (trackResultSize) {</b>
+<b class="nc">&nbsp;				strategy.setTrackResultSize(trackResultSize);</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (trackTime) {</b>
+<b class="nc">&nbsp;				strategy.setTrackTime(trackTime);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);</b>
+&nbsp;
+<b class="fc">&nbsp;			logger.trace(&quot;Optimized query model:\n{}&quot;, tupleExpr);</b>
+<b class="fc">&nbsp;			QueryEvaluationStep qes = strategy.precompile(tupleExpr);</b>
+<b class="fc">&nbsp;			iteration = qes.evaluate(EmptyBindingSet.getInstance());</b>
+<b class="fc">&nbsp;			iteration = interlock(iteration, rdfDataset, branch);</b>
+<b class="fc">&nbsp;			allGood = true;</b>
+<b class="fc">&nbsp;			return iteration;</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+&nbsp;		} finally {
+<b class="pc">&nbsp;			if (!allGood) {</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					if (iteration != null) {</b>
+<b class="nc">&nbsp;						iteration.close();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="nc">&nbsp;						if (rdfDataset != null) {</b>
+<b class="nc">&nbsp;							rdfDataset.close();</b>
+&nbsp;						}
+&nbsp;					} finally {
+<b class="nc">&nbsp;						if (branch != null) {</b>
+<b class="nc">&nbsp;							branch.close();</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+&nbsp;			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+<b class="nc">&nbsp;		boolean queryTimedOut = false;</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			switch (level) {</b>
+&nbsp;			case Timed:
+<b class="nc">&nbsp;				this.trackTime = true;</b>
+<b class="nc">&nbsp;				this.trackResultSize = true;</b>
+<b class="nc">&nbsp;				this.cloneTupleExpression = false;</b>
+&nbsp;
+<b class="nc">&nbsp;				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;
+&nbsp;			case Executed:
+<b class="nc">&nbsp;				this.trackResultSize = true;</b>
+<b class="nc">&nbsp;				this.cloneTupleExpression = false;</b>
+&nbsp;
+<b class="nc">&nbsp;				queryTimedOut = runQueryForExplain(tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;
+&nbsp;			case Optimized:
+<b class="nc">&nbsp;				this.cloneTupleExpression = false;</b>
+&nbsp;
+<b class="nc">&nbsp;				evaluate(tupleExpr, dataset, bindings, includeInferred).close();</b>
+&nbsp;
+<b class="nc">&nbsp;				break;</b>
+&nbsp;
+&nbsp;			case Unoptimized:
+<b class="nc">&nbsp;				break;</b>
+&nbsp;
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new UnsupportedOperationException(&quot;Unsupported query explanation level: &quot; + level);</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			this.cloneTupleExpression = true;</b>
+<b class="nc">&nbsp;			this.trackResultSize = false;</b>
+<b class="nc">&nbsp;			this.trackTime = false;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr);</b>
+<b class="nc">&nbsp;		tupleExpr.visit(converter);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
+&nbsp;			boolean includeInferred, int timeoutSeconds) {
+&nbsp;
+<b class="nc">&nbsp;		AtomicBoolean timedOut = new AtomicBoolean(false);</b>
+&nbsp;
+<b class="nc">&nbsp;		Thread currentThread = Thread.currentThread();</b>
+&nbsp;
+&nbsp;		// selfInterruptOnTimeoutThread will interrupt the current thread after a set timeout to stop the query
+&nbsp;		// execution
+<b class="nc">&nbsp;		Thread selfInterruptOnTimeoutThread = new Thread(() -&gt; {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				TimeUnit.SECONDS.sleep(timeoutSeconds);</b>
+<b class="nc">&nbsp;				currentThread.interrupt();</b>
+<b class="nc">&nbsp;				timedOut.set(true);</b>
+<b class="nc">&nbsp;			} catch (InterruptedException ignored) {</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			selfInterruptOnTimeoutThread.start();</b>
+&nbsp;
+<b class="nc">&nbsp;			try (CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; evaluate = evaluate(tupleExpr,</b>
+&nbsp;					dataset, bindings, includeInferred)) {
+<b class="nc">&nbsp;				while (evaluate.hasNext()) {</b>
+<b class="nc">&nbsp;					if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					evaluate.next();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				if (e instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;					Thread.currentThread().interrupt();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (!timedOut.get()) {</b>
+<b class="nc">&nbsp;					throw e;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return timedOut.get();</b>
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			selfInterruptOnTimeoutThread.interrupt();</b>
+&nbsp;			try {
+&nbsp;				// make sure selfInterruptOnTimeoutThread finishes
+<b class="nc">&nbsp;				selfInterruptOnTimeoutThread.join();</b>
+<b class="nc">&nbsp;			} catch (InterruptedException ignored) {</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// clear interrupted flag;
+<b class="nc">&nbsp;			Thread.interrupted();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void closeInternal() throws SailException {
+&nbsp;		// no-op
+<b class="fc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends Resource, SailException&gt; getContextIDsInternal() throws SailException {
+<b class="fc">&nbsp;		SailSource branch = branch(IncludeInferred.explicitOnly);</b>
+<b class="fc">&nbsp;		SailDataset snapshot = branch.dataset(getIsolationLevel());</b>
+<b class="fc">&nbsp;		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends Statement, SailException&gt; getStatementsInternal(Resource subj, IRI pred,
+&nbsp;			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+<b class="fc">&nbsp;		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));</b>
+<b class="fc">&nbsp;		SailDataset snapshot = branch.dataset(getIsolationLevel());</b>
+<b class="fc">&nbsp;		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected long sizeInternal(Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		try (Stream&lt;? extends Statement&gt; stream = getStatementsInternal(null, null, null, false, contexts).stream()) {</b>
+<b class="nc">&nbsp;			return stream.count();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected CloseableIteration&lt;? extends Namespace, SailException&gt; getNamespacesInternal() throws SailException {
+<b class="nc">&nbsp;		SailSource branch = branch(IncludeInferred.explicitOnly);</b>
+<b class="nc">&nbsp;		SailDataset snapshot = branch.dataset(getIsolationLevel());</b>
+<b class="nc">&nbsp;		return SailClosingIteration.makeClosable(snapshot.getNamespaces(), snapshot, branch);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected String getNamespaceInternal(String prefix) throws SailException {
+<b class="fc">&nbsp;		SailSource branch = null;</b>
+<b class="fc">&nbsp;		SailDataset snapshot = null;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			branch = branch(IncludeInferred.explicitOnly);</b>
+<b class="fc">&nbsp;			snapshot = branch.dataset(getIsolationLevel());</b>
+<b class="fc">&nbsp;			return snapshot.getNamespace(prefix);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="pc">&nbsp;				if (snapshot != null) {</b>
+<b class="fc">&nbsp;					snapshot.close();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="pc">&nbsp;				if (branch != null) {</b>
+<b class="fc">&nbsp;					branch.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void startTransactionInternal() throws SailException {
+<b class="pc">&nbsp;		assert explicitOnlyBranch == null;</b>
+<b class="pc">&nbsp;		assert inferredOnlyBranch == null;</b>
+<b class="pc">&nbsp;		assert includeInferredBranch == null;</b>
+<b class="fc">&nbsp;		IsolationLevel level = getTransactionIsolation();</b>
+<b class="pc">&nbsp;		if (!IsolationLevels.NONE.isCompatibleWith(level)) {</b>
+&nbsp;			// only create transaction branches if transaction is isolated
+<b class="fc">&nbsp;			explicitOnlyBranch = store.getExplicitSailSource().fork();</b>
+<b class="fc">&nbsp;			inferredOnlyBranch = store.getInferredSailSource().fork();</b>
+<b class="fc">&nbsp;			includeInferredBranch = new UnionSailSource(inferredOnlyBranch, explicitOnlyBranch);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void prepareInternal() throws SailException {
+<b class="fc">&nbsp;		SailSource toCheckIncludeInferredBranch = includeInferredBranch;</b>
+<b class="pc">&nbsp;		if (toCheckIncludeInferredBranch != null) {</b>
+<b class="fc">&nbsp;			toCheckIncludeInferredBranch.prepare();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void commitInternal() throws SailException {
+<b class="fc">&nbsp;		SailSource toCloseInferredBranch = includeInferredBranch;</b>
+<b class="fc">&nbsp;		explicitOnlyBranch = null;</b>
+<b class="fc">&nbsp;		inferredOnlyBranch = null;</b>
+<b class="fc">&nbsp;		includeInferredBranch = null;</b>
+&nbsp;		try {
+<b class="pc">&nbsp;			if (toCloseInferredBranch != null) {</b>
+<b class="fc">&nbsp;				toCloseInferredBranch.flush();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="pc">&nbsp;			if (toCloseInferredBranch != null) {</b>
+<b class="fc">&nbsp;				toCloseInferredBranch.close();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void rollbackInternal() throws SailException {
+<b class="nc">&nbsp;		synchronized (datasets) {</b>
+<b class="nc">&nbsp;			SailDataset toCloseDataset = null;</b>
+<b class="nc">&nbsp;			SailSink toCloseExplicitSink = null;</b>
+<b class="nc">&nbsp;			SailDataset toCloseExplicitOnlyDataset = explicitOnlyDataset;</b>
+<b class="nc">&nbsp;			explicitOnlyDataset = null;</b>
+<b class="nc">&nbsp;			SailDataset toCloseInferredDataset = inferredOnlyDataset;</b>
+<b class="nc">&nbsp;			inferredOnlyDataset = null;</b>
+<b class="nc">&nbsp;			SailSink toCloseInferredSink = inferredOnlySink;</b>
+<b class="nc">&nbsp;			inferredOnlySink = null;</b>
+<b class="nc">&nbsp;			SailSource toCloseIncludeInferredBranch = includeInferredBranch;</b>
+<b class="nc">&nbsp;			includeInferredBranch = null;</b>
+<b class="nc">&nbsp;			explicitOnlyBranch = null;</b>
+<b class="nc">&nbsp;			inferredOnlyBranch = null;</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (datasets.containsKey(null)) {</b>
+<b class="nc">&nbsp;					toCloseDataset = datasets.remove(null);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				try {</b>
+<b class="nc">&nbsp;					if (toCloseDataset != null) {</b>
+<b class="nc">&nbsp;						toCloseDataset.close();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="nc">&nbsp;						if (explicitSinks.containsKey(null)) {</b>
+<b class="nc">&nbsp;							toCloseExplicitSink = explicitSinks.remove(null);</b>
+&nbsp;						}
+&nbsp;					} finally {
+<b class="nc">&nbsp;						try {</b>
+<b class="nc">&nbsp;							if (toCloseExplicitSink != null) {</b>
+<b class="nc">&nbsp;								toCloseExplicitSink.close();</b>
+&nbsp;							}
+&nbsp;						} finally {
+<b class="nc">&nbsp;							try {</b>
+<b class="nc">&nbsp;								if (toCloseExplicitOnlyDataset != null) {</b>
+<b class="nc">&nbsp;									toCloseExplicitOnlyDataset.close();</b>
+&nbsp;								}
+&nbsp;							} finally {
+<b class="nc">&nbsp;								try {</b>
+<b class="nc">&nbsp;									if (toCloseInferredDataset != null) {</b>
+<b class="nc">&nbsp;										toCloseInferredDataset.close();</b>
+&nbsp;									}
+&nbsp;								} finally {
+<b class="nc">&nbsp;									try {</b>
+<b class="nc">&nbsp;										if (toCloseInferredSink != null) {</b>
+<b class="nc">&nbsp;											toCloseInferredSink.close();</b>
+&nbsp;										}
+&nbsp;									} finally {
+<b class="nc">&nbsp;										if (toCloseIncludeInferredBranch != null) {</b>
+<b class="nc">&nbsp;											toCloseIncludeInferredBranch.close();</b>
+&nbsp;										}
+<b class="nc">&nbsp;									}</b>
+<b class="nc">&nbsp;								}</b>
+<b class="nc">&nbsp;							}</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startUpdate(UpdateContext op) throws SailException {
+<b class="fc">&nbsp;		if (op != null) {</b>
+<b class="fc">&nbsp;			IsolationLevel level = getIsolationLevel();</b>
+<b class="fc">&nbsp;			flush();</b>
+<b class="fc">&nbsp;			synchronized (datasets) {</b>
+<b class="pc">&nbsp;				assert !datasets.containsKey(op);</b>
+&nbsp;				SailSource source;
+<b class="pc">&nbsp;				if (op.isIncludeInferred() &amp;&amp; inferredOnlyBranch == null) {</b>
+&nbsp;					// IsolationLevels.NONE
+<b class="nc">&nbsp;					SailSource explicit = store.getExplicitSailSource();</b>
+<b class="nc">&nbsp;					SailSource inferred = store.getInferredSailSource();</b>
+<b class="nc">&nbsp;					source = new UnionSailSource(explicit, inferred);</b>
+<b class="nc">&nbsp;				} else if (op.isIncludeInferred()) {</b>
+<b class="fc">&nbsp;					source = new UnionSailSource(explicitOnlyBranch, inferredOnlyBranch);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					source = branch(IncludeInferred.explicitOnly);</b>
+&nbsp;				}
+<b class="fc">&nbsp;				datasets.put(op, source.dataset(level));</b>
+<b class="fc">&nbsp;				explicitSinks.put(op, source.sink(level));</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="fc">&nbsp;		verifyIsOpen();</b>
+<b class="fc">&nbsp;		verifyIsActive();</b>
+<b class="fc">&nbsp;		synchronized (datasets) {</b>
+<b class="fc">&nbsp;			if (op == null &amp;&amp; !datasets.containsKey(null)) {</b>
+<b class="fc">&nbsp;				SailSource source = branch(IncludeInferred.explicitOnly);</b>
+<b class="fc">&nbsp;				datasets.put(null, source.dataset(getIsolationLevel()));</b>
+<b class="fc">&nbsp;				explicitSinks.put(null, source.sink(getIsolationLevel()));</b>
+&nbsp;			}
+<b class="pc">&nbsp;			assert explicitSinks.containsKey(op);</b>
+<b class="fc">&nbsp;			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		addStatementInternal(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="fc">&nbsp;		verifyIsOpen();</b>
+<b class="fc">&nbsp;		verifyIsActive();</b>
+<b class="fc">&nbsp;		synchronized (datasets) {</b>
+<b class="pc">&nbsp;			if (op == null &amp;&amp; !datasets.containsKey(null)) {</b>
+<b class="nc">&nbsp;				SailSource source = branch(IncludeInferred.explicitOnly);</b>
+<b class="nc">&nbsp;				datasets.put(null, source.dataset(getIsolationLevel()));</b>
+<b class="nc">&nbsp;				explicitSinks.put(null, source.sink(getIsolationLevel()));</b>
+&nbsp;			}
+<b class="pc">&nbsp;			assert explicitSinks.containsKey(op);</b>
+<b class="fc">&nbsp;			remove(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		removeStatementsInternal(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void endUpdateInternal(UpdateContext op) throws SailException {
+<b class="fc">&nbsp;		synchronized (datasets) {</b>
+<b class="pc">&nbsp;			if (inferredOnlySink == null &amp;&amp; explicitOnlyDataset == null &amp;&amp; inferredOnlyDataset == null</b>
+<b class="pc">&nbsp;					&amp;&amp; datasets.isEmpty() &amp;&amp; explicitSinks.isEmpty()) {</b>
+<b class="fc">&nbsp;				return;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			SailSink toCloseInferredSink = inferredOnlySink;</b>
+<b class="fc">&nbsp;			inferredOnlySink = null;</b>
+<b class="fc">&nbsp;			SailDataset toCloseExplicitOnlyDataset = explicitOnlyDataset;</b>
+<b class="fc">&nbsp;			explicitOnlyDataset = null;</b>
+<b class="fc">&nbsp;			SailDataset toCloseInferredDataset = inferredOnlyDataset;</b>
+<b class="fc">&nbsp;			inferredOnlyDataset = null;</b>
+&nbsp;
+&nbsp;			try {
+<b class="pc">&nbsp;				if (toCloseInferredSink != null) {</b>
+<b class="nc">&nbsp;					toCloseInferredSink.flush();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				try {</b>
+<b class="pc">&nbsp;					if (toCloseInferredSink != null) {</b>
+<b class="nc">&nbsp;						toCloseInferredSink.close();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="pc">&nbsp;						if (toCloseExplicitOnlyDataset != null) {</b>
+<b class="nc">&nbsp;							toCloseExplicitOnlyDataset.close();</b>
+&nbsp;						}
+&nbsp;					} finally {
+<b class="nc">&nbsp;						try {</b>
+<b class="pc">&nbsp;							if (toCloseInferredDataset != null) {</b>
+<b class="nc">&nbsp;								toCloseInferredDataset.close();</b>
+&nbsp;							}
+&nbsp;						} finally {
+<b class="fc">&nbsp;							SailSink explicit = null;</b>
+&nbsp;							try {
+<b class="fc">&nbsp;								explicit = explicitSinks.remove(op);</b>
+<b class="pc">&nbsp;								if (explicit != null) {</b>
+<b class="fc">&nbsp;									explicit.flush();</b>
+&nbsp;								}
+&nbsp;							} finally {
+<b class="nc">&nbsp;								try {</b>
+<b class="pc">&nbsp;									if (explicit != null) {</b>
+<b class="fc">&nbsp;										explicit.close();</b>
+&nbsp;									}
+&nbsp;								} finally {
+<b class="fc">&nbsp;									SailDataset toCloseDataset = null;</b>
+&nbsp;									try {
+<b class="fc">&nbsp;										toCloseDataset = datasets.remove(op);</b>
+&nbsp;									} finally {
+<b class="pc">&nbsp;										if (toCloseDataset != null) {</b>
+<b class="fc">&nbsp;											toCloseDataset.close();</b>
+&nbsp;										}
+<b class="nc">&nbsp;									}</b>
+<b class="fc">&nbsp;								}</b>
+<b class="fc">&nbsp;							}</b>
+<b class="fc">&nbsp;						}</b>
+<b class="fc">&nbsp;					}</b>
+<b class="fc">&nbsp;				}</b>
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		verifyIsOpen();</b>
+<b class="nc">&nbsp;		verifyIsActive();</b>
+<b class="nc">&nbsp;		IsolationLevel level = getIsolationLevel();</b>
+<b class="nc">&nbsp;		synchronized (datasets) {</b>
+<b class="nc">&nbsp;			if (inferredOnlySink == null) {</b>
+<b class="nc">&nbsp;				SailSource branch = branch(IncludeInferred.inferredOnly);</b>
+<b class="nc">&nbsp;				inferredOnlyDataset = branch.dataset(level);</b>
+<b class="nc">&nbsp;				inferredOnlySink = branch.sink(level);</b>
+<b class="nc">&nbsp;				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			boolean modified = false;</b>
+<b class="nc">&nbsp;			if (contexts.length == 0 || contexts.length == 1 &amp;&amp; contexts[0] == null) {</b>
+<b class="nc">&nbsp;				if (!hasStatement(explicitOnlyDataset, subj, pred, obj, NULL_CTX)) {</b>
+&nbsp;					// only add inferred statements that aren&#39;t already explicit
+<b class="nc">&nbsp;					boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj, NULL_CTX);</b>
+<b class="nc">&nbsp;					inferredOnlySink.approve(subj, pred, obj, null);</b>
+<b class="nc">&nbsp;					if (notHasStatement) {</b>
+&nbsp;						// only report inferred statements that don&#39;t already
+&nbsp;						// exist
+<b class="nc">&nbsp;						addStatementInternal(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;						notifyStatementAdded(vf.createStatement(subj, pred, obj));</b>
+<b class="nc">&nbsp;						setStatementsAdded();</b>
+<b class="nc">&nbsp;						modified = true;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				for (Resource ctx : contexts) {</b>
+&nbsp;					Resource[] contextsToCheck;
+<b class="nc">&nbsp;					if (contexts.length == 1) {</b>
+<b class="nc">&nbsp;						contextsToCheck = contexts;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						contextsToCheck = new Resource[] { ctx };</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					if (!hasStatement(explicitOnlyDataset, subj, pred, obj, contextsToCheck)) {</b>
+&nbsp;						// only add inferred statements that aren&#39;t already
+&nbsp;						// explicit
+<b class="nc">&nbsp;						boolean notHasStatement = !hasStatement(inferredOnlyDataset, subj, pred, obj, contextsToCheck);</b>
+<b class="nc">&nbsp;						inferredOnlySink.approve(subj, pred, obj, ctx);</b>
+<b class="nc">&nbsp;						if (notHasStatement) {</b>
+&nbsp;							// only report inferred statements that don&#39;t
+&nbsp;							// already exist
+<b class="nc">&nbsp;							addStatementInternal(subj, pred, obj, ctx);</b>
+<b class="nc">&nbsp;							notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));</b>
+<b class="nc">&nbsp;							setStatementsAdded();</b>
+<b class="nc">&nbsp;							modified = true;</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return modified;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="fc">&nbsp;		if (contexts.length == 0 || (contexts.length == 1 &amp;&amp; contexts[0] == null)) {</b>
+<b class="pc">&nbsp;			if (hasConnectionListeners()) {</b>
+<b class="nc">&nbsp;				if (!hasStatement(dataset, subj, pred, obj, NULL_CTX)) {</b>
+<b class="nc">&nbsp;					notifyStatementAdded(vf.createStatement(subj, pred, obj));</b>
+<b class="nc">&nbsp;					sink.approve(subj, pred, obj, null);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="fc">&nbsp;				sink.approve(subj, pred, obj, null);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="fc">&nbsp;			for (Resource ctx : contexts) {</b>
+&nbsp;				Resource[] contextsToCheck;
+<b class="fc">&nbsp;				if (contexts.length == 1) {</b>
+<b class="fc">&nbsp;					contextsToCheck = contexts;</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					contextsToCheck = new Resource[] { ctx };</b>
+&nbsp;				}
+&nbsp;
+<b class="pc">&nbsp;				if (hasConnectionListeners()) {</b>
+<b class="nc">&nbsp;					if (!hasStatement(dataset, subj, pred, obj, contextsToCheck)) {</b>
+<b class="nc">&nbsp;						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx));</b>
+<b class="nc">&nbsp;						sink.approve(subj, pred, obj, ctx);</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="fc">&nbsp;					sink.approve(subj, pred, obj, ctx);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		verifyIsOpen();</b>
+<b class="nc">&nbsp;		verifyIsActive();</b>
+<b class="nc">&nbsp;		synchronized (datasets) {</b>
+<b class="nc">&nbsp;			IsolationLevel level = getIsolationLevel();</b>
+<b class="nc">&nbsp;			if (inferredOnlySink == null) {</b>
+<b class="nc">&nbsp;				SailSource branch = branch(IncludeInferred.inferredOnly);</b>
+<b class="nc">&nbsp;				inferredOnlyDataset = branch.dataset(level);</b>
+<b class="nc">&nbsp;				inferredOnlySink = branch.sink(level);</b>
+<b class="nc">&nbsp;				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			removeStatementsInternal(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;			boolean removed = remove(subj, pred, obj, inferredOnlyDataset, inferredOnlySink, contexts);</b>
+<b class="nc">&nbsp;			if (removed) {</b>
+<b class="nc">&nbsp;				setStatementsRemoved();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return removed;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean remove(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
+&nbsp;			throws SailException {
+&nbsp;
+&nbsp;		// Use deprecateByQuery if we don&#39;t need to notify anyone of which statements have been deleted.
+<b class="pc">&nbsp;		if (!hasConnectionListeners() &amp;&amp; sink.supportsDeprecateByQuery()) {</b>
+<b class="nc">&nbsp;			return sink.deprecateByQuery(subj, pred, obj, contexts);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean statementsRemoved = false;</b>
+&nbsp;
+<b class="pc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; iter = dataset.getStatements(subj, pred, obj,</b>
+&nbsp;				contexts)) {
+<b class="fc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="fc">&nbsp;				Statement st = iter.next();</b>
+<b class="fc">&nbsp;				sink.deprecate(st);</b>
+&nbsp;
+<b class="fc">&nbsp;				statementsRemoved = true;</b>
+<b class="fc">&nbsp;				notifyStatementRemoved(st);</b>
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return statementsRemoved;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void clearInternal(Resource... contexts) throws SailException {
+<b class="fc">&nbsp;		verifyIsOpen();</b>
+<b class="fc">&nbsp;		verifyIsActive();</b>
+<b class="fc">&nbsp;		synchronized (datasets) {</b>
+<b class="pc">&nbsp;			if (!datasets.containsKey(null)) {</b>
+<b class="fc">&nbsp;				SailSource source = branch(IncludeInferred.explicitOnly);</b>
+<b class="fc">&nbsp;				datasets.put(null, source.dataset(getIsolationLevel()));</b>
+<b class="fc">&nbsp;				explicitSinks.put(null, source.sink(getIsolationLevel()));</b>
+&nbsp;			}
+<b class="pc">&nbsp;			assert explicitSinks.containsKey(null);</b>
+<b class="pc">&nbsp;			if (this.hasConnectionListeners()) {</b>
+<b class="nc">&nbsp;				remove(null, null, null, datasets.get(null), explicitSinks.get(null), contexts);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			explicitSinks.get(null).clear(contexts);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearInferred(Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		verifyIsOpen();</b>
+<b class="nc">&nbsp;		verifyIsActive();</b>
+<b class="nc">&nbsp;		synchronized (datasets) {</b>
+<b class="nc">&nbsp;			if (inferredOnlySink == null) {</b>
+<b class="nc">&nbsp;				IsolationLevel level = getIsolationLevel();</b>
+<b class="nc">&nbsp;				SailSource branch = branch(IncludeInferred.inferredOnly);</b>
+<b class="nc">&nbsp;				inferredOnlyDataset = branch.dataset(level);</b>
+<b class="nc">&nbsp;				inferredOnlySink = branch.sink(level);</b>
+<b class="nc">&nbsp;				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (this.hasConnectionListeners()) {</b>
+<b class="nc">&nbsp;				remove(null, null, null, inferredOnlyDataset, inferredOnlySink, contexts);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			inferredOnlySink.clear(contexts);</b>
+<b class="nc">&nbsp;			setStatementsRemoved();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flushUpdates() throws SailException {
+<b class="nc">&nbsp;		flush();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void setNamespaceInternal(String prefix, String name) throws SailException {
+<b class="fc">&nbsp;		SailSource branch = null;</b>
+<b class="fc">&nbsp;		SailSink sink = null;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			branch = branch(IncludeInferred.explicitOnly);</b>
+<b class="fc">&nbsp;			sink = branch.sink(getTransactionIsolation());</b>
+<b class="fc">&nbsp;			sink.setNamespace(prefix, name);</b>
+<b class="fc">&nbsp;			sink.flush();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="pc">&nbsp;				if (sink != null) {</b>
+<b class="fc">&nbsp;					sink.close();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="pc">&nbsp;				if (branch != null) {</b>
+<b class="fc">&nbsp;					branch.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void removeNamespaceInternal(String prefix) throws SailException {
+<b class="nc">&nbsp;		SailSource branch = null;</b>
+<b class="nc">&nbsp;		SailSink sink = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			branch = branch(IncludeInferred.explicitOnly);</b>
+<b class="nc">&nbsp;			sink = branch.sink(getTransactionIsolation());</b>
+<b class="nc">&nbsp;			sink.removeNamespace(prefix);</b>
+<b class="nc">&nbsp;			sink.flush();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				if (sink != null) {</b>
+<b class="nc">&nbsp;					sink.close();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				if (branch != null) {</b>
+<b class="nc">&nbsp;					branch.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void clearNamespacesInternal() throws SailException {
+<b class="fc">&nbsp;		SailSource branch = null;</b>
+<b class="fc">&nbsp;		SailSink sink = null;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			branch = branch(IncludeInferred.explicitOnly);</b>
+<b class="fc">&nbsp;			sink = branch.sink(getTransactionIsolation());</b>
+<b class="fc">&nbsp;			sink.clearNamespaces();</b>
+<b class="fc">&nbsp;			sink.flush();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="pc">&nbsp;				if (sink != null) {</b>
+<b class="fc">&nbsp;					sink.close();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="pc">&nbsp;				if (branch != null) {</b>
+<b class="fc">&nbsp;					branch.close();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------------------------------*
+&nbsp;	 * Inner class MemEvaluationStatistics *
+&nbsp;	 *-------------------------------------*/
+&nbsp;
+&nbsp;	private IsolationLevel getIsolationLevel() throws UnknownSailTransactionStateException {
+<b class="fc">&nbsp;		if (isActive()) {</b>
+<b class="fc">&nbsp;			return getTransactionIsolation();</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return defaultIsolationLevel;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	enum IncludeInferred {</b>
+<b class="fc">&nbsp;		all,</b>
+<b class="fc">&nbsp;		explicitOnly,</b>
+<b class="fc">&nbsp;		inferredOnly;</b>
+&nbsp;
+&nbsp;		public static IncludeInferred fromBoolean(boolean includeInferred) {
+<b class="pc">&nbsp;			return includeInferred ? all : explicitOnly;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return read operation {@link SailSource}
+&nbsp;	 * @throws SailException
+&nbsp;	 */
+&nbsp;	private SailSource branch(IncludeInferred includeinferred) throws SailException {
+<b class="fc">&nbsp;		boolean active = isActive();</b>
+<b class="fc">&nbsp;		IsolationLevel level = getIsolationLevel();</b>
+<b class="pc">&nbsp;		boolean isolated = !IsolationLevels.NONE.isCompatibleWith(level);</b>
+<b class="pc">&nbsp;		if (includeinferred == IncludeInferred.all &amp;&amp; active &amp;&amp; isolated) {</b>
+&nbsp;			// use the transaction branch
+<b class="fc">&nbsp;			return new DelegatingSailSource(includeInferredBranch, false);</b>
+<b class="pc">&nbsp;		} else if (includeinferred == IncludeInferred.inferredOnly &amp;&amp; active &amp;&amp; isolated) {</b>
+&nbsp;			// use the transaction branch
+<b class="nc">&nbsp;			return new DelegatingSailSource(inferredOnlyBranch, false);</b>
+<b class="pc">&nbsp;		} else if (active &amp;&amp; isolated) {</b>
+&nbsp;			// use the transaction branch
+<b class="fc">&nbsp;			return new DelegatingSailSource(explicitOnlyBranch, false);</b>
+<b class="pc">&nbsp;		} else if (includeinferred == IncludeInferred.all &amp;&amp; active) {</b>
+&nbsp;			// don&#39;t actually branch source
+<b class="nc">&nbsp;			return new UnionSailSource(store.getInferredSailSource(), store.getExplicitSailSource());</b>
+<b class="pc">&nbsp;		} else if (includeinferred == IncludeInferred.inferredOnly &amp;&amp; active) {</b>
+&nbsp;			// don&#39;t actually branch source
+<b class="nc">&nbsp;			return store.getInferredSailSource();</b>
+<b class="pc">&nbsp;		} else if (active) {</b>
+&nbsp;			// don&#39;t actually branch source
+<b class="nc">&nbsp;			return store.getExplicitSailSource();</b>
+<b class="pc">&nbsp;		} else if (includeinferred == IncludeInferred.all) {</b>
+&nbsp;			// create a new branch for read operation
+<b class="fc">&nbsp;			return new UnionSailSource(store.getInferredSailSource().fork(), store.getExplicitSailSource().fork());</b>
+<b class="nc">&nbsp;		} else if (includeinferred == IncludeInferred.inferredOnly) {</b>
+&nbsp;			// create a new branch for read operation
+<b class="nc">&nbsp;			return store.getInferredSailSource().fork();</b>
+&nbsp;		} else {
+&nbsp;			// create a new branch for read operation
+<b class="nc">&nbsp;			return store.getExplicitSailSource().fork();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T, X extends Exception&gt; CloseableIteration&lt;T, QueryEvaluationException&gt; interlock(
+&nbsp;			CloseableIteration&lt;T, QueryEvaluationException&gt; iter, SailClosable... closes) {
+<b class="fc">&nbsp;		return new SailClosingIteration&lt;T, QueryEvaluationException&gt;(iter, closes) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void handleSailException(SailException e) throws QueryEvaluationException {
+<b class="nc">&nbsp;				throw new QueryEvaluationException(e);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean hasStatement(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; iter = dataset.getStatements(subj, pred, obj,</b>
+&nbsp;				contexts)) {
+<b class="nc">&nbsp;			return iter.hasNext();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

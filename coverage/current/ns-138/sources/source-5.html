@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RepositoryInterceptor</title>
+  <title>Coverage Report > RepositoryListener</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository.event</a>
 </div>
 
-<h1>Coverage Summary for Class: RepositoryInterceptor (org.eclipse.rdf4j.repository.event)</h1>
+<h1>Coverage Summary for Class: RepositoryListener (org.eclipse.rdf4j.repository.event)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RepositoryInterceptor</td>
+  <td class="name">RepositoryListener</td>
 </tr>
 
 </table>
@@ -53,23 +53,20 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;import java.io.File;
 &nbsp;import java.util.EventListener;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.repository.Repository;
-&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
-&nbsp;
 &nbsp;/**
-&nbsp; * Interceptor interface for Repository state changes.
+&nbsp; * Listener interface for Repository state changes.
 &nbsp; *
-&nbsp; * @author Herko ter Horst
+&nbsp; * @author James Leigh
 &nbsp; */
-&nbsp;public interface RepositoryInterceptor extends EventListener {
+&nbsp;public interface RepositoryListener extends EventListener {
 &nbsp;
-&nbsp;	boolean getConnection(Repository repo, RepositoryConnection conn);
+&nbsp;	void getConnection(NotifyingRepository repo, NotifyingRepositoryConnection conn);
 &nbsp;
-&nbsp;	boolean init(Repository repo);
+&nbsp;	void init(NotifyingRepository repo);
 &nbsp;
-&nbsp;	boolean setDataDir(Repository repo, File dataDir);
+&nbsp;	void setDataDir(NotifyingRepository repo, File dataDir);
 &nbsp;
-&nbsp;	boolean shutDown(Repository repo);
+&nbsp;	void shutDown(NotifyingRepository repo);
 &nbsp;
 &nbsp;}
 </code>
@@ -95,7 +92,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

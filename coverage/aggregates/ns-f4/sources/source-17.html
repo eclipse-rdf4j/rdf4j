@@ -1,0 +1,284 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ParseDate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spin.function.spif</a>
+</div>
+
+<h1>Coverage Summary for Class: ParseDate (org.eclipse.rdf4j.spin.function.spif)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ParseDate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ParseDate$FieldAwareGregorianCalendar</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.spin.function.spif;
+&nbsp;
+&nbsp;import java.text.ParseException;
+&nbsp;import java.text.SimpleDateFormat;
+&nbsp;import java.util.Calendar;
+&nbsp;import java.util.GregorianCalendar;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import javax.xml.datatype.DatatypeConfigurationException;
+&nbsp;import javax.xml.datatype.DatatypeConstants;
+&nbsp;import javax.xml.datatype.DatatypeFactory;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;import javax.xml.namespace.QName;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SPIF;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.BinaryFunction;
+&nbsp;
+<b class="nc">&nbsp;public class ParseDate extends BinaryFunction {</b>
+&nbsp;
+&nbsp;	private static final DatatypeFactory datatypeFactory;
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="nc">&nbsp;			datatypeFactory = DatatypeFactory.newInstance();</b>
+<b class="nc">&nbsp;		} catch (DatatypeConfigurationException e) {</b>
+<b class="nc">&nbsp;			throw new Error(&quot;Could not instantiate javax.xml.datatype.DatatypeFactory&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getURI() {
+<b class="nc">&nbsp;		return SPIF.PARSE_DATE_FUNCTION.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Value evaluate(ValueFactory valueFactory, Value arg1, Value arg2) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		if (!(arg1 instanceof Literal) || !(arg2 instanceof Literal)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Both arguments must be literals&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Literal value = (Literal) arg1;</b>
+<b class="nc">&nbsp;		Literal format = (Literal) arg2;</b>
+&nbsp;
+<b class="nc">&nbsp;		FieldAwareGregorianCalendar cal = new FieldAwareGregorianCalendar();</b>
+&nbsp;
+<b class="nc">&nbsp;		SimpleDateFormat formatter = new SimpleDateFormat(format.getLabel());</b>
+<b class="nc">&nbsp;		formatter.setCalendar(cal);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			formatter.parse(value.getLabel());</b>
+<b class="nc">&nbsp;		} catch (ParseException e) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		XMLGregorianCalendar xmlCal = datatypeFactory.newXMLGregorianCalendar(cal);</b>
+<b class="nc">&nbsp;		if (!cal.isDateSet()) {</b>
+<b class="nc">&nbsp;			xmlCal.setYear(DatatypeConstants.FIELD_UNDEFINED);</b>
+<b class="nc">&nbsp;			xmlCal.setMonth(DatatypeConstants.FIELD_UNDEFINED);</b>
+<b class="nc">&nbsp;			xmlCal.setDay(DatatypeConstants.FIELD_UNDEFINED);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!cal.isTimeSet()) {</b>
+<b class="nc">&nbsp;			xmlCal.setHour(DatatypeConstants.FIELD_UNDEFINED);</b>
+<b class="nc">&nbsp;			xmlCal.setMinute(DatatypeConstants.FIELD_UNDEFINED);</b>
+<b class="nc">&nbsp;			xmlCal.setSecond(DatatypeConstants.FIELD_UNDEFINED);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!cal.isMillisecondSet()) {</b>
+<b class="nc">&nbsp;			xmlCal.setMillisecond(DatatypeConstants.FIELD_UNDEFINED);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String dateValue = xmlCal.toXMLFormat();</b>
+<b class="nc">&nbsp;		QName dateType = xmlCal.getXMLSchemaType();</b>
+<b class="nc">&nbsp;		if (!cal.isTimezoneSet()) {</b>
+<b class="nc">&nbsp;			int len = dateValue.length();</b>
+<b class="nc">&nbsp;			if (dateValue.endsWith(&quot;Z&quot;)) {</b>
+<b class="nc">&nbsp;				dateValue = dateValue.substring(0, len - 1);</b>
+<b class="nc">&nbsp;			} else if (dateValue.charAt(len - 6) == &#39;+&#39; || dateValue.charAt(len - 6) == &#39;-&#39;) {</b>
+<b class="nc">&nbsp;				dateValue = dateValue.substring(0, len - 6);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return valueFactory.createLiteral(dateValue, XMLDatatypeUtil.qnameToCoreDatatype(dateType));</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	static final class FieldAwareGregorianCalendar extends GregorianCalendar {</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;Integer&gt; fieldsSet = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void set(int field, int value) {
+<b class="nc">&nbsp;			super.set(field, value);</b>
+<b class="nc">&nbsp;			fieldsSet.add(field);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		boolean isDateSet() {
+<b class="nc">&nbsp;			return fieldsSet.contains(Calendar.YEAR) || fieldsSet.contains(Calendar.MONTH)</b>
+<b class="nc">&nbsp;					|| fieldsSet.contains(Calendar.DAY_OF_MONTH) || fieldsSet.contains(Calendar.DAY_OF_WEEK)</b>
+<b class="nc">&nbsp;					|| fieldsSet.contains(Calendar.DAY_OF_WEEK_IN_MONTH) || fieldsSet.contains(Calendar.DAY_OF_YEAR);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		boolean isTimeSet() {
+<b class="nc">&nbsp;			return fieldsSet.contains(Calendar.HOUR_OF_DAY) || fieldsSet.contains(Calendar.HOUR)</b>
+<b class="nc">&nbsp;					|| fieldsSet.contains(Calendar.MINUTE) || fieldsSet.contains(Calendar.SECOND);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		boolean isMillisecondSet() {
+<b class="nc">&nbsp;			return fieldsSet.contains(Calendar.MILLISECOND);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		boolean isTimezoneSet() {
+<b class="nc">&nbsp;			return fieldsSet.contains(Calendar.ZONE_OFFSET);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,176 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LogConfiguration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.app.logging</a>
+</div>
+
+<h1>Coverage Summary for Class: LogConfiguration (org.eclipse.rdf4j.common.app.logging)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">LogConfiguration</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.app.logging;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.app.AppConfiguration;
+&nbsp;import org.eclipse.rdf4j.common.app.config.Configuration;
+&nbsp;import org.eclipse.rdf4j.common.logging.LogReader;
+&nbsp;
+&nbsp;/**
+&nbsp; * Configuration settings for application logging.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public interface LogConfiguration extends Configuration {
+&nbsp;
+&nbsp;	String LOGGING_DIR = &quot;logs&quot;;
+&nbsp;	String LOG_FILE = &quot;main.log&quot;;
+&nbsp;
+&nbsp;	String USER_EVENT_LOG_FILE = &quot;user-event.log&quot;;
+&nbsp;	String ADMIN_EVENT_LOG_FILE = &quot;admin-event.log&quot;;
+&nbsp;
+&nbsp;	String USER_EVENT_LOGGER_NAME = &quot;event.user&quot;;
+&nbsp;	String ADMIN_EVENT_LOGGER_NAME = &quot;event.admin&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the base location on the file system for logging configuration and data
+&nbsp;	 *
+&nbsp;	 * @param baseDir the base location on the file system for logging configuration and data
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	void setBaseDir(File baseDir) throws IOException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The base location on the file system for logging configuration and data
+&nbsp;	 *
+&nbsp;	 * @return the base location on the file system for logging configuration and data
+&nbsp;	 */
+&nbsp;	File getBaseDir();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The location on the file system where logging configuration is stored.
+&nbsp;	 *
+&nbsp;	 * @return the location on the file system where logging configuration is stored
+&nbsp;	 */
+&nbsp;	File getConfDir();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The location on the file system where logging data is stored.
+&nbsp;	 *
+&nbsp;	 * @return the location on the file system where logging data is stored
+&nbsp;	 */
+&nbsp;	File getLoggingDir();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A reader that can read logging information as stored by the specific logger&#39;s appender.
+&nbsp;	 *
+&nbsp;	 * @param appender Name of the appender to which the LogReader is attached
+&nbsp;	 * @return a reader that can read logging information as stored by the logger configured through this
+&nbsp;	 *         LogConfiguration
+&nbsp;	 */
+&nbsp;	LogReader getLogReader(String appender);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default (fallback) LogReader instance.
+&nbsp;	 *
+&nbsp;	 * @return default (fallback) LogReader instance.
+&nbsp;	 */
+&nbsp;	LogReader getDefaultLogReader();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Is debug logging enabled?
+&nbsp;	 *
+&nbsp;	 * @return true if debug logging is enabled, false otherwise
+&nbsp;	 */
+&nbsp;	boolean isDebugLoggingEnabled();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enable or disable debug logging.
+&nbsp;	 *
+&nbsp;	 * @param enabled set to true if debug logging should be enabled, set to false otherwise
+&nbsp;	 */
+&nbsp;	void setDebugLoggingEnabled(boolean enabled);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set application configuration
+&nbsp;	 *
+&nbsp;	 * @param config application configuration
+&nbsp;	 */
+&nbsp;	void setAppConfiguration(AppConfiguration config);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get application configuration
+&nbsp;	 *
+&nbsp;	 * @return application configuration
+&nbsp;	 */
+&nbsp;	AppConfiguration getAppConfiguration();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

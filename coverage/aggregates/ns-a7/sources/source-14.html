@@ -1,0 +1,1038 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NTriplesUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: NTriplesUtil (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NTriplesUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    7.7%
+  </span>
+  <span class="absValue">
+    (3/39)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0.9%
+  </span>
+  <span class="absValue">
+    (2/218)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    2.7%
+  </span>
+  <span class="absValue">
+    (8/296)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">NTriplesUtil$TripleMatch</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    7.5%
+  </span>
+  <span class="absValue">
+    (3/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0.9%
+  </span>
+  <span class="absValue">
+    (2/218)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    2.7%
+  </span>
+  <span class="absValue">
+    (8/299)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.text.ASCIIUtil;
+&nbsp;import org.eclipse.rdf4j.common.text.StringUtil;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for N-Triples encoding/decoding.
+&nbsp; */
+<b class="nc">&nbsp;public class NTriplesUtil {</b>
+&nbsp;	/*
+&nbsp;	 * The following correspond to the N-Triples grammar (https://www.w3.org/TR/n-triples/#n-triples-grammar).
+&nbsp;	 */
+&nbsp;	private static final String PN_CHARS_BASE = &quot;[A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF&quot;
+&nbsp;			+ &quot;\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD&quot;
+&nbsp;			+ &quot;\uD800\uDC00-\uDB7F\uDFFF]&quot;; // &lt;- \u10000-\uEFFFF expressed with surrogate pairs
+&nbsp;	private static final String PN_CHARS_U = &quot;(?:&quot; + PN_CHARS_BASE + &quot;|_)&quot;;
+&nbsp;	private static final String PN_CHARS = &quot;(?:&quot; + PN_CHARS_U + &quot;|[0-9\u0300-\u036F\u203F-\u2040\u00B7-])&quot;;
+&nbsp;	private static final String BNODE_ID = &quot;(?:&quot; + PN_CHARS_U + &quot;|[0-9])(?:(?:&quot; + PN_CHARS + &quot;|\\.)*&quot; + PN_CHARS + &quot;)?&quot;;
+&nbsp;	private static final String BNODE = &quot;_:&quot; + BNODE_ID;
+&nbsp;
+&nbsp;	private static final String HEX = &quot;[0-9A-Fa-f]&quot;;
+&nbsp;	private static final String UCHAR = &quot;(?:\\\\u&quot; + HEX + &quot;{4}|\\\\U&quot; + HEX + &quot;{8})&quot;;
+&nbsp;	private static final String IRI = &quot;&lt;(?:[^\u0000-\u0020&lt;&gt;\&quot;{}|^`\\\\]|&quot; + UCHAR + &quot;)*&gt;&quot;;
+&nbsp;
+&nbsp;	private static final String ECHAR = &quot;\\\\[tbnrf\&quot;&#39;\\\\]&quot;;
+&nbsp;	private static final String STRING_LITERAL_QUOTE = &quot;\&quot;(?:[^\&quot;\\\\\n\r]|&quot; + ECHAR + &quot;|&quot; + UCHAR + &quot;)*+\&quot;&quot;;
+&nbsp;	private static final String LANGTAG = &quot;@[a-zA-Z]+(?:-[a-zA-Z0-9]+)*&quot;;
+&nbsp;	private static final String LITERAL = STRING_LITERAL_QUOTE + &quot;(?:\\^\\^&quot; + IRI + &quot;|&quot; + LANGTAG + &quot;)?&quot;;
+&nbsp;
+<b class="fc">&nbsp;	private static final Pattern BNODE_ID_PATTERN = Pattern.compile(BNODE_ID);</b>
+<b class="fc">&nbsp;	private static final Pattern BNODE_PATTERN = Pattern.compile(BNODE);</b>
+<b class="fc">&nbsp;	private static final Pattern IRI_PATTERN = Pattern.compile(IRI);</b>
+<b class="fc">&nbsp;	private static final Pattern LITERAL_PATTERN = Pattern.compile(LITERAL);</b>
+&nbsp;
+&nbsp;	static class TripleMatch {
+&nbsp;		Triple triple;
+&nbsp;		int length;
+&nbsp;
+<b class="nc">&nbsp;		TripleMatch(Triple triple, int length) {</b>
+<b class="nc">&nbsp;			this.triple = triple;</b>
+<b class="nc">&nbsp;			this.length = length;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an N-Triples value, creates an object for it using the supplied ValueFactory and returns this object.
+&nbsp;	 *
+&nbsp;	 * @param nTriplesValue The N-Triples value to parse.
+&nbsp;	 * @param valueFactory  The ValueFactory to use for creating the object.
+&nbsp;	 * @return An object representing the parsed value.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	public static Value parseValue(String nTriplesValue, ValueFactory valueFactory) throws IllegalArgumentException {
+<b class="nc">&nbsp;		if (nTriplesValue.startsWith(&quot;&lt;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;			return parseTriple(nTriplesValue, valueFactory);</b>
+<b class="nc">&nbsp;		} else if (nTriplesValue.startsWith(&quot;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;			return parseURI(nTriplesValue, valueFactory);</b>
+<b class="nc">&nbsp;		} else if (nTriplesValue.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;			return parseBNode(nTriplesValue, valueFactory);</b>
+<b class="nc">&nbsp;		} else if (nTriplesValue.startsWith(&quot;\&quot;&quot;)) {</b>
+<b class="nc">&nbsp;			return parseLiteral(nTriplesValue, valueFactory);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a legal N-Triples value: &quot; + nTriplesValue);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an N-Triples resource, creates an object for it using the supplied ValueFactory and returns this object.
+&nbsp;	 *
+&nbsp;	 * @param nTriplesResource The N-Triples resource to parse.
+&nbsp;	 * @param valueFactory     The ValueFactory to use for creating the object.
+&nbsp;	 * @return An object representing the parsed resource.
+&nbsp;	 * @throws IllegalArgumentException If the supplied resource could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	public static Resource parseResource(String nTriplesResource, ValueFactory valueFactory)
+&nbsp;			throws IllegalArgumentException {
+<b class="nc">&nbsp;		if (nTriplesResource.startsWith(&quot;&lt;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;			return parseTriple(nTriplesResource, valueFactory);</b>
+<b class="nc">&nbsp;		} else if (nTriplesResource.startsWith(&quot;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;			return parseURI(nTriplesResource, valueFactory);</b>
+<b class="nc">&nbsp;		} else if (nTriplesResource.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;			return parseBNode(nTriplesResource, valueFactory);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a legal N-Triples resource: &quot; + nTriplesResource);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an N-Triples URI, creates an object for it using the supplied ValueFactory and returns this object.
+&nbsp;	 *
+&nbsp;	 * @param nTriplesURI  The N-Triples URI to parse.
+&nbsp;	 * @param valueFactory The ValueFactory to use for creating the object.
+&nbsp;	 * @return An object representing the parsed URI.
+&nbsp;	 * @throws IllegalArgumentException If the supplied URI could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	public static IRI parseURI(String nTriplesURI, ValueFactory valueFactory) throws IllegalArgumentException {
+<b class="nc">&nbsp;		if (nTriplesURI.startsWith(&quot;&lt;&quot;) &amp;&amp; nTriplesURI.endsWith(&quot;&gt;&quot;)) {</b>
+<b class="nc">&nbsp;			String uri = nTriplesURI.substring(1, nTriplesURI.length() - 1);</b>
+&nbsp;			// Disambiguate with RDF-star triple
+<b class="nc">&nbsp;			if (!uri.startsWith(&quot;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;				uri = unescapeString(uri);</b>
+<b class="nc">&nbsp;				return valueFactory.createIRI(uri);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;Not a legal N-Triples URI: &quot; + nTriplesURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an N-Triples bNode, creates an object for it using the supplied ValueFactory and returns this object.
+&nbsp;	 *
+&nbsp;	 * @param nTriplesBNode The N-Triples bNode to parse.
+&nbsp;	 * @param valueFactory  The ValueFactory to use for creating the object.
+&nbsp;	 * @return An object representing the parsed bNode.
+&nbsp;	 * @throws IllegalArgumentException If the supplied bNode could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	public static BNode parseBNode(String nTriplesBNode, ValueFactory valueFactory) throws IllegalArgumentException {
+<b class="nc">&nbsp;		if (nTriplesBNode.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;			return valueFactory.createBNode(nTriplesBNode.substring(2));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a legal N-Triples Blank Node: &quot; + nTriplesBNode);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an N-Triples literal, creates an object for it using the supplied ValueFactory and returns this object.
+&nbsp;	 *
+&nbsp;	 * @param nTriplesLiteral The N-Triples literal to parse.
+&nbsp;	 * @param valueFactory    The ValueFactory to use for creating the object.
+&nbsp;	 * @return An object representing the parsed literal.
+&nbsp;	 * @throws IllegalArgumentException If the supplied literal could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	public static Literal parseLiteral(String nTriplesLiteral, ValueFactory valueFactory)
+&nbsp;			throws IllegalArgumentException {
+<b class="nc">&nbsp;		if (nTriplesLiteral.startsWith(&quot;\&quot;&quot;)) {</b>
+&nbsp;			// Find string separation points
+<b class="nc">&nbsp;			int endLabelIdx = findEndOfLabel(nTriplesLiteral);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (endLabelIdx != -1) {</b>
+<b class="nc">&nbsp;				int startLangIdx = nTriplesLiteral.indexOf(&#39;@&#39;, endLabelIdx);</b>
+<b class="nc">&nbsp;				int startDtIdx = nTriplesLiteral.indexOf(&quot;^^&quot;, endLabelIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (startLangIdx != -1 &amp;&amp; startDtIdx != -1) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Literals can not have both a language and a datatype&quot;);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Get label
+<b class="nc">&nbsp;				String label = nTriplesLiteral.substring(1, endLabelIdx);</b>
+<b class="nc">&nbsp;				label = unescapeString(label);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (startLangIdx != -1) {</b>
+&nbsp;					// Get language
+<b class="nc">&nbsp;					String language = nTriplesLiteral.substring(startLangIdx + 1);</b>
+<b class="nc">&nbsp;					return valueFactory.createLiteral(label, language);</b>
+<b class="nc">&nbsp;				} else if (startDtIdx != -1) {</b>
+&nbsp;					// Get datatype
+<b class="nc">&nbsp;					String datatype = nTriplesLiteral.substring(startDtIdx + 2);</b>
+<b class="nc">&nbsp;					IRI dtURI = parseURI(datatype, valueFactory);</b>
+<b class="nc">&nbsp;					return valueFactory.createLiteral(label, dtURI);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					return valueFactory.createLiteral(label);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;Not a legal N-Triples literal: &quot; + nTriplesLiteral);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an RDF-star triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
+&nbsp;	 * returns this object.
+&nbsp;	 *
+&nbsp;	 * @param nTriplesTriple The RDF-star triple to parse.
+&nbsp;	 * @param valueFactory   The ValueFactory to use for creating the object.
+&nbsp;	 * @return An object representing the parsed triple.
+&nbsp;	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	public static Triple parseTriple(String nTriplesTriple, ValueFactory valueFactory) {
+<b class="nc">&nbsp;		TripleMatch tm = parseTripleInternal(nTriplesTriple, valueFactory);</b>
+<b class="nc">&nbsp;		if (tm.length != nTriplesTriple.length()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a valid N-Triples triple: &quot; + nTriplesTriple);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return tm.triple;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an RDF-star triple (non-standard N-Triples), creates an object for it using the supplied ValueFactory and
+&nbsp;	 * returns an object that contains the parsed triple and the length of the parsed text.
+&nbsp;	 *
+&nbsp;	 * @param nTriplesTriple The RDF-star triple to parse.
+&nbsp;	 * @param valueFactory   The ValueFactory to use for creating the object.
+&nbsp;	 * @return An object representing the parsed triple and the length of the matching text.
+&nbsp;	 * @throws IllegalArgumentException If the supplied triple could not be parsed correctly.
+&nbsp;	 */
+&nbsp;	private static TripleMatch parseTripleInternal(String nTriplesTriple, ValueFactory valueFactory) {
+<b class="nc">&nbsp;		if (nTriplesTriple.startsWith(&quot;&lt;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;			String triple = nTriplesTriple.substring(2);</b>
+<b class="nc">&nbsp;			int offset = 2;</b>
+&nbsp;
+<b class="nc">&nbsp;			while (triple.length() &gt; 0 &amp;&amp; Character.isWhitespace(triple.charAt(0))) {</b>
+<b class="nc">&nbsp;				triple = triple.substring(1);</b>
+<b class="nc">&nbsp;				++offset;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Resource subject = null;</b>
+<b class="nc">&nbsp;			IRI predicate = null;</b>
+<b class="nc">&nbsp;			Value object = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; i &lt; 3; i++) {</b>
+<b class="nc">&nbsp;				Value v = null;</b>
+<b class="nc">&nbsp;				if (triple.startsWith(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;					Matcher bNodeMatcher = BNODE_PATTERN.matcher(triple);</b>
+<b class="nc">&nbsp;					if (bNodeMatcher.find() &amp;&amp; bNodeMatcher.start() == 0) {</b>
+<b class="nc">&nbsp;						String value = bNodeMatcher.group();</b>
+<b class="nc">&nbsp;						v = NTriplesUtil.parseBNode(value, valueFactory);</b>
+<b class="nc">&nbsp;						triple = triple.substring(bNodeMatcher.end());</b>
+<b class="nc">&nbsp;						offset += bNodeMatcher.end();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (triple.startsWith(&quot;&lt;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;					TripleMatch tm = parseTripleInternal(triple, valueFactory);</b>
+<b class="nc">&nbsp;					triple = triple.substring(tm.length);</b>
+<b class="nc">&nbsp;					offset += tm.length;</b>
+<b class="nc">&nbsp;					v = tm.triple;</b>
+<b class="nc">&nbsp;				} else if (triple.startsWith(&quot;&lt;&quot;)) {</b>
+<b class="nc">&nbsp;					Matcher iriMatcher = IRI_PATTERN.matcher(triple);</b>
+<b class="nc">&nbsp;					if (iriMatcher.find() &amp;&amp; iriMatcher.start() == 0) {</b>
+<b class="nc">&nbsp;						String value = iriMatcher.group();</b>
+<b class="nc">&nbsp;						v = NTriplesUtil.parseURI(value, valueFactory);</b>
+<b class="nc">&nbsp;						triple = triple.substring(iriMatcher.end());</b>
+<b class="nc">&nbsp;						offset += iriMatcher.end();</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (triple.startsWith(&quot;\&quot;&quot;)) {</b>
+<b class="nc">&nbsp;					Matcher literalMatcher = LITERAL_PATTERN.matcher(triple);</b>
+<b class="nc">&nbsp;					if (literalMatcher.find() &amp;&amp; literalMatcher.start() == 0) {</b>
+<b class="nc">&nbsp;						String value = literalMatcher.group();</b>
+<b class="nc">&nbsp;						v = NTriplesUtil.parseLiteral(value, valueFactory);</b>
+<b class="nc">&nbsp;						triple = triple.substring(literalMatcher.end());</b>
+<b class="nc">&nbsp;						offset += literalMatcher.end();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (i == 0) {</b>
+<b class="nc">&nbsp;					if (!(v instanceof Resource)) {</b>
+<b class="nc">&nbsp;						throw new IllegalArgumentException(&quot;Not a valid N-Triples triple: &quot; + nTriplesTriple);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					subject = (Resource) v;</b>
+<b class="nc">&nbsp;				} else if (i == 1) {</b>
+<b class="nc">&nbsp;					if (!(v instanceof IRI)) {</b>
+<b class="nc">&nbsp;						throw new IllegalArgumentException(&quot;Not a valid N-Triples triple: &quot; + nTriplesTriple);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					predicate = (org.eclipse.rdf4j.model.IRI) v;</b>
+<b class="nc">&nbsp;				} else if (i == 2) {</b>
+<b class="nc">&nbsp;					if (v == null) {</b>
+<b class="nc">&nbsp;						throw new IllegalArgumentException(&quot;Not a valid N-Triples triple: &quot; + nTriplesTriple);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					object = v;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				while (triple.length() &gt; 0 &amp;&amp; Character.isWhitespace(triple.charAt(0))) {</b>
+<b class="nc">&nbsp;					triple = triple.substring(1);</b>
+<b class="nc">&nbsp;					++offset;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (triple.endsWith(&quot;&gt;&gt;&quot;)) {</b>
+<b class="nc">&nbsp;				offset += 2;</b>
+<b class="nc">&nbsp;				return new TripleMatch(valueFactory.createTriple(subject, predicate, object), offset);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;Not a valid N-Triples triple: &quot; + nTriplesTriple);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Finds the end of the label in a literal string. This method takes into account that characters can be escaped
+&nbsp;	 * using backslashes.
+&nbsp;	 *
+&nbsp;	 * @return The index of the double quote ending the label, or &lt;var&gt;-1&lt;/var&gt; if it could not be found.
+&nbsp;	 */
+&nbsp;	private static int findEndOfLabel(String nTriplesLiteral) {
+&nbsp;		// First character of literal is guaranteed to be a double
+&nbsp;		// quote, start search at second character.
+&nbsp;
+<b class="nc">&nbsp;		boolean previousWasBackslash = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 1; i &lt; nTriplesLiteral.length(); i++) {</b>
+<b class="nc">&nbsp;			char c = nTriplesLiteral.charAt(i);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (c == &#39;&quot;&#39; &amp;&amp; !previousWasBackslash) {</b>
+<b class="nc">&nbsp;				return i;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;\\&#39; &amp;&amp; !previousWasBackslash) {</b>
+&nbsp;				// start of escape
+<b class="nc">&nbsp;				previousWasBackslash = true;</b>
+<b class="nc">&nbsp;			} else if (previousWasBackslash) {</b>
+&nbsp;				// c was escaped
+<b class="nc">&nbsp;				previousWasBackslash = false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return -1;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples string for the supplied value.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(Value value) {
+&nbsp;		// default to false. Users must call new method directly to remove
+&nbsp;		// xsd:string
+<b class="nc">&nbsp;		return toNTriplesString(value, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples string for the supplied value.If the supplied value is a {@link Literal}, it optionally
+&nbsp;	 * ignores the xsd:string datatype, since this datatype is implicit in RDF-1.1.
+&nbsp;	 *
+&nbsp;	 * @param value                   The value to write.
+&nbsp;	 * @param xsdStringToPlainLiteral True to omit serialising the xsd:string datatype and false to always serialise the
+&nbsp;	 *                                datatype for literals.
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(Value value, boolean xsdStringToPlainLiteral) {
+<b class="nc">&nbsp;		if (value instanceof Resource) {</b>
+<b class="nc">&nbsp;			return toNTriplesString((Resource) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			return toNTriplesString((Literal) value, xsdStringToPlainLiteral);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown value type: &quot; + value.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link Value} to the given {@link Appendable}.
+&nbsp;	 *
+&nbsp;	 * @param value      The value to write.
+&nbsp;	 * @param appendable The object to append to.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(Value value, Appendable appendable) throws IOException {
+&nbsp;		// default to false. Users must call new method directly to remove
+&nbsp;		// xsd:string
+<b class="nc">&nbsp;		append(value, appendable, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue(),</b>
+<b class="nc">&nbsp;				NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link Value} to the given {@link Appendable}, optionally not
+&nbsp;	 * serializing the datatype a {@link Literal} with the xsd:string datatype as it is implied for RDF-1.1.
+&nbsp;	 *
+&nbsp;	 * @param value                   The value to write.
+&nbsp;	 * @param appendable              The object to append to.
+&nbsp;	 * @param xsdStringToPlainLiteral True to omit serializing the xsd:string datatype and false to always serialize the
+&nbsp;	 *                                datatype for literals.
+&nbsp;	 * @param escapeUnicode
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(Value value, Appendable appendable, boolean xsdStringToPlainLiteral,
+&nbsp;			boolean escapeUnicode) throws IOException {
+<b class="nc">&nbsp;		if (value instanceof Resource) {</b>
+<b class="nc">&nbsp;			append((Resource) value, appendable);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			append((Literal) value, appendable, xsdStringToPlainLiteral, escapeUnicode);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown value type: &quot; + value.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples string for the supplied resource.
+&nbsp;	 *
+&nbsp;	 * @param resource
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(Resource resource) {
+<b class="nc">&nbsp;		if (resource instanceof IRI) {</b>
+<b class="nc">&nbsp;			return toNTriplesString((IRI) resource);</b>
+<b class="nc">&nbsp;		} else if (resource instanceof BNode) {</b>
+<b class="nc">&nbsp;			return toNTriplesString((BNode) resource);</b>
+<b class="nc">&nbsp;		} else if (resource instanceof Triple) {</b>
+<b class="nc">&nbsp;			return toNTriplesString((Triple) resource);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown resource type: &quot; + resource.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link Resource} to the given {@link Appendable}.
+&nbsp;	 *
+&nbsp;	 * @param resource   The resource to write.
+&nbsp;	 * @param appendable The object to append to.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(Resource resource, Appendable appendable) throws IOException {
+<b class="nc">&nbsp;		if (resource instanceof IRI) {</b>
+<b class="nc">&nbsp;			append((IRI) resource, appendable);</b>
+<b class="nc">&nbsp;		} else if (resource instanceof BNode) {</b>
+<b class="nc">&nbsp;			append((BNode) resource, appendable);</b>
+<b class="nc">&nbsp;		} else if (resource instanceof Triple) {</b>
+<b class="nc">&nbsp;			append((Triple) resource, appendable);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unknown resource type: &quot; + resource.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples string for the supplied URI.
+&nbsp;	 *
+&nbsp;	 * @param uri
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(IRI uri) {
+<b class="nc">&nbsp;		return &quot;&lt;&quot; + escapeString(uri.toString()) + &quot;&gt;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link IRI} to the given {@link Appendable}.
+&nbsp;	 *
+&nbsp;	 * @param uri        The IRI to write.
+&nbsp;	 * @param appendable The object to append to.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(IRI uri, Appendable appendable) throws IOException {
+<b class="nc">&nbsp;		append(uri, appendable, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link IRI} to the given {@link Appendable}.
+&nbsp;	 *
+&nbsp;	 * @param uri
+&nbsp;	 * @param appendable
+&nbsp;	 * @param escapeUnicode
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(IRI uri, Appendable appendable, boolean escapeUnicode) throws IOException {
+<b class="nc">&nbsp;		appendable.append(&#39;&lt;&#39;);</b>
+<b class="nc">&nbsp;		StringUtil.simpleEscapeIRI(uri.toString(), appendable, escapeUnicode);</b>
+<b class="nc">&nbsp;		appendable.append(&#39;&gt;&#39;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples string for the supplied blank node.
+&nbsp;	 *
+&nbsp;	 * @param bNode
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(BNode bNode) {
+&nbsp;		try {
+<b class="nc">&nbsp;			StringBuilder result = new StringBuilder(bNode.getID().length() + 1);</b>
+<b class="nc">&nbsp;			append(bNode, result);</b>
+<b class="nc">&nbsp;			return result.toString();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Should not receive IOException with StringBuilder&quot;, e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link BNode} to the given {@link Appendable}.
+&nbsp;	 *
+&nbsp;	 * @param bNode
+&nbsp;	 * @param appendable
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(BNode bNode, Appendable appendable) throws IOException {
+<b class="nc">&nbsp;		String nextId = bNode.getID();</b>
+<b class="nc">&nbsp;		appendable.append(&quot;_:&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (nextId.isEmpty() || !BNODE_ID_PATTERN.matcher(nextId).matches()) {</b>
+<b class="nc">&nbsp;			appendable.append(&quot;genid&quot;);</b>
+<b class="nc">&nbsp;			appendable.append(Integer.toHexString(bNode.hashCode()));</b>
+&nbsp;		} else {
+&nbsp;			// The regex check via BNODE_ID_PATTERN also covers SES-2129, previous workaround in Protocol.encodeValue()
+<b class="nc">&nbsp;			appendable.append(nextId);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples string for the supplied literal.
+&nbsp;	 *
+&nbsp;	 * @param lit
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(Literal lit) {
+&nbsp;		// default to false. Users must call new method directly to remove
+&nbsp;		// xsd:string
+<b class="nc">&nbsp;		return toNTriplesString(lit, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples string for the supplied literal, optionally ignoring the xsd:string datatype as it is
+&nbsp;	 * implied for RDF-1.1.
+&nbsp;	 *
+&nbsp;	 * @param lit                     The literal to write.
+&nbsp;	 * @param xsdStringToPlainLiteral True to omit serializing the xsd:string datatype and false to always serialize the
+&nbsp;	 *                                datatype for literals.
+&nbsp;	 * @return String
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(Literal lit, boolean xsdStringToPlainLiteral) {
+&nbsp;		try {
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;			append(lit, sb, xsdStringToPlainLiteral, NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());</b>
+<b class="nc">&nbsp;			return sb.toString();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new AssertionError();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link Literal} to the given {@link Appendable}.
+&nbsp;	 *
+&nbsp;	 * @param lit
+&nbsp;	 * @param appendable
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(Literal lit, Appendable appendable) throws IOException {
+&nbsp;		// default to false. Users must call new method directly to remove
+&nbsp;		// xsd:string
+<b class="nc">&nbsp;		append(lit, appendable, BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL.getDefaultValue(),</b>
+<b class="nc">&nbsp;				NTriplesWriterSettings.ESCAPE_UNICODE.getDefaultValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples representation of the given {@link Literal} to the given {@link Appendable}, optionally
+&nbsp;	 * ignoring the xsd:string datatype as it is implied for RDF-1.1.
+&nbsp;	 *
+&nbsp;	 * @param lit                     The literal to write.
+&nbsp;	 * @param appendable              The object to append to.
+&nbsp;	 * @param xsdStringToPlainLiteral True to omit serializing the xsd:string datatype and false to always serialize the
+&nbsp;	 *                                datatype for literals.
+&nbsp;	 * @param escapeUnicode           True to escape non-ascii/non-printable characters using Unicode escapes
+&nbsp;	 *                                (&lt;var&gt;&amp;#x5C;uxxxx&lt;/var&gt; and &lt;var&gt;&amp;#x5C;Uxxxxxxxx&lt;/var&gt;), false to print without
+&nbsp;	 *                                escaping.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(Literal lit, Appendable appendable, boolean xsdStringToPlainLiteral,
+&nbsp;			boolean escapeUnicode) throws IOException {
+&nbsp;		// Do some character escaping on the label:
+<b class="nc">&nbsp;		appendable.append(&quot;\&quot;&quot;);</b>
+<b class="nc">&nbsp;		escapeString(lit.getLabel(), appendable, escapeUnicode);</b>
+<b class="nc">&nbsp;		appendable.append(&quot;\&quot;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (Literals.isLanguageLiteral(lit)) {</b>
+&nbsp;			// Append the literal&#39;s language
+<b class="nc">&nbsp;			appendable.append(&quot;@&quot;);</b>
+<b class="nc">&nbsp;			appendable.append(lit.getLanguage().get());</b>
+&nbsp;		} else {
+&nbsp;			// SES-1917 : In RDF-1.1, all literals have a type, and if they are not
+&nbsp;			// language literals we display the type for backwards compatibility
+&nbsp;			// Append the literal&#39;s datatype
+<b class="nc">&nbsp;			IRI datatype = lit.getDatatype();</b>
+<b class="nc">&nbsp;			boolean ignoreDatatype = datatype.equals(XSD.STRING) &amp;&amp; xsdStringToPlainLiteral;</b>
+<b class="nc">&nbsp;			if (!ignoreDatatype) {</b>
+<b class="nc">&nbsp;				appendable.append(&quot;^^&quot;);</b>
+<b class="nc">&nbsp;				append(lit.getDatatype(), appendable);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an N-Triples (non-standard) string for the supplied RDF-star triple.
+&nbsp;	 *
+&nbsp;	 * @param triple
+&nbsp;	 * @return string
+&nbsp;	 */
+&nbsp;	public static String toNTriplesString(Triple triple) {
+<b class="nc">&nbsp;		return &quot;&lt;&lt;&quot; + NTriplesUtil.toNTriplesString(triple.getSubject()) + &quot; &quot;</b>
+<b class="nc">&nbsp;				+ NTriplesUtil.toNTriplesString(triple.getPredicate()) + &quot; &quot;</b>
+<b class="nc">&nbsp;				+ NTriplesUtil.toNTriplesString(triple.getObject()) + &quot;&gt;&gt;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the N-Triples (non-standard) representation of the given {@link Triple} to the given {@link Appendable}.
+&nbsp;	 *
+&nbsp;	 * @param triple
+&nbsp;	 * @param appendable
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void append(Triple triple, Appendable appendable) throws IOException {
+<b class="nc">&nbsp;		appendable.append(&quot;&lt;&lt;&quot;);</b>
+<b class="nc">&nbsp;		append(triple.getSubject(), appendable);</b>
+<b class="nc">&nbsp;		appendable.append(&#39; &#39;);</b>
+<b class="nc">&nbsp;		append(triple.getPredicate(), appendable);</b>
+<b class="nc">&nbsp;		appendable.append(&#39; &#39;);</b>
+<b class="nc">&nbsp;		append(triple.getObject(), appendable);</b>
+<b class="nc">&nbsp;		appendable.append(&quot;&gt;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is a letter or number according to the N-Triples specification.
+&nbsp;	 *
+&nbsp;	 * @deprecated use {@link ASCIIUtil#isLetterOrNumber(int)}
+&nbsp;	 * @see #isLetter
+&nbsp;	 * @see #isNumber
+&nbsp;	 * @param c
+&nbsp;	 * @return true if it is a letter or a number
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static boolean isLetterOrNumber(int c) {
+<b class="nc">&nbsp;		return ASCIIUtil.isLetterOrNumber(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is a letter according to the N-Triples specification.N-Triples letters are
+&nbsp;	 * A - Z and a - z.
+&nbsp;	 *
+&nbsp;	 * @deprecated use {@link ASCIIUtil#isLetter(int)}
+&nbsp;	 * @param c
+&nbsp;	 * @return true if c is an ascii leter
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static boolean isLetter(int c) {
+<b class="nc">&nbsp;		return ASCIIUtil.isLetter(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is a number according to the N-Triples specification.N-Triples numbers are
+&nbsp;	 * 0 - 9.
+&nbsp;	 *
+&nbsp;	 * @deprecated use {@link ASCIIUtil#isNumber(int)}
+&nbsp;	 * @param c
+&nbsp;	 * @return true if the character is a number
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static boolean isNumber(int c) {
+<b class="nc">&nbsp;		return ASCIIUtil.isNumber(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is valid character as per N-Triples specification.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/n-triples/#BNodes&quot;&gt;https://www.w3.org/TR/n-triples/#BNodes&lt;/a&gt;
+&nbsp;	 * @param c
+&nbsp;	 * @return true if valid
+&nbsp;	 */
+&nbsp;	public static boolean isValidCharacterForBNodeLabel(int c) {
+<b class="nc">&nbsp;		return ASCIIUtil.isLetterOrNumber(c) || isLiberalCharactersButNotDot(c) || isDot(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is in list of liberal characters according to the N-Triples specification
+&nbsp;	 * except Dot.
+&nbsp;	 *
+&nbsp;	 * @param c
+&nbsp;	 * @return true if valid
+&nbsp;	 */
+&nbsp;	public static boolean isLiberalCharactersButNotDot(int c) {
+<b class="nc">&nbsp;		return isUnderscore(c) || c == 45 || c == 183 || (c &gt;= 768 &amp;&amp; c &lt;= 879) || c == 8255 || c == 8256;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is Underscore.
+&nbsp;	 *
+&nbsp;	 * @param c
+&nbsp;	 * @return true if it is an underscore
+&nbsp;	 */
+&nbsp;	public static boolean isUnderscore(int c) {
+<b class="nc">&nbsp;		return c == 95;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is Dot &#39;.&#39;.
+&nbsp;	 *
+&nbsp;	 * @param c
+&nbsp;	 * @return true if it is a dot
+&nbsp;	 */
+&nbsp;	public static boolean isDot(int c) {
+<b class="pc">&nbsp;		return c == 46;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Escapes a Unicode string to an all-ASCII character sequence.Any special characters are escaped using backslashes
+&nbsp;	 * ( &lt;var&gt;&quot;&lt;/var&gt; becomes &lt;var&gt;\&quot;&lt;/var&gt;, etc.), and non-ascii/non-printable characters are escaped using Unicode
+&nbsp;	 * escapes ( &lt;var&gt;&amp;#x5C;uxxxx&lt;/var&gt; and &lt;var&gt;&amp;#x5C;Uxxxxxxxx&lt;/var&gt;).
+&nbsp;	 *
+&nbsp;	 * @param label
+&nbsp;	 * @return an escaped string (unicode to ascii plus codepoints).
+&nbsp;	 */
+&nbsp;	public static String escapeString(String label) {
+&nbsp;		try {
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder(2 * label.length());</b>
+<b class="nc">&nbsp;			escapeString(label, sb);</b>
+<b class="nc">&nbsp;			return sb.toString();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new AssertionError();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Escapes a Unicode string to an all-ASCII character sequence. Any special characters are escaped using backslashes
+&nbsp;	 * ( &lt;var&gt;&quot;&lt;/var&gt; becomes &lt;var&gt;\&quot;&lt;/var&gt;, etc.), and non-ascii/non-printable characters are escaped using Unicode
+&nbsp;	 * escapes ( &lt;var&gt;&amp;#x5C;uxxxx&lt;/var&gt; and &lt;var&gt;&amp;#x5C;Uxxxxxxxx&lt;/var&gt;).
+&nbsp;	 *
+&nbsp;	 * @param label
+&nbsp;	 * @param appendable
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void escapeString(String label, Appendable appendable) throws IOException {
+<b class="nc">&nbsp;		escapeString(label, appendable, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Escapes a Unicode string to an N-Triples compatible character sequence.Any special characters are escaped using
+&nbsp;	 * backslashes (&lt;var&gt;&quot;&lt;/var&gt; becomes &lt;var&gt;\&quot;&lt;/var&gt;, etc.), and non-ascii/non-printable characters are escaped using
+&nbsp;	 * Unicode escapes (&lt;var&gt;&amp;#x5C;uxxxx&lt;/var&gt; and &lt;var&gt;&amp;#x5C;Uxxxxxxxx&lt;/var&gt;) if the option is selected.
+&nbsp;	 *
+&nbsp;	 * @param label
+&nbsp;	 * @param appendable
+&nbsp;	 * @param escapeUnicode
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void escapeString(String label, Appendable appendable, boolean escapeUnicode) throws IOException {
+<b class="nc">&nbsp;		int labelLength = label.length();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; labelLength; i++) {</b>
+<b class="nc">&nbsp;			char c = label.charAt(i);</b>
+<b class="nc">&nbsp;			int cInt = c;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (c == &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;				appendable.append(&quot;\\\\&quot;);</b>
+<b class="nc">&nbsp;			} else if (c == &#39;&quot;&#39;) {</b>
+<b class="nc">&nbsp;				appendable.append(&quot;\\\&quot;&quot;);</b>
+<b class="nc">&nbsp;			} else if (c == &#39;\n&#39;) {</b>
+<b class="nc">&nbsp;				appendable.append(&quot;\\n&quot;);</b>
+<b class="nc">&nbsp;			} else if (c == &#39;\r&#39;) {</b>
+<b class="nc">&nbsp;				appendable.append(&quot;\\r&quot;);</b>
+<b class="nc">&nbsp;			} else if (c == &#39;\t&#39;) {</b>
+<b class="nc">&nbsp;				appendable.append(&quot;\\t&quot;);</b>
+<b class="nc">&nbsp;			} else if (cInt &gt;= 0x0 &amp;&amp; cInt &lt;= 0x8 || cInt == 0xB || cInt == 0xC || cInt &gt;= 0xE &amp;&amp; cInt &lt;= 0x1F</b>
+&nbsp;					|| cInt &gt;= 0x7F &amp;&amp; cInt &lt;= 0xFFFF) {
+<b class="nc">&nbsp;				if (escapeUnicode) {</b>
+<b class="nc">&nbsp;					appendable.append(&quot;\\u&quot;);</b>
+<b class="nc">&nbsp;					appendable.append(toHexString(cInt, 4));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					appendable.append(c);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (cInt &gt;= 0x10000 &amp;&amp; cInt &lt;= 0x10FFFF) {</b>
+<b class="nc">&nbsp;				if (escapeUnicode) {</b>
+<b class="nc">&nbsp;					appendable.append(&quot;\\U&quot;);</b>
+<b class="nc">&nbsp;					appendable.append(toHexString(cInt, 8));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					appendable.append(c);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				appendable.append(c);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Unescapes an escaped Unicode string. Any Unicode sequences ( &lt;var&gt;&amp;#x5C;uxxxx&lt;/var&gt; and
+&nbsp;	 * &lt;var&gt;&amp;#x5C;Uxxxxxxxx&lt;/var&gt;) are restored to the value indicated by the hexadecimal argument and any
+&nbsp;	 * backslash-escapes ( &lt;var&gt;\&quot;&lt;/var&gt;, &lt;var&gt;\\&lt;/var&gt;, etc.) are decoded to their original form.
+&nbsp;	 *
+&nbsp;	 * @param s An escaped Unicode string.
+&nbsp;	 * @return The unescaped string.
+&nbsp;	 * @throws IllegalArgumentException If the supplied string is not a correctly escaped N-Triples string.
+&nbsp;	 */
+&nbsp;	public static String unescapeString(String s) {
+<b class="fc">&nbsp;		int backSlashIdx = s.indexOf(&#39;\\&#39;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (backSlashIdx == -1) {</b>
+&nbsp;			// No escaped characters found
+<b class="fc">&nbsp;			return s;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int startIdx = 0;</b>
+<b class="nc">&nbsp;		int sLength = s.length();</b>
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(sLength);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (backSlashIdx != -1) {</b>
+<b class="nc">&nbsp;			sb.append(s.substring(startIdx, backSlashIdx));</b>
+&nbsp;
+<b class="nc">&nbsp;			if (backSlashIdx + 1 &gt;= sLength) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			char c = s.charAt(backSlashIdx + 1);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (c == &#39;t&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\t&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;b&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\b&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;n&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\n&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;r&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\r&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;f&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\f&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;&quot;&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;&quot;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;\&#39;&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\&#39;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;\\&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;			} else if (c == &#39;u&#39;) {</b>
+&nbsp;				// \\uxxxx
+<b class="nc">&nbsp;				if (backSlashIdx + 5 &gt;= sLength) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Incomplete Unicode escape sequence in: &quot; + s);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					final int codePoint = Integer.parseInt(xx, 16);</b>
+<b class="nc">&nbsp;					sb.append(Character.toChars(codePoint));</b>
+&nbsp;
+<b class="nc">&nbsp;					startIdx = backSlashIdx + 6;</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Illegal Unicode escape sequence &#39;\\u&quot; + xx + &quot;&#39; in: &quot; + s);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} else if (c == &#39;U&#39;) {</b>
+&nbsp;				// \\Uxxxxxxxx
+<b class="nc">&nbsp;				if (backSlashIdx + 9 &gt;= sLength) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Incomplete Unicode escape sequence in: &quot; + s);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					final int codePoint = Integer.parseInt(xx, 16);</b>
+<b class="nc">&nbsp;					sb.append(Character.toChars(codePoint));</b>
+&nbsp;
+<b class="nc">&nbsp;					startIdx = backSlashIdx + 10;</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Illegal Unicode escape sequence &#39;\\U&quot; + xx + &quot;&#39; in: &quot; + s);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			backSlashIdx = s.indexOf(&#39;\\&#39;, startIdx);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(s.substring(startIdx));</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts a decimal value to a hexadecimal string representation of the specified length.
+&nbsp;	 *
+&nbsp;	 * @param decimal      A decimal value.
+&nbsp;	 * @param stringLength The length of the resulting string.
+&nbsp;	 * @return padded string
+&nbsp;	 */
+&nbsp;	public static String toHexString(int decimal, int stringLength) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(stringLength);</b>
+&nbsp;
+<b class="nc">&nbsp;		String hexVal = Integer.toHexString(decimal).toUpperCase();</b>
+&nbsp;
+&nbsp;		// insert zeros if hexVal has less than stringLength characters:
+<b class="nc">&nbsp;		int nofZeros = stringLength - hexVal.length();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; nofZeros; i++) {</b>
+<b class="nc">&nbsp;			sb.append(&#39;0&#39;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		sb.append(hexVal);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

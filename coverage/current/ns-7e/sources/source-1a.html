@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > BooleanQueryResultWriter</title>
+  <title>Coverage Report > BooleanQueryResultWriterFactory</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
 </div>
 
-<h1>Coverage Summary for Class: BooleanQueryResultWriter (org.eclipse.rdf4j.query.resultio)</h1>
+<h1>Coverage Summary for Class: BooleanQueryResultWriterFactory (org.eclipse.rdf4j.query.resultio)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">BooleanQueryResultWriter</td>
+  <td class="name">BooleanQueryResultWriterFactory</td>
 </tr>
 
 </table>
@@ -50,29 +50,26 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query.resultio;
 &nbsp;
-&nbsp;import java.io.IOException;
-&nbsp;
-&nbsp;import org.eclipse.rdf4j.query.BooleanQueryResultHandler;
+&nbsp;import java.io.OutputStream;
 &nbsp;
 &nbsp;/**
-&nbsp; * The interface of objects that writer query results in a specific query result format.
+&nbsp; * Returns {@link BooleanQueryResultWriter}s for a specific boolean query result format.
 &nbsp; *
 &nbsp; * @author Arjohn Kampman
 &nbsp; */
-&nbsp;public interface BooleanQueryResultWriter extends QueryResultWriter, BooleanQueryResultHandler {
+&nbsp;public interface BooleanQueryResultWriterFactory {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Writes the specified boolean value.
-&nbsp;	 *
-&nbsp;	 * @deprecated Use {@link #handleBoolean(boolean)} instead.
-&nbsp;	 */
-&nbsp;	void write(boolean value) throws IOException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Gets the query result format that this writer uses.
+&nbsp;	 * Returns the boolean query result format for this factory.
 &nbsp;	 */
 &nbsp;	BooleanQueryResultFormat getBooleanQueryResultFormat();
 &nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link BooleanQueryResultWriter} instance that will write to the supplied output stream.
+&nbsp;	 *
+&nbsp;	 * @param out The OutputStream to write the result to.
+&nbsp;	 */
+&nbsp;	BooleanQueryResultWriter getWriter(OutputStream out);
 &nbsp;}
 </code>
 </pre>
@@ -97,7 +94,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

@@ -1,0 +1,360 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PrefixDeclProcessor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: PrefixDeclProcessor (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PrefixDeclProcessor</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (16/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    88.9%
+  </span>
+  <span class="absValue">
+    (48/54)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">PrefixDeclProcessor$QNameProcessor</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (4/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (4/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    76.7%
+  </span>
+  <span class="absValue">
+    (23/30)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    77.8%
+  </span>
+  <span class="absValue">
+    (7/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    71.4%
+  </span>
+  <span class="absValue">
+    (20/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    84.5%
+  </span>
+  <span class="absValue">
+    (71/84)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Map.Entry;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FN;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.OWL;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SESAME;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDeleteData;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInsertData;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPrefixDecl;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQName;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUnparsedQuadDataBlock;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilderTreeConstants;
+&nbsp;import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Processes the prefix declarations in a SPARQL query model.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; *
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+<b class="nc">&nbsp;public class PrefixDeclProcessor {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Processes prefix declarations in queries. This method collects all prefixes that are declared in the supplied
+&nbsp;	 * query, verifies that prefixes are not redefined and replaces any {@link ASTQName} nodes in the query with
+&nbsp;	 * equivalent {@link ASTIRI} nodes.
+&nbsp;	 *
+&nbsp;	 * @param qc                    The query that needs to be processed.
+&nbsp;	 * @param customDefaultPrefixes Custom prefixes to add, will override SPARQL default prefixes. can&#39;t be null.
+&nbsp;	 * @return A map containing the prefixes that are declared in the query (key) and the namespace they map to (value).
+&nbsp;	 * @throws MalformedQueryException If the query contains redefined prefixes or qnames that use undefined prefixes.
+&nbsp;	 */
+&nbsp;	public static Map&lt;String, String&gt; process(ASTOperationContainer qc, Map&lt;String, String&gt; customDefaultPrefixes)
+&nbsp;			throws MalformedQueryException {
+<b class="fc">&nbsp;		List&lt;ASTPrefixDecl&gt; prefixDeclList = qc.getPrefixDeclList();</b>
+&nbsp;
+&nbsp;		// Build a prefix --&gt; IRI map
+<b class="fc">&nbsp;		Map&lt;String, String&gt; prefixMap = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (ASTPrefixDecl prefixDecl : prefixDeclList) {</b>
+<b class="fc">&nbsp;			String prefix = prefixDecl.getPrefix();</b>
+<b class="fc">&nbsp;			String iri = prefixDecl.getIRI().getValue();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (prefixMap.containsKey(prefix)) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(&quot;Multiple prefix declarations for prefix &#39;&quot; + prefix + &quot;&#39;&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			prefixMap.put(prefix, iri);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		int preDefaultPrefixes = 0;</b>
+&nbsp;
+&nbsp;		// insert the default prefixes if presents
+<b class="pc">&nbsp;		for (Entry&lt;String, String&gt; defaultPrefix : customDefaultPrefixes.entrySet()) {</b>
+<b class="nc">&nbsp;			preDefaultPrefixes += insertDefaultPrefix(prefixMap, defaultPrefix.getKey(), defaultPrefix.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// insert some default prefixes (if not explicitly defined in the query)
+<b class="fc">&nbsp;		final int defaultPrefixesAdded = preDefaultPrefixes</b>
+<b class="fc">&nbsp;				+ insertDefaultPrefix(prefixMap, &quot;rdf&quot;, RDF.NAMESPACE)</b>
+<b class="fc">&nbsp;				+ insertDefaultPrefix(prefixMap, &quot;rdfs&quot;, RDFS.NAMESPACE)</b>
+<b class="fc">&nbsp;				+ insertDefaultPrefix(prefixMap, &quot;rdf4j&quot;, RDF4J.NAMESPACE)</b>
+<b class="fc">&nbsp;				+ insertDefaultPrefix(prefixMap, &quot;sesame&quot;, SESAME.NAMESPACE)</b>
+<b class="fc">&nbsp;				+ insertDefaultPrefix(prefixMap, &quot;owl&quot;, OWL.NAMESPACE)</b>
+<b class="fc">&nbsp;				+ insertDefaultPrefix(prefixMap, &quot;xsd&quot;, XSD.NAMESPACE)</b>
+<b class="fc">&nbsp;				+ insertDefaultPrefix(prefixMap, &quot;fn&quot;, FN.NAMESPACE);</b>
+&nbsp;
+<b class="fc">&nbsp;		ASTUnparsedQuadDataBlock dataBlock = null;</b>
+<b class="fc">&nbsp;		if (qc.getOperation() instanceof ASTInsertData) {</b>
+<b class="fc">&nbsp;			ASTInsertData insertData = (ASTInsertData) qc.getOperation();</b>
+<b class="fc">&nbsp;			dataBlock = insertData.jjtGetChild(ASTUnparsedQuadDataBlock.class);</b>
+&nbsp;
+<b class="fc">&nbsp;		} else if (qc.getOperation() instanceof ASTDeleteData) {</b>
+<b class="fc">&nbsp;			ASTDeleteData deleteData = (ASTDeleteData) qc.getOperation();</b>
+<b class="fc">&nbsp;			dataBlock = deleteData.jjtGetChild(ASTUnparsedQuadDataBlock.class);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (dataBlock != null) {</b>
+<b class="fc">&nbsp;			String prefixes = createPrefixesInSPARQLFormat(prefixMap);</b>
+<b class="fc">&nbsp;			dataBlock.setAddedDefaultPrefixes(defaultPrefixesAdded);</b>
+&nbsp;			// TODO optimize string concat?
+<b class="fc">&nbsp;			dataBlock.setDataBlock(prefixes + dataBlock.getDataBlock());</b>
+<b class="fc">&nbsp;		} else {</b>
+<b class="fc">&nbsp;			QNameProcessor visitor = new QNameProcessor(prefixMap);</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				qc.jjtAccept(visitor, null);</b>
+<b class="nc">&nbsp;			} catch (VisitorException e) {</b>
+<b class="nc">&nbsp;				throw new MalformedQueryException(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return prefixMap;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static int insertDefaultPrefix(Map&lt;String, String&gt; prefixMap, String prefix, String namespace) {
+<b class="pc">&nbsp;		if (!prefixMap.containsKey(prefix) &amp;&amp; !prefixMap.containsValue(namespace)) {</b>
+<b class="fc">&nbsp;			prefixMap.put(prefix, namespace);</b>
+<b class="fc">&nbsp;			return 1;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String createPrefixesInSPARQLFormat(Map&lt;String, String&gt; prefixMap) {
+<b class="fc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="fc">&nbsp;		for (Entry&lt;String, String&gt; entry : prefixMap.entrySet()) {</b>
+<b class="fc">&nbsp;			sb.append(&quot;PREFIX&quot;);</b>
+<b class="fc">&nbsp;			final String prefix = entry.getKey();</b>
+<b class="pc">&nbsp;			if (prefix != null) {</b>
+<b class="fc">&nbsp;				sb.append(&quot; &quot;).append(prefix);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			sb.append(&quot;:&quot;);</b>
+<b class="fc">&nbsp;			sb.append(&quot; &lt;&quot;).append(entry.getValue()).append(&quot;&gt; \n&quot;);</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class QNameProcessor extends AbstractASTVisitor {</b>
+&nbsp;
+&nbsp;		private final Map&lt;String, String&gt; prefixMap;
+&nbsp;
+<b class="fc">&nbsp;		public QNameProcessor(Map&lt;String, String&gt; prefixMap) {</b>
+<b class="fc">&nbsp;			this.prefixMap = prefixMap;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTQName qnameNode, Object data) throws VisitorException {
+<b class="fc">&nbsp;			String qname = qnameNode.getValue();</b>
+&nbsp;
+<b class="fc">&nbsp;			int colonIdx = qname.indexOf(&#39;:&#39;);</b>
+<b class="pc">&nbsp;			assert colonIdx &gt;= 0 : &quot;colonIdx should be &gt;= 0: &quot; + colonIdx;</b>
+&nbsp;
+<b class="fc">&nbsp;			String prefix = qname.substring(0, colonIdx);</b>
+<b class="fc">&nbsp;			String localName = qname.substring(colonIdx + 1);</b>
+&nbsp;
+<b class="fc">&nbsp;			String namespace = prefixMap.get(prefix);</b>
+<b class="pc">&nbsp;			if (namespace == null) {</b>
+<b class="nc">&nbsp;				throw new VisitorException(&quot;QName &#39;&quot; + qname + &quot;&#39; uses an undefined prefix&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			localName = processEscapes(localName);</b>
+&nbsp;
+&nbsp;			// Replace the qname node with a new IRI node in the parent node
+<b class="fc">&nbsp;			ASTIRI iriNode = new ASTIRI(SyntaxTreeBuilderTreeConstants.JJTIRI);</b>
+<b class="fc">&nbsp;			iriNode.setValue(namespace + localName);</b>
+<b class="fc">&nbsp;			qnameNode.jjtReplaceWith(iriNode);</b>
+&nbsp;
+<b class="fc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private String processEscapes(String localName) {
+&nbsp;
+&nbsp;			// process escaped special chars.
+<b class="fc">&nbsp;			StringBuilder unescaped = new StringBuilder();</b>
+<b class="fc">&nbsp;			Pattern escapedCharPattern = Pattern</b>
+<b class="fc">&nbsp;					.compile(&quot;\\\\[_~.\\-!$&amp;&#39;()*+,;=:/?#@%]&quot;);</b>
+<b class="fc">&nbsp;			Matcher m = escapedCharPattern.matcher(localName);</b>
+<b class="fc">&nbsp;			boolean result = m.find();</b>
+<b class="pc">&nbsp;			while (result) {</b>
+<b class="nc">&nbsp;				String escaped = m.group();</b>
+<b class="nc">&nbsp;				m.appendReplacement(unescaped, escaped.substring(1));</b>
+<b class="nc">&nbsp;				result = m.find();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="fc">&nbsp;			m.appendTail(unescaped);</b>
+&nbsp;
+<b class="fc">&nbsp;			return unescaped.toString();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Object visit(ASTServiceGraphPattern node, Object data) throws VisitorException {
+<b class="nc">&nbsp;			node.setPrefixDeclarations(prefixMap);</b>
+<b class="nc">&nbsp;			return super.visit(node, data);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

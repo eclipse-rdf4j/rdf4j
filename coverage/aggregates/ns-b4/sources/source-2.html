@@ -1,0 +1,1533 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TurtleParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.turtle</a>
+</div>
+
+<h1>Coverage Summary for Class: TurtleParser (org.eclipse.rdf4j.rio.turtle)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TurtleParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    77.1%
+  </span>
+  <span class="absValue">
+    (37/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.2%
+  </span>
+  <span class="absValue">
+    (219/404)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (403/604)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.turtle;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.PushbackReader;
+&nbsp;import java.io.Reader;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.commons.io.input.BOMInputStream;
+&nbsp;import org.eclipse.rdf4j.common.text.ASCIIUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Values;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * RDF parser for &lt;a href=&quot;https://www.w3.org/TR/turtle/&quot;&gt;RDF-1.1 Turtle&lt;/a&gt; files. This parser is not thread-safe,
+&nbsp; * therefore its public methods are synchronized.
+&nbsp; * &lt;p&gt;
+&nbsp; * &lt;li&gt;Normalization of integer, floating point and boolean values is dependent on the specified datatype handling.
+&nbsp; * According to the specification, integers and booleans should be normalized, but floats don&#39;t.&lt;/li&gt;
+&nbsp; * &lt;li&gt;Comments can be used anywhere in the document, and extend to the end of the line. The Turtle grammar doesn&#39;t
+&nbsp; * allow comments to be used inside triple constructs that extend over multiple lines, but the author&#39;s own parser
+&nbsp; * deviates from this too.&lt;/li&gt;
+&nbsp; * &lt;/ul&gt;
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class TurtleParser extends AbstractRDFParser {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private PushbackReader reader;
+&nbsp;
+&nbsp;	protected Resource subject;
+&nbsp;
+&nbsp;	protected IRI predicate;
+&nbsp;
+&nbsp;	protected Value object;
+&nbsp;
+<b class="fc">&nbsp;	private int lineNumber = 1;</b>
+&nbsp;
+<b class="fc">&nbsp;	private final StringBuilder parsingBuilder = new StringBuilder();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The most recently read complete statement.
+&nbsp;	 */
+&nbsp;	private Statement previousStatement;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleParser that will use a {@link SimpleValueFactory} to create RDF model objects.
+&nbsp;	 */
+&nbsp;	public TurtleParser() {
+<b class="fc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TurtleParser that will use the supplied ValueFactory to create RDF model objects.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory A ValueFactory.
+&nbsp;	 */
+&nbsp;	public TurtleParser(ValueFactory valueFactory) {
+<b class="fc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.TURTLE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Set&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+<b class="nc">&nbsp;		result.add(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES);</b>
+<b class="nc">&nbsp;		result.add(TurtleParserSettings.ACCEPT_TURTLESTAR);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void parse(InputStream in, String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="pc">&nbsp;		if (in == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Input stream must not be &#39;null&#39;&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			parse(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8), baseURI);</b>
+<b class="nc">&nbsp;		} catch (UnsupportedEncodingException e) {</b>
+&nbsp;			// Every platform should support the UTF-8 encoding...
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void parse(Reader reader, String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		clear();</b>
+&nbsp;
+&nbsp;		try {
+<b class="pc">&nbsp;			if (reader == null) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Reader must not be &#39;null&#39;&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (rdfHandler != null) {</b>
+<b class="fc">&nbsp;				rdfHandler.startRDF();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Start counting lines at 1:
+<b class="fc">&nbsp;			lineNumber = 1;</b>
+&nbsp;
+&nbsp;			// Allow at most 8 characters to be pushed back:
+<b class="fc">&nbsp;			this.reader = new PushbackReader(reader, 10);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (baseURI != null) {</b>
+&nbsp;				// Store normalized base URI
+<b class="fc">&nbsp;				setBaseURI(baseURI);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			reportLocation();</b>
+&nbsp;
+<b class="fc">&nbsp;			int c = skipWSC();</b>
+&nbsp;
+<b class="fc">&nbsp;			while (c != -1) {</b>
+<b class="fc">&nbsp;				parseStatement();</b>
+<b class="fc">&nbsp;				c = skipWSC();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			clear();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="fc">&nbsp;			rdfHandler.endRDF();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseStatement() throws IOException, RDFParseException, RDFHandlerException {
+&nbsp;
+<b class="fc">&nbsp;		StringBuilder sb = new StringBuilder(8);</b>
+&nbsp;
+&nbsp;		int codePoint;
+&nbsp;		// longest valid directive @prefix
+&nbsp;		do {
+<b class="fc">&nbsp;			codePoint = readCodePoint();</b>
+<b class="pc">&nbsp;			if (codePoint == -1 || TurtleUtil.isWhitespace(codePoint)) {</b>
+<b class="fc">&nbsp;				unread(codePoint);</b>
+<b class="fc">&nbsp;				break;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			appendCodepoint(sb, codePoint);</b>
+<b class="fc">&nbsp;		} while (sb.length() &lt; 8);</b>
+&nbsp;
+<b class="fc">&nbsp;		String directive = sb.toString();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (directive.startsWith(&quot;@&quot;) || directive.equalsIgnoreCase(&quot;prefix&quot;) || directive.equalsIgnoreCase(&quot;base&quot;)) {</b>
+<b class="fc">&nbsp;			parseDirective(directive);</b>
+<b class="fc">&nbsp;			skipWSC();</b>
+&nbsp;			// SPARQL BASE and PREFIX lines do not end in .
+<b class="pc">&nbsp;			if (directive.startsWith(&quot;@&quot;)) {</b>
+<b class="fc">&nbsp;				verifyCharacterOrFail(readCodePoint(), &quot;.&quot;);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="fc">&nbsp;			unread(directive);</b>
+<b class="fc">&nbsp;			parseTriples();</b>
+<b class="fc">&nbsp;			skipWSC();</b>
+<b class="fc">&nbsp;			verifyCharacterOrFail(readCodePoint(), &quot;.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseDirective(String directive) throws IOException, RDFParseException, RDFHandlerException {
+<b class="pc">&nbsp;		if (directive.length() &gt;= 7 &amp;&amp; directive.substring(0, 7).equals(&quot;@prefix&quot;)) {</b>
+<b class="pc">&nbsp;			if (directive.length() &gt; 7) {</b>
+<b class="nc">&nbsp;				unread(directive.substring(7));</b>
+&nbsp;			}
+<b class="fc">&nbsp;			parsePrefixID();</b>
+<b class="pc">&nbsp;		} else if (directive.length() &gt;= 5 &amp;&amp; directive.substring(0, 5).equals(&quot;@base&quot;)) {</b>
+<b class="nc">&nbsp;			if (directive.length() &gt; 5) {</b>
+<b class="nc">&nbsp;				unread(directive.substring(5));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			parseBase();</b>
+<b class="pc">&nbsp;		} else if (directive.length() &gt;= 6 &amp;&amp; directive.substring(0, 6).equalsIgnoreCase(&quot;prefix&quot;)) {</b>
+&nbsp;			// SPARQL doesn&#39;t require whitespace after directive, so must unread
+&nbsp;			// if
+&nbsp;			// we found part of the prefixID
+<b class="pc">&nbsp;			if (directive.length() &gt; 6) {</b>
+<b class="nc">&nbsp;				unread(directive.substring(6));</b>
+&nbsp;			}
+<b class="fc">&nbsp;			parsePrefixID();</b>
+<b class="pc">&nbsp;		} else if ((directive.length() &gt;= 4 &amp;&amp; directive.substring(0, 4).equalsIgnoreCase(&quot;base&quot;))) {</b>
+<b class="pc">&nbsp;			if (directive.length() &gt; 4) {</b>
+<b class="nc">&nbsp;				unread(directive.substring(4));</b>
+&nbsp;			}
+<b class="fc">&nbsp;			parseBase();</b>
+<b class="nc">&nbsp;		} else if (directive.length() &gt;= 7 &amp;&amp; directive.substring(0, 7).equalsIgnoreCase(&quot;@prefix&quot;)) {</b>
+<b class="nc">&nbsp;			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Cannot strictly support case-insensitive @prefix directive in compliance mode.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (directive.length() &gt; 7) {</b>
+<b class="nc">&nbsp;				unread(directive.substring(7));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			parsePrefixID();</b>
+<b class="nc">&nbsp;		} else if (directive.length() &gt;= 5 &amp;&amp; directive.substring(0, 5).equalsIgnoreCase(&quot;@base&quot;)) {</b>
+<b class="nc">&nbsp;			if (!this.getParserConfig().get(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES)) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Cannot strictly support case-insensitive @base directive in compliance mode.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (directive.length() &gt; 5) {</b>
+<b class="nc">&nbsp;				unread(directive.substring(5));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			parseBase();</b>
+<b class="nc">&nbsp;		} else if (directive.length() == 0) {</b>
+<b class="nc">&nbsp;			reportFatalError(&quot;Directive name is missing, expected @prefix or @base&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			reportFatalError(&quot;Unknown directive \&quot;&quot; + directive + &quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parsePrefixID() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		skipWSC();</b>
+&nbsp;
+&nbsp;		// Read prefix ID (e.g. &quot;rdf:&quot; or &quot;:&quot;)
+<b class="fc">&nbsp;		StringBuilder prefixID = new StringBuilder(8);</b>
+&nbsp;
+&nbsp;		while (true) {
+<b class="fc">&nbsp;			int c = readCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (c == &#39;:&#39;) {</b>
+<b class="fc">&nbsp;				unread(c);</b>
+<b class="fc">&nbsp;				break;</b>
+<b class="pc">&nbsp;			} else if (TurtleUtil.isWhitespace(c)) {</b>
+<b class="nc">&nbsp;				break;</b>
+<b class="pc">&nbsp;			} else if (c == -1) {</b>
+<b class="nc">&nbsp;				throwEOFException();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			appendCodepoint(prefixID, c);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		skipWSC();</b>
+&nbsp;
+<b class="fc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;:&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		skipWSC();</b>
+&nbsp;
+&nbsp;		// Read the namespace URI
+<b class="fc">&nbsp;		String namespaceStr = parseURI().toString();</b>
+&nbsp;
+<b class="fc">&nbsp;		String prefixStr = prefixID.toString();</b>
+&nbsp;
+&nbsp;		// Store and report this namespace mapping
+<b class="fc">&nbsp;		setNamespace(prefixStr, namespaceStr);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="fc">&nbsp;			rdfHandler.handleNamespace(prefixStr, namespaceStr);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseBase() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		skipWSC();</b>
+&nbsp;
+<b class="fc">&nbsp;		IRI baseURI = parseURI();</b>
+&nbsp;
+<b class="fc">&nbsp;		setBaseURI(baseURI.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseTriples() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		int c = peekCodePoint();</b>
+&nbsp;
+&nbsp;		// If the first character is an open bracket we need to decide which of
+&nbsp;		// the two parsing methods for blank nodes to use
+<b class="fc">&nbsp;		if (c == &#39;[&#39;) {</b>
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+<b class="fc">&nbsp;			skipWSC();</b>
+<b class="fc">&nbsp;			c = peekCodePoint();</b>
+<b class="pc">&nbsp;			if (c == &#39;]&#39;) {</b>
+<b class="fc">&nbsp;				c = readCodePoint();</b>
+<b class="fc">&nbsp;				subject = createNode();</b>
+<b class="fc">&nbsp;				skipWSC();</b>
+<b class="fc">&nbsp;				parsePredicateObjectList();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				unread(&#39;[&#39;);</b>
+<b class="nc">&nbsp;				subject = parseImplicitBlank();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			skipWSC();</b>
+<b class="fc">&nbsp;			c = peekCodePoint();</b>
+&nbsp;
+&nbsp;			// if this is not the end of the statement, recurse into the list of
+&nbsp;			// predicate and objects, using the subject parsed above as the
+&nbsp;			// subject
+&nbsp;			// of the statement.
+<b class="pc">&nbsp;			if (c != &#39;.&#39;) {</b>
+<b class="nc">&nbsp;				parsePredicateObjectList();</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="fc">&nbsp;			parseSubject();</b>
+<b class="fc">&nbsp;			skipWSC();</b>
+<b class="fc">&nbsp;			parsePredicateObjectList();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		subject = null;</b>
+<b class="fc">&nbsp;		predicate = null;</b>
+<b class="fc">&nbsp;		object = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parsePredicateObjectList() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		predicate = parsePredicate();</b>
+&nbsp;
+<b class="fc">&nbsp;		skipWSC();</b>
+&nbsp;
+<b class="fc">&nbsp;		parseObjectList();</b>
+&nbsp;
+<b class="fc">&nbsp;		while (skipWSC() == &#39;;&#39;) {</b>
+<b class="fc">&nbsp;			readCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;			int c = skipWSC();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (c == &#39;.&#39; || // end of triple</b>
+&nbsp;					c == &#39;]&#39; || c == &#39;}&#39;) // end of predicateObjectList inside
+&nbsp;			// blank
+&nbsp;			// node
+&nbsp;			{
+<b class="nc">&nbsp;				break;</b>
+<b class="pc">&nbsp;			} else if (c == &#39;;&#39;) {</b>
+&nbsp;				// empty predicateObjectList, skip to next
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			predicate = parsePredicate();</b>
+&nbsp;
+<b class="fc">&nbsp;			skipWSC();</b>
+&nbsp;
+<b class="fc">&nbsp;			parseObjectList();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseObjectList() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		parseObject();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (skipWSC() == &#39;{&#39;) {</b>
+<b class="nc">&nbsp;			parseAnnotation();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		while (skipWSC() == &#39;,&#39;) {</b>
+<b class="fc">&nbsp;			readCodePoint();</b>
+<b class="fc">&nbsp;			skipWSC();</b>
+<b class="fc">&nbsp;			parseObject();</b>
+<b class="pc">&nbsp;			if (skipWSC() == &#39;{&#39;) {</b>
+<b class="nc">&nbsp;				parseAnnotation();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseSubject() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		int c = peekCodePoint();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (c == &#39;(&#39;) {</b>
+<b class="nc">&nbsp;			subject = parseCollection();</b>
+<b class="pc">&nbsp;		} else if (c == &#39;[&#39;) {</b>
+<b class="nc">&nbsp;			subject = parseImplicitBlank();</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			Value value = parseValue();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (value instanceof Resource) {</b>
+<b class="fc">&nbsp;				subject = (Resource) value;</b>
+<b class="nc">&nbsp;			} else if (value != null) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Illegal subject value: &quot; + value);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected IRI parsePredicate() throws IOException, RDFParseException, RDFHandlerException {
+&nbsp;		// Check if the short-cut &#39;a&#39; is used
+<b class="fc">&nbsp;		int c1 = readCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (c1 == &#39;a&#39;) {</b>
+<b class="fc">&nbsp;			int c2 = readCodePoint();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (TurtleUtil.isWhitespace(c2)) {</b>
+&nbsp;				// Short-cut is used, return the rdf:type URI
+<b class="fc">&nbsp;				return RDF.TYPE;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Short-cut is not used, unread all characters
+<b class="nc">&nbsp;			unread(c2);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		unread(c1);</b>
+&nbsp;
+&nbsp;		// Predicate is a normal resource
+<b class="fc">&nbsp;		Value predicate = parseValue();</b>
+<b class="pc">&nbsp;		if (predicate instanceof IRI) {</b>
+<b class="fc">&nbsp;			return (IRI) predicate;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			reportFatalError(&quot;Illegal predicate value: &quot; + predicate);</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse an object
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RDFParseException
+&nbsp;	 * @throws RDFHandlerException
+&nbsp;	 */
+&nbsp;	protected void parseObject() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		int c = peekCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;		switch (c) {</b>
+&nbsp;		case &#39;(&#39;:
+<b class="fc">&nbsp;			object = parseCollection();</b>
+<b class="fc">&nbsp;			break;</b>
+&nbsp;		case &#39;[&#39;:
+<b class="fc">&nbsp;			object = parseImplicitBlank();</b>
+<b class="fc">&nbsp;			break;</b>
+&nbsp;		default:
+<b class="fc">&nbsp;			object = parseValue();</b>
+<b class="fc">&nbsp;			reportStatement(subject, predicate, object);</b>
+&nbsp;			break;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a collection, e.g. &lt;var&gt;( item1 item2 item3 )&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	protected Resource parseCollection() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;(&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		int c = skipWSC();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (c == &#39;)&#39;) {</b>
+&nbsp;			// Empty list
+<b class="nc">&nbsp;			readCodePoint();</b>
+<b class="nc">&nbsp;			if (subject != null) {</b>
+<b class="nc">&nbsp;				reportStatement(subject, predicate, RDF.NIL);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return RDF.NIL;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			Resource listRoot = createNode();</b>
+<b class="pc">&nbsp;			if (subject != null) {</b>
+<b class="fc">&nbsp;				reportStatement(subject, predicate, listRoot);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Remember current subject and predicate
+<b class="fc">&nbsp;			Resource oldSubject = subject;</b>
+<b class="fc">&nbsp;			IRI oldPredicate = predicate;</b>
+&nbsp;
+&nbsp;			// generated bNode becomes subject, predicate becomes rdf:first
+<b class="fc">&nbsp;			subject = listRoot;</b>
+<b class="fc">&nbsp;			predicate = RDF.FIRST;</b>
+&nbsp;
+<b class="fc">&nbsp;			parseObject();</b>
+&nbsp;
+<b class="fc">&nbsp;			Resource bNode = listRoot;</b>
+&nbsp;
+<b class="fc">&nbsp;			while (skipWSC() != &#39;)&#39;) {</b>
+&nbsp;				// Create another list node and link it to the previous
+<b class="fc">&nbsp;				Resource newNode = createNode();</b>
+<b class="fc">&nbsp;				reportStatement(bNode, RDF.REST, newNode);</b>
+&nbsp;
+&nbsp;				// New node becomes the current
+<b class="fc">&nbsp;				subject = bNode = newNode;</b>
+&nbsp;
+<b class="fc">&nbsp;				parseObject();</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// Skip &#39;)&#39;
+<b class="fc">&nbsp;			readCodePoint();</b>
+&nbsp;
+&nbsp;			// Close the list
+<b class="fc">&nbsp;			reportStatement(bNode, RDF.REST, RDF.NIL);</b>
+&nbsp;
+&nbsp;			// Restore previous subject and predicate
+<b class="fc">&nbsp;			subject = oldSubject;</b>
+<b class="fc">&nbsp;			predicate = oldPredicate;</b>
+&nbsp;
+<b class="fc">&nbsp;			return listRoot;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an implicit blank node. This method parses the token &lt;var&gt;[]&lt;/var&gt; and predicateObjectLists that are
+&nbsp;	 * surrounded by square brackets.
+&nbsp;	 */
+&nbsp;	protected Resource parseImplicitBlank() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;[&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		Resource bNode = createNode();</b>
+<b class="pc">&nbsp;		if (subject != null) {</b>
+<b class="fc">&nbsp;			reportStatement(subject, predicate, bNode);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		skipWSC();</b>
+<b class="fc">&nbsp;		int c = readCodePoint();</b>
+<b class="fc">&nbsp;		if (c != &#39;]&#39;) {</b>
+<b class="fc">&nbsp;			unread(c);</b>
+&nbsp;
+&nbsp;			// Remember current subject and predicate
+<b class="fc">&nbsp;			Resource oldSubject = subject;</b>
+<b class="fc">&nbsp;			IRI oldPredicate = predicate;</b>
+&nbsp;
+&nbsp;			// generated bNode becomes subject
+<b class="fc">&nbsp;			subject = bNode;</b>
+&nbsp;
+&nbsp;			// Enter recursion with nested predicate-object list
+<b class="fc">&nbsp;			skipWSC();</b>
+&nbsp;
+<b class="fc">&nbsp;			parsePredicateObjectList();</b>
+&nbsp;
+<b class="fc">&nbsp;			skipWSC();</b>
+&nbsp;
+&nbsp;			// Read closing bracket
+<b class="fc">&nbsp;			verifyCharacterOrFail(readCodePoint(), &quot;]&quot;);</b>
+&nbsp;
+&nbsp;			// Restore previous subject and predicate
+<b class="fc">&nbsp;			subject = oldSubject;</b>
+<b class="fc">&nbsp;			predicate = oldPredicate;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return bNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses an RDF value. This method parses uriref, qname, node ID, quoted literal, integer, double and boolean.
+&nbsp;	 */
+&nbsp;	protected Value parseValue() throws IOException, RDFParseException, RDFHandlerException {
+<b class="pc">&nbsp;		if (getParserConfig().get(TurtleParserSettings.ACCEPT_TURTLESTAR) &amp;&amp; peekIsTripleValue()) {</b>
+<b class="nc">&nbsp;			return parseTripleValue();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		int c = peekCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (c == &#39;&lt;&#39;) {</b>
+&nbsp;			// uriref, e.g. &lt;foo://bar&gt;
+<b class="fc">&nbsp;			return parseURI();</b>
+<b class="fc">&nbsp;		} else if (c == &#39;:&#39; || TurtleUtil.isPrefixStartChar(c)) {</b>
+&nbsp;			// qname or boolean
+<b class="fc">&nbsp;			return parseQNameOrBoolean();</b>
+<b class="fc">&nbsp;		} else if (c == &#39;_&#39;) {</b>
+&nbsp;			// node ID, e.g. _:n1
+<b class="fc">&nbsp;			return parseNodeID();</b>
+<b class="pc">&nbsp;		} else if (c == &#39;&quot;&#39; || c == &#39;\&#39;&#39;) {</b>
+&nbsp;			// quoted literal, e.g. &quot;foo&quot; or &quot;&quot;&quot;foo&quot;&quot;&quot; or &#39;foo&#39; or &#39;&#39;&#39;foo&#39;&#39;&#39;
+<b class="fc">&nbsp;			return parseQuotedLiteral();</b>
+<b class="pc">&nbsp;		} else if (ASCIIUtil.isNumber(c) || c == &#39;.&#39; || c == &#39;+&#39; || c == &#39;-&#39;) {</b>
+&nbsp;			// integer or double, e.g. 123 or 1.2e3
+<b class="fc">&nbsp;			return parseNumber();</b>
+<b class="nc">&nbsp;		} else if (c == -1) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			reportFatalError(&quot;Expected an RDF value here, found &#39;&quot; + new String(Character.toChars(c)) + &quot;&#39;&quot;);</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a quoted string, optionally followed by a language tag or datatype.
+&nbsp;	 */
+&nbsp;	protected Literal parseQuotedLiteral() throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		String label = parseQuotedString();</b>
+&nbsp;
+&nbsp;		// Check for presence of a language tag or datatype
+<b class="fc">&nbsp;		int c = peekCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (c == &#39;@&#39;) {</b>
+<b class="fc">&nbsp;			readCodePoint();</b>
+&nbsp;
+&nbsp;			// Read language
+<b class="fc">&nbsp;			StringBuilder lang = getBuilder();</b>
+&nbsp;
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+<b class="pc">&nbsp;			if (c == -1) {</b>
+<b class="nc">&nbsp;				throwEOFException();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			boolean verifyLanguageTag = getParserConfig().get(BasicParserSettings.VERIFY_LANGUAGE_TAGS);</b>
+<b class="pc">&nbsp;			if (verifyLanguageTag &amp;&amp; !TurtleUtil.isLanguageStartChar(c)) {</b>
+<b class="nc">&nbsp;				reportError(&quot;Expected a letter, found &#39;&quot; + new String(Character.toChars(c)) + &quot;&#39;&quot;,</b>
+&nbsp;						BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			appendCodepoint(lang, c);</b>
+&nbsp;
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+<b class="fc">&nbsp;			while (!TurtleUtil.isWhitespace(c)) {</b>
+&nbsp;				// SES-1887 : Flexibility introduced for SES-1985 and SES-1821
+&nbsp;				// needs
+&nbsp;				// to be counterbalanced against legitimate situations where
+&nbsp;				// Turtle
+&nbsp;				// language tags do not need whitespace following the language
+&nbsp;				// tag
+<b class="pc">&nbsp;				if (c == &#39;.&#39; || c == &#39;;&#39; || c == &#39;,&#39; || c == &#39;)&#39; || c == &#39;]&#39; || c == &#39;&gt;&#39; || c == -1) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="pc">&nbsp;				if (verifyLanguageTag &amp;&amp; !TurtleUtil.isLanguageChar(c)) {</b>
+<b class="nc">&nbsp;					reportError(&quot;Illegal language tag char: &#39;&quot; + new String(Character.toChars(c)) + &quot;&#39;&quot;,</b>
+&nbsp;							BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+&nbsp;				}
+<b class="fc">&nbsp;				appendCodepoint(lang, c);</b>
+<b class="fc">&nbsp;				c = readCodePoint();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			unread(c);</b>
+&nbsp;
+<b class="fc">&nbsp;			return createLiteral(label, lang.toString(), null, getLineNumber(), -1);</b>
+<b class="fc">&nbsp;		} else if (c == &#39;^&#39;) {</b>
+<b class="fc">&nbsp;			readCodePoint();</b>
+&nbsp;
+&nbsp;			// next character should be another &#39;^&#39;
+<b class="fc">&nbsp;			verifyCharacterOrFail(readCodePoint(), &quot;^&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;			skipWSC();</b>
+&nbsp;
+&nbsp;			// Read datatype
+<b class="fc">&nbsp;			Value datatype = parseValue();</b>
+<b class="pc">&nbsp;			if (datatype == null) {</b>
+&nbsp;				// the datatype IRI could not be parsed. report as error only if VERIFY_URI_SYNTAX is enabled, silently
+&nbsp;				// skip otherwise.
+<b class="nc">&nbsp;				reportError(&quot;Invalid datatype IRI for literal &#39;&quot; + label + &quot;&#39;&quot;, BasicParserSettings.VERIFY_URI_SYNTAX);</b>
+<b class="nc">&nbsp;				return null;</b>
+<b class="pc">&nbsp;			} else if (!(datatype instanceof IRI)) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Illegal datatype value: &quot; + datatype);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return createLiteral(label, null, (IRI) datatype, getLineNumber(), -1);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return createLiteral(label, null, null, getLineNumber(), -1);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a quoted string, which is either a &quot;normal string&quot; or a &quot;&quot;&quot;long string&quot;&quot;&quot;.
+&nbsp;	 *
+&nbsp;	 * @return string
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RDFParseException
+&nbsp;	 */
+&nbsp;	protected String parseQuotedString() throws IOException, RDFParseException {
+&nbsp;		String result;
+&nbsp;
+<b class="fc">&nbsp;		int c1 = readCodePoint();</b>
+&nbsp;
+&nbsp;		// First character should be &#39;&quot;&#39; or &quot;&#39;&quot;
+<b class="fc">&nbsp;		verifyCharacterOrFail(c1, &quot;\&quot;\&#39;&quot;);</b>
+&nbsp;
+&nbsp;		// Check for long-string, which starts and ends with three double quotes
+<b class="fc">&nbsp;		int c2 = readCodePoint();</b>
+<b class="fc">&nbsp;		int c3 = readCodePoint();</b>
+&nbsp;
+<b class="pc">&nbsp;		if ((c1 == &#39;&quot;&#39; &amp;&amp; c2 == &#39;&quot;&#39; &amp;&amp; c3 == &#39;&quot;&#39;) || (c1 == &#39;\&#39;&#39; &amp;&amp; c2 == &#39;\&#39;&#39; &amp;&amp; c3 == &#39;\&#39;&#39;)) {</b>
+&nbsp;			// Long string
+<b class="nc">&nbsp;			result = parseLongString(c2);</b>
+&nbsp;		} else {
+&nbsp;			// Normal string
+<b class="fc">&nbsp;			unread(c3);</b>
+<b class="fc">&nbsp;			unread(c2);</b>
+&nbsp;
+<b class="fc">&nbsp;			result = parseString(c1);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Unescape any escape sequences
+&nbsp;		try {
+<b class="fc">&nbsp;			result = TurtleUtil.decodeString(result);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			reportError(e.getMessage(), BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a &quot;normal string&quot;. This method requires that the opening character has already been parsed.
+&nbsp;	 *
+&nbsp;	 * @return parsed string
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RDFParseException
+&nbsp;	 */
+&nbsp;	protected String parseString(int closingCharacter) throws IOException, RDFParseException {
+<b class="fc">&nbsp;		StringBuilder sb = getBuilder();</b>
+&nbsp;
+&nbsp;		while (true) {
+<b class="fc">&nbsp;			int c = readCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (c == closingCharacter) {</b>
+<b class="fc">&nbsp;				break;</b>
+<b class="pc">&nbsp;			} else if (c == -1) {</b>
+<b class="nc">&nbsp;				throwEOFException();</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (c == &#39;\r&#39; || c == &#39;\n&#39;) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Illegal carriage return or new line in literal&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (c == &#39;\r&#39; || c == &#39;\n&#39;) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Illegal carriage return or new line in literal&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			appendCodepoint(sb, c);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (c == &#39;\\&#39;) {</b>
+&nbsp;				// This escapes the next character, which might be a &#39;&quot;&#39;
+<b class="fc">&nbsp;				c = readCodePoint();</b>
+<b class="pc">&nbsp;				if (c == -1) {</b>
+<b class="nc">&nbsp;					throwEOFException();</b>
+&nbsp;				}
+<b class="fc">&nbsp;				appendCodepoint(sb, c);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a &quot;&quot;&quot;long string&quot;&quot;&quot;. This method requires that the first three characters have already been parsed.
+&nbsp;	 */
+&nbsp;	protected String parseLongString(int closingCharacter) throws IOException, RDFParseException {
+<b class="nc">&nbsp;		StringBuilder sb = getBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		int doubleQuoteCount = 0;</b>
+&nbsp;		int c;
+&nbsp;
+<b class="nc">&nbsp;		while (doubleQuoteCount &lt; 3) {</b>
+<b class="nc">&nbsp;			c = readCodePoint();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (c == -1) {</b>
+<b class="nc">&nbsp;				throwEOFException();</b>
+<b class="nc">&nbsp;			} else if (c == closingCharacter) {</b>
+<b class="nc">&nbsp;				doubleQuoteCount++;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				doubleQuoteCount = 0;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			appendCodepoint(sb, c);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (c == &#39;\n&#39;) {</b>
+<b class="nc">&nbsp;				lineNumber++;</b>
+<b class="nc">&nbsp;				reportLocation();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (c == &#39;\\&#39;) {</b>
+&nbsp;				// This escapes the next character, which might be a &#39;&quot;&#39;
+<b class="nc">&nbsp;				c = readCodePoint();</b>
+<b class="nc">&nbsp;				if (c == -1) {</b>
+<b class="nc">&nbsp;					throwEOFException();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				appendCodepoint(sb, c);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return sb.substring(0, sb.length() - 3);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Literal parseNumber() throws IOException, RDFParseException {
+<b class="fc">&nbsp;		StringBuilder value = getBuilder();</b>
+<b class="fc">&nbsp;		IRI datatype = XSD.INTEGER;</b>
+&nbsp;
+<b class="fc">&nbsp;		int c = readCodePoint();</b>
+&nbsp;
+&nbsp;		// read optional sign character
+<b class="pc">&nbsp;		if (c == &#39;+&#39; || c == &#39;-&#39;) {</b>
+<b class="fc">&nbsp;			appendCodepoint(value, c);</b>
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		while (ASCIIUtil.isNumber(c)) {</b>
+<b class="fc">&nbsp;			appendCodepoint(value, c);</b>
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (c == &#39;.&#39; || c == &#39;e&#39; || c == &#39;E&#39;) {</b>
+&nbsp;
+&nbsp;			// read optional fractional digits
+<b class="fc">&nbsp;			if (c == &#39;.&#39;) {</b>
+&nbsp;
+<b class="pc">&nbsp;				if (TurtleUtil.isWhitespace(peekCodePoint())) {</b>
+&nbsp;					// We&#39;re parsing an integer that did not have a space before
+&nbsp;					// the
+&nbsp;					// period to end the statement
+&nbsp;				} else {
+<b class="fc">&nbsp;					appendCodepoint(value, c);</b>
+&nbsp;
+<b class="fc">&nbsp;					c = readCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;					while (ASCIIUtil.isNumber(c)) {</b>
+<b class="fc">&nbsp;						appendCodepoint(value, c);</b>
+<b class="fc">&nbsp;						c = readCodePoint();</b>
+&nbsp;					}
+&nbsp;
+<b class="pc">&nbsp;					if (value.length() == 1) {</b>
+&nbsp;						// We&#39;ve only parsed a &#39;.&#39;
+<b class="nc">&nbsp;						reportFatalError(&quot;Object for statement missing&quot;);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					// We&#39;re parsing a decimal or a double
+<b class="fc">&nbsp;					datatype = XSD.DECIMAL;</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="pc">&nbsp;				if (value.length() == 0) {</b>
+&nbsp;					// We&#39;ve only parsed an &#39;e&#39; or &#39;E&#39;
+<b class="nc">&nbsp;					reportFatalError(&quot;Object for statement missing&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// read optional exponent
+<b class="pc">&nbsp;			if (c == &#39;e&#39; || c == &#39;E&#39;) {</b>
+<b class="fc">&nbsp;				datatype = XSD.DOUBLE;</b>
+<b class="fc">&nbsp;				appendCodepoint(value, c);</b>
+&nbsp;
+<b class="fc">&nbsp;				c = readCodePoint();</b>
+<b class="pc">&nbsp;				if (c == &#39;+&#39; || c == &#39;-&#39;) {</b>
+<b class="fc">&nbsp;					appendCodepoint(value, c);</b>
+<b class="fc">&nbsp;					c = readCodePoint();</b>
+&nbsp;				}
+&nbsp;
+<b class="pc">&nbsp;				if (!ASCIIUtil.isNumber(c)) {</b>
+<b class="nc">&nbsp;					reportError(&quot;Exponent value missing&quot;, BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				appendCodepoint(value, c);</b>
+&nbsp;
+<b class="fc">&nbsp;				c = readCodePoint();</b>
+<b class="pc">&nbsp;				while (ASCIIUtil.isNumber(c)) {</b>
+<b class="nc">&nbsp;					appendCodepoint(value, c);</b>
+<b class="nc">&nbsp;					c = readCodePoint();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Unread last character, it isn&#39;t part of the number
+<b class="fc">&nbsp;		unread(c);</b>
+&nbsp;
+&nbsp;		// String label = value.toString();
+&nbsp;		// if (datatype.equals(XMLSchema.INTEGER)) {
+&nbsp;		// try {
+&nbsp;		// label = XMLDatatypeUtil.normalizeInteger(label);
+&nbsp;		// }
+&nbsp;		// catch (IllegalArgumentException e) {
+&nbsp;		// // Note: this should never happen because of the parse constraints
+&nbsp;		// reportError(&quot;Illegal integer value: &quot; + label);
+&nbsp;		// }
+&nbsp;		// }
+&nbsp;		// return createLiteral(label, null, datatype);
+&nbsp;
+&nbsp;		// Return result as a typed literal
+<b class="fc">&nbsp;		return createLiteral(value.toString(), null, datatype, getLineNumber(), -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected IRI parseURI() throws IOException, RDFParseException {
+<b class="fc">&nbsp;		StringBuilder uriBuf = getBuilder();</b>
+&nbsp;
+&nbsp;		// First character should be &#39;&lt;&#39;
+<b class="fc">&nbsp;		int c = readCodePoint();</b>
+<b class="fc">&nbsp;		verifyCharacterOrFail(c, &quot;&lt;&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		boolean uriIsIllegal = false;</b>
+&nbsp;		// Read up to the next &#39;&gt;&#39; character
+&nbsp;		while (true) {
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (c == &#39;&gt;&#39;) {</b>
+<b class="fc">&nbsp;				break;</b>
+<b class="pc">&nbsp;			} else if (c == -1) {</b>
+<b class="nc">&nbsp;				throwEOFException();</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (c == &#39; &#39;) {</b>
+<b class="nc">&nbsp;				reportError(&quot;IRI included an unencoded space: &#39;&quot; + c + &quot;&#39;&quot;, BasicParserSettings.VERIFY_URI_SYNTAX);</b>
+<b class="nc">&nbsp;				uriIsIllegal = true;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			appendCodepoint(uriBuf, c);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (c == &#39;\\&#39;) {</b>
+&nbsp;				// This escapes the next character, which might be a &#39;&gt;&#39;
+<b class="nc">&nbsp;				c = readCodePoint();</b>
+<b class="nc">&nbsp;				if (c == -1) {</b>
+<b class="nc">&nbsp;					throwEOFException();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (c != &#39;u&#39; &amp;&amp; c != &#39;U&#39;) {</b>
+<b class="nc">&nbsp;					reportError(&quot;IRI includes string escapes: &#39;\\&quot; + c + &quot;&#39;&quot;, BasicParserSettings.VERIFY_URI_SYNTAX);</b>
+<b class="nc">&nbsp;					uriIsIllegal = true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				appendCodepoint(uriBuf, c);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (c == &#39;.&#39;) {</b>
+<b class="nc">&nbsp;			reportError(&quot;IRI must not end in a &#39;.&#39;&quot;, BasicParserSettings.VERIFY_URI_SYNTAX);</b>
+<b class="nc">&nbsp;			uriIsIllegal = true;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// do not report back the actual URI if it&#39;s illegal and the parser is
+&nbsp;		// configured to verify URI syntax.
+<b class="pc">&nbsp;		if (!(uriIsIllegal &amp;&amp; getParserConfig().get(BasicParserSettings.VERIFY_URI_SYNTAX))) {</b>
+<b class="fc">&nbsp;			String uri = uriBuf.toString();</b>
+&nbsp;
+&nbsp;			// Unescape any escape sequences
+&nbsp;			try {
+&nbsp;				// FIXME: The following decodes \n and similar in URIs, which
+&nbsp;				// should
+&nbsp;				// be
+&nbsp;				// invalid according to test &lt;turtle-syntax-bad-uri-04.ttl&gt;
+<b class="fc">&nbsp;				uri = TurtleUtil.decodeString(uri);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				reportError(e.getMessage(), BasicParserSettings.VERIFY_DATATYPE_VALUES);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			return super.resolveURI(uri);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses qnames and boolean values, which have equivalent starting characters.
+&nbsp;	 */
+&nbsp;	protected Value parseQNameOrBoolean() throws IOException, RDFParseException {
+&nbsp;		// First character should be a &#39;:&#39; or a letter
+<b class="fc">&nbsp;		int c = readCodePoint();</b>
+<b class="pc">&nbsp;		if (c == -1) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (c != &#39;:&#39; &amp;&amp; !TurtleUtil.isPrefixStartChar(c)) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Expected a &#39;:&#39; or a letter, found &#39;&quot; + new String(Character.toChars(c)) + &quot;&#39;&quot;,</b>
+&nbsp;					BasicParserSettings.VERIFY_RELATIVE_URIS);
+&nbsp;		}
+&nbsp;
+&nbsp;		String namespace;
+&nbsp;
+<b class="fc">&nbsp;		if (c == &#39;:&#39;) {</b>
+&nbsp;			// qname using default namespace
+<b class="fc">&nbsp;			namespace = getNamespace(&quot;&quot;);</b>
+&nbsp;		} else {
+&nbsp;			// c is the first letter of the prefix
+<b class="fc">&nbsp;			StringBuilder prefix = new StringBuilder(8);</b>
+<b class="fc">&nbsp;			appendCodepoint(prefix, c);</b>
+&nbsp;
+<b class="fc">&nbsp;			int previousChar = c;</b>
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+<b class="fc">&nbsp;			while (TurtleUtil.isPrefixChar(c)) {</b>
+<b class="fc">&nbsp;				appendCodepoint(prefix, c);</b>
+<b class="fc">&nbsp;				previousChar = c;</b>
+<b class="fc">&nbsp;				c = readCodePoint();</b>
+&nbsp;			}
+<b class="pc">&nbsp;			while (previousChar == &#39;.&#39; &amp;&amp; prefix.length() &gt; 0) {</b>
+&nbsp;				// &#39;.&#39; is a legal prefix name char, but can not appear at the end
+<b class="nc">&nbsp;				unread(c);</b>
+<b class="nc">&nbsp;				c = previousChar;</b>
+<b class="nc">&nbsp;				prefix.setLength(prefix.length() - 1);</b>
+<b class="nc">&nbsp;				previousChar = prefix.codePointAt(prefix.codePointCount(0, prefix.length()) - 1);</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (c != &#39;:&#39;) {</b>
+&nbsp;				// prefix may actually be a boolean value
+<b class="nc">&nbsp;				String value = prefix.toString();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (value.equals(&quot;true&quot;)) {</b>
+<b class="nc">&nbsp;					unread(c);</b>
+<b class="nc">&nbsp;					return createLiteral(&quot;true&quot;, null, XSD.BOOLEAN, getLineNumber(), -1);</b>
+<b class="nc">&nbsp;				} else if (value.equals(&quot;false&quot;)) {</b>
+<b class="nc">&nbsp;					unread(c);</b>
+<b class="nc">&nbsp;					return createLiteral(&quot;false&quot;, null, XSD.BOOLEAN, getLineNumber(), -1);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			verifyCharacterOrFail(c, &quot;:&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;			namespace = getNamespace(prefix.toString());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// c == &#39;:&#39;, read optional local name
+<b class="fc">&nbsp;		StringBuilder localName = new StringBuilder(16);</b>
+<b class="fc">&nbsp;		c = readCodePoint();</b>
+<b class="pc">&nbsp;		if (TurtleUtil.isNameStartChar(c)) {</b>
+<b class="pc">&nbsp;			if (c == &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;				localName.append(readLocalEscapedChar());</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				appendCodepoint(localName, c);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			int previousChar = c;</b>
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+<b class="fc">&nbsp;			while (TurtleUtil.isNameChar(c)) {</b>
+<b class="pc">&nbsp;				if (c == &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;					localName.append(readLocalEscapedChar());</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					appendCodepoint(localName, c);</b>
+&nbsp;				}
+<b class="fc">&nbsp;				previousChar = c;</b>
+<b class="fc">&nbsp;				c = readCodePoint();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Unread last character
+<b class="fc">&nbsp;			unread(c);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (previousChar == &#39;.&#39;) {</b>
+&nbsp;				// &#39;.&#39; is a legal name char, but can not appear at the end, so
+&nbsp;				// is
+&nbsp;				// not actually part of the name
+<b class="fc">&nbsp;				unread(previousChar);</b>
+<b class="fc">&nbsp;				localName.deleteCharAt(localName.length() - 1);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		} else {</b>
+&nbsp;			// Unread last character
+<b class="nc">&nbsp;			unread(c);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		String localNameString = localName.toString();</b>
+&nbsp;
+<b class="fc">&nbsp;		for (int i = 0; i &lt; localNameString.length(); i++) {</b>
+<b class="pc">&nbsp;			if (localNameString.charAt(i) == &#39;%&#39;) {</b>
+<b class="nc">&nbsp;				if (i &gt; localNameString.length() - 3 || !ASCIIUtil.isHex(localNameString.charAt(i + 1))</b>
+<b class="nc">&nbsp;						|| !ASCIIUtil.isHex(localNameString.charAt(i + 2))) {</b>
+<b class="nc">&nbsp;					reportFatalError(&quot;Found incomplete percent-encoded sequence: &quot; + localNameString);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// if (c == &#39;.&#39;) {
+&nbsp;		// reportFatalError(&quot;Blank node identifier must not end in a &#39;.&#39;&quot;);
+&nbsp;		// }
+&nbsp;
+&nbsp;		// Note: namespace has already been resolved
+<b class="fc">&nbsp;		return createURI(namespace + localNameString);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private char readLocalEscapedChar() throws RDFParseException, IOException {
+<b class="nc">&nbsp;		int c = readCodePoint();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (TurtleUtil.isLocalEscapedChar(c)) {</b>
+<b class="nc">&nbsp;			return (char) c;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RDFParseException(&quot;found &#39;&quot; + new String(Character.toChars(c)) + &quot;&#39;, expected one of: &quot;</b>
+<b class="nc">&nbsp;					+ Arrays.toString(TurtleUtil.LOCAL_ESCAPED_CHARS));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a blank node ID, e.g. &lt;var&gt;_:node1&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	protected Resource parseNodeID() throws IOException, RDFParseException {
+&nbsp;		// Node ID should start with &quot;_:&quot;
+<b class="fc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;_&quot;);</b>
+<b class="fc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;:&quot;);</b>
+&nbsp;
+&nbsp;		// Read the node ID
+<b class="fc">&nbsp;		int c = readCodePoint();</b>
+<b class="pc">&nbsp;		if (c == -1) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+<b class="pc">&nbsp;		} else if (!TurtleUtil.isBLANK_NODE_LABEL_StartChar(c)) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Expected a letter, found &#39;&quot; + (char) c + &quot;&#39;&quot;, BasicParserSettings.PRESERVE_BNODE_IDS);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		StringBuilder name = getBuilder();</b>
+<b class="fc">&nbsp;		appendCodepoint(name, c);</b>
+&nbsp;
+&nbsp;		// Read all following letter and numbers, they are part of the name
+<b class="fc">&nbsp;		c = readCodePoint();</b>
+&nbsp;
+&nbsp;		// If we would never go into the loop we must unread now
+<b class="fc">&nbsp;		if (!TurtleUtil.isBLANK_NODE_LABEL_Char(c)) {</b>
+<b class="fc">&nbsp;			unread(c);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		while (TurtleUtil.isBLANK_NODE_LABEL_Char(c)) {</b>
+<b class="fc">&nbsp;			int previous = c;</b>
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (previous == &#39;.&#39; &amp;&amp; (c == -1 || TurtleUtil.isWhitespace(c) || c == &#39;&lt;&#39; || c == &#39;_&#39;)) {</b>
+<b class="fc">&nbsp;				unread(c);</b>
+<b class="fc">&nbsp;				unread(previous);</b>
+<b class="fc">&nbsp;				break;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			appendCodepoint(name, previous);</b>
+<b class="fc">&nbsp;			if (!TurtleUtil.isBLANK_NODE_LABEL_Char(c)) {</b>
+<b class="fc">&nbsp;				unread(c);</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return createNode(name.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void reportStatement(Resource subj, IRI pred, Value obj) throws RDFParseException, RDFHandlerException {
+<b class="pc">&nbsp;		if (subj != null &amp;&amp; pred != null &amp;&amp; obj != null) {</b>
+<b class="fc">&nbsp;			previousStatement = createStatement(subj, pred, obj);</b>
+<b class="pc">&nbsp;			if (rdfHandler != null) {</b>
+<b class="fc">&nbsp;				rdfHandler.handleStatement(previousStatement);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that the supplied character code point &lt;var&gt;codePoint&lt;/var&gt; is one of the expected characters specified
+&nbsp;	 * in &lt;var&gt;expected&lt;/var&gt;. This method will throw a &lt;var&gt;ParseException&lt;/var&gt; if this is not the case.
+&nbsp;	 */
+&nbsp;	protected void verifyCharacterOrFail(int codePoint, String expected) throws RDFParseException {
+<b class="pc">&nbsp;		if (codePoint == -1) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		final String supplied = new String(Character.toChars(codePoint));</b>
+&nbsp;
+<b class="pc">&nbsp;		if (expected.indexOf(supplied) == -1) {</b>
+<b class="nc">&nbsp;			StringBuilder msg = new StringBuilder(32);</b>
+<b class="nc">&nbsp;			msg.append(&quot;Expected &quot;);</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; expected.length(); i++) {</b>
+<b class="nc">&nbsp;				if (i &gt; 0) {</b>
+<b class="nc">&nbsp;					msg.append(&quot; or &quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				msg.append(&#39;\&#39;&#39;);</b>
+<b class="nc">&nbsp;				msg.append(expected.charAt(i));</b>
+<b class="nc">&nbsp;				msg.append(&#39;\&#39;&#39;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			msg.append(&quot;, found &#39;&quot;);</b>
+<b class="nc">&nbsp;			msg.append(supplied);</b>
+<b class="nc">&nbsp;			msg.append(&quot;&#39;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			reportFatalError(msg.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Consumes any white space characters (space, tab, line feed, newline) and comments (#-style) from
+&nbsp;	 * &lt;var&gt;reader&lt;/var&gt;. After this method has been called, the first character that is returned by &lt;var&gt;reader&lt;/var&gt;
+&nbsp;	 * is either a non-ignorable character, or EOF. For convenience, this character is also returned by this method.
+&nbsp;	 *
+&nbsp;	 * @return The next character code point that will be returned by &lt;var&gt;reader&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	protected int skipWSC() throws IOException, RDFHandlerException {
+<b class="fc">&nbsp;		int c = readCodePoint();</b>
+<b class="fc">&nbsp;		while (TurtleUtil.isWhitespace(c) || c == &#39;#&#39;) {</b>
+<b class="fc">&nbsp;			if (c == &#39;#&#39;) {</b>
+<b class="fc">&nbsp;				processComment();</b>
+<b class="fc">&nbsp;			} else if (c == &#39;\n&#39;) {</b>
+&nbsp;				// we only count line feeds (LF), not carriage return (CR), as
+&nbsp;				// normally a CR is immediately followed by a LF.
+<b class="fc">&nbsp;				lineNumber++;</b>
+<b class="fc">&nbsp;				reportLocation();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		unread(c);</b>
+&nbsp;
+<b class="fc">&nbsp;		return c;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Consumes characters from reader until the first EOL has been read. This line of text is then passed to the
+&nbsp;	 * {@link #rdfHandler} as a comment.
+&nbsp;	 */
+&nbsp;	protected void processComment() throws IOException, RDFHandlerException {
+<b class="fc">&nbsp;		StringBuilder comment = getBuilder();</b>
+<b class="fc">&nbsp;		int c = readCodePoint();</b>
+<b class="pc">&nbsp;		while (c != -1 &amp;&amp; c != 0xD &amp;&amp; c != 0xA) {</b>
+<b class="fc">&nbsp;			appendCodepoint(comment, c);</b>
+<b class="fc">&nbsp;			c = readCodePoint();</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (c == 0xA) {</b>
+<b class="fc">&nbsp;			lineNumber++;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// c is equal to -1, \r or \n.
+&nbsp;		// In case c is equal to \r, we should also read a following \n.
+<b class="pc">&nbsp;		if (c == 0xD) {</b>
+<b class="nc">&nbsp;			c = readCodePoint();</b>
+<b class="nc">&nbsp;			lineNumber++;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (c != 0xA) {</b>
+<b class="nc">&nbsp;				unread(c);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="pc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="fc">&nbsp;			rdfHandler.handleComment(comment.toString());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		reportLocation();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the next Unicode code point.
+&nbsp;	 *
+&nbsp;	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected int readCodePoint() throws IOException {
+<b class="fc">&nbsp;		int next = reader.read();</b>
+<b class="pc">&nbsp;		if (Character.isHighSurrogate((char) next)) {</b>
+<b class="nc">&nbsp;			next = Character.toCodePoint((char) next, (char) reader.read());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return next;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Pushes back a single code point by copying it to the front of the buffer. After this method returns, a call to
+&nbsp;	 * {@link #readCodePoint()} will return the same code point c again.
+&nbsp;	 *
+&nbsp;	 * @param codePoint a single Unicode code point.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void unread(int codePoint) throws IOException {
+<b class="fc">&nbsp;		if (codePoint != -1) {</b>
+<b class="pc">&nbsp;			if (Character.isSupplementaryCodePoint(codePoint)) {</b>
+<b class="nc">&nbsp;				final char[] surrogatePair = Character.toChars(codePoint);</b>
+<b class="nc">&nbsp;				reader.unread(surrogatePair);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				reader.unread(codePoint);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Pushes back the supplied string by copying it to the front of the buffer. After this method returns, successive
+&nbsp;	 * calls to {@link #readCodePoint()} will return the code points in the supplied string again, starting at the first
+&nbsp;	 * in the String..
+&nbsp;	 *
+&nbsp;	 * @param string the string to un-read.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected void unread(String string) throws IOException {
+<b class="fc">&nbsp;		int i = string.length();</b>
+<b class="fc">&nbsp;		while (i &gt; 0) {</b>
+<b class="fc">&nbsp;			final int codePoint = string.codePointBefore(i);</b>
+<b class="pc">&nbsp;			if (Character.isSupplementaryCodePoint(codePoint)) {</b>
+<b class="nc">&nbsp;				final char[] surrogatePair = Character.toChars(codePoint);</b>
+<b class="nc">&nbsp;				reader.unread(surrogatePair);</b>
+<b class="nc">&nbsp;				i -= surrogatePair.length;</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				reader.unread(codePoint);</b>
+<b class="fc">&nbsp;				i--;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Peeks at the next Unicode code point without advancing the reader, and returns its value.
+&nbsp;	 *
+&nbsp;	 * @return the next Unicode code point, or -1 if the end of the stream has been reached.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected int peekCodePoint() throws IOException {
+<b class="fc">&nbsp;		int result = readCodePoint();</b>
+<b class="fc">&nbsp;		unread(result);</b>
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void reportLocation() {
+<b class="fc">&nbsp;		reportLocation(getLineNumber(), -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportWarning(String msg) {
+<b class="nc">&nbsp;		reportWarning(msg, getLineNumber(), -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportError(String msg, RioSetting&lt;Boolean&gt; setting) throws RDFParseException {
+<b class="nc">&nbsp;		reportError(msg, getLineNumber(), -1, setting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportFatalError(String msg) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(msg, getLineNumber(), -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportFatalError(Exception e) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(e, getLineNumber(), -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void throwEOFException() throws RDFParseException {
+<b class="nc">&nbsp;		throw new RDFParseException(&quot;Unexpected end of file&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected int getLineNumber() {
+<b class="fc">&nbsp;		return lineNumber;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private StringBuilder getBuilder() {
+<b class="fc">&nbsp;		parsingBuilder.setLength(0);</b>
+<b class="fc">&nbsp;		return parsingBuilder;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the characters from codepoint into the string builder. This is the same as Character#toChars but prevents
+&nbsp;	 * the additional char array garbage for BMP codepoints.
+&nbsp;	 *
+&nbsp;	 * @param dst       the destination in which to append the characters
+&nbsp;	 * @param codePoint the codepoint to be appended
+&nbsp;	 */
+&nbsp;	private static void appendCodepoint(StringBuilder dst, int codePoint) {
+<b class="pc">&nbsp;		if (Character.isBmpCodePoint(codePoint)) {</b>
+<b class="fc">&nbsp;			dst.append((char) codePoint);</b>
+<b class="nc">&nbsp;		} else if (Character.isValidCodePoint(codePoint)) {</b>
+<b class="nc">&nbsp;			dst.append(Character.highSurrogate(codePoint));</b>
+<b class="nc">&nbsp;			dst.append(Character.lowSurrogate(codePoint));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Invalid codepoint &quot; + codePoint);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Peeks at the next two Unicode code points without advancing the reader and returns true if they indicate the
+&nbsp;	 * start of an RDF-star triple value. Such values start with &#39;&lt;&lt;&#39;.
+&nbsp;	 *
+&nbsp;	 * @return true if the next code points indicate the beginning of an RDF-star triple value, false otherwise
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected boolean peekIsTripleValue() throws IOException {
+<b class="fc">&nbsp;		int c0 = readCodePoint();</b>
+<b class="fc">&nbsp;		int c1 = readCodePoint();</b>
+<b class="fc">&nbsp;		unread(c1);</b>
+<b class="fc">&nbsp;		unread(c0);</b>
+&nbsp;
+<b class="pc">&nbsp;		return c0 == &#39;&lt;&#39; &amp;&amp; c1 == &#39;&lt;&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser an RDF-star triple value and returns it.
+&nbsp;	 *
+&nbsp;	 * @return An RDF-star triple.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	protected Triple parseTripleValue() throws IOException {
+<b class="nc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;&lt;&quot;);</b>
+<b class="nc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;&lt;&quot;);</b>
+<b class="nc">&nbsp;		skipWSC();</b>
+<b class="nc">&nbsp;		Value subject = parseValue();</b>
+<b class="nc">&nbsp;		if (subject instanceof Resource) {</b>
+<b class="nc">&nbsp;			skipWSC();</b>
+<b class="nc">&nbsp;			Value predicate = parseValue();</b>
+<b class="nc">&nbsp;			if (predicate instanceof IRI) {</b>
+<b class="nc">&nbsp;				skipWSC();</b>
+<b class="nc">&nbsp;				Value object = parseValue();</b>
+<b class="nc">&nbsp;				if (object != null) {</b>
+<b class="nc">&nbsp;					skipWSC();</b>
+<b class="nc">&nbsp;					verifyCharacterOrFail(readCodePoint(), &quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;					verifyCharacterOrFail(readCodePoint(), &quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;					return valueFactory.createTriple((Resource) subject, (IRI) predicate, object);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					reportFatalError(&quot;Missing object in RDF-star triple&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Illegal predicate value in RDF-star triple: &quot; + predicate);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			reportFatalError(&quot;Illegal subject val in RDF-star triple: &quot; + subject);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseAnnotation() throws IOException {
+<b class="nc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;{&quot;);</b>
+<b class="nc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;|&quot;);</b>
+<b class="nc">&nbsp;		skipWSC();</b>
+&nbsp;
+&nbsp;		// keep reference to original subject and predicate while processing the annotation content
+<b class="nc">&nbsp;		final Resource currentSubject = subject;</b>
+<b class="nc">&nbsp;		final IRI currentPredicate = predicate;</b>
+<b class="nc">&nbsp;		subject = Values.triple(previousStatement);</b>
+<b class="nc">&nbsp;		parsePredicateObjectList();</b>
+<b class="nc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;|&quot;);</b>
+<b class="nc">&nbsp;		verifyCharacterOrFail(readCodePoint(), &quot;}&quot;);</b>
+<b class="nc">&nbsp;		subject = currentSubject;</b>
+<b class="nc">&nbsp;		predicate = currentPredicate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

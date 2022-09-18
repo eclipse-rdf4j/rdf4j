@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > InterceptingRepositoryConnection</title>
+  <title>Coverage Report > RepositoryConnectionListener</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository.event</a>
 </div>
 
-<h1>Coverage Summary for Class: InterceptingRepositoryConnection (org.eclipse.rdf4j.repository.event)</h1>
+<h1>Coverage Summary for Class: RepositoryConnectionListener (org.eclipse.rdf4j.repository.event)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">InterceptingRepositoryConnection</td>
+  <td class="name">RepositoryConnectionListener</td>
 </tr>
 
 </table>
@@ -50,24 +50,52 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.repository.event;
 &nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.Update;
 &nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
 &nbsp;
 &nbsp;/**
-&nbsp; * @author Herko ter Horst
+&nbsp; * Listener interface for connection modification.
+&nbsp; *
+&nbsp; * @author James Leigh
 &nbsp; */
-&nbsp;public interface InterceptingRepositoryConnection extends RepositoryConnection {
+&nbsp;public interface RepositoryConnectionListener {
+&nbsp;
+&nbsp;	void close(RepositoryConnection conn);
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Registers a &lt;var&gt;RepositoryConnectionInterceptor&lt;/var&gt; that will receive notifications of operations that are
-&nbsp;	 * performed on this connection.
+&nbsp;	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
+&nbsp;	 * @param conn
+&nbsp;	 * @param autoCommit
 &nbsp;	 */
-&nbsp;	void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
+&nbsp;	@Deprecated
+&nbsp;	void setAutoCommit(RepositoryConnection conn, boolean autoCommit);
 &nbsp;
-&nbsp;	/**
-&nbsp;	 * Removes a registered &lt;var&gt;RepositoryConnectionInterceptor&lt;/var&gt; from this connection.
-&nbsp;	 */
-&nbsp;	void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor);
+&nbsp;	void begin(RepositoryConnection conn);
 &nbsp;
+&nbsp;	void commit(RepositoryConnection conn);
+&nbsp;
+&nbsp;	void rollback(RepositoryConnection conn);
+&nbsp;
+&nbsp;	void add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
+&nbsp;			Resource... contexts);
+&nbsp;
+&nbsp;	void remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
+&nbsp;			Resource... contexts);
+&nbsp;
+&nbsp;	void clear(RepositoryConnection conn, Resource... contexts);
+&nbsp;
+&nbsp;	void setNamespace(RepositoryConnection conn, String prefix, String name);
+&nbsp;
+&nbsp;	void removeNamespace(RepositoryConnection conn, String prefix);
+&nbsp;
+&nbsp;	void clearNamespaces(RepositoryConnection conn);
+&nbsp;
+&nbsp;	void execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
+&nbsp;			Update operation);
 &nbsp;}
 </code>
 </pre>
@@ -92,7 +120,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

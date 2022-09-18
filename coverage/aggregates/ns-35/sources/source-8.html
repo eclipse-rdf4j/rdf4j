@@ -1,0 +1,371 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlTripleSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlTripleSource (org.eclipse.rdf4j.federated.evaluation)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlTripleSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/59)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SparqlTripleSource$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.SparqlEndpointConfiguration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
+&nbsp;import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;
+&nbsp;/**
+&nbsp; * A triple source to be used for (remote) SPARQL endpoints.
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * This triple source supports the {@link SparqlEndpointConfiguration} for defining whether ASK queries are to be used
+&nbsp; * for source selection.
+&nbsp; *
+&nbsp; * The query result of {@link #getStatements(String, BindingSet, FilterValueExpr, QueryInfo)} is wrapped in a
+&nbsp; * {@link ConsumingIteration} to avoid blocking behavior..
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class SparqlTripleSource extends TripleSourceBase {
+&nbsp;
+<b class="nc">&nbsp;	private boolean useASKQueries = true;</b>
+&nbsp;
+&nbsp;	SparqlTripleSource(Endpoint endpoint, FederationContext federationContext) {
+<b class="nc">&nbsp;		super(federationContext, endpoint);</b>
+<b class="nc">&nbsp;		if (endpoint.getEndpointConfiguration() instanceof SparqlEndpointConfiguration) {</b>
+<b class="nc">&nbsp;			SparqlEndpointConfiguration c = (SparqlEndpointConfiguration) endpoint.getEndpointConfiguration();</b>
+<b class="nc">&nbsp;			this.useASKQueries = c.supportsASKQueries();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(
+&nbsp;			StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;NOT YET IMPLEMENTED.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatements(Resource subj,
+&nbsp;			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+&nbsp;			throws RepositoryException {
+&nbsp;
+<b class="nc">&nbsp;		if (!useASKQueries) {</b>
+<b class="nc">&nbsp;			StatementPattern st = new StatementPattern(new Var(&quot;s&quot;, subj), new Var(&quot;p&quot;, pred), new Var(&quot;o&quot;, obj));</b>
+<b class="nc">&nbsp;			Dataset dataset = FedXUtil.toDataset(contexts);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				return hasStatements(st, EmptyBindingSet.getInstance(), queryInfo, dataset);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(e);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return super.hasStatements(subj, pred, obj, queryInfo, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatements(StatementPattern stmt,
+&nbsp;			BindingSet bindings, QueryInfo queryInfo, Dataset dataset) throws RepositoryException,
+&nbsp;			MalformedQueryException, QueryEvaluationException {
+&nbsp;
+&nbsp;		// decide whether to use ASK queries or a SELECT query
+<b class="nc">&nbsp;		if (useASKQueries) {</b>
+&nbsp;			/* remote boolean query */
+<b class="nc">&nbsp;			String queryString = QueryStringUtil.askQueryString(stmt, bindings, dataset);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (RepositoryConnection conn = endpoint.getConnection()) {</b>
+<b class="nc">&nbsp;				BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, queryString, null);</b>
+<b class="nc">&nbsp;				configureInference(query, queryInfo);</b>
+<b class="nc">&nbsp;				applyMaxExecutionTimeUpperBound(query);</b>
+&nbsp;
+<b class="nc">&nbsp;				monitorRemoteRequest();</b>
+<b class="nc">&nbsp;				boolean hasStatements = query.evaluate();</b>
+<b class="nc">&nbsp;				return hasStatements;</b>
+<b class="nc">&nbsp;			} catch (Throwable ex) {</b>
+&nbsp;				// convert into QueryEvaluationException with additional info
+<b class="nc">&nbsp;				throw ExceptionUtil.traceExceptionSourceAndRepair(endpoint, ex, &quot;Subquery: &quot; + queryString);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		} else {
+&nbsp;			/* remote select limit 1 query */
+<b class="nc">&nbsp;			try (RepositoryConnection conn = endpoint.getConnection()) {</b>
+<b class="nc">&nbsp;				String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings, dataset);</b>
+<b class="nc">&nbsp;				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);</b>
+<b class="nc">&nbsp;				configureInference(query, queryInfo);</b>
+<b class="nc">&nbsp;				applyMaxExecutionTimeUpperBound(query);</b>
+&nbsp;
+<b class="nc">&nbsp;				monitorRemoteRequest();</b>
+<b class="nc">&nbsp;				try (TupleQueryResult qRes = query.evaluate()) {</b>
+&nbsp;
+<b class="nc">&nbsp;					boolean hasStatements = qRes.hasNext();</b>
+<b class="nc">&nbsp;					return hasStatements;</b>
+<b class="nc">&nbsp;				} catch (Throwable ex) {</b>
+&nbsp;					// convert into QueryEvaluationException with additional info
+<b class="nc">&nbsp;					throw ExceptionUtil.traceExceptionSourceAndRepair(endpoint, ex, &quot;Subquery: &quot; + queryString);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatements(ExclusiveTupleExpr expr,
+&nbsp;			BindingSet bindings)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		if (!useASKQueries) {</b>
+&nbsp;
+&nbsp;			/* remote select limit 1 query */
+<b class="nc">&nbsp;			try (RepositoryConnection conn = endpoint.getConnection()) {</b>
+<b class="nc">&nbsp;				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,</b>
+<b class="nc">&nbsp;						expr.getQueryInfo().getDataset());</b>
+<b class="nc">&nbsp;				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);</b>
+<b class="nc">&nbsp;				configureInference(query, expr.getQueryInfo());</b>
+<b class="nc">&nbsp;				applyMaxExecutionTimeUpperBound(query);</b>
+&nbsp;
+<b class="nc">&nbsp;				monitorRemoteRequest();</b>
+<b class="nc">&nbsp;				try (TupleQueryResult qRes = query.evaluate()) {</b>
+&nbsp;
+<b class="nc">&nbsp;					boolean hasStatements = qRes.hasNext();</b>
+<b class="nc">&nbsp;					return hasStatements;</b>
+<b class="nc">&nbsp;				} catch (Throwable ex) {</b>
+&nbsp;					// convert into QueryEvaluationException with additional info
+<b class="nc">&nbsp;					throw ExceptionUtil.traceExceptionSourceAndRepair(endpoint, ex, &quot;Subquery: &quot; + queryString);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// default handling: use ASK query
+<b class="nc">&nbsp;		return super.hasStatements(expr, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo) {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(
+&nbsp;			TupleExpr preparedQuery, BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;NOT YET IMPLEMENTED.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;Statement, QueryEvaluationException&gt; getStatements(
+&nbsp;			Resource subj, IRI pred, Value obj, QueryInfo queryInfo,
+&nbsp;			Resource... contexts) throws RepositoryException,
+&nbsp;			MalformedQueryException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return withConnection((conn, resultHolder) -&gt; {</b>
+<b class="nc">&nbsp;			monitorRemoteRequest();</b>
+<b class="nc">&nbsp;			RepositoryResult&lt;Statement&gt; repoResult = conn.getStatements(subj, pred, obj,</b>
+<b class="nc">&nbsp;					queryInfo.getIncludeInferred(), contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;			resultHolder.set(new ExceptionConvertingIteration&lt;&gt;(repoResult) {</b>
+&nbsp;				@Override
+&nbsp;				protected QueryEvaluationException convert(Exception ex) {
+<b class="nc">&nbsp;					if (ex instanceof QueryEvaluationException) {</b>
+<b class="nc">&nbsp;						return (QueryEvaluationException) ex;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return new QueryEvaluationException(ex);</b>
+&nbsp;				}
+&nbsp;			});
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;Sparql Triple Source: Endpoint - &quot; + endpoint.getId();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

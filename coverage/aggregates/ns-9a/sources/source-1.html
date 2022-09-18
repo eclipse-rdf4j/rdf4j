@@ -1,0 +1,193 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NotifyingLocalRepositoryManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.manager.util</a>
+</div>
+
+<h1>Coverage Summary for Class: NotifyingLocalRepositoryManager (org.eclipse.rdf4j.repository.manager.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NotifyingLocalRepositoryManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.manager.util;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.util.ArrayList;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
+&nbsp;
+&nbsp;/**
+&nbsp; * NotifyingLocalRepositoryManager extends LocalRepositoryManager with support for registering listeners. In time this
+&nbsp; * class is likely to become redundant as RepositoryManager may be extended with listener support. This functionality
+&nbsp; * can currently not be implemented as a wrapper around any existing RepositoryManager due to the fact that
+&nbsp; * RepositoryManager defines abstract protected methods. A wrapper class cannot implement these methods in a meaningful
+&nbsp; * way by itself and, because of the protected access, cannot invoke it on the wrapped RepositoryManager either.
+&nbsp; */
+&nbsp;public class NotifyingLocalRepositoryManager extends LocalRepositoryManager {
+&nbsp;
+&nbsp;	private final ArrayList&lt;RepositoryManagerListener&gt; listeners;
+&nbsp;
+&nbsp;	public NotifyingLocalRepositoryManager(File baseDir) {
+<b class="nc">&nbsp;		super(baseDir);</b>
+<b class="nc">&nbsp;		listeners = new ArrayList&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addRepositoryManagerListener(RepositoryManagerListener listener) {
+<b class="nc">&nbsp;		listeners.add(listener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removeRepositoryManagerListener(RepositoryManagerListener listener) {
+<b class="nc">&nbsp;		listeners.remove(listener);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws RepositoryException {
+<b class="nc">&nbsp;		super.init();</b>
+<b class="nc">&nbsp;		fireInitialized();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void refresh() {
+<b class="nc">&nbsp;		super.refresh();</b>
+<b class="nc">&nbsp;		fireRefreshed();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() {
+<b class="nc">&nbsp;		super.shutDown();</b>
+<b class="nc">&nbsp;		fireShutDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void fireInitialized() {
+<b class="nc">&nbsp;		for (RepositoryManagerListener listener : listeners) {</b>
+<b class="nc">&nbsp;			listener.initialized(this);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void fireRefreshed() {
+<b class="nc">&nbsp;		for (RepositoryManagerListener listener : listeners) {</b>
+<b class="nc">&nbsp;			listener.refreshed(this);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void fireShutDown() {
+<b class="nc">&nbsp;		for (RepositoryManagerListener listener : listeners) {</b>
+<b class="nc">&nbsp;			listener.shutDown(this);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

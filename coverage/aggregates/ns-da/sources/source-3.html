@@ -1,0 +1,468 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ClassConstraintComponent</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents</a>
+</div>
+
+<h1>Coverage Summary for Class: ClassConstraintComponent (org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ClassConstraintComponent</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/150)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SHACL;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.paths.Path;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalInnerJoin;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicateObject;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ReduceTargets;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+&nbsp;
+&nbsp;public class ClassConstraintComponent extends AbstractConstraintComponent {
+&nbsp;
+&nbsp;	private final IRI clazz;
+&nbsp;	private final Set&lt;Resource&gt; clazzSet;
+&nbsp;
+<b class="nc">&nbsp;	public ClassConstraintComponent(IRI clazz) {</b>
+<b class="nc">&nbsp;		this.clazz = clazz;</b>
+<b class="nc">&nbsp;		this.clazzSet = Set.of(clazz);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void toModel(Resource subject, IRI predicate, Model model, Set&lt;Resource&gt; cycleDetection) {
+<b class="nc">&nbsp;		model.add(subject, SHACL.CLASS, clazz);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SourceConstraintComponent getConstraintComponent() {
+<b class="nc">&nbsp;		return SourceConstraintComponent.ClassConstraintComponent;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ConstraintComponent deepClone() {
+<b class="nc">&nbsp;		return new ClassConstraintComponent(clazz);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings,
+&nbsp;			PlanNodeProvider overrideTargetNode, Scope scope) {
+<b class="nc">&nbsp;		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();</b>
+&nbsp;
+<b class="nc">&nbsp;		EffectiveTarget target = getTargetChain().getEffectiveTarget(scope,</b>
+<b class="nc">&nbsp;				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (scope == Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			Path path = getTargetChain().getPath().get();</b>
+&nbsp;
+&nbsp;			PlanNode addedTargets;
+&nbsp;
+<b class="nc">&nbsp;			if (overrideTargetNode != null) {</b>
+<b class="nc">&nbsp;				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), scope,</b>
+&nbsp;						EffectiveTarget.Extend.right,
+&nbsp;						false, null);
+&nbsp;
+&nbsp;			} else {
+<b class="nc">&nbsp;				BufferedSplitter addedTargetsBufferedSplitter = new BufferedSplitter(</b>
+<b class="nc">&nbsp;						target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false, null));</b>
+<b class="nc">&nbsp;				addedTargets = addedTargetsBufferedSplitter.getPlanNode();</b>
+<b class="nc">&nbsp;				PlanNode addedByPath = path.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);</b>
+&nbsp;
+<b class="nc">&nbsp;				addedByPath = target.getTargetFilter(connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), Unique.getInstance(new TrimToTarget(addedByPath), false));</b>
+&nbsp;
+<b class="nc">&nbsp;				addedByPath = new ReduceTargets(addedByPath, addedTargetsBufferedSplitter.getPlanNode());</b>
+&nbsp;
+<b class="nc">&nbsp;				addedByPath = target.extend(addedByPath, connectionsGroup, validationSettings.getDataGraph(), scope,</b>
+&nbsp;						EffectiveTarget.Extend.left, false,
+&nbsp;						null);
+&nbsp;
+<b class="nc">&nbsp;				if (connectionsGroup.getStats().hasRemoved()) {</b>
+<b class="nc">&nbsp;					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,</b>
+<b class="nc">&nbsp;							clazz, validationSettings.getDataGraph(),</b>
+<b class="nc">&nbsp;							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));</b>
+&nbsp;
+<b class="nc">&nbsp;					deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;							.getEffectiveTarget(Scope.nodeShape,</b>
+<b class="nc">&nbsp;									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)</b>
+<b class="nc">&nbsp;							.extend(deletedTypes, connectionsGroup, validationSettings.getDataGraph(), Scope.nodeShape,</b>
+&nbsp;									EffectiveTarget.Extend.left,
+&nbsp;									false, null);
+&nbsp;
+<b class="nc">&nbsp;					deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;							.getEffectiveTarget(Scope.nodeShape,</b>
+<b class="nc">&nbsp;									connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider)</b>
+<b class="nc">&nbsp;							.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(), deletedTypes);</b>
+&nbsp;
+<b class="nc">&nbsp;					addedTargets = UnionNode.getInstance(addedTargets,</b>
+&nbsp;							new TrimToTarget(new ShiftToPropertyShape(deletedTypes)));
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				addedTargets = UnionNode.getInstance(addedByPath, addedTargets);</b>
+<b class="nc">&nbsp;				addedTargets = Unique.getInstance(addedTargets, false);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			PlanNode falseNode = new BulkedExternalInnerJoin(</b>
+&nbsp;					addedTargets,
+<b class="nc">&nbsp;					connectionsGroup.getBaseConnection(),</b>
+<b class="nc">&nbsp;					validationSettings.getDataGraph(),</b>
+<b class="nc">&nbsp;					path.getTargetQueryFragment(new StatementMatcher.Variable(&quot;a&quot;), new StatementMatcher.Variable(&quot;c&quot;),</b>
+<b class="nc">&nbsp;							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),</b>
+&nbsp;					false,
+&nbsp;					null,
+<b class="nc">&nbsp;					BulkedExternalInnerJoin.getMapper(&quot;a&quot;, &quot;c&quot;, scope, validationSettings.getDataGraph())</b>
+&nbsp;			);
+&nbsp;
+<b class="nc">&nbsp;			if (connectionsGroup.getAddedStatements() != null) {</b>
+&nbsp;				// filter by type against the added statements
+<b class="nc">&nbsp;				falseNode = new FilterByPredicateObject(</b>
+<b class="nc">&nbsp;						connectionsGroup.getAddedStatements(),</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), RDF.TYPE, clazzSet,</b>
+&nbsp;						falseNode, false, FilterByPredicateObject.FilterOn.value, false);
+&nbsp;			}
+&nbsp;
+&nbsp;			// filter by type against the base sail
+<b class="nc">&nbsp;			falseNode = new FilterByPredicateObject(</b>
+<b class="nc">&nbsp;					connectionsGroup.getBaseConnection(),</b>
+<b class="nc">&nbsp;					validationSettings.getDataGraph(), RDF.TYPE, clazzSet,</b>
+&nbsp;					falseNode, false, FilterByPredicateObject.FilterOn.value, true);
+&nbsp;
+<b class="nc">&nbsp;			return falseNode;</b>
+&nbsp;
+<b class="nc">&nbsp;		} else if (scope == Scope.nodeShape) {</b>
+&nbsp;
+&nbsp;			PlanNode addedTargets;
+&nbsp;
+<b class="nc">&nbsp;			if (overrideTargetNode != null) {</b>
+<b class="nc">&nbsp;				addedTargets = target.extend(overrideTargetNode.getPlanNode(), connectionsGroup,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph(), scope,</b>
+&nbsp;						EffectiveTarget.Extend.right,
+&nbsp;						false, null);
+&nbsp;			} else {
+<b class="nc">&nbsp;				addedTargets = target.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, false,</b>
+&nbsp;						null);
+&nbsp;
+<b class="nc">&nbsp;				if (connectionsGroup.getStats().hasRemoved()) {</b>
+<b class="nc">&nbsp;					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,</b>
+<b class="nc">&nbsp;							clazz, validationSettings.getDataGraph(),</b>
+<b class="nc">&nbsp;							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));</b>
+<b class="nc">&nbsp;					deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;							.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;									stableRandomVariableProvider)
+<b class="nc">&nbsp;							.getTargetFilter(connectionsGroup, validationSettings.getDataGraph(), deletedTypes);</b>
+<b class="nc">&nbsp;					deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;							.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;									stableRandomVariableProvider)
+<b class="nc">&nbsp;							.extend(deletedTypes, connectionsGroup, validationSettings.getDataGraph(), scope,</b>
+&nbsp;									EffectiveTarget.Extend.left, false, null);
+<b class="nc">&nbsp;					addedTargets = UnionNode.getInstance(addedTargets, new TrimToTarget(deletedTypes));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// filter by type against the base sail
+<b class="nc">&nbsp;			PlanNode falseNode = new FilterByPredicateObject(</b>
+<b class="nc">&nbsp;					connectionsGroup.getBaseConnection(),</b>
+<b class="nc">&nbsp;					validationSettings.getDataGraph(), RDF.TYPE, clazzSet,</b>
+&nbsp;					addedTargets, false, FilterByPredicateObject.FilterOn.value, true);
+&nbsp;
+<b class="nc">&nbsp;			return falseNode;</b>
+&nbsp;
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;Unknown scope: &quot; + scope);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+<b class="nc">&nbsp;		if (scope == Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			PlanNode allTargetsPlan = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);</b>
+&nbsp;
+&nbsp;			// removed type statements that match clazz could affect sh:or
+<b class="nc">&nbsp;			if (connectionsGroup.getStats().hasRemoved()) {</b>
+<b class="nc">&nbsp;				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,</b>
+<b class="nc">&nbsp;						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));</b>
+<b class="nc">&nbsp;				deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;								stableRandomVariableProvider)
+<b class="nc">&nbsp;						.getTargetFilter(connectionsGroup, dataGraph, deletedTypes);</b>
+<b class="nc">&nbsp;				deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;								stableRandomVariableProvider)
+<b class="nc">&nbsp;						.extend(deletedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,</b>
+&nbsp;								false,
+&nbsp;								null);
+<b class="nc">&nbsp;				allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedTypes);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// added type statements that match clazz could affect sh:not
+<b class="nc">&nbsp;			if (connectionsGroup.getStats().hasAdded()) {</b>
+<b class="nc">&nbsp;				PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE,</b>
+<b class="nc">&nbsp;						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));</b>
+<b class="nc">&nbsp;				addedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;								stableRandomVariableProvider)
+<b class="nc">&nbsp;						.getTargetFilter(connectionsGroup, dataGraph, addedTypes);</b>
+<b class="nc">&nbsp;				addedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;								stableRandomVariableProvider)
+<b class="nc">&nbsp;						.extend(addedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,</b>
+&nbsp;								false,
+&nbsp;								null);
+<b class="nc">&nbsp;				allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedTypes);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return Unique.getInstance(new TrimToTarget(new ShiftToPropertyShape(allTargetsPlan)), false);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		PlanNode allTargetsPlan = EmptyNode.getInstance();</b>
+&nbsp;
+&nbsp;		// removed type statements that match clazz could affect sh:or
+<b class="nc">&nbsp;		if (connectionsGroup.getStats().hasRemoved()) {</b>
+<b class="nc">&nbsp;			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,</b>
+<b class="nc">&nbsp;					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));</b>
+<b class="nc">&nbsp;			deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.getTargetFilter(connectionsGroup, dataGraph, deletedTypes);</b>
+<b class="nc">&nbsp;			deletedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.extend(deletedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,</b>
+&nbsp;							false, null);
+<b class="nc">&nbsp;			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, deletedTypes);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		// added type statements that match clazz could affect sh:not
+<b class="nc">&nbsp;		if (connectionsGroup.getStats().hasAdded()) {</b>
+<b class="nc">&nbsp;			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE, clazz,</b>
+<b class="nc">&nbsp;					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape));</b>
+<b class="nc">&nbsp;			addedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.getTargetFilter(connectionsGroup, dataGraph, addedTypes);</b>
+<b class="nc">&nbsp;			addedTypes = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.extend(addedTypes, connectionsGroup, dataGraph, Scope.nodeShape, EffectiveTarget.Extend.left,</b>
+&nbsp;							false, null);
+<b class="nc">&nbsp;			allTargetsPlan = UnionNode.getInstanceDedupe(allTargetsPlan, addedTypes);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return Unique.getInstance(allTargetsPlan, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+<b class="nc">&nbsp;		return super.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider)</b>
+<b class="nc">&nbsp;				|| connectionsGroup.getRemovedStatements().hasStatement(null, RDF.TYPE, clazz, true, dataGraph)</b>
+<b class="nc">&nbsp;				|| connectionsGroup.getAddedStatements().hasStatement(null, RDF.TYPE, clazz, true, dataGraph);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+&nbsp;
+<b class="nc">&nbsp;		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();</b>
+&nbsp;
+<b class="nc">&nbsp;		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,</b>
+<b class="nc">&nbsp;				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);</b>
+<b class="nc">&nbsp;		String query = effectiveTarget.getQuery(false);</b>
+&nbsp;
+&nbsp;		StatementMatcher.Variable value;
+&nbsp;
+<b class="nc">&nbsp;		if (scope == Scope.nodeShape) {</b>
+&nbsp;
+<b class="nc">&nbsp;			value = null;</b>
+&nbsp;
+<b class="nc">&nbsp;			StatementMatcher.Variable target = effectiveTarget.getTargetVar();</b>
+&nbsp;
+<b class="nc">&nbsp;			query += getFilter(connectionsGroup, target);</b>
+&nbsp;
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			value = new StatementMatcher.Variable(&quot;value&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			String pathQuery = getTargetChain().getPath()</b>
+<b class="nc">&nbsp;					.map(p -&gt; p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,</b>
+<b class="nc">&nbsp;							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))</b>
+<b class="nc">&nbsp;					.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;			query += pathQuery;</b>
+<b class="nc">&nbsp;			query += getFilter(connectionsGroup, value);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		List&lt;StatementMatcher.Variable&gt; allTargetVariables = effectiveTarget.getAllTargetVariables();</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ValidationQuery(query, allTargetVariables, value, scope, getConstraintComponent(), null, null);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getFilter(ConnectionsGroup connectionsGroup, StatementMatcher.Variable target) {
+&nbsp;
+<b class="nc">&nbsp;		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = connectionsGroup.getRdfsSubClassOfReasoner();</b>
+&nbsp;		Set&lt;Resource&gt; allClasses;
+&nbsp;
+<b class="nc">&nbsp;		if (rdfsSubClassOfReasoner != null) {</b>
+<b class="nc">&nbsp;			allClasses = rdfsSubClassOfReasoner.backwardsChain(clazz);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			allClasses = clazzSet;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String condition = allClasses.stream()</b>
+<b class="nc">&nbsp;				.map(c -&gt; &quot;EXISTS{?&quot; + target.getName() + &quot; a &lt;&quot; + c.stringValue() + &quot;&gt;}&quot;)</b>
+<b class="nc">&nbsp;				.reduce((a, b) -&gt; a + &quot; || &quot; + b)</b>
+<b class="nc">&nbsp;				.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;		return &quot;\nFILTER(!(&quot; + condition + &quot;))&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationApproach getOptimalBulkValidationApproach() {
+<b class="nc">&nbsp;		return ValidationApproach.SPARQL;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

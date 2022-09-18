@@ -1,0 +1,228 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryValueEvaluationStep</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryValueEvaluationStep (org.eclipse.rdf4j.query.algebra.evaluation)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryValueEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryValueEvaluationStep$ConstantQueryValueEvaluationStep</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">QueryValueEvaluationStep$Minimal</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (7/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (11/11)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;
+&nbsp;/**
+&nbsp; * A step in the query evaluation that works on ValueExpresions.
+&nbsp; */
+&nbsp;public interface QueryValueEvaluationStep {
+&nbsp;	Value evaluate(BindingSet bindings)
+&nbsp;			throws QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If an value expression results in a constant then it may be executed once per query invocation. This can reduce
+&nbsp;	 * computation time significantly.
+&nbsp;	 *
+&nbsp;	 * @return if this ValueExpresionStep will always return the same value
+&nbsp;	 */
+&nbsp;	default boolean isConstant() {
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A QueryValueEvalationStep that will return the same constant value throughout the query execution. As these
+&nbsp;	 * rather result just in a value we set the value at precompile time.
+&nbsp;	 */
+&nbsp;	class ConstantQueryValueEvaluationStep implements QueryValueEvaluationStep {
+&nbsp;		private final Value value;
+&nbsp;
+<b class="fc">&nbsp;		public ConstantQueryValueEvaluationStep(ValueConstant valueConstant) {</b>
+<b class="fc">&nbsp;			this.value = valueConstant.getValue();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		public ConstantQueryValueEvaluationStep(Value valueConstant) {</b>
+<b class="fc">&nbsp;			this.value = valueConstant;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;			return value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isConstant() {
+<b class="fc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A minimal implementation that falls back to calling evaluate in the strategy.
+&nbsp;	 */
+&nbsp;	final class Minimal implements QueryValueEvaluationStep {
+&nbsp;		private final ValueExpr ve;
+&nbsp;		private final EvaluationStrategy strategy;
+&nbsp;
+&nbsp;		public Minimal(EvaluationStrategy strategy, ValueExpr ve) {
+<b class="fc">&nbsp;			super();</b>
+<b class="fc">&nbsp;			this.strategy = strategy;</b>
+<b class="fc">&nbsp;			this.ve = ve;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Value evaluate(BindingSet bindings) throws QueryEvaluationException {
+<b class="fc">&nbsp;			return strategy.evaluate(ve, bindings);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

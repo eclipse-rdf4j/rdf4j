@@ -1,0 +1,209 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConcurrentCache</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: ConcurrentCache (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConcurrentCache</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;
+&nbsp;/**
+&nbsp; * Limited-size concurrent cache. The actual cleanup to keep the size limited is done once per
+&nbsp; * &lt;code&gt;CLEANUP_INTERVAL&lt;/code&gt; invocations of the protected method &lt;code&gt;cleanUp&lt;/code&gt;. &lt;code&gt;cleanUp&lt;/code&gt; method
+&nbsp; * is called every time by &lt;code&gt;put&lt;/code&gt; The maximum size is maintained approximately. Cleanup is not done if size is
+&nbsp; * less than &lt;code&gt;capacity + CLEANUP_INTERVAL / 2&lt;/code&gt;.
+&nbsp; *
+&nbsp; * @author Oleg Mirzov
+&nbsp; */
+&nbsp;public class ConcurrentCache&lt;K, V&gt; {
+&nbsp;
+&nbsp;	private static final int CLEANUP_INTERVAL = 1024;
+&nbsp;
+&nbsp;	private static final float LOAD_FACTOR = 0.75f;
+&nbsp;
+&nbsp;	private final int capacity;
+&nbsp;
+<b class="nc">&nbsp;	private volatile int cleanupTick = 0;</b>
+&nbsp;
+&nbsp;	protected final ConcurrentHashMap&lt;K, V&gt; cache;
+&nbsp;
+<b class="nc">&nbsp;	public ConcurrentCache(int capacity) {</b>
+<b class="nc">&nbsp;		this.capacity = capacity;</b>
+<b class="nc">&nbsp;		this.cache = new ConcurrentHashMap&lt;&gt;((int) (capacity / LOAD_FACTOR), LOAD_FACTOR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public V get(Object key) {
+<b class="nc">&nbsp;		return cache.get(key);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public V put(K key, V value) {
+<b class="nc">&nbsp;		cleanUp();</b>
+<b class="nc">&nbsp;		return cache.put(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void clear() {
+<b class="nc">&nbsp;		cache.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param key the key of the node to test for removal and do finalization on
+&nbsp;	 * @return true if removal is approved
+&nbsp;	 */
+&nbsp;	protected boolean onEntryRemoval(K key) {
+&nbsp;		// Hook method, doing nothing by default
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void cleanUp() {
+&nbsp;		// This is not thread-safe, but the worst that can happen is that we may (rarely) get slightly longer
+&nbsp;		// cleanup intervals or run cleanUp twice
+<b class="nc">&nbsp;		cleanupTick++;</b>
+<b class="nc">&nbsp;		if (cleanupTick &lt;= CLEANUP_INTERVAL) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		cleanupTick %= CLEANUP_INTERVAL;</b>
+&nbsp;
+<b class="nc">&nbsp;		synchronized (cache) {</b>
+&nbsp;
+<b class="nc">&nbsp;			final int size = cache.size();</b>
+<b class="nc">&nbsp;			if (size &lt; capacity + CLEANUP_INTERVAL / 2) {</b>
+<b class="nc">&nbsp;				return;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Iterator&lt;K&gt; iter = cache.keySet().iterator();</b>
+&nbsp;
+<b class="nc">&nbsp;			float removeEachTh = (float) size / (size - capacity);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; iter.hasNext(); i++) {</b>
+&nbsp;
+<b class="nc">&nbsp;				K key = iter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (i % removeEachTh &lt; 1) {</b>
+<b class="nc">&nbsp;					cache.computeIfPresent(key, (k, v) -&gt; onEntryRemoval(k) ? null : v);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

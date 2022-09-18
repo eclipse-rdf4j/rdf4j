@@ -1,0 +1,374 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLResultsTSVWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.text.tsv</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLResultsTSVWriter (org.eclipse.rdf4j.query.resultio.text.tsv)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLResultsTSVWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/94)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.text.tsv;
+&nbsp;
+&nbsp;import java.io.BufferedWriter;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.common.text.StringUtil;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+&nbsp;
+&nbsp;/**
+&nbsp; * TupleQueryResultWriter for the SPARQL TSV (Tab-Separated Values) format.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-results-csv-tsv/#tsv&quot;&gt;SPARQL 1.1 Query Results TSV Format&lt;/a&gt;
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
+&nbsp;
+&nbsp;	protected Writer writer;
+&nbsp;
+&nbsp;	private List&lt;String&gt; bindingNames;
+&nbsp;
+<b class="nc">&nbsp;	protected boolean tupleVariablesFound = false;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param out
+&nbsp;	 */
+&nbsp;	public SPARQLResultsTSVWriter(OutputStream out) {
+<b class="nc">&nbsp;		this(new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8), 1024));</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public SPARQLResultsTSVWriter(Writer writer) {</b>
+<b class="nc">&nbsp;		this.writer = writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startQueryResult(List&lt;String&gt; bindingNames) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		super.startQueryResult(bindingNames);</b>
+&nbsp;
+<b class="nc">&nbsp;		tupleVariablesFound = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.bindingNames = bindingNames;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; bindingNames.size(); i++) {</b>
+<b class="nc">&nbsp;				writer.write(&quot;?&quot;); // mandatory prefix in TSV</b>
+<b class="nc">&nbsp;				writer.write(bindingNames.get(i));</b>
+<b class="nc">&nbsp;				if (i &lt; bindingNames.size() - 1) {</b>
+<b class="nc">&nbsp;					writer.write(&quot;\t&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			writer.write(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endQueryResult() throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		if (!tupleVariablesFound) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Could not end query result as startQueryResult was not called first.&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			writer.flush();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleSolutionImpl(BindingSet bindingSet) throws TupleQueryResultHandlerException {
+<b class="nc">&nbsp;		if (!tupleVariablesFound) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Must call startQueryResult before handleSolution&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			for (int i = 0; i &lt; bindingNames.size(); i++) {</b>
+<b class="nc">&nbsp;				String name = bindingNames.get(i);</b>
+<b class="nc">&nbsp;				Value value = bindingSet.getValue(name);</b>
+<b class="nc">&nbsp;				if (value != null) {</b>
+<b class="nc">&nbsp;					writeValue(value);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (i &lt; bindingNames.size() - 1) {</b>
+<b class="nc">&nbsp;					writer.write(&quot;\t&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			writer.write(&quot;\n&quot;);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new TupleQueryResultHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQueryResultFormat getTupleQueryResultFormat() {
+<b class="nc">&nbsp;		return TupleQueryResultFormat.TSV;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public final TupleQueryResultFormat getQueryResultFormat() {
+<b class="nc">&nbsp;		return getTupleQueryResultFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeValue(Value val) throws IOException {
+<b class="nc">&nbsp;		if (val instanceof Triple) {</b>
+<b class="nc">&nbsp;			writer.write(&quot;&lt;&lt;&quot;);</b>
+<b class="nc">&nbsp;			writeValue(((Triple) val).getSubject());</b>
+<b class="nc">&nbsp;			writer.write(&#39; &#39;);</b>
+<b class="nc">&nbsp;			writeValue(((Triple) val).getPredicate());</b>
+<b class="nc">&nbsp;			writer.write(&#39; &#39;);</b>
+<b class="nc">&nbsp;			writeValue(((Triple) val).getObject());</b>
+<b class="nc">&nbsp;			writer.write(&quot;&gt;&gt;&quot;);</b>
+<b class="nc">&nbsp;		} else if (val instanceof Resource) {</b>
+<b class="nc">&nbsp;			writeResource((Resource) val);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeLiteral((Literal) val);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeResource(Resource res) throws IOException {
+<b class="nc">&nbsp;		if (res instanceof IRI) {</b>
+<b class="nc">&nbsp;			writeURI((IRI) res);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeBNode((BNode) res);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeURI(IRI uri) throws IOException {
+<b class="nc">&nbsp;		String uriString = uri.toString();</b>
+<b class="nc">&nbsp;		writer.write(&quot;&lt;&quot; + uriString + &quot;&gt;&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void writeBNode(BNode bNode) throws IOException {
+<b class="nc">&nbsp;		writer.write(&quot;_:&quot;);</b>
+<b class="nc">&nbsp;		writer.write(bNode.getID());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeLiteral(Literal lit) throws IOException {
+<b class="nc">&nbsp;		String label = lit.getLabel();</b>
+&nbsp;
+<b class="nc">&nbsp;		IRI datatype = lit.getDatatype();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (XSD.INTEGER.equals(datatype) || XSD.DECIMAL.equals(datatype)</b>
+<b class="nc">&nbsp;				|| XSD.DOUBLE.equals(datatype)) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				writer.write(XMLDatatypeUtil.normalize(label, datatype));</b>
+&nbsp;				return; // done
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+&nbsp;				// not a valid numeric typed literal. ignore error and write as
+&nbsp;				// quoted string instead.
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String encoded = encodeString(label);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (Literals.isLanguageLiteral(lit)) {</b>
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+<b class="nc">&nbsp;			writer.write(encoded);</b>
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;			// Append the literal&#39;s language
+<b class="nc">&nbsp;			writer.write(&quot;@&quot;);</b>
+<b class="nc">&nbsp;			writer.write(lit.getLanguage().get());</b>
+<b class="nc">&nbsp;		} else if (!XSD.STRING.equals(datatype) || !xsdStringToPlainLiteral()) {</b>
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+<b class="nc">&nbsp;			writer.write(encoded);</b>
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;			// Append the literal&#39;s datatype
+<b class="nc">&nbsp;			writer.write(&quot;^^&quot;);</b>
+<b class="nc">&nbsp;			writeURI(datatype);</b>
+<b class="nc">&nbsp;		} else if (label.length() &gt; 0 &amp;&amp; encoded.equals(label) &amp;&amp; label.charAt(0) != &#39;&lt;&#39; &amp;&amp; label.charAt(0) != &#39;_&#39;</b>
+<b class="nc">&nbsp;				&amp;&amp; !label.matches(&quot;^[\\+\\-]?[\\d\\.].*&quot;)) {</b>
+&nbsp;			// no need to include double quotes
+<b class="nc">&nbsp;			writer.write(encoded);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+<b class="nc">&nbsp;			writer.write(encoded);</b>
+<b class="nc">&nbsp;			writer.write(&quot;\&quot;&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String encodeString(String s) {
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\\&quot;, &quot;\\\\&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\t&quot;, &quot;\\t&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\n&quot;, &quot;\\n&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\r&quot;, &quot;\\r&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;, s);</b>
+<b class="nc">&nbsp;		return s;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startDocument() throws TupleQueryResultHandlerException {
+&nbsp;		// Ignored in SPARQLResultsTSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStylesheet(String stylesheetUrl) throws TupleQueryResultHandlerException {
+&nbsp;		// Ignored in SPARQLResultsTSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startHeader() throws TupleQueryResultHandlerException {
+&nbsp;		// Ignored in SPARQLResultsTSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleLinks(List&lt;String&gt; linkUrls) throws TupleQueryResultHandlerException {
+&nbsp;		// Ignored in SPARQLResultsTSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endHeader() throws TupleQueryResultHandlerException {
+&nbsp;		// Ignored in SPARQLResultsTSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleBoolean(boolean value) throws QueryResultHandlerException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Cannot handle boolean results&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws QueryResultHandlerException {
+&nbsp;		// Ignored in SPARQLResultsTSVWriter
+<b class="nc">&nbsp;	}</b>
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

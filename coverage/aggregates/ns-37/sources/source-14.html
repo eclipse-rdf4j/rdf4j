@@ -1,0 +1,179 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StopRemainingExecutionsOnCloseIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: StopRemainingExecutionsOnCloseIteration (org.eclipse.rdf4j.federated.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StopRemainingExecutionsOnCloseIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.concurrent.Future;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A wrapping iteration that attempts to close all running scheduled {@link Future}s for the given query evaluation.
+&nbsp; * &lt;p&gt;
+&nbsp; * This is required for instance if the resulting iteration is not fully consumed.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see QueryInfo#close()
+&nbsp; * @see ParallelTask#cancel()
+&nbsp; */
+&nbsp;public class StopRemainingExecutionsOnCloseIteration
+&nbsp;		extends AbstractCloseableIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	protected final CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; inner;
+&nbsp;	protected final QueryInfo queryInfo;
+&nbsp;
+&nbsp;	public StopRemainingExecutionsOnCloseIteration(
+&nbsp;			CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; inner, QueryInfo queryInfo) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.inner = inner;</b>
+<b class="nc">&nbsp;		this.queryInfo = queryInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasNext() throws QueryEvaluationException {
+<b class="nc">&nbsp;		return inner.hasNext();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet next() throws QueryEvaluationException {
+<b class="nc">&nbsp;		return inner.next();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void remove() throws QueryEvaluationException {
+<b class="nc">&nbsp;		inner.remove();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				inner.close();</b>
+&nbsp;			} finally {
+&nbsp;				// make sure to close all scheduled / running parallel executions
+&nbsp;				// (e.g. if the query result is not fully consumed)
+<b class="nc">&nbsp;				queryInfo.close();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

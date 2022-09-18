@@ -1,0 +1,320 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ExceptionUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.exception</a>
+</div>
+
+<h1>Coverage Summary for Class: ExceptionUtil (org.eclipse.rdf4j.federated.exception)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ExceptionUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.exception;
+&nbsp;
+&nbsp;import java.lang.reflect.Constructor;
+&nbsp;import java.util.concurrent.TimeoutException;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Convenience functions to handle exceptions.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+<b class="nc">&nbsp;public class ExceptionUtil {</b>
+&nbsp;
+<b class="nc">&nbsp;	protected static final Logger log = LoggerFactory.getLogger(ExceptionUtil.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Regex pattern to identify http error codes from the title of the returned document:
+&nbsp;	 *
+&nbsp;	 * &lt;code&gt;
+&nbsp;	 * Matcher m = httpErrorPattern.matcher(&quot;[..] &lt;title&gt;503 Service Unavailable&lt;/title&gt; [..]&quot;);
+&nbsp;	 * if (m.matches()) {
+&nbsp;	 * 		System.out.println(&quot;HTTP Error: &quot; + m.group(1);
+&nbsp;	 * }
+&nbsp;	 * &lt;/code&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	protected static final Pattern httpErrorPattern = Pattern.compile(&quot;.*&lt;title&gt;(.*)&lt;/title&gt;.*&quot;, Pattern.DOTALL);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Trace the exception source within the exceptions to identify the originating endpoint. The message of the
+&nbsp;	 * provided exception is adapted to &quot;@ endpoint.getId() - %orginalMessage&quot;.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * Note that in addition HTTP error codes are extracted from the title, if the exception resulted from an HTTP
+&nbsp;	 * error, such as for instance &quot;503 Service unavailable&quot;
+&nbsp;	 *
+&nbsp;	 * @param endpoint       the the endpoint
+&nbsp;	 * @param ex             the exception
+&nbsp;	 * @param additionalInfo additional information that might be helpful, e.g. the subquery
+&nbsp;	 *
+&nbsp;	 * @return a modified exception with endpoint source
+&nbsp;	 */
+&nbsp;	public static QueryEvaluationException traceExceptionSource(Endpoint endpoint, Throwable ex,
+&nbsp;			String additionalInfo) {
+&nbsp;
+<b class="nc">&nbsp;		if (ex instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		String eID;
+&nbsp;
+<b class="nc">&nbsp;		if (endpoint == null) {</b>
+<b class="nc">&nbsp;			log.warn(&quot;No endpoint found for connection, probably changed from different thread.&quot;);</b>
+<b class="nc">&nbsp;			eID = &quot;unknown&quot;;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			eID = endpoint.getId();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// check for http error code (heuristic)
+<b class="nc">&nbsp;		String message = ex.getMessage();</b>
+<b class="nc">&nbsp;		message = message == null ? &quot;n/a&quot; : message;</b>
+<b class="nc">&nbsp;		Matcher m = httpErrorPattern.matcher(message);</b>
+<b class="nc">&nbsp;		if (m.matches()) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;HTTP error detected for endpoint &quot; + eID + &quot;:\n&quot; + message);</b>
+<b class="nc">&nbsp;			message = &quot;HTTP Error: &quot; + m.group(1);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			log.trace(&quot;No http error found&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(ex instanceof QueryEvaluationException)) {</b>
+<b class="nc">&nbsp;			message += &quot;. Original exception type: &quot; + ex.getClass().getName();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		QueryEvaluationException res = new QueryEvaluationException(</b>
+<b class="nc">&nbsp;				&quot;@ &quot; + eID + &quot; - &quot; + message + &quot;. &quot; + additionalInfo, ex.getCause());</b>
+<b class="nc">&nbsp;		res.setStackTrace(ex.getStackTrace());</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Repair the connection and then trace the exception source.
+&nbsp;	 *
+&nbsp;	 * @param endpoint
+&nbsp;	 * @param ex
+&nbsp;	 * @return the exception
+&nbsp;	 */
+&nbsp;	public static QueryEvaluationException traceExceptionSourceAndRepair(Endpoint endpoint, Throwable ex,
+&nbsp;			String additionalInfo) {
+<b class="nc">&nbsp;		return traceExceptionSource(endpoint, ex, additionalInfo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the exception in a convenient representation, i.e. &#39;%msg% (%CLASS%): %ex.getMessage()%&#39;
+&nbsp;	 *
+&nbsp;	 * @param msg
+&nbsp;	 * @param ex
+&nbsp;	 *
+&nbsp;	 * @return the exception in a convenient representation
+&nbsp;	 */
+&nbsp;	public static String getExceptionString(String msg, Throwable ex) {
+<b class="nc">&nbsp;		return msg + &quot; &quot; + ex.getClass().getSimpleName() + &quot;: &quot; + ex.getMessage();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If possible change the message text of the specified exception. This is only possible if the provided exception
+&nbsp;	 * has a public constructor with String and Throwable as argument. The new message is set to &#39;msgPrefix.
+&nbsp;	 * ex.getMessage()&#39;, all other exception elements remain the same.
+&nbsp;	 *
+&nbsp;	 * @param &lt;E&gt;
+&nbsp;	 * @param msgPrefix
+&nbsp;	 * @param ex
+&nbsp;	 * @param exClazz
+&nbsp;	 *
+&nbsp;	 * @return the updated exception
+&nbsp;	 */
+&nbsp;	public static &lt;E extends Exception&gt; E changeExceptionMessage(String msgPrefix, E ex, Class&lt;E&gt; exClazz) {
+&nbsp;
+&nbsp;		Constructor&lt;E&gt; constructor;
+&nbsp;
+&nbsp;		try {
+&nbsp;			// try to find the constructor &#39;public Exception(String, Throwable)&#39;
+<b class="nc">&nbsp;			constructor = exClazz.getConstructor(new Class&lt;?&gt;[] { String.class, Throwable.class });</b>
+<b class="nc">&nbsp;		} catch (SecurityException e) {</b>
+<b class="nc">&nbsp;			log.warn(&quot;Cannot change the message of exception class &quot; + exClazz.getCanonicalName()</b>
+<b class="nc">&nbsp;					+ &quot; due to SecurityException: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			return ex;</b>
+<b class="nc">&nbsp;		} catch (NoSuchMethodException e) {</b>
+<b class="nc">&nbsp;			log.warn(&quot;Cannot change the message of exception class &quot; + exClazz.getCanonicalName()</b>
+&nbsp;					+ &quot;: Constructor &lt;String, Throwable&gt; not found.&quot;);
+<b class="nc">&nbsp;			return ex;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		E newEx;
+&nbsp;		try {
+<b class="nc">&nbsp;			newEx = constructor.newInstance(new Object[] { msgPrefix + &quot;.&quot; + ex.getMessage(), ex.getCause() });</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			log.warn(&quot;Cannot change the message of exception class &quot; + exClazz.getCanonicalName() + &quot; due to &quot;</b>
+<b class="nc">&nbsp;					+ e.getClass().getSimpleName() + &quot;: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			return ex;</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		newEx.setStackTrace(ex.getStackTrace());</b>
+&nbsp;
+<b class="nc">&nbsp;		return newEx;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the {@link Throwable} to an {@link Exception}. If it is already of type exception, it is returned as is.
+&nbsp;	 * Otherwise, we create a new {@link QueryEvaluationException}, and attach the stack trace and a meaningful message.
+&nbsp;	 *
+&nbsp;	 * @param t
+&nbsp;	 * @return the {@link Exception}
+&nbsp;	 */
+&nbsp;	public static Exception toException(Throwable t) {
+&nbsp;		Exception e;
+<b class="nc">&nbsp;		if (t instanceof QueryEvaluationException) {</b>
+<b class="nc">&nbsp;			return (QueryEvaluationException) t;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (t instanceof TimeoutException) {</b>
+<b class="nc">&nbsp;			e = new QueryInterruptedException(&quot;Query evaluation has run into a timeout.&quot;, t);</b>
+<b class="nc">&nbsp;		} else if (t instanceof Exception) {</b>
+<b class="nc">&nbsp;			e = (Exception) t;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			e = new QueryEvaluationException(&quot;&quot; + t.getMessage() + &quot;. Original type: &quot; + t.getClass());</b>
+<b class="nc">&nbsp;			e.setStackTrace(t.getStackTrace());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return e;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the given Throwable to a {@link QueryEvaluationException}. If it is already of type
+&nbsp;	 * {@link QueryEvaluationException} no transformation is done, otherwise the throwable is wrapped.
+&nbsp;	 *
+&nbsp;	 * @param t
+&nbsp;	 * @return the {@link QueryEvaluationException}
+&nbsp;	 */
+&nbsp;	public static QueryEvaluationException toQueryEvaluationException(Throwable t) {
+&nbsp;
+<b class="nc">&nbsp;		Exception res = toException(t);</b>
+<b class="nc">&nbsp;		if (res instanceof QueryEvaluationException) {</b>
+<b class="nc">&nbsp;			return (QueryEvaluationException) res;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (t instanceof InterruptedException) {</b>
+<b class="nc">&nbsp;			Thread.currentThread().interrupt();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new QueryEvaluationException(res);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

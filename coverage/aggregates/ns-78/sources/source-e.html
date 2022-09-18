@@ -1,0 +1,312 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ListBindingSet</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: ListBindingSet (org.eclipse.rdf4j.query.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ListBindingSet</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (9/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (14/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (25/25)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ListBindingSet$ListBindingSetIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (4/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90.9%
+  </span>
+  <span class="absValue">
+    (10/11)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    92.9%
+  </span>
+  <span class="absValue">
+    (13/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90.9%
+  </span>
+  <span class="absValue">
+    (20/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    97.2%
+  </span>
+  <span class="absValue">
+    (35/36)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.impl;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.AbstractBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * A List-based implementation of the {@link BindingSet} interface.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;public class ListBindingSet extends AbstractBindingSet {</b>
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -2907809218835403743L;
+&nbsp;
+&nbsp;	private final List&lt;String&gt; bindingNames;
+&nbsp;	private Set&lt;String&gt; bindingNamesSetCache;
+&nbsp;
+&nbsp;	private final List&lt;? extends Value&gt; values;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new List-based BindingSet containing the supplied bindings. &lt;em&gt;The supplied list of binding names is
+&nbsp;	 * assumed to be constant&lt;/em&gt;; care should be taken that the contents of this list doesn&#39;t change after supplying
+&nbsp;	 * it to this solution. The number of supplied values must be equal to the number of the binding names.
+&nbsp;	 *
+&nbsp;	 * @param names  The binding names.
+&nbsp;	 * @param values The binding values.
+&nbsp;	 */
+&nbsp;	public ListBindingSet(List&lt;String&gt; names, Value... values) {
+<b class="fc">&nbsp;		this(names, Arrays.asList(values));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new List-based BindingSet containing the supplied bindings. &lt;em&gt;The supplied lists are assumed to be
+&nbsp;	 * constant&lt;/em&gt;; care should be taken that the contents of these lists don&#39;t change after supplying them to this
+&nbsp;	 * solution. The number of supplied values must be equal to the number of the binding names.
+&nbsp;	 *
+&nbsp;	 * @param bindingNames The binding names.
+&nbsp;	 * @param values       The binding values.
+&nbsp;	 */
+<b class="fc">&nbsp;	public ListBindingSet(List&lt;String&gt; bindingNames, List&lt;? extends Value&gt; values) {</b>
+<b class="pc">&nbsp;		assert bindingNames.size() == values.size() : &quot;number of binding names and values not equal&quot;;</b>
+&nbsp;
+<b class="fc">&nbsp;		this.bindingNames = bindingNames;</b>
+<b class="fc">&nbsp;		this.values = values;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="fc">&nbsp;		if (bindingNamesSetCache == null) {</b>
+<b class="fc">&nbsp;			bindingNamesSetCache = new LinkedHashSet&lt;&gt;(bindingNames);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return bindingNamesSetCache;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Value getValue(String bindingName) {
+<b class="fc">&nbsp;		int idx = bindingNames.indexOf(bindingName);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (idx != -1) {</b>
+<b class="fc">&nbsp;			return values.get(idx);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Binding getBinding(String bindingName) {
+<b class="fc">&nbsp;		Value value = getValue(bindingName);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (value != null) {</b>
+<b class="fc">&nbsp;			return new SimpleBinding(bindingName, value);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasBinding(String bindingName) {
+<b class="fc">&nbsp;		return getValue(bindingName) != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;Binding&gt; iterator() {
+<b class="fc">&nbsp;		return new ListBindingSetIterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int size() {
+<b class="fc">&nbsp;		int size = 0;</b>
+&nbsp;
+<b class="fc">&nbsp;		for (Value value : values) {</b>
+<b class="fc">&nbsp;			if (value != null) {</b>
+<b class="fc">&nbsp;				size++;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return size;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------------------------*
+&nbsp;	 * Inner class ListBindingSetIterator *
+&nbsp;	 *------------------------------------*/
+&nbsp;
+&nbsp;	private class ListBindingSetIterator implements Iterator&lt;Binding&gt; {
+&nbsp;
+<b class="fc">&nbsp;		private int index = -1;</b>
+&nbsp;
+<b class="fc">&nbsp;		public ListBindingSetIterator() {</b>
+<b class="fc">&nbsp;			findNextElement();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void findNextElement() {
+<b class="fc">&nbsp;			for (index++; index &lt; values.size(); index++) {</b>
+<b class="fc">&nbsp;				if (values.get(index) != null) {</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean hasNext() {
+<b class="fc">&nbsp;			return index &lt; values.size();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Binding next() {
+<b class="fc">&nbsp;			Binding result = new SimpleBinding(bindingNames.get(index), values.get(index));</b>
+<b class="fc">&nbsp;			findNextElement();</b>
+<b class="fc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void remove() {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

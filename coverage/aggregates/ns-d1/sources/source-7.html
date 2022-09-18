@@ -1,0 +1,263 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemLiteral</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: MemLiteral (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemLiteral</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    62.5%
+  </span>
+  <span class="absValue">
+    (10/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (2/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.6%
+  </span>
+  <span class="absValue">
+    (14/22)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleLiteral;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;
+&nbsp;/**
+&nbsp; * A MemoryStore-specific extension of Literal giving it node properties.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class MemLiteral extends SimpleLiteral implements MemValue {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 4288477328829845024L;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The object that created this MemLiteral.
+&nbsp;	 */
+&nbsp;	transient private final Object creator;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The list of statements for which this MemLiteral is the object.
+&nbsp;	 */
+<b class="fc">&nbsp;	transient private final MemStatementList objectStatements = new MemStatementList();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new Literal which will get the supplied label.
+&nbsp;	 *
+&nbsp;	 * @param creator The object that is creating this MemLiteral.
+&nbsp;	 * @param label   The label for this literal.
+&nbsp;	 */
+&nbsp;	public MemLiteral(Object creator, String label) {
+<b class="nc">&nbsp;		super(label, XSD.STRING);</b>
+<b class="nc">&nbsp;		this.creator = creator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new Literal which will get the supplied label and language code.
+&nbsp;	 *
+&nbsp;	 * @param creator The object that is creating this MemLiteral.
+&nbsp;	 * @param label   The label for this literal.
+&nbsp;	 * @param lang    The language code of the supplied label.
+&nbsp;	 */
+&nbsp;	public MemLiteral(Object creator, String label, String lang) {
+<b class="fc">&nbsp;		super(label, lang);</b>
+<b class="fc">&nbsp;		this.creator = creator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new Literal which will get the supplied label and datatype.
+&nbsp;	 *
+&nbsp;	 * @param creator  The object that is creating this MemLiteral.
+&nbsp;	 * @param label    The label for this literal.
+&nbsp;	 * @param datatype The datatype of the supplied label.
+&nbsp;	 */
+&nbsp;	public MemLiteral(Object creator, String label, IRI datatype) {
+<b class="fc">&nbsp;		super(label, datatype);</b>
+<b class="fc">&nbsp;		this.creator = creator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public MemLiteral(Object creator, String label, IRI datatype, CoreDatatype coreDatatype) {
+<b class="fc">&nbsp;		super(label, datatype, coreDatatype);</b>
+<b class="fc">&nbsp;		this.creator = creator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public MemLiteral(Object creator, String label, CoreDatatype datatype) {
+<b class="fc">&nbsp;		super(label, datatype);</b>
+<b class="fc">&nbsp;		this.creator = creator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Object getCreator() {
+<b class="fc">&nbsp;		return creator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatements() {
+<b class="nc">&nbsp;		return !objectStatements.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public MemStatementList getObjectStatementList() {
+<b class="fc">&nbsp;		return objectStatements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int getObjectStatementCount() {
+<b class="fc">&nbsp;		return objectStatements.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addObjectStatement(MemStatement st) throws InterruptedException {
+<b class="fc">&nbsp;		objectStatements.add(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeObjectStatement(MemStatement st) throws InterruptedException {
+<b class="nc">&nbsp;		objectStatements.remove(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void cleanSnapshotsFromObjectStatements(int currentSnapshot) throws InterruptedException {
+<b class="nc">&nbsp;		objectStatements.cleanSnapshots(currentSnapshot);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasSubjectStatements() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasPredicateStatements() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasObjectStatements() {
+<b class="fc">&nbsp;		return !objectStatements.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasContextStatements() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

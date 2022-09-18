@@ -1,0 +1,192 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DelegatingUpdate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.support.query</a>
+</div>
+
+<h1>Coverage Summary for Class: DelegatingUpdate (org.eclipse.rdf4j.spring.support.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DelegatingUpdate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.support.query;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public abstract class DelegatingUpdate implements Update {
+&nbsp;	private final Update delegate;
+&nbsp;
+<b class="nc">&nbsp;	public DelegatingUpdate(Update delegate) {</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Update getDelegate() {
+<b class="nc">&nbsp;		return delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute() throws UpdateExecutionException {
+<b class="nc">&nbsp;		delegate.execute();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setBinding(String name, Value value) {
+<b class="nc">&nbsp;		delegate.setBinding(name, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeBinding(String name) {
+<b class="nc">&nbsp;		delegate.removeBinding(name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearBindings() {
+<b class="nc">&nbsp;		delegate.clearBindings();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BindingSet getBindings() {
+<b class="nc">&nbsp;		return delegate.getBindings();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataset(Dataset dataset) {
+<b class="nc">&nbsp;		delegate.setDataset(dataset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Dataset getDataset() {
+<b class="nc">&nbsp;		return delegate.getDataset();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setIncludeInferred(boolean includeInferred) {
+<b class="nc">&nbsp;		delegate.setIncludeInferred(includeInferred);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean getIncludeInferred() {
+<b class="nc">&nbsp;		return delegate.getIncludeInferred();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+<b class="nc">&nbsp;		delegate.setMaxExecutionTime(maxExecutionTimeSeconds);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int getMaxExecutionTime() {
+<b class="nc">&nbsp;		return delegate.getMaxExecutionTime();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

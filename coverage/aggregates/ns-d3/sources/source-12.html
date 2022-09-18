@@ -1,0 +1,315 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TxnStatusFile</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf</a>
+</div>
+
+<h1>Coverage Summary for Class: TxnStatusFile (org.eclipse.rdf4j.sail.nativerdf)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TxnStatusFile</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TxnStatusFile$TxnStatus</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/41)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf;
+&nbsp;
+&nbsp;import static java.nio.charset.StandardCharsets.US_ASCII;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.NioFile;
+&nbsp;
+&nbsp;/**
+&nbsp; * Writes transaction statuses to a file.
+&nbsp; */
+&nbsp;class TxnStatusFile {
+&nbsp;
+<b class="nc">&nbsp;	public enum TxnStatus {</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * No active transaction. This occurs if no transaction has been started yet, or if all transactions have been
+&nbsp;		 * committed or rolled back. An empty TxnStatus file also represents the NONE status.
+&nbsp;		 */
+<b class="nc">&nbsp;		NONE(TxnStatus.NONE_BYTE),</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * A transaction has been started, but was not yet committed or rolled back.
+&nbsp;		 */
+<b class="nc">&nbsp;		ACTIVE(TxnStatus.ACTIVE_BYTE),</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * A transaction is being committed.
+&nbsp;		 */
+<b class="nc">&nbsp;		COMMITTING(TxnStatus.COMMITTING_BYTE),</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * A transaction is being rolled back.
+&nbsp;		 */
+<b class="nc">&nbsp;		ROLLING_BACK(TxnStatus.ROLLING_BACK_BYTE),</b>
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * The transaction status is unknown.
+&nbsp;		 */
+<b class="nc">&nbsp;		UNKNOWN(TxnStatus.UNKNOWN_BYTE);</b>
+&nbsp;
+&nbsp;		private final byte[] onDisk;
+&nbsp;
+<b class="nc">&nbsp;		TxnStatus(byte onDisk) {</b>
+<b class="nc">&nbsp;			this.onDisk = new byte[1];</b>
+<b class="nc">&nbsp;			this.onDisk[0] = onDisk;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		byte[] getOnDisk() {
+<b class="nc">&nbsp;			return onDisk;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private static final byte NONE_BYTE = (byte) 0b00000000;
+&nbsp;		private static final byte OLD_NONE_BYTE = (byte) 0b00000001;
+&nbsp;
+&nbsp;		private static final byte ACTIVE_BYTE = (byte) 0b00000010;
+&nbsp;		private static final byte COMMITTING_BYTE = (byte) 0b00000100;
+&nbsp;		private static final byte ROLLING_BACK_BYTE = (byte) 0b00001000;
+&nbsp;		private static final byte UNKNOWN_BYTE = (byte) 0b00010000;
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The name of the transaction status file.
+&nbsp;	 */
+&nbsp;	public static final String FILE_NAME = &quot;txn-status&quot;;
+&nbsp;
+&nbsp;	private final NioFile nioFile;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new transaction status file. New files are initialized with {@link TxnStatus#NONE}.
+&nbsp;	 *
+&nbsp;	 * @param dataDir The directory for the transaction status file.
+&nbsp;	 * @throws IOException If the file did not yet exist and could not be written to.
+&nbsp;	 */
+<b class="nc">&nbsp;	public TxnStatusFile(File dataDir) throws IOException {</b>
+<b class="nc">&nbsp;		File statusFile = new File(dataDir, FILE_NAME);</b>
+<b class="nc">&nbsp;		nioFile = new NioFile(statusFile, &quot;rwd&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void close() throws IOException {
+<b class="nc">&nbsp;		nioFile.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Writes the specified transaction status to file.
+&nbsp;	 *
+&nbsp;	 * @param txnStatus The transaction status to write.
+&nbsp;	 * @throws IOException If the transaction status could not be written to file.
+&nbsp;	 */
+&nbsp;	public void setTxnStatus(TxnStatus txnStatus) throws IOException {
+<b class="nc">&nbsp;		if (txnStatus == TxnStatus.NONE) {</b>
+<b class="nc">&nbsp;			nioFile.truncate(0);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			nioFile.writeBytes(txnStatus.onDisk, 0);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads the transaction status from file.
+&nbsp;	 *
+&nbsp;	 * @return The read transaction status, or {@link TxnStatus#UNKNOWN} when the file contains an unrecognized status
+&nbsp;	 *         string.
+&nbsp;	 * @throws IOException If the transaction status file could not be read.
+&nbsp;	 */
+&nbsp;	public TxnStatus getTxnStatus() throws IOException {
+<b class="nc">&nbsp;		byte[] bytes = nioFile.readBytes(0, 1);</b>
+&nbsp;
+&nbsp;		TxnStatus status;
+&nbsp;
+<b class="nc">&nbsp;		switch (bytes[0]) {</b>
+&nbsp;		case TxnStatus.NONE_BYTE:
+<b class="nc">&nbsp;			status = TxnStatus.NONE;</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		case TxnStatus.OLD_NONE_BYTE:
+<b class="nc">&nbsp;			status = TxnStatus.NONE;</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		case TxnStatus.ACTIVE_BYTE:
+<b class="nc">&nbsp;			status = TxnStatus.ACTIVE;</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		case TxnStatus.COMMITTING_BYTE:
+<b class="nc">&nbsp;			status = TxnStatus.COMMITTING;</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		case TxnStatus.ROLLING_BACK_BYTE:
+<b class="nc">&nbsp;			status = TxnStatus.ROLLING_BACK;</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		case TxnStatus.UNKNOWN_BYTE:
+<b class="nc">&nbsp;			status = TxnStatus.UNKNOWN;</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			status = getTxnStatusDeprecated();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return status;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private TxnStatus getTxnStatusDeprecated() throws IOException {
+<b class="nc">&nbsp;		byte[] bytes = nioFile.readBytes(0, (int) nioFile.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		String s = new String(bytes, US_ASCII);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			return TxnStatus.valueOf(s);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+&nbsp;			// use platform encoding for backwards compatibility with versions
+&nbsp;			// older than 2.6.6:
+<b class="nc">&nbsp;			s = new String(bytes);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				return TxnStatus.valueOf(s);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e2) {</b>
+<b class="nc">&nbsp;				return TxnStatus.UNKNOWN;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

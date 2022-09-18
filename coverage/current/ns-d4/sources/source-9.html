@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RecordIterator</title>
+  <title>Coverage Report > RecordComparator</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.btree</a>
 </div>
 
-<h1>Coverage Summary for Class: RecordIterator (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
+<h1>Coverage Summary for Class: RecordComparator (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RecordIterator</td>
+  <td class="name">RecordComparator</td>
 </tr>
 
 </table>
@@ -50,40 +50,23 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail.nativerdf.btree;
 &nbsp;
-&nbsp;import java.io.Closeable;
-&nbsp;import java.io.IOException;
-&nbsp;
 &nbsp;/**
-&nbsp; * An iterator that iterates over records, for example those in a BTree.
-&nbsp; *
-&nbsp; * @see BTree
 &nbsp; * @author Arjohn Kampman
 &nbsp; */
-&nbsp;public interface RecordIterator extends Closeable {
+&nbsp;public interface RecordComparator {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Returns the next record in the BTree.
+&nbsp;	 * Compares the supplied &lt;var&gt;key&lt;/var&gt; to the value of length &lt;var&gt;length&lt;/var&gt;, starting at offset
+&nbsp;	 * &lt;var&gt;offset&lt;/var&gt; in the supplied &lt;var&gt;data&lt;/var&gt; array.
 &nbsp;	 *
-&nbsp;	 * @return A record that is stored in the BTree, or &lt;var&gt;null&lt;/var&gt; if all records have been returned.
-&nbsp;	 * @exception IOException In case an I/O error occurred.
+&nbsp;	 * @param key    A byte array representing the search key.
+&nbsp;	 * @param data   A byte array containing the value to compare the key to.
+&nbsp;	 * @param offset The offset (0-based) of the value in &lt;var&gt;data&lt;/var&gt;.
+&nbsp;	 * @param length The length of the value.
+&nbsp;	 * @return A negative integer when the key is smaller than the value, a positive integer when the key is larger than
+&nbsp;	 *         the value, or &lt;var&gt;0&lt;/var&gt; when the key is equal to the value.
 &nbsp;	 */
-&nbsp;	byte[] next() throws IOException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Replaces the last record returned by {@link #next} with the specified record.
-&nbsp;	 *
-&nbsp;	 * @exception IOException In case an I/O error occurred.
-&nbsp;	 */
-&nbsp;	void set(byte[] record) throws IOException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
-&nbsp;	 * records.
-&nbsp;	 *
-&nbsp;	 * @exception IOException In case an I/O error occurred.
-&nbsp;	 */
-&nbsp;	@Override
-&nbsp;	void close() throws IOException;
+&nbsp;	int compareBTreeValues(byte[] key, byte[] data, int offset, int length);
 &nbsp;}
 </code>
 </pre>
@@ -108,7 +91,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

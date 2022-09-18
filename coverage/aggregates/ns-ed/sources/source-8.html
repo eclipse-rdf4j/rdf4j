@@ -1,0 +1,254 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GroupGraphPattern</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.graphpattern</a>
+</div>
+
+<h1>Coverage Summary for Class: GroupGraphPattern (org.eclipse.rdf4j.sparqlbuilder.graphpattern)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GroupGraphPattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.graphpattern;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.QueryElementCollection;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SPARQL Group Graph Pattern
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns&quot;&gt; SPARQL Group Graph Patterns&lt;/a&gt;
+&nbsp; */
+&nbsp;class GroupGraphPattern extends QueryElementCollection&lt;GraphPattern&gt; implements GraphPattern {
+&nbsp;	private static final String OPTIONAL = &quot;OPTIONAL&quot;;
+&nbsp;	private static final String GRAPH = &quot;GRAPH &quot;;
+&nbsp;
+<b class="nc">&nbsp;	private Optional&lt;GraphName&gt; from = Optional.empty();</b>
+<b class="nc">&nbsp;	private List&lt;Filter&gt; filters = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;	protected boolean isOptional = false;</b>
+&nbsp;
+&nbsp;	GroupGraphPattern() {
+<b class="nc">&nbsp;		this(false);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	GroupGraphPattern(boolean isOptional) {</b>
+<b class="nc">&nbsp;		this.isOptional = isOptional;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	GroupGraphPattern(GraphPattern original) {</b>
+<b class="nc">&nbsp;		if (original instanceof GroupGraphPattern) {</b>
+<b class="nc">&nbsp;			copy((GroupGraphPattern) original);</b>
+<b class="nc">&nbsp;		} else if (original != null &amp;&amp; !original.isEmpty()) {</b>
+<b class="nc">&nbsp;			elements.add(original);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void copy(GroupGraphPattern original) {
+<b class="nc">&nbsp;		this.elements = original.elements;</b>
+<b class="nc">&nbsp;		this.isOptional = original.isOptional;</b>
+<b class="nc">&nbsp;		this.from = original.from;</b>
+<b class="nc">&nbsp;		this.filters = new ArrayList&lt;&gt;(original.filters);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GroupGraphPattern and(GraphPattern... patterns) {
+<b class="nc">&nbsp;		if (isEmpty() &amp;&amp; patterns.length == 1 &amp;&amp; (isGGP(patterns[0]))) {</b>
+<b class="nc">&nbsp;			copy(GraphPatterns.extractOrConvertToGGP(patterns[0]));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			addElements(patterns);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GroupGraphPattern optional(boolean isOptional) {
+<b class="nc">&nbsp;		this.isOptional = isOptional;</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GroupGraphPattern from(GraphName name) {
+<b class="nc">&nbsp;		from = Optional.of(name);</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GroupGraphPattern filter(Expression&lt;?&gt; constraint) {
+<b class="nc">&nbsp;		filters.add(new Filter(constraint));</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isEmpty() {
+<b class="nc">&nbsp;		return super.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		StringBuilder pattern = new StringBuilder();</b>
+<b class="nc">&nbsp;		StringBuilder innerPattern = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isOptional) {</b>
+<b class="nc">&nbsp;			pattern.append(OPTIONAL).append(&quot; &quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendQueryElementIfPresent(from, pattern, GRAPH, &quot; &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		innerPattern.append(super.getQueryString());</b>
+&nbsp;
+<b class="nc">&nbsp;		filters.forEach(filter -&gt; SparqlBuilderUtils.appendQueryElementIfPresent(</b>
+<b class="nc">&nbsp;				Optional.of(filter),</b>
+&nbsp;				innerPattern, &quot;\n&quot;, null));
+&nbsp;
+<b class="nc">&nbsp;		if (bracketInner()) {</b>
+<b class="nc">&nbsp;			pattern.append(SparqlBuilderUtils.getBracedString(innerPattern.toString()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			pattern.append(innerPattern.toString());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return pattern.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isGGP(GraphPattern pattern) {
+<b class="nc">&nbsp;		if (pattern instanceof GroupGraphPattern) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (pattern instanceof GraphPatternNotTriples) {</b>
+<b class="nc">&nbsp;			return ((GraphPatternNotTriples) pattern).gp instanceof GroupGraphPattern;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// Prevent extra brackets being added in the case of this graph pattern
+&nbsp;	// containing only one group graph pattern. Resulting syntax is
+&nbsp;	// logically equivalent and easier to read (and hopefully parse by query
+&nbsp;	// parsers) or make sure to add them if &quot;modifiers&quot; exist
+&nbsp;	private boolean bracketInner() {
+<b class="nc">&nbsp;		return !(elements.size() == 1 &amp;&amp; elements.iterator().next() instanceof GroupGraphPattern);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

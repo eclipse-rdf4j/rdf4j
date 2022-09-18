@@ -1,0 +1,356 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValidatingValueFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: ValidatingValueFactory (org.eclipse.rdf4j.model.impl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValidatingValueFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    48.3%
+  </span>
+  <span class="absValue">
+    (14/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    53.6%
+  </span>
+  <span class="absValue">
+    (15/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    45.8%
+  </span>
+  <span class="absValue">
+    (27/59)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2017 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.impl;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.time.temporal.TemporalAccessor;
+&nbsp;import java.time.temporal.TemporalAmount;
+&nbsp;import java.util.Date;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.util.URIUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * Validating wrapper to {@link ValueFactory}. Use this class in situations where a caller may be prone to errors.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public class ValidatingValueFactory implements ValueFactory {
+&nbsp;
+<b class="fc">&nbsp;	private static final int[][] PN_CHARS_U = { new int[] { &#39;0&#39;, &#39;9&#39; }, new int[] { &#39;_&#39;, &#39;_&#39; }, new int[] { &#39;A&#39;, &#39;Z&#39; },</b>
+&nbsp;			new int[] { &#39;a&#39;, &#39;z&#39; }, new int[] { 0x00C0, 0x00D6 }, new int[] { 0x00D8, 0x00F6 },
+&nbsp;			new int[] { 0x00F8, 0x02FF }, new int[] { 0x0370, 0x037D }, new int[] { 0x037F, 0x1FFF },
+&nbsp;			new int[] { 0x200C, 0x200D }, new int[] { 0x2070, 0x218F }, new int[] { 0x2C00, 0x2FEF },
+&nbsp;			new int[] { 0x3001, 0xD7FF }, new int[] { 0xF900, 0xFDCF }, new int[] { 0xFDF0, 0xFFFD },
+&nbsp;			new int[] { 0x10000, 0xEFFFF } };
+&nbsp;
+<b class="fc">&nbsp;	private static final int[][] PN_CHARS = { new int[] { &#39;-&#39;, &#39;-&#39; }, new int[] { 0x00B7, 0x00B7 },</b>
+&nbsp;			new int[] { 0x0300, 0x036F }, new int[] { 0x203F, 0x2040 }, new int[] { &#39;0&#39;, &#39;9&#39; }, new int[] { &#39;_&#39;, &#39;_&#39; },
+&nbsp;			new int[] { &#39;A&#39;, &#39;Z&#39; }, new int[] { &#39;a&#39;, &#39;z&#39; }, new int[] { 0x00C0, 0x00D6 }, new int[] { 0x00D8, 0x00F6 },
+&nbsp;			new int[] { 0x00F8, 0x02FF }, new int[] { 0x0370, 0x037D }, new int[] { 0x037F, 0x1FFF },
+&nbsp;			new int[] { 0x200C, 0x200D }, new int[] { 0x2070, 0x218F }, new int[] { 0x2C00, 0x2FEF },
+&nbsp;			new int[] { 0x3001, 0xD7FF }, new int[] { 0xF900, 0xFDCF }, new int[] { 0xFDF0, 0xFFFD },
+&nbsp;			new int[] { 0x10000, 0xEFFFF } };
+&nbsp;
+&nbsp;	private final ValueFactory delegate;
+&nbsp;
+&nbsp;	public ValidatingValueFactory() {
+<b class="nc">&nbsp;		this(SimpleValueFactory.getInstance());</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	public ValidatingValueFactory(ValueFactory delegate) {</b>
+<b class="fc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String iri) {
+&nbsp;		try {
+<b class="pc">&nbsp;			if (!new ParsedIRI(iri).isAbsolute()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;IRI must be absolute&quot;);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return delegate.createIRI(iri);</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String namespace, String localName) {
+<b class="pc">&nbsp;		if (!URIUtil.isCorrectURISplit(namespace, localName)) {</b>
+<b class="nc">&nbsp;			return createIRI(namespace + localName);</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="pc">&nbsp;			if (!new ParsedIRI(namespace + localName).isAbsolute()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Namespace must be absolute&quot;);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return delegate.createIRI(namespace, localName);</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BNode createBNode(String nodeID) {
+<b class="pc">&nbsp;		if (nodeID.length() &lt; 1) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Blank node ID cannot be empty&quot;);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (!isMember(PN_CHARS_U, nodeID.codePointAt(0))) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Blank node ID must start with alphanumber or underscore&quot;);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		for (int i = 0, n = nodeID.codePointCount(0, nodeID.length()); i &lt; n; i++) {</b>
+<b class="pc">&nbsp;			if (!isMember(PN_CHARS, nodeID.codePointAt(nodeID.offsetByCodePoints(0, i)))) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Illegal blank node ID character&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return delegate.createBNode(nodeID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, IRI datatype) {
+<b class="pc">&nbsp;		if (!XMLDatatypeUtil.isValidValue(label, datatype)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a valid literal value&quot;);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return delegate.createLiteral(label, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, CoreDatatype datatype) {
+<b class="pc">&nbsp;		if (!XMLDatatypeUtil.isValidValue(label, datatype)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a valid literal value&quot;);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return delegate.createLiteral(label, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+<b class="nc">&nbsp;		if (!XMLDatatypeUtil.isValidValue(label, coreDatatype)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a valid literal value&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return delegate.createLiteral(label, datatype, coreDatatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, String language) {
+<b class="nc">&nbsp;		if (!Literals.isValidLanguageTag(language)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Not a valid language tag: &quot; + language);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return delegate.createLiteral(label, language);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BNode createBNode() {
+<b class="fc">&nbsp;		return delegate.createBNode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label) {
+<b class="fc">&nbsp;		return delegate.createLiteral(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(boolean value) {
+<b class="nc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(byte value) {
+<b class="nc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(short value) {
+<b class="nc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(int value) {
+<b class="fc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(long value) {
+<b class="nc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(float value) {
+<b class="nc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(double value) {
+<b class="fc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(BigDecimal bigDecimal) {
+<b class="fc">&nbsp;		return delegate.createLiteral(bigDecimal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(BigInteger bigInteger) {
+<b class="nc">&nbsp;		return delegate.createLiteral(bigInteger);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(TemporalAccessor value) {
+<b class="fc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(TemporalAmount value) {
+<b class="nc">&nbsp;		return delegate.createLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(XMLGregorianCalendar calendar) {
+<b class="nc">&nbsp;		return delegate.createLiteral(calendar);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(Date date) {
+<b class="nc">&nbsp;		return delegate.createLiteral(date);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Statement createStatement(Resource subject, IRI predicate, Value object) {
+<b class="nc">&nbsp;		return delegate.createStatement(subject, predicate, object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
+<b class="nc">&nbsp;		return delegate.createStatement(subject, predicate, object, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+<b class="nc">&nbsp;		return delegate.createTriple(subject, predicate, object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isMember(int[][] set, int cp) {
+<b class="pc">&nbsp;		for (int i = 0; i &lt; set.length; i++) {</b>
+<b class="fc">&nbsp;			if (set[i][0] &lt;= cp &amp;&amp; cp &lt;= set[i][1]) {</b>
+<b class="fc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

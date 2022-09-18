@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RDFHandler</title>
+  <title>Coverage Report > RDFParserFactory</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.rio</a>
 </div>
 
-<h1>Coverage Summary for Class: RDFHandler (org.eclipse.rdf4j.rio)</h1>
+<h1>Coverage Summary for Class: RDFParserFactory (org.eclipse.rdf4j.rio)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RDFHandler</td>
+  <td class="name">RDFParserFactory</td>
 </tr>
 
 </table>
@@ -50,56 +50,22 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.rio;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.model.Statement;
-&nbsp;
 &nbsp;/**
-&nbsp; * An interface defining methods related to RDF data handling. &lt;var&gt;RDFHandler&lt;/var&gt; is both used as a &quot;consumer&quot; and as
-&nbsp; * a &quot;producer&quot; interface. As such it can be used both as an interface for receiving RDF data, for example by listening
-&nbsp; * to the results of an RDF parser, and as an interface for reporting RDF data, for example to an object that serializes
-&nbsp; * RDF data to an RDF/XML document.
+&nbsp; * A RDFParserFactory returns {@link RDFParser}s for a specific RDF format.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
 &nbsp; */
-&nbsp;public interface RDFHandler {
+&nbsp;public interface RDFParserFactory {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Signals the start of the RDF data. This method is called before any data is reported.
-&nbsp;	 *
-&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
+&nbsp;	 * Returns the RDF format for this factory.
 &nbsp;	 */
-&nbsp;	void startRDF() throws RDFHandlerException;
+&nbsp;	RDFFormat getRDFFormat();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Signals the end of the RDF data. This method is called when all data has been reported.
-&nbsp;	 *
-&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
+&nbsp;	 * Returns a RDFParser instance.
 &nbsp;	 */
-&nbsp;	void endRDF() throws RDFHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Handles a namespace declaration/definition. A namespace declaration associates a (short) prefix string with the
-&nbsp;	 * namespace&#39;s URI. The prefix for default namespaces, which do not have an associated prefix, are represented as
-&nbsp;	 * empty strings.
-&nbsp;	 *
-&nbsp;	 * @param prefix The prefix for the namespace, or an empty string in case of a default namespace.
-&nbsp;	 * @param uri    The URI that the prefix maps to.
-&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
-&nbsp;	 */
-&nbsp;	void handleNamespace(String prefix, String uri) throws RDFHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Handles a statement.
-&nbsp;	 *
-&nbsp;	 * @param st The statement.
-&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
-&nbsp;	 */
-&nbsp;	void handleStatement(Statement st) throws RDFHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Handles a comment.
-&nbsp;	 *
-&nbsp;	 * @param comment The comment.
-&nbsp;	 * @throws RDFHandlerException If the RDF handler has encountered an unrecoverable error.
-&nbsp;	 */
-&nbsp;	void handleComment(String comment) throws RDFHandlerException;
+&nbsp;	RDFParser getParser();
 &nbsp;}
 </code>
 </pre>
@@ -124,7 +90,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

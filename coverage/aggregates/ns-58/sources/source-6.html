@@ -1,0 +1,239 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractTriple</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.base</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractTriple (org.eclipse.rdf4j.model.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractTriple</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">AbstractTriple$GenericTriple</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.model.base;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link Triple}, offering common functionality.
+&nbsp; *
+&nbsp; * @author Alessandro Bollini
+&nbsp; * @since 3.5.0
+&nbsp; */
+<b class="nc">&nbsp;public abstract class AbstractTriple implements Triple {</b>
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 2661609986803671844L;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String stringValue() {
+<b class="nc">&nbsp;		return &quot;&lt;&lt;&quot; + getSubject() + &quot; &quot; + getPredicate() + &quot; &quot; + getObject() + &quot;&gt;&gt;&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+&nbsp;
+&nbsp;		// We check object equality first since it&#39;s most likely to be different. In general the number of different
+&nbsp;		// predicates in sets of statements are the smallest (and therefore most likely to be identical), so these are
+&nbsp;		// checked last.
+&nbsp;
+<b class="nc">&nbsp;		return this == o || o instanceof Triple</b>
+<b class="nc">&nbsp;				&amp;&amp; getObject().equals(((Triple) o).getObject())</b>
+<b class="nc">&nbsp;				&amp;&amp; getSubject().equals(((Triple) o).getSubject())</b>
+<b class="nc">&nbsp;				&amp;&amp; getPredicate().equals(((Triple) o).getPredicate());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() { // TODO inline Objects.hash() to avoid array creation?
+<b class="nc">&nbsp;		return Objects.hash(getSubject(), getPredicate(), getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return stringValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static class GenericTriple extends AbstractTriple {
+&nbsp;
+&nbsp;		private static final long serialVersionUID = 7822116805598041700L;
+&nbsp;
+&nbsp;		private final Resource subject;
+&nbsp;		private final IRI predicate;
+&nbsp;		private final Value object;
+&nbsp;
+<b class="nc">&nbsp;		GenericTriple(Resource subject, IRI predicate, Value object) {</b>
+<b class="nc">&nbsp;			this.subject = subject;</b>
+<b class="nc">&nbsp;			this.predicate = predicate;</b>
+<b class="nc">&nbsp;			this.object = object;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Resource getSubject() {
+<b class="nc">&nbsp;			return subject;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public IRI getPredicate() {
+<b class="nc">&nbsp;			return predicate;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Value getObject() {
+<b class="nc">&nbsp;			return object;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

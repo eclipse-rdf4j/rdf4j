@@ -1,0 +1,244 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Slice</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: Slice (org.eclipse.rdf4j.query.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Slice</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    71.4%
+  </span>
+  <span class="absValue">
+    (10/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    37.5%
+  </span>
+  <span class="absValue">
+    (6/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    51.9%
+  </span>
+  <span class="absValue">
+    (14/27)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra;
+&nbsp;
+&nbsp;/**
+&nbsp; * The SLICE operator, as defined in &lt;a href=&quot;http://www.w3.org/TR/rdf-sparql-query/#defn_algSlice&quot;&gt;SPARQL Query
+&nbsp; * Language for RDF&lt;/a&gt;. The SLICE operator selects specific results from the underlying tuple expression based on an
+&nbsp; * offset and limit value (both optional).
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class Slice extends UnaryTupleOperator {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private long offset;
+&nbsp;
+&nbsp;	private long limit;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public Slice() {
+<b class="nc">&nbsp;		this(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Slice(TupleExpr arg) {
+<b class="nc">&nbsp;		this(arg, -1, -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Slice(TupleExpr arg, long offset2, long limit2) {
+<b class="fc">&nbsp;		super(arg);</b>
+<b class="fc">&nbsp;		setOffset(offset2);</b>
+<b class="fc">&nbsp;		setLimit(limit2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public long getOffset() {
+<b class="fc">&nbsp;		return offset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setOffset(long offset) {
+<b class="fc">&nbsp;		this.offset = offset;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the row selection has a (valid) offset.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; when &lt;var&gt;offset &amp;gt; 0&lt;/var&gt;
+&nbsp;	 */
+&nbsp;	public boolean hasOffset() {
+<b class="pc">&nbsp;		return offset &gt; 0L;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getLimit() {
+<b class="fc">&nbsp;		return limit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setLimit(long limit) {
+<b class="fc">&nbsp;		this.limit = limit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the row selection has a (valid) limit.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; when &lt;var&gt;offset &amp;gt;= 0&lt;/var&gt;
+&nbsp;	 */
+&nbsp;	public boolean hasLimit() {
+<b class="pc">&nbsp;		return limit &gt;= 0L;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor) throws X {
+<b class="fc">&nbsp;		visitor.meet(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getSignature() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(256);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(super.getSignature());</b>
+<b class="nc">&nbsp;		sb.append(&quot; (&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (hasLimit()) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;limit=&quot;).append(getLimit());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (hasOffset()) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;offset=&quot;).append(getOffset());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;)&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="pc">&nbsp;		if (other instanceof Slice &amp;&amp; super.equals(other)) {</b>
+<b class="fc">&nbsp;			Slice o = (Slice) other;</b>
+<b class="pc">&nbsp;			return offset == o.getOffset() &amp;&amp; limit == o.getLimit();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+&nbsp;		// casting long to int is not safe, but shouldn&#39;t matter for hashcode, should it?
+<b class="nc">&nbsp;		return super.hashCode() ^ (int) offset ^ (int) limit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Slice clone() {
+<b class="fc">&nbsp;		return (Slice) super.clone();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

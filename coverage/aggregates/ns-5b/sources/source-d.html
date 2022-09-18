@@ -1,0 +1,495 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Statements</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.util</a>
+</div>
+
+<h1>Coverage Summary for Class: Statements (org.eclipse.rdf4j.model.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Statements</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    14.3%
+  </span>
+  <span class="absValue">
+    (3/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    5.9%
+  </span>
+  <span class="absValue">
+    (3/51)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.util;
+&nbsp;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Base64;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for working with {@link Statement} objects, including conversion to/from {@link Triple RDF-star
+&nbsp; * triple objects}.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class Statements {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A {@link Function} that maps {@link Triple} to {@link org.eclipse.rdf4j.model.BNode} consistently. Multiple
+&nbsp;	 * invocations for the same {@link Triple} will return the same {@link org.eclipse.rdf4j.model.BNode}.
+&nbsp;	 *
+&nbsp;	 * The current implementation creates a {@link org.eclipse.rdf4j.model.BNode} by encoding the string representation
+&nbsp;	 * of the {@link Triple} using base64 URL-safe encoding.
+&nbsp;	 */
+&nbsp;	@Experimental
+<b class="fc">&nbsp;	public static Function&lt;Triple, Resource&gt; TRIPLE_BNODE_MAPPER = (t) -&gt; SimpleValueFactory.getInstance()</b>
+<b class="nc">&nbsp;			.createBNode(Base64.getUrlEncoder().encodeToString(t.stringValue().getBytes(StandardCharsets.UTF_8)));</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for each given
+&nbsp;	 * context, and sends each created statement to the supplied {@link Consumer}. If no context is supplied, only a
+&nbsp;	 * single statement (without any assigned context) is created.
+&nbsp;	 *
+&nbsp;	 * @param vf        the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param subject   the subject of each statement. May not be null.
+&nbsp;	 * @param predicate the predicate of each statement. May not be null.
+&nbsp;	 * @param object    the object of each statement. May not be null.
+&nbsp;	 * @param consumer  the {@link Consumer} function for the produced statements.
+&nbsp;	 * @param contexts  the context(s) for which to produce statements. This argument is an optional vararg: leave it
+&nbsp;	 *                  out completely to produce a single statement without context.
+&nbsp;	 */
+&nbsp;	public static void consume(ValueFactory vf, Resource subject, IRI predicate, Value object,
+&nbsp;			Consumer&lt;Statement&gt; consumer, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(contexts,</b>
+&nbsp;				&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(consumer);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (contexts.length &gt; 0) {</b>
+<b class="nc">&nbsp;			for (Resource context : contexts) {</b>
+<b class="nc">&nbsp;				consumer.accept(vf.createStatement(subject, predicate, object, context));</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			consumer.accept(vf.createStatement(subject, predicate, object));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates one or more {@link Statement} objects with the given subject, predicate and object, one for each given
+&nbsp;	 * context. If no context is supplied, only a single statement (without any assigned context) is created.
+&nbsp;	 *
+&nbsp;	 * @param vf         the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param subject    the subject of each statement. May not be null.
+&nbsp;	 * @param predicate  the predicate of each statement. May not be null.
+&nbsp;	 * @param object     the object of each statement. May not be null.
+&nbsp;	 * @param collection the collection of Statements to which the newly created Statements will be added. May not be
+&nbsp;	 *                   null.
+&nbsp;	 * @return the input collection of Statements, with the newly created Statements added.
+&nbsp;	 * @param contexts the context(s) for which to produce statements. This argument is an optional vararg: leave it out
+&nbsp;	 *                 completely to produce a single statement without context.
+&nbsp;	 */
+&nbsp;	public static &lt;C extends Collection&lt;Statement&gt;&gt; C create(ValueFactory vf, Resource subject, IRI predicate,
+&nbsp;			Value object, C collection, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(collection);</b>
+<b class="nc">&nbsp;		consume(vf, subject, predicate, object, st -&gt; collection.add(st), contexts);</b>
+<b class="nc">&nbsp;		return collection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Strips the context (if any) from the supplied statement and returns a statement with the same subject, predicate
+&nbsp;	 * and object, but with no assigned context.
+&nbsp;	 *
+&nbsp;	 * @param statement the statement to strip the context from
+&nbsp;	 * @return a statement without context
+&nbsp;	 *
+&nbsp;	 * @since 3.1.0
+&nbsp;	 */
+&nbsp;	public static Statement stripContext(Statement statement) {
+<b class="nc">&nbsp;		return stripContext(SimpleValueFactory.getInstance(), statement);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Strips the context (if any) from the supplied statement and returns a statement with the same subject, predicate
+&nbsp;	 * and object, but with no assigned context.
+&nbsp;	 *
+&nbsp;	 * @param vf        the {@link ValueFactory} to use for creating a new {@link Statement}.
+&nbsp;	 * @param statement the statement to strip the context from.
+&nbsp;	 * @return a statement without context
+&nbsp;	 *
+&nbsp;	 * @since 3.1.0
+&nbsp;	 */
+&nbsp;	public static Statement stripContext(ValueFactory vf, Statement statement) {
+<b class="nc">&nbsp;		if (statement.getContext() == null) {</b>
+<b class="nc">&nbsp;			return statement;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return vf.createStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create an {@link Triple RDF-star triple} from the supplied {@link Statement}
+&nbsp;	 *
+&nbsp;	 * @param statement a statement to convert to an RDF-star triple
+&nbsp;	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
+&nbsp;	 * @since 3.4.0
+&nbsp;	 * @deprecated since 3.5.0 - use {@link Values#triple(Statement)} instead
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static Triple toTriple(Statement statement) {
+<b class="nc">&nbsp;		return toTriple(SimpleValueFactory.getInstance(), statement);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create an {@link Triple RDF-star triple} from the supplied {@link Statement}
+&nbsp;	 *
+&nbsp;	 * @param vf        the {@link ValueFactory} to use for creating the {@link Triple} object.
+&nbsp;	 * @param statement a statement to convert to an RDF-star triple
+&nbsp;	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
+&nbsp;	 * @since 3.4.0
+&nbsp;	 *
+&nbsp;	 * @deprecated since 3.5.0 - use {@link Values#triple(ValueFactory, Statement)} instead
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static Triple toTriple(ValueFactory vf, Statement statement) {
+<b class="nc">&nbsp;		return vf.createTriple(statement.getSubject(), statement.getPredicate(), statement.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple}
+&nbsp;	 *
+&nbsp;	 * @param triple an RDF-star triple to convert to a {@link Statement}.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
+&nbsp;	 * @since 3.4.0
+&nbsp;	 * @deprecated Use {@link #statement(Triple)} instead
+&nbsp;	 */
+&nbsp;	public static Statement toStatement(Triple triple) {
+<b class="nc">&nbsp;		return statement(triple);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple}
+&nbsp;	 *
+&nbsp;	 * @param triple an RDF-star triple to convert to a {@link Statement}.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and no context.
+&nbsp;	 * @since 3.4.0
+&nbsp;	 */
+&nbsp;	public static Statement statement(Triple triple) {
+<b class="nc">&nbsp;		return toStatement(triple, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
+&nbsp;	 *
+&nbsp;	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
+&nbsp;	 * @param context the context to assign to the {@link Statement}.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+&nbsp;	 *         supplied context.
+&nbsp;	 * @since 3.7.0
+&nbsp;	 */
+&nbsp;	public static Statement statement(Triple triple, Resource context) {
+<b class="nc">&nbsp;		return statement(SimpleValueFactory.getInstance(), triple, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
+&nbsp;	 *
+&nbsp;	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
+&nbsp;	 * @param context the context to assign to the {@link Statement}.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+&nbsp;	 *         supplied context.
+&nbsp;	 * @since 3.4.0
+&nbsp;	 * @deprecated since 3.7.0 - use {@link #statement(Triple, Resource)} instead
+&nbsp;	 */
+&nbsp;	public static Statement toStatement(Triple triple, Resource context) {
+<b class="nc">&nbsp;		return statement(SimpleValueFactory.getInstance(), triple, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
+&nbsp;	 *
+&nbsp;	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
+&nbsp;	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
+&nbsp;	 * @param context the context to assign to the {@link Statement}. May be null to indicate no context.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+&nbsp;	 *         supplied context.
+&nbsp;	 * @since 3.4.0
+&nbsp;	 * @deprecated Use {@link #statement(ValueFactory,Triple,Resource)} instead
+&nbsp;	 */
+&nbsp;	public static Statement toStatement(ValueFactory vf, Triple triple, Resource context) {
+<b class="nc">&nbsp;		return statement(vf, triple, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied {@link Triple RDF-star triple} and context.
+&nbsp;	 *
+&nbsp;	 * @param vf      the {@link ValueFactory} to use for creating the {@link Statement} object.
+&nbsp;	 * @param triple  an RDF-star triple to convert to a {@link Statement}.
+&nbsp;	 * @param context the context to assign to the {@link Statement}. May be null to indicate no context.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+&nbsp;	 *         supplied context.
+&nbsp;	 * @since 3.7.0
+&nbsp;	 */
+&nbsp;	public static Statement statement(ValueFactory vf, Triple triple, Resource context) {
+<b class="nc">&nbsp;		return vf.createStatement(triple.getSubject(), triple.getPredicate(), triple.getObject(), context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied subject, predicate, object and context.
+&nbsp;	 *
+&nbsp;	 * @param subject   the statement subject
+&nbsp;	 * @param predicate the statement predicate
+&nbsp;	 * @param object    the statement object
+&nbsp;	 * @param context   the context to assign to the {@link Statement}. May be null to indicate no context.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+&nbsp;	 *         supplied context.
+&nbsp;	 * @throws NullPointerException if any of subject, predicate, or object are &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @since 3.5.0
+&nbsp;	 */
+&nbsp;	public static Statement statement(Resource subject, IRI predicate, Value object,
+&nbsp;			Resource context) {
+<b class="fc">&nbsp;		return statement(SimpleValueFactory.getInstance(), subject, predicate, object, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a {@link Statement} from the supplied subject, predicate, object and context.
+&nbsp;	 *
+&nbsp;	 * @param vf        the {@link ValueFactory} to use for creating the {@link Statement} object.
+&nbsp;	 * @param subject   the statement subject
+&nbsp;	 * @param predicate the statement predicate
+&nbsp;	 * @param object    the statement object
+&nbsp;	 * @param context   the context to assign to the {@link Statement}. May be null to indicate no context.
+&nbsp;	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
+&nbsp;	 *         supplied context.
+&nbsp;	 * @throws NullPointerException if any of vf, subject, predicate, or object are &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 * @since 3.5.0
+&nbsp;	 */
+&nbsp;	public static Statement statement(ValueFactory vf, Resource subject, IRI predicate, Value object,
+&nbsp;			Resource context) {
+<b class="fc">&nbsp;		return vf.createStatement(subject, predicate, object, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the two statements represent the same triple (that is, they have equal subject, predicate, and object).
+&nbsp;	 * Context information is disregarded.
+&nbsp;	 *
+&nbsp;	 * @param st1 the first statement to compare. May not be null.
+&nbsp;	 * @param st2 the second statement to compare. May not be null.
+&nbsp;	 * @return {@code true} iff the subject, predicate and object of {@code st1} and {@code st2} are equal,
+&nbsp;	 *         {@code false} otherwise.
+&nbsp;	 * @see Statement#equals(Object)
+&nbsp;	 * @since 2.0
+&nbsp;	 */
+&nbsp;	public static boolean isSameTriple(Statement st1, Statement st2) {
+<b class="nc">&nbsp;		Objects.requireNonNull(st1);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(st2);</b>
+<b class="nc">&nbsp;		return st1.getPredicate().equals(st2.getPredicate()) &amp;&amp; st1.getSubject().equals(st2.getSubject())</b>
+<b class="nc">&nbsp;				&amp;&amp; st1.getObject().equals(st2.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF-star statement to RDF reification statements, and sends the resultant statements to the
+&nbsp;	 * supplied consumer. If the supplied statement is not RDF-star it will be sent to the consumer as is.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The statements needed to represent reification will use blank nodes.
+&nbsp;	 *
+&nbsp;	 * @param st       the {@link Statement} to convert.
+&nbsp;	 * @param consumer the {@link Consumer} function for the produced statements.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static void convertRDFStarToReification(Statement st, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		convertRDFStarToReification(SimpleValueFactory.getInstance(), st, consumer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF-star statement to RDF reification statements, and sends the resultant statements to the
+&nbsp;	 * supplied consumer. If the supplied statement is not RDF-star it will be sent to the consumer as is.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The statements needed to represent reification will use blank nodes.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements and blank nodes.
+&nbsp;	 *
+&nbsp;	 * @param vf       the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param st       the {@link Statement} to convert.
+&nbsp;	 * @param consumer the {@link Consumer} function for the produced statements.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static void convertRDFStarToReification(ValueFactory vf, Statement st, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		convertRDFStarToReification(vf, TRIPLE_BNODE_MAPPER, st, consumer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF-star statement to RDF reification statements, and sends the resultant statements to the
+&nbsp;	 * supplied consumer. If the supplied statement is not RDF-star it will be sent to the consumer as is.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied mapper function maps a {@link Triple} to a {@link Resource} and is used to create the ID of the RDF
+&nbsp;	 * reification statement corresponding to the converted triple. The function must return the same value for
+&nbsp;	 * identical triples in order to produce consistent results between invocations. See {@link #TRIPLE_BNODE_MAPPER}.
+&nbsp;	 *
+&nbsp;	 * @param vf              the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param reifiedIdMapper the mapper {@link Function} from {@link Triple} to {@link Resource}.
+&nbsp;	 * @param st              the {@link Statement} to convert,
+&nbsp;	 * @param consumer        the {@link Consumer} function for the produced statements.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static void convertRDFStarToReification(ValueFactory vf, Function&lt;Triple, Resource&gt; reifiedIdMapper,
+&nbsp;			Statement st, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		Resource subject = st.getSubject();</b>
+<b class="nc">&nbsp;		Value object = st.getObject();</b>
+<b class="nc">&nbsp;		if (subject instanceof Triple || object instanceof Triple) {</b>
+<b class="nc">&nbsp;			if (subject instanceof Triple) {</b>
+<b class="nc">&nbsp;				subject = createReifiedStatement(vf, reifiedIdMapper, (Triple) subject, st.getContext(), consumer);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (object instanceof Triple) {</b>
+<b class="nc">&nbsp;				object = createReifiedStatement(vf, reifiedIdMapper, (Triple) object, st.getContext(), consumer);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			st = vf.createStatement(subject, st.getPredicate(), object, st.getContext());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		consumer.accept(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF-star triple to a series of RDF reification statements and sends the statements to the
+&nbsp;	 * supplied consumer. The subject of the created statements is returned.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied mapper function maps a {@link Triple} to a {@link Resource} and is used to create the ID of the RDF
+&nbsp;	 * reification statement corresponding to the converted triple.
+&nbsp;	 *
+&nbsp;	 * @param vf              the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param reifiedIdMapper the mapper {@link Function} from {@link Triple} to {@link Resource}.
+&nbsp;	 * @param triple          the {@link Triple} to convert.
+&nbsp;	 * @param consumer        the {@link Consumer} function for the produced statements.
+&nbsp;	 * @return the {@link Resource} that was used as the subject of the created RDF reification statements.
+&nbsp;	 */
+&nbsp;	private static Resource createReifiedStatement(ValueFactory vf, Function&lt;Triple, Resource&gt; reifiedIdMapper,
+&nbsp;			Triple triple, Resource context, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		Resource stId = reifiedIdMapper.apply(triple);</b>
+<b class="nc">&nbsp;		Statement reifiedSt = vf.createStatement(stId, RDF.TYPE, RDF.STATEMENT, context);</b>
+<b class="nc">&nbsp;		consumer.accept(reifiedSt);</b>
+<b class="nc">&nbsp;		Statement reifiedStSubject = vf.createStatement(stId, RDF.SUBJECT, triple.getSubject(), context);</b>
+<b class="nc">&nbsp;		convertRDFStarToReification(vf, reifiedIdMapper, reifiedStSubject, consumer);</b>
+<b class="nc">&nbsp;		Statement reifiedStPredicate = vf.createStatement(stId, RDF.PREDICATE, triple.getPredicate(), context);</b>
+<b class="nc">&nbsp;		consumer.accept(reifiedStPredicate);</b>
+<b class="nc">&nbsp;		Statement reifiedStObject = vf.createStatement(stId, RDF.OBJECT, triple.getObject(), context);</b>
+<b class="nc">&nbsp;		convertRDFStarToReification(vf, reifiedIdMapper, reifiedStObject, consumer);</b>
+<b class="nc">&nbsp;		return stId;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

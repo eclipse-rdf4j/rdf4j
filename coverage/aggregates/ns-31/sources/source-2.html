@@ -1,0 +1,324 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CheckStatementPattern</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
+</div>
+
+<h1>Coverage Summary for Class: CheckStatementPattern (org.eclipse.rdf4j.federated.algebra)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CheckStatementPattern</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.algebra;
+&nbsp;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A statement pattern with no free variables when provided with some particular BindingSet in evaluate. For evaluation
+&nbsp; * a boolean ASK query is performed.
+&nbsp; *
+&nbsp; * Wraps a StatementTupleExpr
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+&nbsp;public class CheckStatementPattern implements StatementTupleExpr, BoundJoinTupleExpr {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -4063951571744144255L;
+&nbsp;
+&nbsp;	protected final StatementTupleExpr stmt;
+&nbsp;	protected final String id;
+&nbsp;	protected final QueryInfo queryInfo;
+&nbsp;
+<b class="nc">&nbsp;	private double resultSizeEstimate = -1;</b>
+<b class="nc">&nbsp;	private double costEstimate = -1;</b>
+<b class="nc">&nbsp;	private long resultSizeActual = -1;</b>
+<b class="nc">&nbsp;	private long totalTimeNanosActual = -1;</b>
+&nbsp;
+&nbsp;	public CheckStatementPattern(StatementTupleExpr stmt, QueryInfo queryInfo) {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		this.stmt = stmt;</b>
+<b class="nc">&nbsp;		this.id = NodeFactory.getNextId();</b>
+<b class="nc">&nbsp;		this.queryInfo = queryInfo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public StatementPattern getStatementPattern() {
+<b class="nc">&nbsp;		return (StatementPattern) stmt;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int getFreeVarCount() {
+<b class="nc">&nbsp;		return 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getFreeVars() {
+<b class="nc">&nbsp;		return Collections.emptyList();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;StatementSource&gt; getStatementSources() {
+<b class="nc">&nbsp;		return stmt.getStatementSources();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasFreeVarsFor(BindingSet binding) {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getAssuredBindingNames() {
+<b class="nc">&nbsp;		return stmt.getAssuredBindingNames();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getBindingNames() {
+<b class="nc">&nbsp;		return stmt.getBindingNames();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryModelNode getParentNode() {
+<b class="nc">&nbsp;		return stmt.getParentNode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getSignature() {
+<b class="nc">&nbsp;		return stmt.getSignature();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+<b class="nc">&nbsp;		stmt.replaceChildNode(current, replacement);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void replaceWith(QueryModelNode replacement) {
+<b class="nc">&nbsp;		stmt.replaceWith(replacement);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setParentNode(QueryModelNode parent) {
+<b class="nc">&nbsp;		stmt.setParentNode(parent);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visit(QueryModelVisitor&lt;X&gt; visitor)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		stmt.visit(visitor);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;X extends Exception&gt; void visitChildren(QueryModelVisitor&lt;X&gt; visitor)
+&nbsp;			throws X {
+<b class="nc">&nbsp;		stmt.visitChildren(visitor);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CheckStatementPattern clone() {
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Operation not supported on this node!&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public double getResultSizeEstimate() {
+<b class="nc">&nbsp;		return resultSizeEstimate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setResultSizeEstimate(double resultSizeEstimate) {
+<b class="nc">&nbsp;		this.resultSizeEstimate = resultSizeEstimate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long getResultSizeActual() {
+<b class="nc">&nbsp;		return resultSizeActual;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setResultSizeActual(long resultSizeActual) {
+<b class="nc">&nbsp;		this.resultSizeActual = resultSizeActual;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public double getCostEstimate() {
+<b class="nc">&nbsp;		return costEstimate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setCostEstimate(double costEstimate) {
+<b class="nc">&nbsp;		this.costEstimate = costEstimate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long getTotalTimeNanosActual() {
+<b class="nc">&nbsp;		return totalTimeNanosActual;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTotalTimeNanosActual(long totalTimeNanosActual) {
+<b class="nc">&nbsp;		this.totalTimeNanosActual = totalTimeNanosActual;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings)
+&nbsp;			throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		StatementPattern st = (StatementPattern) stmt;</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;			// return true if at least one endpoint has a result for this binding set
+<b class="nc">&nbsp;			for (StatementSource source : stmt.getStatementSources()) {</b>
+<b class="nc">&nbsp;				Endpoint ownedEndpoint = queryInfo.getFederationContext()</b>
+<b class="nc">&nbsp;						.getEndpointManager()</b>
+<b class="nc">&nbsp;						.getEndpoint(source.getEndpointID());</b>
+<b class="nc">&nbsp;				TripleSource t = ownedEndpoint.getTripleSource();</b>
+<b class="nc">&nbsp;				if (t.hasStatements(st, bindings, queryInfo, queryInfo.getDataset())) {</b>
+<b class="nc">&nbsp;					return new SingleBindingSetIteration(bindings);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			throw new QueryEvaluationException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// XXX return NULL instead and add an additional check?
+<b class="nc">&nbsp;		return new EmptyIteration&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public QueryInfo getQueryInfo() {
+<b class="nc">&nbsp;		return stmt.getQueryInfo();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

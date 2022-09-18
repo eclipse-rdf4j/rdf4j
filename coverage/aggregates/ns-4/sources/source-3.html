@@ -1,0 +1,331 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFTestDataset</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.benchmark.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFTestDataset (org.eclipse.rdf4j.benchmark.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFTestDataset</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.benchmark.rio;
+&nbsp;
+&nbsp;import java.io.BufferedInputStream;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.UncheckedIOException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.nio.file.Paths;
+&nbsp;import java.util.zip.GZIPInputStream;
+&nbsp;import java.util.zip.ZipEntry;
+&nbsp;import java.util.zip.ZipFile;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * This enum holds locations for RDF files from the web. It allows downloading these into a a temporary location in
+&nbsp; * {@code {java.io.tmpdir}/rdf4j-benchmark-datasets/{filename} }. Please note
+&nbsp; *
+&nbsp; * @author Frens Jan Rumph
+&nbsp; */
+<b class="nc">&nbsp;public enum RDFTestDataset {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A dump of the &lt;a href=&quot;http://wifo5-03.informatik.uni-mannheim.de/bizer/berlinsparqlbenchmark/&quot;&gt;Berlin SPARQL
+&nbsp;	 * Benchmark&lt;/a&gt; made available by the &lt;a href=&quot;https://project-hobbit.eu&quot;&gt;HOBBIT project&lt;/a&gt;.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 25 GB extracted.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	BSBM(&quot;bsbm.nt&quot;, &quot;dataset.nt&quot;,</b>
+&nbsp;			&quot;https://hobbitdata.informatik.uni-leipzig.de/benchmarks-data/datasets-dumps/bsbm-dump.zip&quot;),
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A dump of the &lt;a href=&quot;http://owl.cs.manchester.ac.uk/publications/supporting-material/fishmark/&quot;&gt;FishMark&lt;/a&gt;
+&nbsp;	 * benchmark made available by the &lt;a href=&quot;https://project-hobbit.eu&quot;&gt;HOBBIT project&lt;/a&gt;.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 1.8 GB extracted
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	FISHMARK(&quot;fishmark.nt&quot;, &quot;fishmark-size1.nt&quot;,</b>
+&nbsp;			&quot;https://hobbitdata.informatik.uni-leipzig.de/benchmarks-data/datasets-dumps/fishmark-dump.zip&quot;),
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A dump of the
+&nbsp;	 * &lt;a href=&quot;http://borneo.informatik.uni-freiburg.de/content/publikationen/papers/sp2b.pdf&quot;&gt;SP2Bench&lt;/a&gt; benchmark
+&nbsp;	 * made available by the &lt;a href=&quot;https://project-hobbit.eu&quot;&gt;HOBBIT project&lt;/a&gt;.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 2.7 GB extracted
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	SP2BENCH(&quot;sp2b.n3&quot;, &quot;sp2b.n3&quot;,</b>
+&nbsp;			&quot;https://hobbitdata.informatik.uni-leipzig.de/benchmarks-data/datasets-dumps/sp2bench-dump.zip&quot;),
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A dump of the Semantic Web Dog Food dataset made available by the &lt;a href=&quot;https://project-hobbit.eu&quot;&gt;HOBBIT
+&nbsp;	 * project&lt;/a&gt;.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 49 MB extracted
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	SWDF(&quot;swdf.nt&quot;, &quot;SWDF.nt&quot;,</b>
+&nbsp;			&quot;https://hobbitdata.informatik.uni-leipzig.de/benchmarks-data/datasets-dumps/swdf-dump.zip&quot;),
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A dump of the gene database of National Center for Biotechnology Information made available by the
+&nbsp;	 * &lt;a href=&quot;https://bio2rdf.org&quot;&gt;Bio2RDF project&lt;/a&gt;.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 5.6 GB extracted
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	GENE2GO(&quot;gene2go.nq&quot;,</b>
+&nbsp;			&quot;https://download.bio2rdf.org/files/release/3/ncbigene/gene2go.nq.gz&quot;),
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A dump of the &lt;a href=&quot;http://www.lexvo.org/&quot;&gt;Lexvo.org&lt;/a&gt; data.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 67 MB extracted
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	LEXVO(&quot;lexvo_latest.rdf&quot;,</b>
+&nbsp;			&quot;http://www.lexvo.org/resources/lexvo_latest.rdf.gz&quot;),
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * A Data Catalogue Vocabulary file from &lt;a href=&quot;https://github.com/Fedict/dcat&quot;&gt;Federal Public Service Policy and
+&nbsp;	 * Support DG Digital Transformation&lt;/a&gt;&#39;s github repository.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * 139 MB extracted
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	DATAGOVBE(&quot;datagovbe.nt&quot;,</b>
+&nbsp;			&quot;https://github.com/Fedict/dcat/raw/master/all/datagovbe.nt.gz&quot;);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Name of the target file.
+&nbsp;	 */
+&nbsp;	private final String fileName;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Name of the file to extract from the archive; {@code null} if the file is not part of a multi file archive (e.g.
+&nbsp;	 * ZIP file).
+&nbsp;	 */
+&nbsp;	private final String archiveEntryName;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The {@link URL} to download the file from.
+&nbsp;	 */
+&nbsp;	private final URL url;
+&nbsp;
+&nbsp;	RDFTestDataset(String fileName, String url) {
+<b class="nc">&nbsp;		this(fileName, null, url);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	RDFTestDataset(String fileName, String archiveEntryName, String url) {</b>
+<b class="nc">&nbsp;		this.archiveEntryName = archiveEntryName;</b>
+<b class="nc">&nbsp;		this.fileName = fileName;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			this.url = new URL(url);</b>
+<b class="nc">&nbsp;		} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Statically defiled URL &quot; + url + &quot; is unexpectedly malformed&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Download the dataset file to {@code {java.io.tmpdir}/rdf4j-benchmark-datasets/{fileName}}.
+&nbsp;	 *
+&nbsp;	 * @return The {@link File} to which the dataset was downloaded and extracted.
+&nbsp;	 */
+&nbsp;	public File download() {
+<b class="nc">&nbsp;		File downloadDir = new File(System.getProperty(&quot;java.io.tmpdir&quot;), &quot;rdf4j-benchmark-datasets&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		File dataFile = new File(downloadDir, fileName);</b>
+<b class="nc">&nbsp;		if (dataFile.exists()) {</b>
+<b class="nc">&nbsp;			return dataFile;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Files.createDirectories(downloadDir.toPath());</b>
+<b class="nc">&nbsp;			File downloadFile = new File(downloadDir, Paths.get(url.getPath()).getFileName().toString());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!downloadFile.exists()) {</b>
+<b class="nc">&nbsp;				downloadTo(downloadFile);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!downloadFile.equals(dataFile)) {</b>
+<b class="nc">&nbsp;				extract(downloadFile, dataFile);</b>
+<b class="nc">&nbsp;				downloadFile.delete();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new UncheckedIOException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return dataFile;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void downloadTo(File downloadFile) throws IOException {
+<b class="nc">&nbsp;		System.out.println(&quot;Downloading &quot; + url);</b>
+<b class="nc">&nbsp;		try (InputStream is = new BufferedInputStream(url.openStream())) {</b>
+<b class="nc">&nbsp;			IOUtil.transfer(is, downloadFile);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void extract(File downloadFile, File dataFile) throws IOException {
+<b class="nc">&nbsp;		String downloadFileName = downloadFile.getName();</b>
+<b class="nc">&nbsp;		if (downloadFileName.endsWith(&quot;.zip&quot;)) {</b>
+<b class="nc">&nbsp;			extractFromZip(downloadFile, dataFile);</b>
+<b class="nc">&nbsp;		} else if (downloadFileName.endsWith(&quot;.gz&quot;)) {</b>
+<b class="nc">&nbsp;			extractFromGzip(downloadFile, dataFile);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void extractFromZip(File downloadFile, File dataFile) throws IOException {
+<b class="nc">&nbsp;		System.out.println(&quot;Extracting &quot; + archiveEntryName + &quot; from &quot; + downloadFile + &quot; to &quot; + dataFile.getName());</b>
+<b class="nc">&nbsp;		try (ZipFile zf = new ZipFile(downloadFile)) {</b>
+<b class="nc">&nbsp;			ZipEntry entry = zf.getEntry(archiveEntryName);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (InputStream in = zf.getInputStream(entry)) {</b>
+<b class="nc">&nbsp;				IOUtil.writeStream(in, dataFile);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void extractFromGzip(File downloadFile, File dataFile) throws IOException {
+<b class="nc">&nbsp;		System.out.println(&quot;Extracting &quot; + downloadFile + &quot; to &quot; + dataFile.getName());</b>
+<b class="nc">&nbsp;		GZIPInputStream in = new GZIPInputStream(new FileInputStream(downloadFile));</b>
+<b class="nc">&nbsp;		IOUtil.writeStream(in, dataFile);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

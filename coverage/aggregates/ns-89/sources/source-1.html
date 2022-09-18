@@ -1,0 +1,266 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ContextCollector</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: ContextCollector (org.eclipse.rdf4j.queryrender.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ContextCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;p&gt;
+&nbsp; * Visitor implementation for the query algebra which walks the tree and figures out the context for nodes in the
+&nbsp; * algebra. The context for a node is set on the highest node in the tree. That is, everything below it shares the same
+&nbsp; * context.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Blazej Bulka
+&nbsp; */
+&nbsp;public class ContextCollector extends AbstractQueryModelVisitor&lt;Exception&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps TupleExpr to contexts. This map contains only top-level expression elements that share the given context
+&nbsp;	 * (i.e., all elements below share the same context) -- this is because of where contexts are being introduced into
+&nbsp;	 * a SPARQL query -- all elements sharing the same contexts are grouped together with a &quot;GRAPH &lt;ctx&gt; { ... }&quot;
+&nbsp;	 * clause.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final Map&lt;TupleExpr, Var&gt; mContexts = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private ContextCollector() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static Map&lt;TupleExpr, Var&gt; collectContexts(TupleExpr theTupleExpr) throws Exception {
+<b class="nc">&nbsp;		ContextCollector aContextVisitor = new ContextCollector();</b>
+&nbsp;
+<b class="nc">&nbsp;		theTupleExpr.visit(aContextVisitor);</b>
+&nbsp;
+<b class="nc">&nbsp;		return aContextVisitor.mContexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Join theJoin) throws Exception {
+<b class="nc">&nbsp;		binaryOpMeet(theJoin, theJoin.getLeftArg(), theJoin.getRightArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(LeftJoin theJoin) throws Exception {
+<b class="nc">&nbsp;		binaryOpMeet(theJoin, theJoin.getLeftArg(), theJoin.getRightArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Union theOp) throws Exception {
+<b class="nc">&nbsp;		binaryOpMeet(theOp, theOp.getLeftArg(), theOp.getRightArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Difference theOp) throws Exception {
+<b class="nc">&nbsp;		binaryOpMeet(theOp, theOp.getLeftArg(), theOp.getRightArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Intersection theOp) throws Exception {
+<b class="nc">&nbsp;		binaryOpMeet(theOp, theOp.getLeftArg(), theOp.getRightArg());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(final Filter theFilter) throws Exception {
+<b class="nc">&nbsp;		theFilter.getArg().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (mContexts.containsKey(theFilter.getArg())) {</b>
+<b class="nc">&nbsp;			Var aCtx = mContexts.get(theFilter.getArg());</b>
+<b class="nc">&nbsp;			mContexts.remove(theFilter.getArg());</b>
+<b class="nc">&nbsp;			mContexts.put(theFilter, aCtx);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void binaryOpMeet(TupleExpr theCurrentExpr, TupleExpr theLeftExpr, TupleExpr theRightExpr)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		theLeftExpr.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		Var aLeftCtx = mContexts.get(theLeftExpr);</b>
+&nbsp;
+<b class="nc">&nbsp;		theRightExpr.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		Var aRightCtx = mContexts.get(theRightExpr);</b>
+&nbsp;
+<b class="nc">&nbsp;		sameCtxCheck(theCurrentExpr, theLeftExpr, aLeftCtx, theRightExpr, aRightCtx);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(StatementPattern thePattern) throws Exception {
+<b class="nc">&nbsp;		Var aCtxVar = thePattern.getContextVar();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (aCtxVar != null) {</b>
+<b class="nc">&nbsp;			mContexts.put(thePattern, aCtxVar);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void sameCtxCheck(TupleExpr theCurrentExpr, TupleExpr theLeftExpr, Var theLeftCtx, TupleExpr theRightExpr,
+&nbsp;			Var theRightCtx) {
+<b class="nc">&nbsp;		if ((theLeftCtx != null) &amp;&amp; (theRightCtx != null) &amp;&amp; isSameCtx(theLeftCtx, theRightCtx)) {</b>
+<b class="nc">&nbsp;			mContexts.remove(theLeftExpr);</b>
+<b class="nc">&nbsp;			mContexts.remove(theRightExpr);</b>
+<b class="nc">&nbsp;			mContexts.put(theCurrentExpr, theLeftCtx);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isSameCtx(Var v1, Var v2) {
+<b class="nc">&nbsp;		if ((v1 != null &amp;&amp; v1.getValue() != null) &amp;&amp; (v2 != null &amp;&amp; v2.getValue() != null)) {</b>
+<b class="nc">&nbsp;			return v1.getValue().equals(v2.getValue());</b>
+<b class="nc">&nbsp;		} else if ((v1 != null &amp;&amp; v1.getName() != null) &amp;&amp; (v2 != null &amp;&amp; v2.getName() != null)) {</b>
+<b class="nc">&nbsp;			return v1.getName().equals(v2.getName());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

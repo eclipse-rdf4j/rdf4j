@@ -1,0 +1,294 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > UpdateWithModelBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.dao.support</a>
+</div>
+
+<h1>Coverage Summary for Class: UpdateWithModelBuilder (org.eclipse.rdf4j.spring.dao.support)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">UpdateWithModelBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/59)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.dao.support;
+&nbsp;
+&nbsp;import java.io.StringWriter;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.ObjectUtils;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelBuilder;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class UpdateWithModelBuilder {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;
+&nbsp;	private final RepositoryConnection con;
+&nbsp;	private final ModelBuilder modelBuilder;
+&nbsp;
+<b class="nc">&nbsp;	public UpdateWithModelBuilder(RepositoryConnection con) {</b>
+<b class="nc">&nbsp;		this.con = con;</b>
+<b class="nc">&nbsp;		this.modelBuilder = new ModelBuilder();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder setNamespace(Namespace ns) {
+<b class="nc">&nbsp;		modelBuilder.setNamespace(ns);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder setNamespace(String prefix, String namespace) {
+<b class="nc">&nbsp;		modelBuilder.setNamespace(prefix, namespace);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder subject(Resource subject) {
+<b class="nc">&nbsp;		modelBuilder.subject(subject);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder subject(String prefixedNameOrIri) {
+<b class="nc">&nbsp;		modelBuilder.subject(prefixedNameOrIri);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder namedGraph(Resource namedGraph) {
+<b class="nc">&nbsp;		modelBuilder.namedGraph(namedGraph);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder namedGraph(String prefixedNameOrIRI) {
+<b class="nc">&nbsp;		modelBuilder.namedGraph(prefixedNameOrIRI);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder defaultGraph() {
+<b class="nc">&nbsp;		modelBuilder.defaultGraph();</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder addMaybe(Resource subject, IRI predicate, Object object) {
+<b class="nc">&nbsp;		if (ObjectUtils.allNotNull(subject, predicate, object)) {</b>
+<b class="nc">&nbsp;			return add(subject, predicate, object);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder add(Resource subject, IRI predicate, Object object) {
+<b class="nc">&nbsp;		modelBuilder.add(subject, predicate, object);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder addMaybe(String subject, IRI predicate, Object object) {
+<b class="nc">&nbsp;		if (ObjectUtils.allNotNull(subject, predicate, object)) {</b>
+<b class="nc">&nbsp;			return add(subject, predicate, object);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder add(String subject, IRI predicate, Object object) {
+<b class="nc">&nbsp;		modelBuilder.add(subject, predicate, object);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder addMaybe(String subject, String predicate, Object object) {
+<b class="nc">&nbsp;		if (ObjectUtils.allNotNull(subject, predicate, object)) {</b>
+<b class="nc">&nbsp;			return add(subject, predicate, object);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder add(String subject, String predicate, Object object) {
+<b class="nc">&nbsp;		modelBuilder.add(subject, predicate, object);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder addMaybe(IRI predicate, Object object) {
+<b class="nc">&nbsp;		if (ObjectUtils.allNotNull(predicate, object)) {</b>
+<b class="nc">&nbsp;			return add(predicate, object);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder add(IRI predicate, Object object) {
+<b class="nc">&nbsp;		modelBuilder.add(predicate, object);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder addMaybe(String predicate, Object object) {
+<b class="nc">&nbsp;		if (ObjectUtils.allNotNull(predicate, object)) {</b>
+<b class="nc">&nbsp;			return add(predicate, object);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder add(String predicate, Object object) {
+<b class="nc">&nbsp;		modelBuilder.add(predicate, object);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void acceptConnection(Consumer&lt;RepositoryConnection&gt; connectionConsumer) {
+<b class="nc">&nbsp;		connectionConsumer.accept(this.con);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public &lt;T&gt; T applyToConnection(Function&lt;RepositoryConnection, T&gt; function) {
+<b class="nc">&nbsp;		return function.apply(con);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public BNode createBNode() {
+<b class="nc">&nbsp;		return con.getValueFactory().createBNode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public UpdateWithModelBuilder withSink(Consumer&lt;Collection&lt;Statement&gt;&gt; consumer) {
+<b class="nc">&nbsp;		List&lt;Statement&gt; sink = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		consumer.accept(sink);</b>
+<b class="nc">&nbsp;		if (sink.size() &gt; 0) {</b>
+<b class="nc">&nbsp;			sink.stream()</b>
+<b class="nc">&nbsp;					.forEach(</b>
+<b class="nc">&nbsp;							s -&gt; modelBuilder.add(s.getSubject(), s.getPredicate(), s.getObject()));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void execute() {
+<b class="nc">&nbsp;		Model model = modelBuilder.build();</b>
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			StringWriter sw = new StringWriter();</b>
+<b class="nc">&nbsp;			Rio.write(model, sw, RDFFormat.TURTLE);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;adding the following triples:\n{}&quot;, sw.toString());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		con.add(model);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

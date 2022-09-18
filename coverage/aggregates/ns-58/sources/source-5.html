@@ -1,0 +1,178 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractStatement</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.base</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractStatement (org.eclipse.rdf4j.model.base)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractStatement</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.5%
+  </span>
+  <span class="absValue">
+    (12/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70.6%
+  </span>
+  <span class="absValue">
+    (12/17)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.model.base;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link Statement}, offering common functionality.
+&nbsp; *
+&nbsp; * @author Alessandro Bollini
+&nbsp; * @since 3.5.0
+&nbsp; */
+<b class="fc">&nbsp;public abstract class AbstractStatement implements Statement {</b>
+&nbsp;
+&nbsp;	private static final long serialVersionUID = 2087591563645988076L;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+&nbsp;
+&nbsp;		// We check object equality first since it&#39;s most likely to be different. In general the number of different
+&nbsp;		// predicates and contexts in sets of statements are the smallest (and therefore most likely to be identical),
+&nbsp;		// so these are checked last.
+&nbsp;
+<b class="pc">&nbsp;		return this == o || o instanceof Statement</b>
+<b class="fc">&nbsp;				&amp;&amp; getObject().equals(((Statement) o).getObject())</b>
+<b class="pc">&nbsp;				&amp;&amp; getSubject().equals(((Statement) o).getSubject())</b>
+<b class="pc">&nbsp;				&amp;&amp; getPredicate().equals(((Statement) o).getPredicate())</b>
+<b class="pc">&nbsp;				&amp;&amp; Objects.equals(getContext(), ((Statement) o).getContext());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+&nbsp;		// Inlined Objects.hash(getSubject(), getPredicate(), getObject(), getContext()) to avoid array creationg
+<b class="fc">&nbsp;		int result = 1;</b>
+<b class="pc">&nbsp;		result = 31 * result + (getSubject() == null ? 0 : getSubject().hashCode());</b>
+<b class="pc">&nbsp;		result = 31 * result + (getPredicate() == null ? 0 : getPredicate().hashCode());</b>
+<b class="pc">&nbsp;		result = 31 * result + (getObject() == null ? 0 : getObject().hashCode());</b>
+<b class="fc">&nbsp;		result = 31 * result + (getContext() == null ? 0 : getContext().hashCode());</b>
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return &quot;(&quot;</b>
+<b class="nc">&nbsp;				+ getSubject()</b>
+<b class="nc">&nbsp;				+ &quot;, &quot; + getPredicate()</b>
+<b class="nc">&nbsp;				+ &quot;, &quot; + getObject()</b>
+<b class="nc">&nbsp;				+ (getContext() == null ? &quot;&quot; : &quot;, &quot; + getContext())</b>
+&nbsp;				+ &quot;)&quot;;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

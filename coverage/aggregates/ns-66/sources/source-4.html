@@ -1,0 +1,396 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DefaultSpatialAlgebra</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql</a>
+</div>
+
+<h1>Coverage Summary for Class: DefaultSpatialAlgebra (org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DefaultSpatialAlgebra</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/56)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/92)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collections;
+&nbsp;
+&nbsp;import org.locationtech.spatial4j.shape.Point;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;import org.locationtech.spatial4j.shape.ShapeCollection;
+&nbsp;import org.locationtech.spatial4j.shape.SpatialRelation;
+&nbsp;import org.locationtech.spatial4j.shape.impl.BufferedLineString;
+&nbsp;
+&nbsp;/**
+&nbsp; * Default implementation of Spatial Algebra for use in situations where JTS support is not available.
+&nbsp; *
+&nbsp; * @deprecated use {@link JtsSpatialAlgebra} instead.
+&nbsp; */
+&nbsp;@Deprecated
+<b class="nc">&nbsp;final class DefaultSpatialAlgebra implements SpatialAlgebra {</b>
+&nbsp;
+&nbsp;	private &lt;T&gt; T notSupported() {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Not supported due to licensing issues. Feel free to provide your own implementation by using something like JTS.&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	private Shape createEmptyPoint() {
+<b class="nc">&nbsp;		return SpatialSupport.getSpatialContext().makePoint(Double.NaN, Double.NaN);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Shape createEmptyGeometry() {
+<b class="nc">&nbsp;		return new ShapeCollection&lt;&gt;(Collections.&lt;Shape&gt;emptyList(), SpatialSupport.getSpatialContext());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape convexHull(Shape s) {
+<b class="nc">&nbsp;		if (s instanceof Point) {</b>
+<b class="nc">&nbsp;			return s;</b>
+<b class="nc">&nbsp;		} else if (s instanceof ShapeCollection&lt;?&gt;) {</b>
+<b class="nc">&nbsp;			return new BufferedLineString((ShapeCollection&lt;Point&gt;) s, 0.0, SpatialSupport.getSpatialContext());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape boundary(Shape s) {
+<b class="nc">&nbsp;		if (s instanceof Point) {</b>
+&nbsp;			// points have no boundary so return empty shape
+<b class="nc">&nbsp;			return createEmptyGeometry();</b>
+<b class="nc">&nbsp;		} else if (s instanceof ShapeCollection&lt;?&gt;) {</b>
+<b class="nc">&nbsp;			ShapeCollection&lt;?&gt; col = (ShapeCollection&lt;?&gt;) s;</b>
+<b class="nc">&nbsp;			if (col.isEmpty()) {</b>
+<b class="nc">&nbsp;				return createEmptyGeometry();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			for (Shape p : col) {</b>
+<b class="nc">&nbsp;				if (!(p instanceof Point)) {</b>
+<b class="nc">&nbsp;					return notSupported();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return createEmptyGeometry();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape envelope(Shape s) {
+<b class="nc">&nbsp;		if (s instanceof Point) {</b>
+<b class="nc">&nbsp;			return s;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape union(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		if (s1 instanceof Point &amp;&amp; s2 instanceof Point) {</b>
+<b class="nc">&nbsp;			Point p1 = (Point) s1;</b>
+<b class="nc">&nbsp;			Point p2 = (Point) s2;</b>
+<b class="nc">&nbsp;			int diff = compare(p2, p1);</b>
+<b class="nc">&nbsp;			if (diff == 0) {</b>
+<b class="nc">&nbsp;				return s1;</b>
+<b class="nc">&nbsp;			} else if (diff &lt; 0) {</b>
+<b class="nc">&nbsp;				p1 = p2;</b>
+<b class="nc">&nbsp;				p2 = (Point) s1;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return new ShapeCollection&lt;&gt;(Arrays.asList(p1, p2), SpatialSupport.getSpatialContext());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int compare(Point p1, Point p2) {
+<b class="nc">&nbsp;		int diff = Double.compare(p1.getX(), p2.getX());</b>
+<b class="nc">&nbsp;		if (diff == 0) {</b>
+<b class="nc">&nbsp;			diff = Double.compare(p1.getY(), p2.getY());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return diff;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape intersection(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		if (s1 instanceof Point &amp;&amp; s2 instanceof Point) {</b>
+<b class="nc">&nbsp;			Point p1 = (Point) s1;</b>
+<b class="nc">&nbsp;			Point p2 = (Point) s2;</b>
+<b class="nc">&nbsp;			int diff = compare(p2, p1);</b>
+<b class="nc">&nbsp;			if (diff == 0) {</b>
+<b class="nc">&nbsp;				return s1;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return createEmptyPoint();</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape symDifference(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		if (s1 instanceof Point &amp;&amp; s2 instanceof Point) {</b>
+<b class="nc">&nbsp;			Point p1 = (Point) s1;</b>
+<b class="nc">&nbsp;			Point p2 = (Point) s2;</b>
+<b class="nc">&nbsp;			int diff = compare(p2, p1);</b>
+<b class="nc">&nbsp;			if (diff == 0) {</b>
+<b class="nc">&nbsp;				return createEmptyPoint();</b>
+<b class="nc">&nbsp;			} else if (diff &lt; 0) {</b>
+<b class="nc">&nbsp;				p1 = p2;</b>
+<b class="nc">&nbsp;				p2 = (Point) s1;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return new ShapeCollection&lt;&gt;(Arrays.asList(p1, p2), SpatialSupport.getSpatialContext());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape difference(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		if (s1 instanceof Point &amp;&amp; s2 instanceof Point) {</b>
+<b class="nc">&nbsp;			Point p1 = (Point) s1;</b>
+<b class="nc">&nbsp;			Point p2 = (Point) s2;</b>
+<b class="nc">&nbsp;			int diff = compare(p2, p1);</b>
+<b class="nc">&nbsp;			if (diff == 0) {</b>
+<b class="nc">&nbsp;				return createEmptyPoint();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return s1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean relate(Shape s1, Shape s2, String intersectionPattern) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfEquals(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return s1.equals(s2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfDisjoint(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return SpatialRelation.DISJOINT == s1.relate(s2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfIntersects(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return SpatialRelation.INTERSECTS == s1.relate(s2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfTouches(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfCrosses(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfWithin(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfContains(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfOverlaps(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehDisjoint(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return SpatialRelation.DISJOINT == s1.relate(s2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehMeet(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehOverlap(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehCovers(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return SpatialRelation.CONTAINS == s1.relate(s2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehCoveredBy(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return SpatialRelation.WITHIN == s1.relate(s2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehInside(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehContains(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8dc(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8ec(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8po(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8tppi(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8tpp(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8ntpp(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8ntppi(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape buffer(Shape s, double distance) {
+<b class="nc">&nbsp;		return s.getBuffered(distance, SpatialSupport.getSpatialContext());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehEquals(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8eq(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return notSupported();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

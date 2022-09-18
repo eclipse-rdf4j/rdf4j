@@ -1,0 +1,306 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TransactionalRepositoryConnectionFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.tx</a>
+</div>
+
+<h1>Coverage Summary for Class: TransactionalRepositoryConnectionFactory (org.eclipse.rdf4j.spring.tx)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TransactionalRepositoryConnectionFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/95)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.tx;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils.findWrapper;
+&nbsp;import static org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils.wrapOnce;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationReportHelper;
+&nbsp;import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.tx.exception.CommitException;
+&nbsp;import org.eclipse.rdf4j.spring.tx.exception.ConnectionClosedException;
+&nbsp;import org.eclipse.rdf4j.spring.tx.exception.NoTransactionException;
+&nbsp;import org.eclipse.rdf4j.spring.tx.exception.RDF4JTransactionException;
+&nbsp;import org.eclipse.rdf4j.spring.tx.exception.RollbackException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author ameingast@gmail.com
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class TransactionalRepositoryConnectionFactory implements RepositoryConnectionFactory {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;
+&nbsp;	private final RepositoryConnectionFactory delegateFactory;
+&nbsp;
+<b class="nc">&nbsp;	private final ThreadLocal&lt;TransactionObject&gt; transactionData = new ThreadLocal&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	public TransactionalRepositoryConnectionFactory(RepositoryConnectionFactory delegateFactory) {</b>
+<b class="nc">&nbsp;		this.delegateFactory = delegateFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public TransactionObject getTransactionData() {
+<b class="nc">&nbsp;		return transactionData.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RepositoryConnection getConnection() {
+<b class="nc">&nbsp;		logger.debug(&quot;Trying to obtain connection&quot;);</b>
+<b class="nc">&nbsp;		TransactionObject data = getTransactionData();</b>
+<b class="nc">&nbsp;		if (data == null) {</b>
+<b class="nc">&nbsp;			throw new NoTransactionException(&quot;Cannot obtain connection: no transaction&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		RepositoryConnection con = data.getConnection();</b>
+<b class="nc">&nbsp;		if (con == null) {</b>
+<b class="nc">&nbsp;			throw new RDF4JTransactionException(</b>
+&nbsp;					&quot;Cannot obtain connection: transaction started but no connection found&quot;);
+&nbsp;		}
+<b class="nc">&nbsp;		if (!con.isOpen()) {</b>
+<b class="nc">&nbsp;			throw new ConnectionClosedException(&quot;Cannot obtain connection: connection closed&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (data.isReadOnly()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;transaction is readonly, not starting a database transaction&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (!con.isActive()) {</b>
+<b class="nc">&nbsp;				logger.debug(</b>
+&nbsp;						&quot;connection does not have an active transaction yet, starting transaction&quot;);
+<b class="nc">&nbsp;				con.begin();</b>
+<b class="nc">&nbsp;				logger.debug(&quot;con.begin() called&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		logger.debug(&quot;returning  connection&quot;);</b>
+<b class="nc">&nbsp;		return con;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void closeConnection() {
+<b class="nc">&nbsp;		logger.debug(&quot;Trying to close connection&quot;);</b>
+<b class="nc">&nbsp;		RepositoryConnection con = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			TransactionObject data = getTransactionData();</b>
+<b class="nc">&nbsp;			if (data == null) {</b>
+<b class="nc">&nbsp;				throw new NoTransactionException(&quot;Cannot close connection: no transaction&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			con = data.getConnection();</b>
+<b class="nc">&nbsp;			if (con == null) {</b>
+<b class="nc">&nbsp;				throw new RDF4JTransactionException(</b>
+&nbsp;						&quot;Cannot close connection: transaction started but no connection found&quot;);
+&nbsp;			}
+<b class="nc">&nbsp;			if (!con.isOpen()) {</b>
+<b class="nc">&nbsp;				throw new ConnectionClosedException(&quot;Cannot close connection: connection closed&quot;);</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				if (con != null &amp;&amp; con.isActive()) {</b>
+<b class="nc">&nbsp;					logger.warn(</b>
+&nbsp;							&quot;Encountered active transaction when closing connection - rolling back!&quot;);
+<b class="nc">&nbsp;					con.rollback();</b>
+<b class="nc">&nbsp;					logger.debug(&quot;con.rollback() called&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Error rolling back transaction&quot;, t);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (con != null) {</b>
+<b class="nc">&nbsp;					con.close();</b>
+<b class="nc">&nbsp;					logger.debug(&quot;con.close() called&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Error closing connection&quot;, t);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			this.transactionData.remove();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Thread-local transaction data removed&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public TransactionObject createTransaction() {
+<b class="nc">&nbsp;		logger.debug(&quot;Trying to create new transaction&quot;);</b>
+<b class="nc">&nbsp;		RepositoryConnection delegate = delegateFactory.getConnection();</b>
+<b class="nc">&nbsp;		RepositoryConnection wrappedCon = wrapOnce(</b>
+&nbsp;				delegate,
+<b class="nc">&nbsp;				con -&gt; new TransactionalRepositoryConnection(con.getRepository(), con),</b>
+&nbsp;				TransactionalRepositoryConnection.class);
+<b class="nc">&nbsp;		TransactionObject txObj = new TransactionObject(wrappedCon);</b>
+<b class="nc">&nbsp;		transactionData.set(txObj);</b>
+<b class="nc">&nbsp;		TransactionalRepositoryConnection txCon = findWrapper(wrappedCon, TransactionalRepositoryConnection.class)</b>
+<b class="nc">&nbsp;				.get();</b>
+<b class="nc">&nbsp;		txCon.setTransactionObject(txObj);</b>
+<b class="nc">&nbsp;		logger.debug(&quot;Transaction created&quot;);</b>
+<b class="nc">&nbsp;		return txObj;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void endTransaction(boolean rollback) {
+<b class="nc">&nbsp;		logger.debug(&quot;Trying to end transaction&quot;);</b>
+<b class="nc">&nbsp;		TransactionObject data = getTransactionData();</b>
+<b class="nc">&nbsp;		if (data == null) {</b>
+<b class="nc">&nbsp;			throw new NoTransactionException(&quot;Cannot obtain connection: no transaction&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		RepositoryConnection con = data.getConnection();</b>
+<b class="nc">&nbsp;		if (con == null) {</b>
+<b class="nc">&nbsp;			throw new RDF4JTransactionException(</b>
+&nbsp;					&quot;Cannot obtain connection: transaction started but no connection found&quot;);
+&nbsp;		}
+<b class="nc">&nbsp;		if (!con.isOpen()) {</b>
+<b class="nc">&nbsp;			throw new ConnectionClosedException(&quot;Cannot obtain connection: connection closed&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (data.isReadOnly()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;transaction is readonly&quot;);</b>
+<b class="nc">&nbsp;			if (con.isActive()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;however, the connection is active - rolling back&quot;);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					con.rollback();</b>
+<b class="nc">&nbsp;				} catch (Exception e) {</b>
+<b class="nc">&nbsp;					throw new RollbackException(</b>
+&nbsp;							&quot;Cannot rollback changes in readonly transaction: an error occurred&quot;,
+&nbsp;							e);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				logger.debug(&quot;The connection is inactive, no updates have been attempted.&quot;);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (con.isActive()) {</b>
+<b class="nc">&nbsp;				if (rollback) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						logger.debug(&quot;rolling back transaction...&quot;);</b>
+<b class="nc">&nbsp;						con.rollback();</b>
+<b class="nc">&nbsp;						logger.debug(&quot;con.rollback() called&quot;);</b>
+<b class="nc">&nbsp;					} catch (Throwable t) {</b>
+<b class="nc">&nbsp;						throw new RollbackException(</b>
+&nbsp;								&quot;Cannot rollback transaction: an error occurred&quot;, t);
+<b class="nc">&nbsp;					}</b>
+&nbsp;				} else {
+&nbsp;					try {
+<b class="nc">&nbsp;						logger.debug(&quot;committing transaction...&quot;);</b>
+<b class="nc">&nbsp;						con.commit();</b>
+<b class="nc">&nbsp;						logger.debug(&quot;con.commit() called&quot;);</b>
+<b class="nc">&nbsp;					} catch (Throwable t) {</b>
+<b class="nc">&nbsp;						ShaclSailValidationReportHelper</b>
+<b class="nc">&nbsp;								.getValidationReportAsString(t)</b>
+<b class="nc">&nbsp;								.ifPresent(report -&gt; logger.error(</b>
+&nbsp;										&quot;SHACL validation failed, cannot commit. Validation report:\n{}&quot;, report));
+<b class="nc">&nbsp;						throw new CommitException(</b>
+&nbsp;								&quot;Cannot commit transaction: an error occurred&quot;, t);
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

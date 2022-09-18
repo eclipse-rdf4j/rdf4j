@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > TupleQueryResult</title>
+  <title>Coverage Report > TupleQueryResultHandler</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query</a>
 </div>
 
-<h1>Coverage Summary for Class: TupleQueryResult (org.eclipse.rdf4j.query)</h1>
+<h1>Coverage Summary for Class: TupleQueryResultHandler (org.eclipse.rdf4j.query)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">TupleQueryResult</td>
+  <td class="name">TupleQueryResultHandler</td>
 </tr>
 
 </table>
@@ -53,21 +53,13 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;import java.util.List;
 &nbsp;
 &nbsp;/**
-&nbsp; * A representation of a variable-binding query result as a sequence of {@link BindingSet} objects. Each query result
-&nbsp; * consists of zero or more solutions, each of which represents a single query solution as a set of bindings. Note: take
-&nbsp; * care to always close a TupleQueryResult after use to free any resources it keeps hold of.
-&nbsp; *
-&nbsp; * @author jeen
+&nbsp; * An interface defining methods related to handling sequences of Solutions.
+&nbsp; * &lt;p&gt;
+&nbsp; * Instances of this interface are capable of handling tuple results using the {@link #startQueryResult(List)} ,
+&nbsp; * {@link #handleSolution(BindingSet)} and {@link #endQueryResult()} methods.
 &nbsp; */
-&nbsp;public interface TupleQueryResult extends QueryResult&lt;BindingSet&gt; {
+&nbsp;public interface TupleQueryResultHandler extends QueryResultHandler {
 &nbsp;
-&nbsp;	/**
-&nbsp;	 * Gets the names of the bindings, in order of projection.
-&nbsp;	 *
-&nbsp;	 * @return The binding names, in order of projection.
-&nbsp;	 * @throws QueryEvaluationException
-&nbsp;	 */
-&nbsp;	List&lt;String&gt; getBindingNames() throws QueryEvaluationException;
 &nbsp;}
 </code>
 </pre>
@@ -92,7 +84,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

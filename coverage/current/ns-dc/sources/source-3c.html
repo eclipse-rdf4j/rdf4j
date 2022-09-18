@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > PushablePlanNode</title>
+  <title>Coverage Report > MultiStreamPlanNode</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.planNodes</a>
 </div>
 
-<h1>Coverage Summary for Class: PushablePlanNode (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
+<h1>Coverage Summary for Class: MultiStreamPlanNode (org.eclipse.rdf4j.sail.shacl.ast.planNodes)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">PushablePlanNode</td>
+  <td class="name">MultiStreamPlanNode</td>
 </tr>
 
 </table>
@@ -51,11 +51,12 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;
 &nbsp;package org.eclipse.rdf4j.sail.shacl.ast.planNodes;
 &nbsp;
-&nbsp;public interface PushablePlanNode extends PlanNode {
+&nbsp;public interface MultiStreamPlanNode {
+&nbsp;	void init();
 &nbsp;
-&nbsp;	void push(ValidationTuple tuple);
+&nbsp;	void close();
 &nbsp;
-&nbsp;	boolean isClosed();
+&nbsp;	boolean incrementIterator();
 &nbsp;}
 </code>
 </pre>
@@ -80,7 +81,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

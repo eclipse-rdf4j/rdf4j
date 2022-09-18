@@ -1,0 +1,211 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ShaclAstLists</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast</a>
+</div>
+
+<h1>Coverage Summary for Class: ShaclAstLists (org.eclipse.rdf4j.sail.shacl.ast)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ShaclAstLists</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.bnode;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+&nbsp;
+&nbsp;/**
+&nbsp; * Internal utility methods for the SHACL AST to quickly convert between java collections and RDF collections. These
+&nbsp; * utilities are not meant for general use as they make several simplifying assumptions for performance reasons:
+&nbsp; *
+&nbsp; * &lt;ul&gt;
+&nbsp; * &lt;li&gt;they add type coercion
+&nbsp; * &lt;Li&gt;they rely on the use of &quot;stable&quot; identifiers for blank nodes, so that duplicates can be quickly detected and
+&nbsp; * discarded
+&nbsp; * &lt;/ul&gt;
+&nbsp; *
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+<b class="nc">&nbsp;public class ShaclAstLists {</b>
+&nbsp;
+&nbsp;	public static void listToRdf(Collection&lt;? extends Value&gt; values, Resource head, Model model) {
+&nbsp;		// The Turtle parser does not add &quot;a rdf:List&quot; statements when parsing the shorthand list format,
+&nbsp;		// so we don&#39;t add rdf:List when writing it out either.
+&nbsp;
+<b class="nc">&nbsp;		Iterator&lt;? extends Value&gt; iter = values.iterator();</b>
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			Value value = iter.next();</b>
+<b class="nc">&nbsp;			model.add(head, RDF.FIRST, value);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				Resource next = bnode();</b>
+<b class="nc">&nbsp;				model.add(head, RDF.REST, next);</b>
+<b class="nc">&nbsp;				head = next;</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				model.add(head, RDF.REST, RDF.NIL);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static List&lt;Value&gt; toList(ShapeSource shapeSource, Resource head) {
+<b class="nc">&nbsp;		List&lt;Value&gt; ret = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		while (!RDF.NIL.equals(head)) {</b>
+<b class="nc">&nbsp;			Value value = shapeSource.getRdfFirst(head);</b>
+<b class="nc">&nbsp;			ret.add(value);</b>
+<b class="nc">&nbsp;			head = shapeSource.getRdfRest(head);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static &lt;T extends Value&gt; List&lt;T&gt; toList(ShapeSource shapeSource, Resource head, Class&lt;T&gt; type) {
+<b class="nc">&nbsp;		if (type == Value.class) {</b>
+<b class="nc">&nbsp;			return (List&lt;T&gt;) toList(shapeSource, head);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		List&lt;T&gt; ret = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		while (!RDF.NIL.equals(head)) {</b>
+<b class="nc">&nbsp;			Value value = shapeSource.getRdfFirst(head);</b>
+<b class="nc">&nbsp;			if (type.isInstance(value)) {</b>
+<b class="nc">&nbsp;				ret.add(((T) value));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IllegalStateException(&quot;RDF list should contain only type &quot; + type.getSimpleName()</b>
+<b class="nc">&nbsp;						+ &quot;, but found &quot; + value.getClass().getSimpleName());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			head = shapeSource.getRdfRest(head);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return ret;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,333 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TargetClass</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.targets</a>
+</div>
+
+<h1>Coverage Summary for Class: TargetClass (org.eclipse.rdf4j.sail.shacl.ast.targets)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TargetClass</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/79)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.targets;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SHACL;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.FilterByPredicateObject;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Select;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Sort;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+&nbsp;
+<b class="nc">&nbsp;public class TargetClass extends Target {</b>
+&nbsp;
+&nbsp;	private final Set&lt;Resource&gt; targetClass;
+&nbsp;
+<b class="nc">&nbsp;	public TargetClass(Set&lt;Resource&gt; targetClass) {</b>
+<b class="nc">&nbsp;		this.targetClass = targetClass;</b>
+<b class="nc">&nbsp;		assert !this.targetClass.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI getPredicate() {
+<b class="nc">&nbsp;		return SHACL.TARGET_CLASS;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode getAdded(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+&nbsp;			ConstraintComponent.Scope scope) {
+<b class="nc">&nbsp;		return getAddedRemovedInner(connectionsGroup.getAddedStatements(), dataGraph, scope);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private PlanNode getAddedRemovedInner(SailConnection connection, Resource[] dataGraph,
+&nbsp;			ConstraintComponent.Scope scope) {
+&nbsp;		PlanNode planNode;
+<b class="nc">&nbsp;		if (targetClass.size() == 1) {</b>
+<b class="nc">&nbsp;			Resource clazz = targetClass.stream().findAny().get();</b>
+<b class="nc">&nbsp;			planNode = new UnorderedSelect(connection, null, RDF.TYPE, clazz,</b>
+<b class="nc">&nbsp;					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope));</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			planNode = new Select(connection,</b>
+<b class="nc">&nbsp;					getQueryFragment(&quot;?a&quot;, &quot;?c&quot;, null, new StatementMatcher.StableRandomVariableProvider()),</b>
+<b class="nc">&nbsp;					&quot;?a&quot;, b -&gt; new ValidationTuple(b.getValue(&quot;a&quot;), scope, false, dataGraph), dataGraph);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return Unique.getInstance(planNode, false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryFragment(String subjectVariable, String objectVariable,
+&nbsp;			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+<b class="nc">&nbsp;		Set&lt;Resource&gt; targets = targetClass;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (rdfsSubClassOfReasoner != null) {</b>
+<b class="nc">&nbsp;			targets = targets.stream()</b>
+<b class="nc">&nbsp;					.flatMap(target -&gt; rdfsSubClassOfReasoner.backwardsChain(target).stream())</b>
+<b class="nc">&nbsp;					.collect(Collectors.toSet());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		assert targets.size() &gt;= 1;</b>
+&nbsp;
+<b class="nc">&nbsp;		return targets.stream()</b>
+<b class="nc">&nbsp;				.map(r -&gt; &quot;&lt;&quot; + r + &quot;&gt;&quot;)</b>
+<b class="nc">&nbsp;				.sorted()</b>
+<b class="nc">&nbsp;				.map(r -&gt; String.join(&quot;\n&quot;,</b>
+&nbsp;						&quot;{&quot;,
+<b class="nc">&nbsp;						&quot;BIND(rdf:type as &quot; + stableRandomVariableProvider.next().asSparqlVariable() + &quot;)&quot;,</b>
+&nbsp;						&quot;BIND(&quot; + r + &quot; as &quot; + objectVariable + &quot;)&quot;,
+<b class="nc">&nbsp;						&quot;&quot; + subjectVariable + &quot; &quot; + stableRandomVariableProvider.current().asSparqlVariable()</b>
+&nbsp;								+ objectVariable + &quot;.&quot;,
+&nbsp;						&quot;}&quot;
+&nbsp;				)
+&nbsp;				)
+<b class="nc">&nbsp;				.reduce((l, r) -&gt; l + &quot; UNION &quot; + r)</b>
+<b class="nc">&nbsp;				.get();</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode getTargetFilter(ConnectionsGroup connectionsGroup, Resource[] dataGraph,
+&nbsp;			PlanNode parent) {
+&nbsp;
+<b class="nc">&nbsp;		if (connectionsGroup.hasAddedStatements()) {</b>
+<b class="nc">&nbsp;			BufferedSplitter bufferedSplitter = new BufferedSplitter(parent);</b>
+&nbsp;
+<b class="nc">&nbsp;			FilterByPredicateObject typeFoundInAdded = new FilterByPredicateObject(</b>
+<b class="nc">&nbsp;					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,</b>
+<b class="nc">&nbsp;					bufferedSplitter.getPlanNode(), true, FilterByPredicateObject.FilterOn.activeTarget, false);</b>
+&nbsp;
+<b class="nc">&nbsp;			FilterByPredicateObject typeNotFoundInAdded = new FilterByPredicateObject(</b>
+<b class="nc">&nbsp;					connectionsGroup.getAddedStatements(), dataGraph, RDF.TYPE, targetClass,</b>
+<b class="nc">&nbsp;					bufferedSplitter.getPlanNode(), false, FilterByPredicateObject.FilterOn.activeTarget, false);</b>
+&nbsp;
+<b class="nc">&nbsp;			FilterByPredicateObject filterAgainstBaseConnection = new FilterByPredicateObject(</b>
+<b class="nc">&nbsp;					connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE, targetClass, typeNotFoundInAdded, true,</b>
+&nbsp;					FilterByPredicateObject.FilterOn.activeTarget, true);
+&nbsp;
+<b class="nc">&nbsp;			return new Sort(UnionNode.getInstance(typeFoundInAdded, filterAgainstBaseConnection));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new FilterByPredicateObject(connectionsGroup.getBaseConnection(), dataGraph, RDF.TYPE,</b>
+&nbsp;					targetClass, parent, true, FilterByPredicateObject.FilterOn.activeTarget, true);
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void toModel(Resource subject, IRI predicate, Model model, Set&lt;Resource&gt; cycleDetection) {
+<b class="nc">&nbsp;		targetClass.forEach(t -&gt; model.add(subject, getPredicate(), t));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Stream&lt;StatementMatcher&gt; getStatementMatcher(StatementMatcher.Variable subject,
+&nbsp;			StatementMatcher.Variable object,
+&nbsp;			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+<b class="nc">&nbsp;		assert (subject == null);</b>
+&nbsp;
+<b class="nc">&nbsp;		Stream&lt;Resource&gt; stream = targetClass.stream();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (rdfsSubClassOfReasoner != null) {</b>
+<b class="nc">&nbsp;			stream = stream</b>
+<b class="nc">&nbsp;					.map(rdfsSubClassOfReasoner::backwardsChain)</b>
+<b class="nc">&nbsp;					.flatMap(Collection::stream)</b>
+<b class="nc">&nbsp;					.distinct();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return stream</b>
+<b class="nc">&nbsp;				.map(t -&gt; new StatementMatcher(object, new StatementMatcher.Variable(RDF.TYPE),</b>
+&nbsp;						new StatementMatcher.Variable(t)));
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getTargetQueryFragment(StatementMatcher.Variable subject, StatementMatcher.Variable object,
+&nbsp;			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+<b class="nc">&nbsp;		assert (subject == null);</b>
+&nbsp;
+&nbsp;		Collection&lt;Resource&gt; targetClass;
+&nbsp;
+<b class="nc">&nbsp;		if (rdfsSubClassOfReasoner != null) {</b>
+<b class="nc">&nbsp;			targetClass = this.targetClass</b>
+<b class="nc">&nbsp;					.stream()</b>
+<b class="nc">&nbsp;					.map(rdfsSubClassOfReasoner::backwardsChain)</b>
+<b class="nc">&nbsp;					.flatMap(Collection::stream)</b>
+<b class="nc">&nbsp;					.distinct()</b>
+<b class="nc">&nbsp;					.collect(Collectors.toList());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			targetClass = this.targetClass;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (targetClass.size() == 1) {</b>
+&nbsp;
+<b class="nc">&nbsp;			return targetClass.stream()</b>
+<b class="nc">&nbsp;					.findFirst()</b>
+<b class="nc">&nbsp;					.map(r -&gt; object.asSparqlVariable() + &quot; a &lt;&quot; + r + &quot;&gt; .&quot;)</b>
+<b class="nc">&nbsp;					.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+&nbsp;		} else {
+&nbsp;
+<b class="nc">&nbsp;			String in = targetClass.stream()</b>
+<b class="nc">&nbsp;					.map(r -&gt; &quot;&lt;&quot; + r + &quot;&gt;&quot;)</b>
+<b class="nc">&nbsp;					.sorted()</b>
+<b class="nc">&nbsp;					.reduce((a, b) -&gt; a + &quot; , &quot; + b)</b>
+<b class="nc">&nbsp;					.orElse(&quot;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			String randomSparqlVariable = stableRandomVariableProvider.next().asSparqlVariable();</b>
+&nbsp;
+<b class="nc">&nbsp;			return object.asSparqlVariable() + &quot; a &quot; + randomSparqlVariable + &quot;.\n&quot; +</b>
+&nbsp;					&quot;FILTER(&quot; + randomSparqlVariable + &quot; in ( &quot; + in + &quot; ))&quot;;
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object o) {
+<b class="nc">&nbsp;		if (this == o) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (o == null || getClass() != o.getClass()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		TargetClass that = (TargetClass) o;</b>
+<b class="nc">&nbsp;		return targetClass.equals(that.targetClass);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return Objects.hash(targetClass);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

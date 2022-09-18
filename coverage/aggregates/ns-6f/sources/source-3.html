@@ -1,0 +1,386 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BottomUpJoinIterator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: BottomUpJoinIterator (org.eclipse.rdf4j.query.algebra.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BottomUpJoinIterator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/91)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;
+&nbsp;/**
+&nbsp; * Join Iterator that executes a basic bottom-up hash-join algorithm. To be used in cases where interleaved iteration
+&nbsp; * joining is not appropriate (e.g. when the join arguments are subselects).
+&nbsp; *
+&nbsp; * @author jeen
+&nbsp; * @deprecated replaced by HashJoinIteration
+&nbsp; */
+&nbsp;@Deprecated
+&nbsp;public class BottomUpJoinIterator extends LookAheadIteration&lt;BindingSet, QueryEvaluationException&gt; {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; leftIter;
+&nbsp;
+&nbsp;	private final CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; rightIter;
+&nbsp;
+&nbsp;	private List&lt;BindingSet&gt; scanList;
+&nbsp;
+&nbsp;	private CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; restIter;
+&nbsp;
+&nbsp;	private Map&lt;BindingSet, List&lt;BindingSet&gt;&gt; hashTable;
+&nbsp;
+&nbsp;	private final Set&lt;String&gt; joinAttributes;
+&nbsp;
+&nbsp;	private BindingSet currentScanElem;
+&nbsp;
+&nbsp;	private List&lt;BindingSet&gt; hashTableValues;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public BottomUpJoinIterator(EvaluationStrategy strategy, Join join, BindingSet bindings)
+<b class="nc">&nbsp;			throws QueryEvaluationException {</b>
+<b class="nc">&nbsp;		leftIter = strategy.evaluate(join.getLeftArg(), bindings);</b>
+<b class="nc">&nbsp;		rightIter = strategy.evaluate(join.getRightArg(), bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; rightBindingNames = join.getRightArg().getBindingNames();</b>
+<b class="nc">&nbsp;		joinAttributes = join.getLeftArg()</b>
+<b class="nc">&nbsp;				.getBindingNames()</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.filter(rightBindingNames::contains)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;
+<b class="nc">&nbsp;		hashTable = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected BindingSet getNextElement() throws QueryEvaluationException {
+<b class="nc">&nbsp;		if (hashTable == null) {</b>
+<b class="nc">&nbsp;			setupHashTable();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		while (currentScanElem == null) {</b>
+<b class="nc">&nbsp;			if (scanList.size() &gt; 0) {</b>
+<b class="nc">&nbsp;				currentScanElem = removeFirstElement(scanList);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (restIter.hasNext()) {</b>
+<b class="nc">&nbsp;					currentScanElem = restIter.next();</b>
+&nbsp;				} else {
+&nbsp;					// no more elements available
+<b class="nc">&nbsp;					return null;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (currentScanElem instanceof EmptyBindingSet) {</b>
+&nbsp;				// the empty bindingset should be merged with all bindingset in the
+&nbsp;				// hash table
+<b class="nc">&nbsp;				hashTableValues = makeList();</b>
+<b class="nc">&nbsp;				for (Map.Entry&lt;BindingSet, List&lt;BindingSet&gt;&gt; key : hashTable.entrySet()) {</b>
+<b class="nc">&nbsp;					addAll(hashTableValues, key.getValue());</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				BindingSet key = calcKey(currentScanElem, joinAttributes);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (hashTable.containsKey(key)) {</b>
+<b class="nc">&nbsp;					hashTableValues = makeList(hashTable.get(key));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					currentScanElem = null;</b>
+<b class="nc">&nbsp;					hashTableValues = null;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		BindingSet nextHashTableValue = removeFirstElement(hashTableValues);</b>
+&nbsp;
+<b class="nc">&nbsp;		QueryBindingSet result = new QueryBindingSet(currentScanElem);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String name : nextHashTableValue.getBindingNames()) {</b>
+<b class="nc">&nbsp;			Binding b = nextHashTableValue.getBinding(name);</b>
+<b class="nc">&nbsp;			if (!result.hasBinding(name)) {</b>
+<b class="nc">&nbsp;				result.addBinding(b);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (hashTableValues.isEmpty()) {</b>
+&nbsp;			// we&#39;ve exhausted the current scanlist entry
+<b class="nc">&nbsp;			currentScanElem = null;</b>
+<b class="nc">&nbsp;			hashTableValues = null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+<b class="nc">&nbsp;				leftIter.close();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				try {</b>
+<b class="nc">&nbsp;					CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; toCloseRightIter = rightIter;</b>
+<b class="nc">&nbsp;					if (toCloseRightIter != null) {</b>
+<b class="nc">&nbsp;						toCloseRightIter.close();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="nc">&nbsp;					hashTable = null;</b>
+<b class="nc">&nbsp;					hashTableValues = null;</b>
+<b class="nc">&nbsp;					scanList = null;</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the size that the hashtable had before clearing it.
+&nbsp;	 */
+&nbsp;	protected long clearHashTable() {
+<b class="nc">&nbsp;		int size = hashTable.size();</b>
+<b class="nc">&nbsp;		hashTable.clear();</b>
+<b class="nc">&nbsp;		return size;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private BindingSet calcKey(BindingSet bindings, Set&lt;String&gt; commonVars) {
+<b class="nc">&nbsp;		QueryBindingSet q = new QueryBindingSet();</b>
+<b class="nc">&nbsp;		for (String varName : commonVars) {</b>
+<b class="nc">&nbsp;			Binding b = bindings.getBinding(varName);</b>
+<b class="nc">&nbsp;			if (b != null) {</b>
+<b class="nc">&nbsp;				q.addBinding(b);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return q;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setupHashTable() throws QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		hashTable = makeMap();</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; leftArgResults = makeList();</b>
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; rightArgResults = makeList();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (leftIter.hasNext() &amp;&amp; rightIter.hasNext()) {</b>
+<b class="nc">&nbsp;			add(leftArgResults, leftIter.next());</b>
+<b class="nc">&nbsp;			add(rightArgResults, rightIter.next());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		List&lt;BindingSet&gt; smallestResult;
+&nbsp;
+<b class="nc">&nbsp;		if (leftIter.hasNext()) { // leftArg is the greater relation</b>
+<b class="nc">&nbsp;			smallestResult = rightArgResults;</b>
+<b class="nc">&nbsp;			scanList = leftArgResults;</b>
+<b class="nc">&nbsp;			restIter = leftIter;</b>
+&nbsp;		} else { // rightArg is the greater relation (or they are equal)
+<b class="nc">&nbsp;			smallestResult = leftArgResults;</b>
+<b class="nc">&nbsp;			scanList = rightArgResults;</b>
+<b class="nc">&nbsp;			restIter = rightIter;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// create the hash table for our join
+<b class="nc">&nbsp;		for (BindingSet b : smallestResult) {</b>
+<b class="nc">&nbsp;			BindingSet hashKey = calcKey(b, joinAttributes);</b>
+&nbsp;
+&nbsp;			List&lt;BindingSet&gt; hashValue;
+<b class="nc">&nbsp;			if (hashTable.containsKey(hashKey)) {</b>
+<b class="nc">&nbsp;				hashValue = hashTable.get(hashKey);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				hashValue = makeList();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			add(hashValue, b);</b>
+<b class="nc">&nbsp;			put(hashTable, hashKey, hashValue);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void put(Map&lt;BindingSet, List&lt;BindingSet&gt;&gt; hashTable, BindingSet hashKey, List&lt;BindingSet&gt; hashValue)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		hashTable.put(hashKey, hashValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void addAll(List&lt;BindingSet&gt; hashTableValues, List&lt;BindingSet&gt; values) throws QueryEvaluationException {
+<b class="nc">&nbsp;		hashTableValues.addAll(values);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void add(List&lt;BindingSet&gt; leftArgResults, BindingSet b) throws QueryEvaluationException {
+<b class="nc">&nbsp;		leftArgResults.add(b);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Utility methods to make it easier to inserted custom store dependent maps
+&nbsp;	 *
+&nbsp;	 * @return map
+&nbsp;	 */
+&nbsp;	protected Map&lt;BindingSet, List&lt;BindingSet&gt;&gt; makeMap() {
+<b class="nc">&nbsp;		return new HashMap&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Utility methods to make it easier to inserted custom store dependent list
+&nbsp;	 *
+&nbsp;	 * @return list
+&nbsp;	 */
+&nbsp;	protected List&lt;BindingSet&gt; makeList() {
+<b class="nc">&nbsp;		return new ArrayList&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Utility methods to make it easier to inserted custom store dependent list
+&nbsp;	 *
+&nbsp;	 * @return list
+&nbsp;	 */
+&nbsp;	protected List&lt;BindingSet&gt; makeList(List&lt;BindingSet&gt; key) {
+<b class="nc">&nbsp;		return new ArrayList&lt;&gt;(key);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove the first (0 index) element from a BindingSet list.
+&nbsp;	 *
+&nbsp;	 * @param list which is worked on.
+&nbsp;	 * @return the removed BindingSet
+&nbsp;	 */
+&nbsp;	protected BindingSet removeFirstElement(List&lt;BindingSet&gt; list) throws QueryEvaluationException {
+<b class="nc">&nbsp;		return list.remove(0);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

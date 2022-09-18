@@ -1,0 +1,551 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FederationManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: FederationManager (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FederationManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/121)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">FederationManager$FederationType</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/125)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.concurrent.Executor;
+&nbsp;import java.util.concurrent.ExecutorService;
+&nbsp;import java.util.concurrent.Executors;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.EndpointClassification;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.SailFederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.NamingThreadFactory;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.Scheduler;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.TaskWrapper;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.ControlledWorkerUnion;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.SynchronousWorkerUnion;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.union.WorkerUnionBase;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXException;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * The FederationManager manages all modules necessary for the runtime behavior. This includes for instance the
+&nbsp; * federation layer instance, cache and statistics. It is Singleton and there can only be on federation instance at a
+&nbsp; * time.
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * The factory {@link FedXFactory} provides various functions for initialization of FedX and should be used as the entry
+&nbsp; * point for any application using FedX.
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * Config.initialize(fedxConfig);
+&nbsp; * List&amp;ltEndpoint&amp;gt members = ...			// e.g. use EndpointFactory methods
+&nbsp; * FedXRepository repo = FedXFactory.initializeFederation(endpoints);
+&nbsp; * ReositoryConnection conn = repo.getConnection();
+&nbsp; *
+&nbsp; * // Do something with the connection, e.g. query evaluation
+&nbsp; * repo.shutDown();
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FederationManager {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FederationManager.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The Federation type definition: Local, Remote, Hybrid
+&nbsp;	 *
+&nbsp;	 * @author Andreas Schwarte
+&nbsp;	 */
+<b class="nc">&nbsp;	public enum FederationType {</b>
+<b class="nc">&nbsp;		LOCAL,</b>
+<b class="nc">&nbsp;		REMOTE,</b>
+<b class="nc">&nbsp;		HYBRID</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/* Instance variables */
+&nbsp;	private FederationContext federationContext;
+&nbsp;	private FedX federation;
+&nbsp;	private ExecutorService executor;
+&nbsp;	private FederationType federationType;
+&nbsp;	private ControlledWorkerScheduler&lt;BindingSet&gt; joinScheduler;
+&nbsp;	private ControlledWorkerScheduler&lt;BindingSet&gt; leftJoinScheduler;
+&nbsp;	private ControlledWorkerScheduler&lt;BindingSet&gt; unionScheduler;
+&nbsp;
+<b class="nc">&nbsp;	public FederationManager() {</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public void init(FedX federation, FederationContext federationContext) {
+<b class="nc">&nbsp;		this.federation = federation;</b>
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+<b class="nc">&nbsp;		this.executor = Executors.newCachedThreadPool(new NamingThreadFactory(&quot;FedX Executor&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;		updateFederationType();</b>
+<b class="nc">&nbsp;		reset();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the initialized and configured {@link FederationEvaluationStrategyFactory}
+&nbsp;	 */
+&nbsp;	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
+<b class="nc">&nbsp;		FederationEvaluationStrategyFactory strategyFactory = federation.getFederationEvaluationStrategyFactory();</b>
+<b class="nc">&nbsp;		strategyFactory.setFederationType(federationType);</b>
+<b class="nc">&nbsp;		strategyFactory.setFederationContext(federationContext);</b>
+<b class="nc">&nbsp;		return strategyFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reset the {@link Scheduler} instances, i.e. abort all running threads and create a new scheduler instance.
+&nbsp;	 */
+&nbsp;	public void reset() {
+<b class="nc">&nbsp;		if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;Scheduler for join and union are reset.&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Optional&lt;TaskWrapper&gt; taskWrapper = federationContext.getConfig().getTaskWrapper();</b>
+<b class="nc">&nbsp;		if (joinScheduler != null) {</b>
+<b class="nc">&nbsp;			joinScheduler.abort();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		joinScheduler = new ControlledWorkerScheduler&lt;&gt;(federationContext.getConfig().getJoinWorkerThreads(),</b>
+&nbsp;				&quot;Join Scheduler&quot;);
+<b class="nc">&nbsp;		taskWrapper.ifPresent(joinScheduler::setTaskWrapper);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (unionScheduler != null) {</b>
+<b class="nc">&nbsp;			unionScheduler.abort();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		unionScheduler = new ControlledWorkerScheduler&lt;&gt;(federationContext.getConfig().getUnionWorkerThreads(),</b>
+&nbsp;				&quot;Union Scheduler&quot;);
+<b class="nc">&nbsp;		taskWrapper.ifPresent(unionScheduler::setTaskWrapper);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (leftJoinScheduler != null) {</b>
+<b class="nc">&nbsp;			leftJoinScheduler.abort();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		leftJoinScheduler = new ControlledWorkerScheduler&lt;&gt;(federationContext.getConfig().getLeftJoinWorkerThreads(),</b>
+&nbsp;				&quot;Left Join Scheduler&quot;);
+<b class="nc">&nbsp;		taskWrapper.ifPresent(leftJoinScheduler::setTaskWrapper);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the managed {@link Executor} which takes for properly handling any configured
+&nbsp;	 * {@link FedXConfig#getTaskWrapper()}
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public Executor getExecutor() {
+<b class="nc">&nbsp;		final Optional&lt;TaskWrapper&gt; taskWrapper = federationContext.getConfig().getTaskWrapper();</b>
+<b class="nc">&nbsp;		return (runnable) -&gt; {</b>
+&nbsp;
+&nbsp;			// Note: for specific use-cases the runnable may be wrapped (e.g. to allow injection of thread-contexts). By
+&nbsp;			// default the unmodified runnable is returned from the task wrapper
+<b class="nc">&nbsp;			Runnable wrappedRunnable = taskWrapper.map(tw -&gt; tw.wrap(runnable)).orElse(runnable);</b>
+&nbsp;
+<b class="nc">&nbsp;			executor.execute(wrappedRunnable);</b>
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public FedX getFederation() {
+<b class="nc">&nbsp;		return this.federation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ControlledWorkerScheduler&lt;BindingSet&gt; getJoinScheduler() {
+<b class="nc">&nbsp;		return joinScheduler;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ControlledWorkerScheduler&lt;BindingSet&gt; getLeftJoinScheduler() {
+<b class="nc">&nbsp;		return leftJoinScheduler;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ControlledWorkerScheduler&lt;BindingSet&gt; getUnionScheduler() {
+<b class="nc">&nbsp;		return unionScheduler;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public FederationType getFederationType() {
+<b class="nc">&nbsp;		return federationType;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add the specified endpoint to the federation. The federation must not contain a member with the same endpoint
+&nbsp;	 * location.
+&nbsp;	 *
+&nbsp;	 * @param e              the endpoint
+&nbsp;	 * @param updateStrategy optional parameter, to determine if strategy is to be updated, default=true
+&nbsp;	 *
+&nbsp;	 * @throws FedXRuntimeException if the federation has already a member with the same location
+&nbsp;	 */
+&nbsp;	public void addEndpoint(Endpoint e, boolean... updateStrategy) throws FedXRuntimeException {
+<b class="nc">&nbsp;		log.info(&quot;Adding endpoint &quot; + e.getId() + &quot; to federation ...&quot;);</b>
+&nbsp;
+&nbsp;		/* check for duplicate before adding: heuristic =&gt; same location */
+<b class="nc">&nbsp;		for (Endpoint member : federation.getMembers()) {</b>
+<b class="nc">&nbsp;			if (member.getEndpoint().equals(e.getEndpoint())) {</b>
+<b class="nc">&nbsp;				throw new FedXRuntimeException(&quot;Adding failed: there exists already an endpoint with location &quot;</b>
+<b class="nc">&nbsp;						+ e.getEndpoint() + &quot; (eid=&quot; + member.getId() + &quot;)&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		federation.addMember(e);</b>
+<b class="nc">&nbsp;		federationContext.getEndpointManager().addEndpoint(e);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (updateStrategy == null || updateStrategy.length == 0</b>
+&nbsp;				|| (updateStrategy.length == 1 &amp;&amp; updateStrategy[0])) {
+<b class="nc">&nbsp;			updateFederationType();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add the specified endpoints to the federation and take care for updating all structures.
+&nbsp;	 *
+&nbsp;	 * @param endpoints a list of endpoints to add
+&nbsp;	 */
+&nbsp;	public void addAll(List&lt;Endpoint&gt; endpoints) {
+<b class="nc">&nbsp;		log.info(&quot;Adding &quot; + endpoints.size() + &quot; endpoints to the federation.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Endpoint e : endpoints) {</b>
+<b class="nc">&nbsp;			addEndpoint(e, false);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		updateFederationType();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove the specified endpoint from the federation.
+&nbsp;	 *
+&nbsp;	 * @param e              the endpoint
+&nbsp;	 * @param updateStrategy optional parameter, to determine if strategy is to be updated, default=true
+&nbsp;	 */
+&nbsp;	public void removeEndpoint(Endpoint e, boolean... updateStrategy) throws RepositoryException {
+<b class="nc">&nbsp;		log.info(&quot;Removing endpoint &quot; + e.getId() + &quot; from federation ...&quot;);</b>
+&nbsp;
+&nbsp;		/* check if e is a federation member */
+<b class="nc">&nbsp;		if (!federation.getMembers().contains(e)) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(&quot;Endpoint &quot; + e.getId() + &quot; is not a member of the current federation.&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		federation.removeMember(e);</b>
+<b class="nc">&nbsp;		federationContext.getEndpointManager().removeEndpoint(e);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (updateStrategy == null || updateStrategy.length == 0</b>
+&nbsp;				|| (updateStrategy.length == 1 &amp;&amp; updateStrategy[0])) {
+<b class="nc">&nbsp;			updateFederationType();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove all endpoints from the federation, e.g. to load a new preset. Repositories of the endpoints are shutDown,
+&nbsp;	 * and the EndpointManager is added accordingly.
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	public void removeAll() throws RepositoryException {
+<b class="nc">&nbsp;		log.info(&quot;Removing all endpoints from federation.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Endpoint e : new ArrayList&lt;&gt;(federation.getMembers())) {</b>
+<b class="nc">&nbsp;			removeEndpoint(e, false);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		updateFederationType();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Shutdown the federation including the following operations:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;shut down repositories of all federation members&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;persist the cached information&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;clear the endpoint manager&lt;/li&gt;
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 *
+&nbsp;	 * @throws FedXException if an error occurs while shutting down the federation
+&nbsp;	 */
+&nbsp;	public synchronized void shutDown() throws FedXException {
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			log.info(&quot;Shutting down federation and all underlying repositories ...&quot;);</b>
+&nbsp;			// Abort all running queries
+<b class="nc">&nbsp;			federationContext.getQueryManager().shutdown();</b>
+<b class="nc">&nbsp;			executor.shutdown();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				executor.awaitTermination(30, TimeUnit.SECONDS);</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				log.warn(&quot;Failed to shutdown executor:&quot; + e.getMessage());</b>
+<b class="nc">&nbsp;				log.debug(&quot;Details:&quot;, e);</b>
+<b class="nc">&nbsp;				Thread.currentThread().interrupt();</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				executor.shutdownNow();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			try {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					joinScheduler.shutdown();</b>
+<b class="nc">&nbsp;				} catch (Exception e) {</b>
+<b class="nc">&nbsp;					log.warn(&quot;Failed to shutdown join scheduler: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;					log.debug(&quot;Details: &quot;, e);</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					joinScheduler.abort();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				try {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						unionScheduler.shutdown();</b>
+<b class="nc">&nbsp;					} catch (Exception e) {</b>
+<b class="nc">&nbsp;						log.warn(&quot;Failed to shutdown union scheduler: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;						log.debug(&quot;Details: &quot;, e);</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						unionScheduler.abort();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							leftJoinScheduler.shutdown();</b>
+<b class="nc">&nbsp;						} catch (Exception e) {</b>
+<b class="nc">&nbsp;							log.warn(&quot;Failed to shutdown left join scheduler: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;							log.debug(&quot;Details: &quot;, e);</b>
+&nbsp;						} finally {
+<b class="nc">&nbsp;							leftJoinScheduler.abort();</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						federationContext.getFederatedServiceResolver().shutDown();</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create an appropriate worker union for this federation, i.e. a synchronous worker union for local federations and
+&nbsp;	 * a multithreaded worker union for remote &amp; hybrid federations.
+&nbsp;	 *
+&nbsp;	 * @return the {@link WorkerUnionBase}
+&nbsp;	 *
+&nbsp;	 * @see ControlledWorkerUnion
+&nbsp;	 * @see SynchronousWorkerUnion
+&nbsp;	 */
+&nbsp;	public WorkerUnionBase&lt;BindingSet&gt; createWorkerUnion(QueryInfo queryInfo) {
+<b class="nc">&nbsp;		if (federationType == FederationType.LOCAL) {</b>
+<b class="nc">&nbsp;			return new SynchronousWorkerUnion&lt;&gt;(queryInfo);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new ControlledWorkerUnion&lt;&gt;(unionScheduler, queryInfo);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Update the federation evaluation strategy using the classification of endpoints as provided by
+&nbsp;	 * {@link Endpoint#getEndpointClassification()}:
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Which strategy is applied depends on the {@link FederationEvaluationStrategyFactory}, see
+&nbsp;	 * {@link #getFederationEvaluationStrategyFactory()}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * Default strategies:
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;local federation: {@link SailFederationEvalStrategy}&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;endpoint federation: {@link SparqlFederationEvalStrategy}&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;hybrid federation: {@link SparqlFederationEvalStrategy}&lt;/li&gt;
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	private void updateFederationType() {
+&nbsp;
+<b class="nc">&nbsp;		int localCount = 0, remoteCount = 0;</b>
+<b class="nc">&nbsp;		for (Endpoint e : federation.getMembers()) {</b>
+<b class="nc">&nbsp;			if (e.getEndpointClassification() == EndpointClassification.Remote) {</b>
+<b class="nc">&nbsp;				remoteCount++;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				localCount++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean updated = false;</b>
+<b class="nc">&nbsp;		if (remoteCount == 0) {</b>
+<b class="nc">&nbsp;			if (federationType != FederationType.LOCAL) {</b>
+<b class="nc">&nbsp;				federationType = FederationType.LOCAL;</b>
+<b class="nc">&nbsp;				updated = true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (localCount == 0) {</b>
+<b class="nc">&nbsp;			if (federationType != FederationType.REMOTE) {</b>
+<b class="nc">&nbsp;				federationType = FederationType.REMOTE;</b>
+<b class="nc">&nbsp;				updated = true;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (federationType != FederationType.HYBRID) {</b>
+<b class="nc">&nbsp;				federationType = FederationType.HYBRID;</b>
+<b class="nc">&nbsp;				updated = true;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (updated) {</b>
+<b class="nc">&nbsp;			log.info(&quot;Federation updated. Type: &quot; + federationType);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

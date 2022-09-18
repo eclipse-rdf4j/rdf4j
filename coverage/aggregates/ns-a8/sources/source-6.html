@@ -1,0 +1,329 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONLDWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.jsonld</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONLDWriter (org.eclipse.rdf4j.rio.jsonld)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONLDWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/63)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.jsonld;
+&nbsp;
+&nbsp;import java.io.BufferedWriter;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.CharSink;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.JSONLDMode;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;
+&nbsp;import com.github.jsonldjava.core.JsonLdConsts;
+&nbsp;import com.github.jsonldjava.core.JsonLdError;
+&nbsp;import com.github.jsonldjava.core.JsonLdOptions;
+&nbsp;import com.github.jsonldjava.core.JsonLdProcessor;
+&nbsp;import com.github.jsonldjava.utils.JsonUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * An RDFWriter that links to {@link JSONLDInternalRDFParser}.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
+&nbsp;
+<b class="nc">&nbsp;	private final Model model = new LinkedHashModel();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final StatementCollector statementCollector = new StatementCollector(model);</b>
+&nbsp;
+&nbsp;	private final String baseURI;
+&nbsp;
+&nbsp;	private final Writer writer;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
+&nbsp;	 *
+&nbsp;	 * @param outputStream The OutputStream to write to.
+&nbsp;	 */
+&nbsp;	public JSONLDWriter(OutputStream outputStream) {
+<b class="nc">&nbsp;		this(outputStream, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a JSONLDWriter using a {@link java.io.OutputStream}
+&nbsp;	 *
+&nbsp;	 * @param outputStream The OutputStream to write to.
+&nbsp;	 * @param baseURI      base URI
+&nbsp;	 */
+<b class="nc">&nbsp;	public JSONLDWriter(OutputStream outputStream, String baseURI) {</b>
+<b class="nc">&nbsp;		this.baseURI = baseURI;</b>
+<b class="nc">&nbsp;		this.writer = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SesameJSONLDWriter using a {@link java.io.Writer}
+&nbsp;	 *
+&nbsp;	 * @param writer The Writer to write to.
+&nbsp;	 */
+&nbsp;	public JSONLDWriter(Writer writer) {
+<b class="nc">&nbsp;		this(writer, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a SesameJSONLDWriter using a {@link java.io.Writer}
+&nbsp;	 *
+&nbsp;	 * @param writer  The Writer to write to.
+&nbsp;	 * @param baseURI base URI
+&nbsp;	 */
+<b class="nc">&nbsp;	public JSONLDWriter(Writer writer, String baseURI) {</b>
+<b class="nc">&nbsp;		this.baseURI = baseURI;</b>
+<b class="nc">&nbsp;		this.writer = writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Writer getWriter() {
+<b class="nc">&nbsp;		return writer;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+<b class="nc">&nbsp;		model.setNamespace(prefix, uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		super.startRDF();</b>
+<b class="nc">&nbsp;		statementCollector.clear();</b>
+<b class="nc">&nbsp;		model.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+<b class="nc">&nbsp;		final JSONLDInternalRDFParser serialiser = new JSONLDInternalRDFParser();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			final JsonLdOptions opts = new JsonLdOptions();</b>
+&nbsp;			// opts.addBlankNodeIDs =
+&nbsp;			// getWriterConfig().get(BasicParserSettings.PRESERVE_BNODE_IDS);
+<b class="nc">&nbsp;			WriterConfig writerConfig = getWriterConfig();</b>
+<b class="nc">&nbsp;			opts.setCompactArrays(writerConfig.get(JSONLDSettings.COMPACT_ARRAYS));</b>
+<b class="nc">&nbsp;			opts.setProduceGeneralizedRdf(writerConfig.get(JSONLDSettings.PRODUCE_GENERALIZED_RDF));</b>
+<b class="nc">&nbsp;			opts.setUseRdfType(writerConfig.get(JSONLDSettings.USE_RDF_TYPE));</b>
+<b class="nc">&nbsp;			opts.setUseNativeTypes(writerConfig.get(JSONLDSettings.USE_NATIVE_TYPES));</b>
+&nbsp;			// opts.optimize = getWriterConfig().get(JSONLDSettings.OPTIMIZE);
+&nbsp;
+<b class="nc">&nbsp;			Object output = JsonLdProcessor.fromRDF(model, opts, serialiser);</b>
+&nbsp;
+<b class="nc">&nbsp;			final JSONLDMode mode = getWriterConfig().get(JSONLDSettings.JSONLD_MODE);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (writerConfig.get(JSONLDSettings.HIERARCHICAL_VIEW)) {</b>
+<b class="nc">&nbsp;				output = JSONLDHierarchicalProcessor.fromJsonLdObject(output);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (baseURI != null &amp;&amp; writerConfig.get(BasicWriterSettings.BASE_DIRECTIVE)) {</b>
+<b class="nc">&nbsp;				opts.setBase(baseURI);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (mode == JSONLDMode.EXPAND) {</b>
+<b class="nc">&nbsp;				output = JsonLdProcessor.expand(output, opts);</b>
+&nbsp;			}
+&nbsp;			// TODO: Implement inframe in JSONLDSettings
+<b class="nc">&nbsp;			final Object inframe = null;</b>
+<b class="nc">&nbsp;			if (mode == JSONLDMode.FLATTEN) {</b>
+<b class="nc">&nbsp;				output = JsonLdProcessor.flatten(output, inframe, opts);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (mode == JSONLDMode.COMPACT) {</b>
+<b class="nc">&nbsp;				final Map&lt;String, Object&gt; ctx = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				addPrefixes(ctx, model.getNamespaces());</b>
+<b class="nc">&nbsp;				final Map&lt;String, Object&gt; localCtx = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				localCtx.put(JsonLdConsts.CONTEXT, ctx);</b>
+&nbsp;
+<b class="nc">&nbsp;				output = JsonLdProcessor.compact(output, localCtx, opts);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (writerConfig.get(BasicWriterSettings.PRETTY_PRINT)) {</b>
+<b class="nc">&nbsp;				JsonUtils.writePrettyPrint(writer, output);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				JsonUtils.write(writer, output);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		} catch (JsonLdError | IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(&quot;Could not render JSONLD&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void consumeStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		statementCollector.handleStatement(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.JSONLD;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		final Collection&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+<b class="nc">&nbsp;		result.add(BasicWriterSettings.PRETTY_PRINT);</b>
+<b class="nc">&nbsp;		result.add(BasicWriterSettings.BASE_DIRECTIVE);</b>
+<b class="nc">&nbsp;		result.add(JSONLDSettings.COMPACT_ARRAYS);</b>
+<b class="nc">&nbsp;		result.add(JSONLDSettings.HIERARCHICAL_VIEW);</b>
+<b class="nc">&nbsp;		result.add(JSONLDSettings.JSONLD_MODE);</b>
+<b class="nc">&nbsp;		result.add(JSONLDSettings.PRODUCE_GENERALIZED_RDF);</b>
+<b class="nc">&nbsp;		result.add(JSONLDSettings.USE_RDF_TYPE);</b>
+<b class="nc">&nbsp;		result.add(JSONLDSettings.USE_NATIVE_TYPES);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add name space prefixes to JSON-LD context, empty prefix gets the &#39;@vocab&#39; prefix
+&nbsp;	 *
+&nbsp;	 * @param ctx        context
+&nbsp;	 * @param namespaces set of RDF name spaces
+&nbsp;	 */
+&nbsp;	private static void addPrefixes(Map&lt;String, Object&gt; ctx, Set&lt;Namespace&gt; namespaces) {
+<b class="nc">&nbsp;		for (final Namespace ns : namespaces) {</b>
+<b class="nc">&nbsp;			ctx.put(ns.getPrefix().isEmpty() ? JsonLdConsts.VOCAB : ns.getPrefix(), ns.getName());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

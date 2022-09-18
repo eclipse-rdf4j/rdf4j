@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RepositoryResolver</title>
+  <title>Coverage Report > RepositoryResolverClient</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository.sail.config</a>
 </div>
 
-<h1>Coverage Summary for Class: RepositoryResolver (org.eclipse.rdf4j.repository.sail.config)</h1>
+<h1>Coverage Summary for Class: RepositoryResolverClient (org.eclipse.rdf4j.repository.sail.config)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RepositoryResolver</td>
+  <td class="name">RepositoryResolverClient</td>
 </tr>
 
 </table>
@@ -50,21 +50,14 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.repository.sail.config;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.repository.Repository;
-&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
-&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
-&nbsp;
 &nbsp;/**
-&nbsp; * Gets local repositories using a simple identifier string.
+&nbsp; * Interface used by factory classes that need access to other repositories by their id&#39;s.
 &nbsp; *
 &nbsp; * @author Dale Visser
-&nbsp; * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.RepositoryResolver}
+&nbsp; * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.RepositoryResolverClient}
 &nbsp; */
 &nbsp;@Deprecated
-&nbsp;public interface RepositoryResolver extends org.eclipse.rdf4j.repository.RepositoryResolver {
-&nbsp;
-&nbsp;	@Override
-&nbsp;	Repository getRepository(String memberID) throws RepositoryException, RepositoryConfigException;
+&nbsp;public interface RepositoryResolverClient extends org.eclipse.rdf4j.repository.RepositoryResolverClient {
 &nbsp;}
 </code>
 </pre>
@@ -89,7 +82,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

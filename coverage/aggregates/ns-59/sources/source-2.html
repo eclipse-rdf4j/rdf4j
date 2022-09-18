@@ -1,0 +1,626 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > XMLDateTime</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.datatypes</a>
+</div>
+
+<h1>Coverage Summary for Class: XMLDateTime (org.eclipse.rdf4j.model.datatypes)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">XMLDateTime</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    38.5%
+  </span>
+  <span class="absValue">
+    (5/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    19.9%
+  </span>
+  <span class="absValue">
+    (37/186)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    31.6%
+  </span>
+  <span class="absValue">
+    (66/209)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.datatypes;
+&nbsp;
+&nbsp;import java.util.Calendar;
+&nbsp;import java.util.GregorianCalendar;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.StringTokenizer;
+&nbsp;
+&nbsp;/**
+&nbsp; * This class provides utility functions for comparisons operating on &lt;code&gt;xml:dateTime&lt;/code&gt; datatypes as specified
+&nbsp; * in &lt;a href=&quot;http://www.w3.org/TR/xmlschema11-2/#dateTime&quot;&gt;W3C XML Schema Definition Language (XSD) 1.1 Part 2:
+&nbsp; * Datatypes&lt;/a&gt;.
+&nbsp; * &lt;p/&gt;
+&nbsp; * Known deviations from the standard: - the range of years in this implementation is limited to Integer.MIN_VALUE to
+&nbsp; * Integer.MAX_VALUE for practical reasons.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/xmlschema11-2/&quot;&gt;W3C XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes&lt;/a&gt;
+&nbsp; */
+&nbsp;public class XMLDateTime implements Cloneable, Comparable&lt;XMLDateTime&gt; {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/** The raw dateTime string that was used to initialize this object. */
+&nbsp;	private final String dateTimeString;
+&nbsp;
+&nbsp;	/** Flag indicating whether the year is positive or negative. */
+&nbsp;	private boolean isNegativeYear;
+&nbsp;
+&nbsp;	/** year part of the dateTime object as String */
+&nbsp;	private String year;
+&nbsp;
+&nbsp;	/** month part of the dateTime object as String */
+&nbsp;	private String months;
+&nbsp;
+&nbsp;	/** day part of the dateTime object as String */
+&nbsp;	private String days;
+&nbsp;
+&nbsp;	/** hour part of the dateTime object as String */
+&nbsp;	private String hours;
+&nbsp;
+&nbsp;	/** minutes part of the dateTime object as String */
+&nbsp;	private String minutes;
+&nbsp;
+&nbsp;	/** seconds part of the dateTime object as String */
+&nbsp;	private String seconds;
+&nbsp;
+&nbsp;	/** fractional seconds part of the dateTime object as String */
+&nbsp;	private String fractionalSeconds;
+&nbsp;
+&nbsp;	/** Flag indicating whether the timezone, if any, is positive or negative. */
+&nbsp;	private boolean isNegativeTimezone;
+&nbsp;
+&nbsp;	/** hours part of the optional timezone as String */
+&nbsp;	private String hoursTimezone;
+&nbsp;
+&nbsp;	/** minutes part of the optional timezone as String */
+&nbsp;	private String minutesTimezone;
+&nbsp;
+&nbsp;	/** year part of the dateTime object as int */
+&nbsp;	private int iYear;
+&nbsp;
+&nbsp;	/** month part of the dateTime object as int */
+&nbsp;	private int iMonths;
+&nbsp;
+&nbsp;	/** day part of the dateTime object as int */
+&nbsp;	private int iDays;
+&nbsp;
+&nbsp;	/** hour part of the dateTime object as int */
+&nbsp;	private int iHours;
+&nbsp;
+&nbsp;	/** minute part of the dateTime object as int */
+&nbsp;	private int iMinutes;
+&nbsp;
+&nbsp;	/** second part of the dateTime object as int */
+&nbsp;	private int iSeconds;
+&nbsp;
+&nbsp;	/** fractional seconds part of the dateTime object as int */
+&nbsp;	private double iFractionalSeconds;
+&nbsp;
+&nbsp;	/** hours part of the optional timezone as int */
+&nbsp;	private int iHoursTimezone;
+&nbsp;
+&nbsp;	/** minutes part of the optional timezone as int */
+&nbsp;	private int iMinutesTimezone;
+&nbsp;
+&nbsp;	/** Flag indicating whether the values have been normalized. */
+<b class="fc">&nbsp;	private boolean isNormalized = false;</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new XMLDateTime object for the supplied xsd:dateTime string value.
+&nbsp;	 *
+&nbsp;	 * @param dateTimeString An xsd:dateTime lexical value, for example &lt;var&gt;1999-05-31T13:20:00-05:00&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException if the supplied lexical value does not constitute a valid xsd:dateTime.
+&nbsp;	 */
+<b class="fc">&nbsp;	public XMLDateTime(String dateTimeString) {</b>
+<b class="fc">&nbsp;		this.dateTimeString = XMLDatatypeUtil.collapseWhiteSpace(dateTimeString);</b>
+<b class="fc">&nbsp;		parseDateTimeString();</b>
+<b class="fc">&nbsp;		setNumericFields();</b>
+<b class="fc">&nbsp;		validateFieldValues();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	private void parseDateTimeString() {
+<b class="pc">&nbsp;		if (dateTimeString.length() &lt; 19) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+&nbsp;					&quot;String value too short to be a valid xsd:dateTime value: &quot; + dateTimeString);
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		String errMsg = &quot;Invalid xsd:dateTime value: &quot; + dateTimeString;</b>
+&nbsp;
+<b class="fc">&nbsp;		StringTokenizer st = new StringTokenizer(dateTimeString, &quot;+-:.TZ&quot;, true);</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			year = st.nextToken();</b>
+<b class="fc">&nbsp;			isNegativeYear = year.equals(&quot;-&quot;);</b>
+<b class="pc">&nbsp;			if (isNegativeYear) {</b>
+<b class="nc">&nbsp;				year = st.nextToken();</b>
+&nbsp;			}
+<b class="fc">&nbsp;			verifyTokenValue(st.nextToken(), &quot;-&quot;, errMsg);</b>
+<b class="fc">&nbsp;			months = st.nextToken();</b>
+<b class="fc">&nbsp;			verifyTokenValue(st.nextToken(), &quot;-&quot;, errMsg);</b>
+<b class="fc">&nbsp;			days = st.nextToken();</b>
+<b class="fc">&nbsp;			verifyTokenValue(st.nextToken(), &quot;T&quot;, errMsg);</b>
+<b class="fc">&nbsp;			hours = st.nextToken();</b>
+<b class="fc">&nbsp;			verifyTokenValue(st.nextToken(), &quot;:&quot;, errMsg);</b>
+<b class="fc">&nbsp;			minutes = st.nextToken();</b>
+<b class="fc">&nbsp;			verifyTokenValue(st.nextToken(), &quot;:&quot;, errMsg);</b>
+<b class="fc">&nbsp;			seconds = st.nextToken();</b>
+&nbsp;
+<b class="pc">&nbsp;			String token = st.hasMoreTokens() ? st.nextToken() : null;</b>
+&nbsp;
+<b class="pc">&nbsp;			if (&quot;.&quot;.equals(token)) {</b>
+<b class="fc">&nbsp;				fractionalSeconds = st.nextToken();</b>
+<b class="pc">&nbsp;				token = st.hasMoreTokens() ? st.nextToken() : null;</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (&quot;+&quot;.equals(token) || &quot;-&quot;.equals(token)) {</b>
+<b class="nc">&nbsp;				isNegativeTimezone = &quot;-&quot;.equals(token);</b>
+<b class="nc">&nbsp;				hoursTimezone = st.nextToken();</b>
+<b class="nc">&nbsp;				verifyTokenValue(st.nextToken(), &quot;:&quot;, errMsg);</b>
+<b class="nc">&nbsp;				minutesTimezone = st.nextToken();</b>
+<b class="pc">&nbsp;			} else if (&quot;Z&quot;.equals(token)) {</b>
+<b class="fc">&nbsp;				isNegativeTimezone = false;</b>
+<b class="fc">&nbsp;				hoursTimezone = minutesTimezone = &quot;00&quot;;</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (st.hasMoreTokens()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(errMsg);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (NoSuchElementException e) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(errMsg);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void verifyTokenValue(String token, String expected, String errMsg) {
+<b class="pc">&nbsp;		if (!token.equals(expected)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(errMsg);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void setNumericFields() {
+&nbsp;		try {
+&nbsp;			// FIXME: the following statement fails when the year is
+&nbsp;			// outside the range of integers (comment by Arjohn)
+<b class="fc">&nbsp;			iYear = Integer.parseInt(year);</b>
+<b class="fc">&nbsp;			iMonths = Integer.parseInt(months);</b>
+<b class="fc">&nbsp;			iDays = Integer.parseInt(days);</b>
+<b class="fc">&nbsp;			iHours = Integer.parseInt(hours);</b>
+<b class="fc">&nbsp;			iMinutes = Integer.parseInt(minutes);</b>
+<b class="fc">&nbsp;			iSeconds = Integer.parseInt(seconds);</b>
+&nbsp;
+<b class="pc">&nbsp;			if (fractionalSeconds != null) {</b>
+&nbsp;				// FIXME: the following statement fails when the fractional
+&nbsp;				// seconds are outside the range of doubles (comment by Arjohn)
+<b class="fc">&nbsp;				iFractionalSeconds = Double.parseDouble(&quot;0.&quot; + fractionalSeconds);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (hoursTimezone != null) {</b>
+<b class="fc">&nbsp;				iHoursTimezone = Integer.parseInt(hoursTimezone);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (minutesTimezone != null) {</b>
+<b class="fc">&nbsp;				iMinutesTimezone = Integer.parseInt(minutesTimezone);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;All fields must be numbers: &quot; + dateTimeString);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void validateFieldValues() {
+<b class="pc">&nbsp;		if (year.length() &lt; 4) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Year field requires at least 4 digits: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (months.length() != 2) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Month field must be two digits: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (days.length() != 2) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Days field must be two digits: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (hours.length() != 2) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Hours field must be two digits: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (minutes.length() != 2) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Minutes field must be two digits: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (seconds.length() != 2) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Seconds field must be two digits: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (hoursTimezone != null) {</b>
+<b class="pc">&nbsp;			if (hoursTimezone.length() != 2) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Timezone-hours field must be two digits: &quot; + dateTimeString);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (minutesTimezone.length() != 2) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Timezone-minutes field must be two digits: &quot; + dateTimeString);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (year.length() &gt; 4 &amp;&amp; year.charAt(0) == &#39;0&#39;) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+&nbsp;					&quot;Leading zeros in years with more than 4 digits are prohibited: &quot; + dateTimeString);
+&nbsp;		}
+<b class="pc">&nbsp;		if (iYear == 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;0000 is not a valid year: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (iDays &lt; 1 || iDays &gt; 31) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;invalid day value: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (iMonths &lt; 1 || iMonths &gt; 12) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;invalid month value: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (iDays == 31 &amp;&amp; is30DayMonth(iMonths)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;invalid dateTime value: &quot; + dateTimeString);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (iMonths == 2 &amp;&amp; iDays &gt; 28) {</b>
+<b class="nc">&nbsp;			if (iDays == 29) {</b>
+<b class="nc">&nbsp;				if (!isLeapYear(iYear)) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;invalid dateTime value: &quot; + dateTimeString);</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;invalid dateTime value: &quot; + dateTimeString);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (iHours &gt; 24) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Invalid hour value: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (iMinutes &gt; 59) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Invalid minute value: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (iSeconds &gt; 59) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Invalid second value: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (iHours == 24 &amp;&amp; (iMinutes != 0 || iSeconds != 0)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Invalid time: &quot; + dateTimeString);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (iHoursTimezone &gt; 14 || iMinutesTimezone &gt; 59 || iHoursTimezone == 14 &amp;&amp; iMinutesTimezone != 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Invalid timezone: &quot; + dateTimeString);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the supplied month is a month with exactly 30 days.
+&nbsp;	 *
+&nbsp;	 * @param month the month
+&nbsp;	 * @return {@code true} iff the supplied month has exactly 30 days.
+&nbsp;	 */
+&nbsp;	private boolean is30DayMonth(int month) {
+<b class="nc">&nbsp;		return month == 4 || month == 6 || month == 9 || month == 11;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the supplied year is a leap year (one in which February 29 occurs) according to the definition in
+&nbsp;	 * &lt;a href=&quot;http://www.w3.org/TR/xmlschema11-2/#dateTime&quot;&gt;the XML Schema XSD definition&lt;/a&gt;
+&nbsp;	 *
+&nbsp;	 * @param year the year.
+&nbsp;	 * @return {@code true} if the supplied year is a leap year according to the XSD definition.
+&nbsp;	 */
+&nbsp;	private boolean isLeapYear(int year) {
+<b class="nc">&nbsp;		return year % 400 == 0 || (year % 4 == 0 &amp;&amp; year % 100 != 0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this object has already been normalized.
+&nbsp;	 */
+&nbsp;	public boolean isNormalized() {
+<b class="nc">&nbsp;		return isNormalized;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes this dateTime object.
+&nbsp;	 */
+&nbsp;	public void normalize() {
+<b class="nc">&nbsp;		if (isNormalized) {</b>
+&nbsp;			// Values already normalized
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (iHours == 24 || hoursTimezone != null &amp;&amp; (iHoursTimezone != 0 || iMinutesTimezone != 0)) {</b>
+&nbsp;			// Normalize the timezone to Coordinated Universal Time (UTC)
+&nbsp;
+&nbsp;			// Insert values into a GregorianCalendar object.
+&nbsp;			// Note: GregorianCalendar uses 0-based months
+<b class="nc">&nbsp;			Calendar cal = new GregorianCalendar(iYear, iMonths - 1, iDays, iHours, iMinutes, iSeconds);</b>
+<b class="nc">&nbsp;			if (isNegativeYear) {</b>
+<b class="nc">&nbsp;				cal.set(Calendar.ERA, GregorianCalendar.BC);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Add/subtract the timezone
+<b class="nc">&nbsp;			if (isNegativeTimezone) {</b>
+<b class="nc">&nbsp;				cal.add(Calendar.HOUR_OF_DAY, iHoursTimezone);</b>
+<b class="nc">&nbsp;				cal.add(Calendar.MINUTE, iMinutesTimezone);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				cal.add(Calendar.HOUR_OF_DAY, -iHoursTimezone);</b>
+<b class="nc">&nbsp;				cal.add(Calendar.MINUTE, -iMinutesTimezone);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Get the updated fields
+<b class="nc">&nbsp;			if (cal.get(Calendar.ERA) == GregorianCalendar.BC) {</b>
+<b class="nc">&nbsp;				isNegativeYear = true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			iYear = cal.get(Calendar.YEAR);</b>
+<b class="nc">&nbsp;			iMonths = cal.get(Calendar.MONTH) + 1;</b>
+<b class="nc">&nbsp;			iDays = cal.get(Calendar.DAY_OF_MONTH);</b>
+<b class="nc">&nbsp;			iHours = cal.get(Calendar.HOUR_OF_DAY);</b>
+<b class="nc">&nbsp;			iMinutes = cal.get(Calendar.MINUTE);</b>
+<b class="nc">&nbsp;			iSeconds = cal.get(Calendar.SECOND);</b>
+&nbsp;
+<b class="nc">&nbsp;			year = int2string(iYear, 4);</b>
+<b class="nc">&nbsp;			months = int2string(iMonths, 2);</b>
+<b class="nc">&nbsp;			days = int2string(iDays, 2);</b>
+<b class="nc">&nbsp;			hours = int2string(iHours, 2);</b>
+<b class="nc">&nbsp;			minutes = int2string(iMinutes, 2);</b>
+<b class="nc">&nbsp;			seconds = int2string(iSeconds, 2);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (hoursTimezone != null) {</b>
+<b class="nc">&nbsp;				iHoursTimezone = iMinutesTimezone = 0;</b>
+<b class="nc">&nbsp;				hoursTimezone = minutesTimezone = &quot;00&quot;;</b>
+<b class="nc">&nbsp;				isNegativeTimezone = false;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (fractionalSeconds != null) {</b>
+&nbsp;			// Remove any trailing zeros
+<b class="nc">&nbsp;			int zeroCount = 0;</b>
+<b class="nc">&nbsp;			for (int i = fractionalSeconds.length() - 1; i &gt;= 0; i--) {</b>
+<b class="nc">&nbsp;				if (fractionalSeconds.charAt(i) == &#39;0&#39;) {</b>
+<b class="nc">&nbsp;					zeroCount++;</b>
+&nbsp;				} else {
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (zeroCount == fractionalSeconds.length()) {</b>
+<b class="nc">&nbsp;				fractionalSeconds = null;</b>
+<b class="nc">&nbsp;			} else if (zeroCount &gt; 0) {</b>
+<b class="nc">&nbsp;				fractionalSeconds = fractionalSeconds.substring(0, fractionalSeconds.length() - zeroCount);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		isNormalized = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an integer to a string, enforcing the resulting string to have at least &lt;var&gt;minDigits&lt;/var&gt; digits by
+&nbsp;	 * prepending zeros if it has less than that amount of digits.
+&nbsp;	 */
+&nbsp;	private String int2string(int iValue, int minDigits) {
+<b class="nc">&nbsp;		String result = String.valueOf(iValue);</b>
+&nbsp;
+<b class="nc">&nbsp;		int zeroCount = minDigits - result.length();</b>
+<b class="nc">&nbsp;		if (zeroCount &gt; 0) {</b>
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder(minDigits);</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; zeroCount; i++) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;0&#39;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			sb.append(result);</b>
+&nbsp;
+<b class="nc">&nbsp;			result = sb.toString();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the xsd:dateTime string-representation of this object.
+&nbsp;	 *
+&nbsp;	 * @return An xsd:dateTime value, e.g. &lt;var&gt;1999-05-31T13:20:00-05:00&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(32);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isNegativeYear) {</b>
+<b class="nc">&nbsp;			sb.append(&#39;-&#39;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		sb.append(year);</b>
+<b class="nc">&nbsp;		sb.append(&#39;-&#39;);</b>
+<b class="nc">&nbsp;		sb.append(months);</b>
+<b class="nc">&nbsp;		sb.append(&#39;-&#39;);</b>
+<b class="nc">&nbsp;		sb.append(days);</b>
+<b class="nc">&nbsp;		sb.append(&#39;T&#39;);</b>
+<b class="nc">&nbsp;		sb.append(hours);</b>
+<b class="nc">&nbsp;		sb.append(&#39;:&#39;);</b>
+<b class="nc">&nbsp;		sb.append(minutes);</b>
+<b class="nc">&nbsp;		sb.append(&#39;:&#39;);</b>
+<b class="nc">&nbsp;		sb.append(seconds);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (fractionalSeconds != null) {</b>
+<b class="nc">&nbsp;			sb.append(&#39;.&#39;);</b>
+<b class="nc">&nbsp;			sb.append(fractionalSeconds);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (hoursTimezone != null) {</b>
+<b class="nc">&nbsp;			if (iHoursTimezone == 0 &amp;&amp; iMinutesTimezone == 0) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;Z&quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (isNegativeTimezone) {</b>
+<b class="nc">&nbsp;					sb.append(&#39;-&#39;);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					sb.append(&#39;+&#39;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				sb.append(hoursTimezone);</b>
+<b class="nc">&nbsp;				sb.append(&#39;:&#39;);</b>
+<b class="nc">&nbsp;				sb.append(minutesTimezone);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares this DateTime object to another DateTime object.
+&nbsp;	 *
+&nbsp;	 * @throws ClassCastException If &lt;var&gt;other&lt;/var&gt; is not a DateTime object.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public int compareTo(XMLDateTime otherDT) {
+<b class="nc">&nbsp;		XMLDateTime thisDT = this;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (thisDT.hoursTimezone != null &amp;&amp; (thisDT.iHoursTimezone != 0 || thisDT.iMinutesTimezone != 0)) {</b>
+&nbsp;			// Create a normalized copy of this DateTime object
+<b class="nc">&nbsp;			thisDT = (XMLDateTime) thisDT.clone();</b>
+<b class="nc">&nbsp;			thisDT.normalize();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (otherDT.hoursTimezone != null &amp;&amp; (otherDT.iHoursTimezone != 0 || otherDT.iMinutesTimezone != 0)) {</b>
+&nbsp;			// Create a normalized copy of this DateTime object
+<b class="nc">&nbsp;			otherDT = (XMLDateTime) otherDT.clone();</b>
+<b class="nc">&nbsp;			otherDT.normalize();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (thisDT.isNegativeYear &amp;&amp; !otherDT.isNegativeYear) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+<b class="nc">&nbsp;		} else if (!thisDT.isNegativeYear &amp;&amp; otherDT.isNegativeYear) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int result = 0;</b>
+<b class="nc">&nbsp;		if (thisDT.iYear != otherDT.iYear) {</b>
+<b class="nc">&nbsp;			result = thisDT.iYear - otherDT.iYear;</b>
+<b class="nc">&nbsp;		} else if (thisDT.iMonths != otherDT.iMonths) {</b>
+<b class="nc">&nbsp;			result = thisDT.iMonths - otherDT.iMonths;</b>
+<b class="nc">&nbsp;		} else if (thisDT.iDays != otherDT.iDays) {</b>
+<b class="nc">&nbsp;			result = thisDT.iDays - otherDT.iDays;</b>
+<b class="nc">&nbsp;		} else if (thisDT.iHours != otherDT.iHours) {</b>
+<b class="nc">&nbsp;			result = thisDT.iHours - otherDT.iHours;</b>
+<b class="nc">&nbsp;		} else if (thisDT.iMinutes != otherDT.iMinutes) {</b>
+<b class="nc">&nbsp;			result = thisDT.iMinutes - otherDT.iMinutes;</b>
+<b class="nc">&nbsp;		} else if (thisDT.iSeconds != otherDT.iSeconds) {</b>
+<b class="nc">&nbsp;			result = thisDT.iSeconds - otherDT.iSeconds;</b>
+<b class="nc">&nbsp;		} else if (thisDT.iFractionalSeconds != otherDT.iFractionalSeconds) {</b>
+<b class="nc">&nbsp;			result = (thisDT.iFractionalSeconds &lt; otherDT.iFractionalSeconds) ? -1 : 1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (thisDT.isNegativeYear) {</b>
+&nbsp;			// Invert result for negative years
+<b class="nc">&nbsp;			result = -result;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// Overrides Object.clone();
+&nbsp;	@Override
+&nbsp;	public Object clone() {
+&nbsp;		try {
+<b class="nc">&nbsp;			return super.clone();</b>
+<b class="nc">&nbsp;		} catch (CloneNotSupportedException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

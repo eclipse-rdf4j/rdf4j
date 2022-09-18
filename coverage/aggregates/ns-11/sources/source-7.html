@@ -1,0 +1,485 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NioFile</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.io</a>
+</div>
+
+<h1>Coverage Summary for Class: NioFile (org.eclipse.rdf4j.common.io)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NioFile</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/83)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.io;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.nio.channels.ClosedByInterruptException;
+&nbsp;import java.nio.channels.ClosedChannelException;
+&nbsp;import java.nio.channels.FileChannel;
+&nbsp;import java.nio.channels.WritableByteChannel;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.nio.file.StandardOpenOption;
+&nbsp;import java.util.EnumSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;/**
+&nbsp; * File wrapper that protects against concurrent file closing events due to e.g. {@link Thread#interrupt() thread
+&nbsp; * interrupts}. In case the file channel that is used by this class is closed due to such an event, it will try to
+&nbsp; * reopen the channel. The thread that causes the {@link ClosedByInterruptException} is not protected, assuming the
+&nbsp; * interrupt is intended to end the thread&#39;s operation.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public final class NioFile implements Closeable {
+&nbsp;
+<b class="nc">&nbsp;	public static final EnumSet&lt;StandardOpenOption&gt; R = EnumSet.of(StandardOpenOption.READ);</b>
+<b class="nc">&nbsp;	public static final EnumSet&lt;StandardOpenOption&gt; RW = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,</b>
+&nbsp;			StandardOpenOption.CREATE);
+<b class="nc">&nbsp;	public static final EnumSet&lt;StandardOpenOption&gt; RWS = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,</b>
+&nbsp;			StandardOpenOption.CREATE, StandardOpenOption.SYNC);
+<b class="nc">&nbsp;	public static final EnumSet&lt;StandardOpenOption&gt; RWD = EnumSet.of(StandardOpenOption.READ, StandardOpenOption.WRITE,</b>
+&nbsp;			StandardOpenOption.CREATE, StandardOpenOption.DSYNC);
+&nbsp;	private final File file;
+&nbsp;	private final Set&lt;StandardOpenOption&gt; openOptions;
+&nbsp;
+&nbsp;	private volatile FileChannel fc;
+&nbsp;
+&nbsp;	private volatile boolean explictlyClosed;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor Opens a file in read/write mode, creating a new one if the file doesn&#39;t exist.
+&nbsp;	 *
+&nbsp;	 * @param file
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public NioFile(File file) throws IOException {
+<b class="nc">&nbsp;		this(file, &quot;rw&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor Opens a file in a specific mode, creating a new one if the file doesn&#39;t exist.
+&nbsp;	 *
+&nbsp;	 * @param file file
+&nbsp;	 * @param mode file mode
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public NioFile(File file, String mode) throws IOException {
+<b class="nc">&nbsp;		this(file, toOpenOptions(mode));</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public NioFile(File file, Set&lt;StandardOpenOption&gt; openOptions) throws IOException {</b>
+<b class="nc">&nbsp;		this.openOptions = openOptions;</b>
+<b class="nc">&nbsp;		explictlyClosed = false;</b>
+<b class="nc">&nbsp;		this.file = file;</b>
+<b class="nc">&nbsp;		open();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public NioFile(Path path, Set&lt;StandardOpenOption&gt; openOptions) throws IOException {
+<b class="nc">&nbsp;		this(path.toFile(), openOptions);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Set&lt;StandardOpenOption&gt; toOpenOptions(String mode) {
+<b class="nc">&nbsp;		switch (mode) {</b>
+&nbsp;		case &quot;r&quot;:
+<b class="nc">&nbsp;			return R;</b>
+&nbsp;		case &quot;rw&quot;:
+<b class="nc">&nbsp;			return RW;</b>
+&nbsp;		case &quot;rws&quot;:
+<b class="nc">&nbsp;			return RWS;</b>
+&nbsp;		case &quot;rwd&quot;:
+<b class="nc">&nbsp;			return RWD;</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			throw new IllegalArgumentException();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Open a file channel for random access.
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private void open() throws IOException {
+<b class="nc">&nbsp;		fc = FileChannel.open(file.toPath(), openOptions);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reopen a channel closed by an exception, unless it was closed explicitly.
+&nbsp;	 *
+&nbsp;	 * @param e exception that closed the channel
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private synchronized void reopen(ClosedChannelException e) throws IOException {
+<b class="nc">&nbsp;		if (explictlyClosed) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (fc.isOpen()) {</b>
+&nbsp;			// file channel has been already reopened by another thread
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		open();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void close() throws IOException {
+<b class="nc">&nbsp;		explictlyClosed = true;</b>
+<b class="nc">&nbsp;		fc.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if a file was closed explicitly.
+&nbsp;	 *
+&nbsp;	 * @return true if it was closed explicitly
+&nbsp;	 */
+&nbsp;	public boolean isClosed() {
+<b class="nc">&nbsp;		return explictlyClosed;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public File getFile() {
+<b class="nc">&nbsp;		return file;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Close any open channels and then deletes the file.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if the file has been deleted successfully, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @throws IOException If there was a problem closing the open file channel.
+&nbsp;	 */
+&nbsp;	public boolean delete() throws IOException {
+&nbsp;		// make sure to close file handles prior to deletion
+<b class="nc">&nbsp;		close();</b>
+<b class="nc">&nbsp;		return file.delete();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Performs a protected {@link FileChannel#force(boolean)} call.
+&nbsp;	 *
+&nbsp;	 * @param metaData
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void force(boolean metaData) throws IOException {
+&nbsp;		while (true) {
+&nbsp;			try {
+<b class="nc">&nbsp;				fc.force(metaData);</b>
+&nbsp;				return;
+<b class="nc">&nbsp;			} catch (ClosedByInterruptException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (ClosedChannelException e) {</b>
+<b class="nc">&nbsp;				reopen(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Performs a protected {@link FileChannel#truncate(long)} call.
+&nbsp;	 *
+&nbsp;	 * @param size
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void truncate(long size) throws IOException {
+&nbsp;		while (true) {
+&nbsp;			try {
+<b class="nc">&nbsp;				fc.truncate(size);</b>
+&nbsp;				return;
+<b class="nc">&nbsp;			} catch (ClosedByInterruptException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (ClosedChannelException e) {</b>
+<b class="nc">&nbsp;				reopen(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Performs a protected {@link FileChannel#size()} call.
+&nbsp;	 *
+&nbsp;	 * @return size of the file
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public long size() throws IOException {
+&nbsp;		while (true) {
+&nbsp;			try {
+<b class="nc">&nbsp;				return fc.size();</b>
+<b class="nc">&nbsp;			} catch (ClosedByInterruptException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (ClosedChannelException e) {</b>
+<b class="nc">&nbsp;				reopen(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Performs a protected {@link FileChannel#transferTo(long, long, WritableByteChannel)} call.
+&nbsp;	 *
+&nbsp;	 * @param position position within the file
+&nbsp;	 * @param count    number of bytes to transfer
+&nbsp;	 * @param target   target channel
+&nbsp;	 * @return number of bytes transferred
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public long transferTo(long position, long count, WritableByteChannel target) throws IOException {
+&nbsp;		while (true) {
+&nbsp;			try {
+<b class="nc">&nbsp;				return fc.transferTo(position, count, target);</b>
+<b class="nc">&nbsp;			} catch (ClosedByInterruptException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (ClosedChannelException e) {</b>
+<b class="nc">&nbsp;				reopen(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Performs a protected {@link FileChannel#write(ByteBuffer, long)} call.
+&nbsp;	 *
+&nbsp;	 * @param buf    buffer
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @return number of bytes written
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public int write(ByteBuffer buf, long offset) throws IOException {
+&nbsp;		while (true) {
+&nbsp;			try {
+<b class="nc">&nbsp;				return fc.write(buf, offset);</b>
+<b class="nc">&nbsp;			} catch (ClosedByInterruptException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (ClosedChannelException e) {</b>
+<b class="nc">&nbsp;				reopen(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Performs a protected {@link FileChannel#read(ByteBuffer, long)} call.
+&nbsp;	 *
+&nbsp;	 * @param buf    buffer to read
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @return number of bytes read
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public int read(ByteBuffer buf, long offset) throws IOException {
+&nbsp;		while (true) {
+&nbsp;			try {
+<b class="nc">&nbsp;				return fc.read(buf, offset);</b>
+<b class="nc">&nbsp;			} catch (ClosedByInterruptException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (ClosedChannelException e) {</b>
+<b class="nc">&nbsp;				reopen(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write byte array to channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param value  byte array to write
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void writeBytes(byte[] value, long offset) throws IOException {
+<b class="nc">&nbsp;		write(ByteBuffer.wrap(value), offset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read a byte array of a specific length from channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param offset
+&nbsp;	 * @param length
+&nbsp;	 * @return byte array
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public byte[] readBytes(long offset, int length) throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.allocate(length);</b>
+<b class="nc">&nbsp;		read(buf, offset);</b>
+<b class="nc">&nbsp;		return buf.array();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write single byte to channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param value  value to write
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void writeByte(byte value, long offset) throws IOException {
+<b class="nc">&nbsp;		writeBytes(new byte[] { value }, offset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read single byte from channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @return byte
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public byte readByte(long offset) throws IOException {
+<b class="nc">&nbsp;		return readBytes(offset, 1)[0];</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write long value to channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param value  value to write
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void writeLong(long value, long offset) throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.allocate(8);</b>
+<b class="nc">&nbsp;		buf.putLong(0, value);</b>
+<b class="nc">&nbsp;		write(buf, offset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read long value from channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @return long
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public long readLong(long offset) throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.allocate(8);</b>
+<b class="nc">&nbsp;		read(buf, offset);</b>
+<b class="nc">&nbsp;		return buf.getLong(0);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write integer value to channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param value  value to write
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void writeInt(int value, long offset) throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.allocate(4);</b>
+<b class="nc">&nbsp;		buf.putInt(0, value);</b>
+<b class="nc">&nbsp;		write(buf, offset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read integer value from channel starting at offset.
+&nbsp;	 *
+&nbsp;	 * @param offset non-negative offset
+&nbsp;	 * @return integer
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public int readInt(long offset) throws IOException {
+<b class="nc">&nbsp;		ByteBuffer buf = ByteBuffer.allocate(4);</b>
+<b class="nc">&nbsp;		read(buf, offset);</b>
+<b class="nc">&nbsp;		return buf.getInt(0);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

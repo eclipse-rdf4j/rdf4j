@@ -1,0 +1,239 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Aggregate</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.constraint</a>
+</div>
+
+<h1>Coverage Summary for Class: Aggregate (org.eclipse.rdf4j.sparqlbuilder.constraint)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Aggregate</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.constraint;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SPARQL aggregate expression.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#aggregates&quot;&gt; SPARQL Aggregates&lt;/a&gt;
+&nbsp; */
+&nbsp;public class Aggregate extends Expression&lt;Aggregate&gt; {
+&nbsp;	private static final String DISTINCT = &quot;DISTINCT&quot;;
+<b class="nc">&nbsp;	private static final Object SEPARATOR = &quot;SEPARATOR&quot;;</b>
+&nbsp;
+&nbsp;	private String separator;
+<b class="nc">&nbsp;	private boolean isDistinct = false;</b>
+<b class="nc">&nbsp;	private boolean countAll = false;</b>
+&nbsp;
+&nbsp;	Aggregate(SparqlAggregate aggregate) {
+<b class="nc">&nbsp;		super(aggregate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify this aggregate expression to be distinct
+&nbsp;	 *
+&nbsp;	 * @return this aggregate instance
+&nbsp;	 */
+&nbsp;	public Aggregate distinct() {
+<b class="nc">&nbsp;		return distinct(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify if this aggregate expression should be distinct or not
+&nbsp;	 *
+&nbsp;	 * @param isDistinct if this aggregate should be distinct
+&nbsp;	 *
+&nbsp;	 * @return this aggregate instance
+&nbsp;	 */
+&nbsp;	public Aggregate distinct(boolean isDistinct) {
+<b class="nc">&nbsp;		this.isDistinct = isDistinct;</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If this is a {@code count} aggregate expressions, specify that it should count all
+&nbsp;	 *
+&nbsp;	 * @return this aggregate instance
+&nbsp;	 */
+&nbsp;	public Aggregate countAll() {
+<b class="nc">&nbsp;		return countAll(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If this is a {@code count} aggregate expressions, specify if it should count all
+&nbsp;	 *
+&nbsp;	 * @param countAll if this should count all arguments or not
+&nbsp;	 *
+&nbsp;	 * @return this aggregate instance
+&nbsp;	 */
+&nbsp;	public Aggregate countAll(boolean countAll) {
+<b class="nc">&nbsp;		this.countAll = countAll;</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If this is a {@code group_concat} aggregate expression, specify the separator to use
+&nbsp;	 *
+&nbsp;	 * @param separator the separator to use
+&nbsp;	 *
+&nbsp;	 * @return this aggregate instance
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#defn_aggGroupConcat&quot;&gt; group_concat()&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public Aggregate separator(String separator) {
+<b class="nc">&nbsp;		this.separator = separator;</b>
+&nbsp;
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		StringBuilder aggregate = new StringBuilder();</b>
+<b class="nc">&nbsp;		StringBuilder params = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		aggregate.append(operator.getQueryString());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isDistinct) {</b>
+<b class="nc">&nbsp;			params.append(DISTINCT).append(&quot; &quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Yeah. I know...
+<b class="nc">&nbsp;		if (operator == SparqlAggregate.COUNT &amp;&amp; countAll) {</b>
+<b class="nc">&nbsp;			params.append(&quot;*&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			params.append(super.getQueryString());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Yep, I still know...
+<b class="nc">&nbsp;		if (operator == SparqlAggregate.GROUP_CONCAT &amp;&amp; separator != null) {</b>
+<b class="nc">&nbsp;			params.append(&quot; &quot;)</b>
+<b class="nc">&nbsp;					.append(&quot;;&quot;)</b>
+<b class="nc">&nbsp;					.append(&quot; &quot;)</b>
+<b class="nc">&nbsp;					.append(SEPARATOR)</b>
+<b class="nc">&nbsp;					.append(&quot; &quot;)</b>
+<b class="nc">&nbsp;					.append(&quot;=&quot;)</b>
+<b class="nc">&nbsp;					.append(&quot; &quot;)</b>
+<b class="nc">&nbsp;					.append(separator);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return aggregate.append(SparqlBuilderUtils.getParenthesizedString(params.toString())).toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

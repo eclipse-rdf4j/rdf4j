@@ -1,0 +1,480 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFJSONParserTestCase</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.rio.rdfjson</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFJSONParserTestCase (org.eclipse.rdf4j.testsuite.rio.rdfjson)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFJSONParserTestCase</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/78)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RDFJSONParserTestCase$NegativeParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RDFJSONParserTestCase$PositiveParserTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/119)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.rio.rdfjson;
+&nbsp;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;
+&nbsp;import junit.framework.TestCase;
+&nbsp;import junit.framework.TestSuite;
+&nbsp;
+&nbsp;/**
+&nbsp; * JUnit test for the RDFJSON Parser.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+<b class="nc">&nbsp;public abstract class RDFJSONParserTestCase {</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+<b class="nc">&nbsp;	protected static String BASE_URL = &quot;http://example/base/&quot;;</b>
+&nbsp;
+&nbsp;	private static final String TEST_FILE_BASE_PATH = &quot;/testcases/rdfjson/&quot;;
+&nbsp;
+&nbsp;	private static final String MANIFEST_GOOD_URL = &quot;/testcases/rdfjson/manifest.ttl&quot;;
+&nbsp;
+&nbsp;	/*--------------------*
+&nbsp;	 * Static initializer *
+&nbsp;	 *--------------------*/
+&nbsp;
+&nbsp;	public TestSuite createTestSuite() throws Exception {
+&nbsp;		// Create test suite
+<b class="nc">&nbsp;		TestSuite suite = new TestSuite(RDFJSONParserTestCase.class.getName());</b>
+&nbsp;
+&nbsp;		// Add the manifest for positive test cases to a repository and query it
+<b class="nc">&nbsp;		Repository repository = new SailRepository(new MemoryStore());</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+&nbsp;
+<b class="nc">&nbsp;			InputStream inputStream = this.getClass().getResourceAsStream(MANIFEST_GOOD_URL);</b>
+<b class="nc">&nbsp;			con.add(inputStream, BASE_URL, RDFFormat.TURTLE);</b>
+&nbsp;
+<b class="nc">&nbsp;			StringBuilder positiveQuery = new StringBuilder();</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot; PREFIX mf:   &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot; PREFIX qt:   &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot; PREFIX rdft: &lt;http://www.w3.org/ns/rdftest#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot; SELECT ?test ?testName ?inputURL ?outputURL \n&quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot; WHERE { \n&quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot;     ?test a rdft:TestRDFJSONPositiveSyntax . &quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot;     ?test mf:name ?testName . &quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot;     ?test mf:action ?inputURL . &quot;);</b>
+<b class="nc">&nbsp;			positiveQuery.append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (TupleQueryResult queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveQuery.toString())</b>
+<b class="nc">&nbsp;					.evaluate()) {</b>
+&nbsp;				// Add all positive parser tests to the test suite
+<b class="nc">&nbsp;				while (queryResult.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = queryResult.next();</b>
+<b class="nc">&nbsp;					String nextTestName = ((Literal) bindingSet.getValue(&quot;testName&quot;)).getLabel();</b>
+<b class="nc">&nbsp;					String nextTestFile = removeBase(((IRI) bindingSet.getValue(&quot;inputURL&quot;)).toString());</b>
+<b class="nc">&nbsp;					String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;</b>
+&nbsp;
+<b class="nc">&nbsp;					String nextBaseUrl = BASE_URL + nextTestFile;</b>
+&nbsp;
+<b class="nc">&nbsp;					suite.addTest(new PositiveParserTest(nextTestName, nextInputURL, null, nextBaseUrl));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			StringBuilder negativeQuery = new StringBuilder();</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot; PREFIX mf:   &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot; PREFIX qt:   &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot; PREFIX rdft: &lt;http://www.w3.org/ns/rdftest#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot; SELECT ?test ?testName ?inputURL ?outputURL \n&quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot; WHERE { \n&quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot;     ?test a rdft:TestRDFJSONNegativeSyntax . &quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot;     ?test mf:name ?testName . &quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot;     ?test mf:action ?inputURL . &quot;);</b>
+<b class="nc">&nbsp;			negativeQuery.append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (var queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, negativeQuery.toString()).evaluate()) {</b>
+&nbsp;
+&nbsp;				// Add all negative parser tests to the test suite
+<b class="nc">&nbsp;				while (queryResult.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = queryResult.next();</b>
+<b class="nc">&nbsp;					String nextTestName = ((Literal) bindingSet.getValue(&quot;testName&quot;)).toString();</b>
+<b class="nc">&nbsp;					String nextTestFile = removeBase(((IRI) bindingSet.getValue(&quot;inputURL&quot;)).toString());</b>
+<b class="nc">&nbsp;					String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;</b>
+&nbsp;
+<b class="nc">&nbsp;					String nextBaseUrl = BASE_URL + nextTestFile;</b>
+&nbsp;
+<b class="nc">&nbsp;					suite.addTest(new NegativeParserTest(nextTestName, nextInputURL, nextBaseUrl));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			StringBuilder positiveEvalQuery = new StringBuilder();</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot; PREFIX mf:   &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot; PREFIX qt:   &lt;http://www.w3.org/2001/sw/DataAccess/tests/test-query#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot; PREFIX rdft: &lt;http://www.w3.org/ns/rdftest#&gt;\n&quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot; SELECT ?test ?testName ?inputURL ?outputURL \n&quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot; WHERE { \n&quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot;     ?test a rdft:TestRDFJSONEval . &quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot;     ?test mf:name ?testName . &quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot;     ?test mf:action ?inputURL . &quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot;     ?test mf:result ?outputURL . &quot;);</b>
+<b class="nc">&nbsp;			positiveEvalQuery.append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (var queryResult = con.prepareTupleQuery(QueryLanguage.SPARQL, positiveEvalQuery.toString())</b>
+<b class="nc">&nbsp;					.evaluate()) {</b>
+&nbsp;
+&nbsp;				// Add all positive eval tests to the test suite
+<b class="nc">&nbsp;				while (queryResult.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindingSet = queryResult.next();</b>
+<b class="nc">&nbsp;					String nextTestName = ((Literal) bindingSet.getValue(&quot;testName&quot;)).getLabel();</b>
+<b class="nc">&nbsp;					String nextTestFile = removeBase(((IRI) bindingSet.getValue(&quot;inputURL&quot;)).toString());</b>
+<b class="nc">&nbsp;					String nextInputURL = TEST_FILE_BASE_PATH + nextTestFile;</b>
+<b class="nc">&nbsp;					String nextOutputURL = TEST_FILE_BASE_PATH</b>
+<b class="nc">&nbsp;							+ removeBase(((IRI) bindingSet.getValue(&quot;outputURL&quot;)).toString());</b>
+&nbsp;
+<b class="nc">&nbsp;					String nextBaseUrl = BASE_URL + nextTestFile;</b>
+&nbsp;
+<b class="nc">&nbsp;					suite.addTest(new PositiveParserTest(nextTestName, nextInputURL, nextOutputURL, nextBaseUrl));</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		repository.shutDown();</b>
+&nbsp;
+<b class="nc">&nbsp;		return suite;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract RDFParser createRDFParser();
+&nbsp;
+&nbsp;	/*--------------------------------*
+&nbsp;	 * Inner class PositiveParserTest *
+&nbsp;	 *--------------------------------*/
+&nbsp;
+&nbsp;	private class PositiveParserTest extends TestCase {
+&nbsp;
+&nbsp;		/*-----------*
+&nbsp;		 * Variables *
+&nbsp;		 *-----------*/
+&nbsp;
+&nbsp;		private final String inputURL;
+&nbsp;
+&nbsp;		private String outputURL;
+&nbsp;
+&nbsp;		private final String baseURL;
+&nbsp;
+&nbsp;		/*--------------*
+&nbsp;		 * Constructors *
+&nbsp;		 *--------------*/
+&nbsp;
+&nbsp;		public PositiveParserTest(String testName, String inputURL, String outputURL, String baseURL)
+<b class="nc">&nbsp;				throws MalformedURLException {</b>
+<b class="nc">&nbsp;			super(testName);</b>
+<b class="nc">&nbsp;			this.inputURL = inputURL;</b>
+<b class="nc">&nbsp;			if (outputURL != null) {</b>
+<b class="nc">&nbsp;				this.outputURL = outputURL;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			this.baseURL = baseURL;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*---------*
+&nbsp;		 * Methods *
+&nbsp;		 *---------*/
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void runTest() throws Exception {
+&nbsp;			// Parse input data
+<b class="nc">&nbsp;			RDFParser rdfjsonParser = createRDFParser();</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Statement&gt; inputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementCollector inputCollector = new StatementCollector(inputCollection);</b>
+<b class="nc">&nbsp;			rdfjsonParser.setRDFHandler(inputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;			InputStream in = this.getClass().getResourceAsStream(inputURL);</b>
+<b class="nc">&nbsp;			rdfjsonParser.parse(in, baseURL);</b>
+<b class="nc">&nbsp;			in.close();</b>
+&nbsp;
+&nbsp;			// Parse expected output data
+<b class="nc">&nbsp;			NTriplesParser ntriplesParser = new NTriplesParser();</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;Statement&gt; outputCollection = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StatementCollector outputCollector = new StatementCollector(outputCollection);</b>
+<b class="nc">&nbsp;			ntriplesParser.setRDFHandler(outputCollector);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (outputURL != null) {</b>
+&nbsp;				// System.out.println(this.outputURL);
+&nbsp;				//
+&nbsp;				// NTriplesWriter nTriplesWriter = new NTriplesWriter(System.out);
+&nbsp;				// nTriplesWriter.startRDF();
+&nbsp;				// for(Statement nextStatment : inputCollection) {
+&nbsp;				// nTriplesWriter.handleStatement(nextStatment);
+&nbsp;				// }
+&nbsp;				// nTriplesWriter.endRDF();
+&nbsp;
+<b class="nc">&nbsp;				in = this.getClass().getResourceAsStream(outputURL);</b>
+<b class="nc">&nbsp;				ntriplesParser.parse(in, baseURL);</b>
+<b class="nc">&nbsp;				in.close();</b>
+&nbsp;
+&nbsp;				// Check equality of the two models
+<b class="nc">&nbsp;				if (!Models.isomorphic(inputCollection, outputCollection)) {</b>
+<b class="nc">&nbsp;					System.err.println(&quot;===models not equal===&quot;);</b>
+<b class="nc">&nbsp;					System.err.println(&quot;Expected: &quot; + outputCollection);</b>
+<b class="nc">&nbsp;					System.err.println(&quot;Actual  : &quot; + inputCollection);</b>
+<b class="nc">&nbsp;					System.err.println(&quot;======================&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					fail(&quot;models not equal&quot;);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;	} // end inner class PositiveParserTest
+&nbsp;
+&nbsp;	/*--------------------------------*
+&nbsp;	 * Inner class NegativeParserTest *
+&nbsp;	 *--------------------------------*/
+&nbsp;
+&nbsp;	private class NegativeParserTest extends TestCase {
+&nbsp;
+&nbsp;		/*-----------*
+&nbsp;		 * Variables *
+&nbsp;		 *-----------*/
+&nbsp;
+&nbsp;		private final String inputURL;
+&nbsp;
+&nbsp;		private final String baseURL;
+&nbsp;
+&nbsp;		/*--------------*
+&nbsp;		 * Constructors *
+&nbsp;		 *--------------*/
+&nbsp;
+<b class="nc">&nbsp;		public NegativeParserTest(String caseURI, String inputURL, String baseURL) throws MalformedURLException {</b>
+<b class="nc">&nbsp;			super(caseURI);</b>
+<b class="nc">&nbsp;			this.inputURL = inputURL;</b>
+<b class="nc">&nbsp;			this.baseURL = baseURL;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/*---------*
+&nbsp;		 * Methods *
+&nbsp;		 *---------*/
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void runTest() {
+&nbsp;			try {
+&nbsp;				// Try parsing the input; this should result in an error being
+&nbsp;				// reported.
+<b class="nc">&nbsp;				RDFParser rdfjsonParser = createRDFParser();</b>
+&nbsp;
+<b class="nc">&nbsp;				rdfjsonParser.setRDFHandler(new StatementCollector());</b>
+&nbsp;
+<b class="nc">&nbsp;				InputStream in = this.getClass().getResourceAsStream(inputURL);</b>
+<b class="nc">&nbsp;				rdfjsonParser.parse(in, baseURL);</b>
+<b class="nc">&nbsp;				in.close();</b>
+&nbsp;
+<b class="nc">&nbsp;				fail(&quot;Parser parses erroneous data without reporting errors&quot;);</b>
+<b class="nc">&nbsp;			} catch (RDFParseException e) {</b>
+&nbsp;				// This is expected as the input file is incorrect RDF
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				fail(&quot;Error: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	} // end inner class NegativeParserTest
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param baseUrl
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private String removeBase(String baseUrl) {
+<b class="nc">&nbsp;		if (baseUrl.startsWith(BASE_URL)) {</b>
+<b class="nc">&nbsp;			return baseUrl.substring(BASE_URL.length());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return baseUrl;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

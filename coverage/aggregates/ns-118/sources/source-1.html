@@ -1,0 +1,390 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractModelPerformanceTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.model</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractModelPerformanceTest (org.eclipse.rdf4j.testsuite.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractModelPerformanceTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.model;
+&nbsp;
+&nbsp;import static org.junit.jupiter.api.Assertions.fail;
+&nbsp;
+&nbsp;import org.junit.jupiter.api.AfterAll;
+&nbsp;import org.junit.jupiter.api.BeforeAll;
+&nbsp;import org.junit.jupiter.api.Disabled;
+&nbsp;import org.junit.jupiter.api.Test;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Peter Ansell
+&nbsp; */
+<b class="nc">&nbsp;public abstract class AbstractModelPerformanceTest extends ModelTest {</b>
+&nbsp;
+&nbsp;	private static final int COUNT = 150;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws java.lang.Exception
+&nbsp;	 */
+&nbsp;	@BeforeAll
+&nbsp;	@Override
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		super.setUp();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws java.lang.Exception
+&nbsp;	 */
+&nbsp;	@AfterAll
+&nbsp;	@Override
+&nbsp;	public void tearDown() throws Exception {
+<b class="nc">&nbsp;		super.tearDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for
+&nbsp;	 * {@link org.eclipse.rdf4j.model.Model#add(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
+&nbsp;	 * .
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfAddResourceURIValueResourceArray() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#getNamespaces()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfGetNamespaces() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#getNamespace(java.lang.String)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfGetNamespace() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#setNamespace(java.lang.String, java.lang.String)} .
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfSetNamespaceStringString() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#setNamespace(org.eclipse.rdf4j.model.Namespace)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfSetNamespaceNamespace() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#removeNamespace(java.lang.String)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfRemoveNamespace() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for
+&nbsp;	 * {@link org.eclipse.rdf4j.model.Model#contains(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
+&nbsp;	 * .
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfContainsResourceURIValueResourceArray() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#clear(org.eclipse.rdf4j.model.Resource[])}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfClearResourceArray() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for
+&nbsp;	 * {@link org.eclipse.rdf4j.model.Model#remove(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
+&nbsp;	 * .
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfRemoveResourceURIValueResourceArray() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for
+&nbsp;	 * {@link org.eclipse.rdf4j.model.Model#filter(org.eclipse.rdf4j.model.Resource, org.eclipse.rdf4j.model.IRI, org.eclipse.rdf4j.model.Value, org.eclipse.rdf4j.model.Resource[])}
+&nbsp;	 * .
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfFilter() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#subjects()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfSubjects() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#predicates()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfPredicates() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#objects()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfObjects() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link org.eclipse.rdf4j.model.Model#contexts()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfContexts() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#iterator()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfIterator() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#size()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfSize() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#isEmpty()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfIsEmpty() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#contains(java.lang.Object)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfContainsObject() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#add(java.lang.Object)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfAddE() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#remove(java.lang.Object)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfRemoveObject() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#containsAll(java.util.Collection)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfContainsAll() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#addAll(java.util.Collection)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfAddAll() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#removeAll(java.util.Collection)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfRemoveAll() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#retainAll(java.util.Collection)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfRetainAll() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Set#clear()}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfClear() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Test method for {@link java.util.Collection#removeIf(java.util.function.Predicate)}.
+&nbsp;	 */
+&nbsp;	@Disabled(&quot;TODO: Implement me!&quot;)
+&nbsp;	@Test
+&nbsp;	public final void testPerfRemoveIf() {
+<b class="nc">&nbsp;		fail(&quot;Not yet implemented&quot;); // TODO</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

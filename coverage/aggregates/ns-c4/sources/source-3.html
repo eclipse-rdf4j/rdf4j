@@ -1,0 +1,474 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CustomGraphQueryInferencer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.inferencer.fc</a>
+</div>
+
+<h1>Coverage Summary for Class: CustomGraphQueryInferencer (org.eclipse.rdf4j.sail.inferencer.fc)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CustomGraphQueryInferencer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">CustomGraphQueryInferencer$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">CustomGraphQueryInferencer$Connection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/57)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/96)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.inferencer.fc;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnectionListener;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.fc.config.CustomGraphQueryInferencerConfig;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A forward-chaining inferencer that infers new statements using a SPARQL graph query.
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; */
+&nbsp;public class CustomGraphQueryInferencer extends NotifyingSailWrapper {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(CustomGraphQueryInferencer.class);</b>
+&nbsp;
+&nbsp;	private ParsedGraphQuery customQuery;
+&nbsp;
+&nbsp;	private ParsedGraphQuery customMatcher;
+&nbsp;
+<b class="nc">&nbsp;	private final Collection&lt;Value&gt; watchPredicates = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Collection&lt;Value&gt; watchSubjects = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Collection&lt;Value&gt; watchObjects = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private boolean hasWatchValues;
+&nbsp;
+&nbsp;	public CustomGraphQueryInferencer() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new custom inferencer.
+&nbsp;	 *
+&nbsp;	 * @param language    language that &lt;var&gt;queryText&lt;/var&gt; and &lt;var&gt;matcherText&lt;/var&gt; are expressed in
+&nbsp;	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
+&nbsp;	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
+&nbsp;	 * @throws MalformedQueryException           if there is a problem parsing either of the given queries
+&nbsp;	 * @throws UnsupportedQueryLanguageException if an unsupported query language is specified
+&nbsp;	 * @throws SailException                     if a problem occurs interpreting the rule pattern
+&nbsp;	 */
+&nbsp;	public CustomGraphQueryInferencer(QueryLanguage language, String queryText, String matcherText)
+&nbsp;			throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
+<b class="nc">&nbsp;		super();</b>
+<b class="nc">&nbsp;		setFields(language, queryText, matcherText);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new custom inferencer.
+&nbsp;	 *
+&nbsp;	 * @param baseSail    an underlying Sail, such as another inferencer or a SailRepository
+&nbsp;	 * @param language    language that &lt;var&gt;queryText&lt;/var&gt; and &lt;var&gt;matcherText&lt;/var&gt; are expressed in
+&nbsp;	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
+&nbsp;	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
+&nbsp;	 * @throws MalformedQueryException           if there is a problem parsing either of the given queries
+&nbsp;	 * @throws UnsupportedQueryLanguageException
+&nbsp;	 * @throws SailException                     if a problem occurs interpreting the rule pattern
+&nbsp;	 */
+&nbsp;	public CustomGraphQueryInferencer(NotifyingSail baseSail, QueryLanguage language, String queryText,
+&nbsp;			String matcherText) throws MalformedQueryException, UnsupportedQueryLanguageException, SailException {
+<b class="nc">&nbsp;		super(baseSail);</b>
+<b class="nc">&nbsp;		setFields(language, queryText, matcherText);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Called in order to set all the fields needed for the inferencer to function.
+&nbsp;	 *
+&nbsp;	 * @param language    language that &lt;var&gt;queryText&lt;/var&gt; and &lt;var&gt;matcherText&lt;/var&gt; are expressed in
+&nbsp;	 * @param queryText   a query that returns an RDF graph of inferred statements to be added to the underlying Sail
+&nbsp;	 * @param matcherText a query that returns an RDF graph of existing inferred statements already added previously
+&nbsp;	 * @throws MalformedQueryException if there is a problem parsing either of the given queries
+&nbsp;	 * @throws SailException           if a problem occurs interpreting the rule pattern
+&nbsp;	 */
+&nbsp;	public final void setFields(QueryLanguage language, String queryText, String matcherText)
+&nbsp;			throws MalformedQueryException, SailException {
+<b class="nc">&nbsp;		customQuery = QueryParserUtil.parseGraphQuery(language, queryText, null);</b>
+<b class="nc">&nbsp;		String matcherQuery = matcherText;</b>
+<b class="nc">&nbsp;		if (matcherText.trim().isEmpty()) {</b>
+<b class="nc">&nbsp;			matcherQuery = CustomGraphQueryInferencerConfig.buildMatcherQueryFromRuleQuery(language, queryText);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		customMatcher = QueryParserUtil.parseGraphQuery(language, matcherQuery, null);</b>
+<b class="nc">&nbsp;		customQuery.getTupleExpr().visit(new AbstractQueryModelVisitor&lt;SailException&gt;() {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void meet(StatementPattern statement) throws SailException {
+<b class="nc">&nbsp;				Var var = statement.getSubjectVar();</b>
+<b class="nc">&nbsp;				if (var.hasValue()) {</b>
+<b class="nc">&nbsp;					watchSubjects.add(var.getValue());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				var = statement.getPredicateVar();</b>
+<b class="nc">&nbsp;				if (var.hasValue()) {</b>
+<b class="nc">&nbsp;					watchPredicates.add(var.getValue());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				var = statement.getObjectVar();</b>
+<b class="nc">&nbsp;				if (var.hasValue()) {</b>
+<b class="nc">&nbsp;					watchObjects.add(var.getValue());</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		});
+<b class="nc">&nbsp;		hasWatchValues = !(watchSubjects.isEmpty() &amp;&amp; watchPredicates.isEmpty() &amp;&amp; watchObjects.isEmpty());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public InferencerConnection getConnection() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			InferencerConnection con = (InferencerConnection) super.getConnection();</b>
+<b class="nc">&nbsp;			return new Connection(con);</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws SailException {
+<b class="nc">&nbsp;		super.init();</b>
+<b class="nc">&nbsp;		try (InferencerConnection con = getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			con.flushUpdates();</b>
+<b class="nc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Exposed for test purposes.
+&nbsp;	 *
+&nbsp;	 * @return a computed collection of the statement subjects that, when added or removed, trigger an update of
+&nbsp;	 *         inferred statements
+&nbsp;	 */
+&nbsp;	public Collection&lt;Value&gt; getWatchSubjects() {
+<b class="nc">&nbsp;		return Collections.unmodifiableCollection(watchSubjects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Exposed for test purposes.
+&nbsp;	 *
+&nbsp;	 * @return a computed collection of the statement predicates that, when added or removed, trigger an update of
+&nbsp;	 *         inferred statements
+&nbsp;	 */
+&nbsp;	public Collection&lt;Value&gt; getWatchPredicates() {
+<b class="nc">&nbsp;		return Collections.unmodifiableCollection(watchPredicates);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Exposed for test purposes.
+&nbsp;	 *
+&nbsp;	 * @return a computed collection of the statement objects that, when added or removed, trigger an update of inferred
+&nbsp;	 *         statements
+&nbsp;	 */
+&nbsp;	public Collection&lt;Value&gt; getWatchObjects() {
+<b class="nc">&nbsp;		return Collections.unmodifiableCollection(watchObjects);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private class Connection extends InferencerConnectionWrapper implements SailConnectionListener {
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Flag indicating whether an update of the inferred statements is needed.
+&nbsp;		 */
+<b class="nc">&nbsp;		private boolean updateNeeded = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		private Connection(InferencerConnection con) {</b>
+<b class="nc">&nbsp;			super(con);</b>
+<b class="nc">&nbsp;			con.addConnectionListener(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void statementAdded(Statement statement) {
+<b class="nc">&nbsp;			setUpdateNeededIfMatching(statement);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void statementRemoved(Statement statement) {
+<b class="nc">&nbsp;			setUpdateNeededIfMatching(statement);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void setUpdateNeededIfMatching(Statement statement) {
+<b class="nc">&nbsp;			updateNeeded = hasWatchValues ? watchPredicates.contains(statement.getPredicate())</b>
+<b class="nc">&nbsp;					|| watchSubjects.contains(statement.getSubject()) || watchObjects.contains(statement.getObject())</b>
+<b class="nc">&nbsp;					: true;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void rollback() throws SailException {
+<b class="nc">&nbsp;			super.rollback();</b>
+<b class="nc">&nbsp;			updateNeeded = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void flushUpdates() throws SailException {
+<b class="nc">&nbsp;			super.flushUpdates();</b>
+<b class="nc">&nbsp;			Collection&lt;Statement&gt; forRemoval = new HashSet&lt;&gt;(256);</b>
+<b class="nc">&nbsp;			Collection&lt;Statement&gt; forAddition = new HashSet&lt;&gt;(256);</b>
+<b class="nc">&nbsp;			Resource[] contexts = new Resource[] { null };</b>
+<b class="nc">&nbsp;			while (updateNeeded) {</b>
+&nbsp;				try {
+&nbsp;					// Determine which statements should be added and which should be
+&nbsp;					// removed
+<b class="nc">&nbsp;					forRemoval.clear();</b>
+<b class="nc">&nbsp;					forAddition.clear();</b>
+<b class="nc">&nbsp;					buildDeltaSets(forRemoval, forAddition);</b>
+<b class="nc">&nbsp;					for (Statement st : forRemoval) {</b>
+<b class="nc">&nbsp;						removeInferredStatement(st.getSubject(), st.getPredicate(), st.getObject(), contexts);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					for (Statement st : forAddition) {</b>
+<b class="nc">&nbsp;						addInferredStatement(st.getSubject(), st.getPredicate(), st.getObject(), contexts);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					updateNeeded = false;</b>
+<b class="nc">&nbsp;				} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;					Throwable cause = e.getCause();</b>
+<b class="nc">&nbsp;					if (cause instanceof SailException) {</b>
+<b class="nc">&nbsp;						throw (SailException) cause;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						throw new SailException(cause);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;					throw new SailException(e);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				super.flushUpdates();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void buildDeltaSets(Collection&lt;Statement&gt; forRemoval, Collection&lt;Statement&gt; forAddition)
+&nbsp;				throws SailException, RDFHandlerException, QueryEvaluationException {
+<b class="nc">&nbsp;			evaluateIntoStatements(customMatcher, forRemoval);</b>
+<b class="nc">&nbsp;			evaluateIntoStatements(customQuery, forAddition);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;existing virtual properties: {}&quot;, forRemoval.size());</b>
+<b class="nc">&nbsp;			logger.debug(&quot;new virtual properties: {}&quot;, forAddition.size());</b>
+<b class="nc">&nbsp;			Collection&lt;Statement&gt; inCommon = new HashSet&lt;&gt;(forRemoval);</b>
+<b class="nc">&nbsp;			inCommon.retainAll(forAddition);</b>
+<b class="nc">&nbsp;			forRemoval.removeAll(inCommon);</b>
+<b class="nc">&nbsp;			forAddition.removeAll(inCommon);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;virtual properties to remove: {}&quot;, forRemoval.size());</b>
+<b class="nc">&nbsp;			logger.debug(&quot;virtual properties to add: {}&quot;, forAddition.size());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void evaluateIntoStatements(ParsedGraphQuery query, Collection&lt;Statement&gt; statements)
+&nbsp;				throws SailException, RDFHandlerException, QueryEvaluationException {
+<b class="nc">&nbsp;			try (CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; bindingsIter = getWrappedConnection()</b>
+<b class="nc">&nbsp;					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {</b>
+<b class="nc">&nbsp;				ValueFactory factory = getValueFactory();</b>
+<b class="nc">&nbsp;				while (bindingsIter.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindings = bindingsIter.next();</b>
+<b class="nc">&nbsp;					Value subj = bindings.getValue(&quot;subject&quot;);</b>
+<b class="nc">&nbsp;					Value pred = bindings.getValue(&quot;predicate&quot;);</b>
+<b class="nc">&nbsp;					Value obj = bindings.getValue(&quot;object&quot;);</b>
+<b class="nc">&nbsp;					if (subj instanceof Resource &amp;&amp; pred instanceof IRI &amp;&amp; obj != null) {</b>
+<b class="nc">&nbsp;						statements.add(factory.createStatement((Resource) subj, (IRI) pred, obj));</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

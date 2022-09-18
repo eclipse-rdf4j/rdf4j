@@ -1,0 +1,250 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDF4JConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring</a>
+</div>
+
+<h1>Coverage Summary for Class: RDF4JConfig (org.eclipse.rdf4j.spring)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDF4JConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;
+&nbsp;import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.spring.operationcache.CachingOperationInstantiator;
+&nbsp;import org.eclipse.rdf4j.spring.operationcache.OperationCacheProperties;
+&nbsp;import org.eclipse.rdf4j.spring.operationlog.LoggingRepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.operationlog.log.OperationLog;
+&nbsp;import org.eclipse.rdf4j.spring.pool.PoolProperties;
+&nbsp;import org.eclipse.rdf4j.spring.pool.PooledRepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.resultcache.CachingRepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.resultcache.ResultCacheProperties;
+&nbsp;import org.eclipse.rdf4j.spring.support.DirectOperationInstantiator;
+&nbsp;import org.eclipse.rdf4j.spring.support.OperationInstantiator;
+&nbsp;import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
+&nbsp;import org.eclipse.rdf4j.spring.support.UUIDSource;
+&nbsp;import org.eclipse.rdf4j.spring.support.connectionfactory.DirectRepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.tx.TransactionalRepositoryConnectionFactory;
+&nbsp;import org.eclipse.rdf4j.spring.tx.TxProperties;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.beans.factory.annotation.Autowired;
+&nbsp;import org.springframework.context.annotation.Bean;
+&nbsp;import org.springframework.context.annotation.Configuration;
+&nbsp;import org.springframework.core.io.ResourceLoader;
+&nbsp;import org.springframework.transaction.annotation.EnableTransactionManagement;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;@Experimental
+&nbsp;@Configuration
+&nbsp;@EnableTransactionManagement
+<b class="nc">&nbsp;public class RDF4JConfig {</b>
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;
+&nbsp;	@Bean
+&nbsp;	RDF4JTemplate getRdf4JTemplate(@Autowired RepositoryConnectionFactory repositoryConnectionFactory,
+&nbsp;			@Autowired(required = false) OperationCacheProperties operationCacheProperties,
+&nbsp;			@Autowired ResourceLoader resourceLoader,
+&nbsp;			@Autowired(required = false) UUIDSource uuidSource) {
+&nbsp;		OperationInstantiator operationInstantiator;
+<b class="nc">&nbsp;		if (operationCacheProperties != null &amp;&amp; operationCacheProperties.isEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Operation caching is enabled&quot;);</b>
+<b class="nc">&nbsp;			operationInstantiator = new CachingOperationInstantiator();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.debug(&quot;Operation caching is not enabled&quot;);</b>
+<b class="nc">&nbsp;			operationInstantiator = new DirectOperationInstantiator();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new RDF4JTemplate(repositoryConnectionFactory, operationInstantiator, resourceLoader, uuidSource);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Bean
+&nbsp;	RepositoryConnectionFactory getRepositoryConnectionFactory(
+&nbsp;			@Autowired Repository repository,
+&nbsp;			@Autowired(required = false) PoolProperties poolProperties,
+&nbsp;			@Autowired(required = false) ResultCacheProperties resultCacheProperties,
+&nbsp;			@Autowired(required = false) OperationLog operationLog,
+&nbsp;			@Autowired(required = false) TxProperties txProperties) {
+<b class="nc">&nbsp;		RepositoryConnectionFactory factory = getDirectRepositoryConnectionFactory(repository);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (poolProperties != null &amp;&amp; poolProperties.isEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Connection pooling is enabled&quot;);</b>
+<b class="nc">&nbsp;			factory = wrapWithPooledRepositoryConnectionFactory(factory, poolProperties);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.debug(&quot;Connection pooling is not enabled&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (resultCacheProperties != null &amp;&amp; resultCacheProperties.isEnabled()) {</b>
+<b class="nc">&nbsp;			factory = wrapWithCachingRepositoryConnectionFactory(factory, resultCacheProperties);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Result caching is enabled&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.debug(&quot;Result caching is not enabled&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (operationLog != null) {</b>
+<b class="nc">&nbsp;			factory = wrapWithLoggingRepositoryConnectionFactory(factory, operationLog);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Query logging is enabled&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.debug(&quot;Query logging is not enabled&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (txProperties != null &amp;&amp; txProperties.isEnabled()) {</b>
+<b class="nc">&nbsp;			factory = wrapWithTxRepositoryConnectionFactory(factory);</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Spring transaction integration is enabled&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			logger.debug(&quot;Spring transaction integration is not enabled&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return factory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	RepositoryConnectionFactory getDirectRepositoryConnectionFactory(Repository repository) {
+<b class="nc">&nbsp;		return new DirectRepositoryConnectionFactory(repository);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	RepositoryConnectionFactory wrapWithPooledRepositoryConnectionFactory(
+&nbsp;			RepositoryConnectionFactory delegate, PoolProperties poolProperties) {
+<b class="nc">&nbsp;		GenericObjectPoolConfig&lt;RepositoryConnection&gt; config = new GenericObjectPoolConfig&lt;&gt;();</b>
+<b class="nc">&nbsp;		config.setMaxTotal(poolProperties.getMaxConnections());</b>
+<b class="nc">&nbsp;		config.setMinIdle(poolProperties.getMinIdleConnections());</b>
+<b class="nc">&nbsp;		config.setTimeBetweenEvictionRunsMillis(</b>
+<b class="nc">&nbsp;				poolProperties.getTimeBetweenEvictionRuns().toMillis());</b>
+<b class="nc">&nbsp;		config.setTestWhileIdle(poolProperties.isTestWhileIdle());</b>
+<b class="nc">&nbsp;		return new PooledRepositoryConnectionFactory(delegate, config);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	RepositoryConnectionFactory wrapWithLoggingRepositoryConnectionFactory(
+&nbsp;			RepositoryConnectionFactory delegate, OperationLog operationLog) {
+<b class="nc">&nbsp;		return new LoggingRepositoryConnectionFactory(delegate, operationLog);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	RepositoryConnectionFactory wrapWithCachingRepositoryConnectionFactory(
+&nbsp;			RepositoryConnectionFactory delegate, ResultCacheProperties resultCacheProperties) {
+<b class="nc">&nbsp;		return new CachingRepositoryConnectionFactory(delegate, resultCacheProperties);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	TransactionalRepositoryConnectionFactory wrapWithTxRepositoryConnectionFactory(
+&nbsp;			RepositoryConnectionFactory delegate) {
+<b class="nc">&nbsp;		return new TransactionalRepositoryConnectionFactory(delegate);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

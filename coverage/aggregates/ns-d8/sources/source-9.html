@@ -1,0 +1,179 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Stats</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl</a>
+</div>
+
+<h1>Coverage Summary for Class: Stats (org.eclipse.rdf4j.sail.shacl)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Stats</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;
+&nbsp;/**
+&nbsp; * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+<b class="nc">&nbsp;public class Stats {</b>
+&nbsp;
+&nbsp;	private Boolean emptyBeforeTransaction;
+&nbsp;	private boolean hasAdded;
+&nbsp;	private boolean hasRemoved;
+&nbsp;	private Boolean emptyIncludingCurrentTransaction;
+&nbsp;
+&nbsp;	public void added(Statement statement) {
+<b class="nc">&nbsp;		hasAdded = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removed(Statement statement) {
+<b class="nc">&nbsp;		hasRemoved = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if statements were effectively added in this transaction
+&nbsp;	 */
+&nbsp;	public boolean hasAdded() {
+<b class="nc">&nbsp;		return hasAdded;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if statements were effectively removed in this transaction
+&nbsp;	 */
+&nbsp;	public boolean hasRemoved() {
+<b class="nc">&nbsp;		return hasRemoved;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if the sail was empty before this transaction started
+&nbsp;	 */
+&nbsp;	public boolean wasEmptyBeforeTransaction() {
+<b class="nc">&nbsp;		return emptyBeforeTransaction;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void setEmptyBeforeTransaction(boolean emptyBeforeTransaction) {
+<b class="nc">&nbsp;		this.emptyBeforeTransaction = emptyBeforeTransaction;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if the entire sail is empty, even with the current transaction
+&nbsp;	 */
+&nbsp;	public boolean isEmptyIncludingCurrentTransaction() {
+<b class="nc">&nbsp;		return emptyIncludingCurrentTransaction;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void setEmptyIncludingCurrentTransaction(boolean emptyIncludingCurrentTransaction) {
+<b class="nc">&nbsp;		this.emptyIncludingCurrentTransaction = emptyIncludingCurrentTransaction;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

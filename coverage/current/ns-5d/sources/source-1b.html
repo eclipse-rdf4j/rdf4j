@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > TupleQueryResultHandler</title>
+  <title>Coverage Report > Update</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query</a>
 </div>
 
-<h1>Coverage Summary for Class: TupleQueryResultHandler (org.eclipse.rdf4j.query)</h1>
+<h1>Coverage Summary for Class: Update (org.eclipse.rdf4j.query)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">TupleQueryResultHandler</td>
+  <td class="name">Update</td>
 </tr>
 
 </table>
@@ -50,15 +50,20 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query;
 &nbsp;
-&nbsp;import java.util.List;
-&nbsp;
 &nbsp;/**
-&nbsp; * An interface defining methods related to handling sequences of Solutions.
-&nbsp; * &lt;p&gt;
-&nbsp; * Instances of this interface are capable of handling tuple results using the {@link #startQueryResult(List)} ,
-&nbsp; * {@link #handleSolution(BindingSet)} and {@link #endQueryResult()} methods.
+&nbsp; * An update operation on a repository that can be formulated in one of the supported query languages (for example
+&nbsp; * SPARQL).
+&nbsp; *
+&nbsp; * @author Jeen
 &nbsp; */
-&nbsp;public interface TupleQueryResultHandler extends QueryResultHandler {
+&nbsp;public interface Update extends Operation {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Execute this update on the repository.
+&nbsp;	 *
+&nbsp;	 * @throws UpdateExecutionException if the update could not be successfully completed.
+&nbsp;	 */
+&nbsp;	void execute() throws UpdateExecutionException;
 &nbsp;
 &nbsp;}
 </code>
@@ -84,7 +89,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

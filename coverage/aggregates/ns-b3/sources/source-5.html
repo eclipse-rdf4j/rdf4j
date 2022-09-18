@@ -1,0 +1,114 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TriXConstants</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.trix</a>
+</div>
+
+<h1>Coverage Summary for Class: TriXConstants (org.eclipse.rdf4j.rio.trix)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">TriXConstants</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.trix;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface defining a number of constants for the TriX document format.
+&nbsp; */
+&nbsp;public interface TriXConstants {
+&nbsp;
+&nbsp;	/** The TriX namespace. */
+&nbsp;	String NAMESPACE = &quot;http://www.w3.org/2004/03/trix/trix-1/&quot;;
+&nbsp;
+&nbsp;	/** The root tag. */
+&nbsp;	String ROOT_TAG = &quot;TriX&quot;;
+&nbsp;
+&nbsp;	/** The tag that starts a new context/graph. */
+&nbsp;	String CONTEXT_TAG = &quot;graph&quot;;
+&nbsp;
+&nbsp;	/** The tag that starts a new triple. */
+&nbsp;	String TRIPLE_TAG = &quot;triple&quot;;
+&nbsp;
+&nbsp;	/** The tag for URI values. */
+&nbsp;	String URI_TAG = &quot;uri&quot;;
+&nbsp;
+&nbsp;	/** The tag for BNode values. */
+&nbsp;	String BNODE_TAG = &quot;id&quot;;
+&nbsp;
+&nbsp;	/** The tag for plain literal values. */
+&nbsp;	String PLAIN_LITERAL_TAG = &quot;plainLiteral&quot;;
+&nbsp;
+&nbsp;	/** The tag for typed literal values. */
+&nbsp;	String TYPED_LITERAL_TAG = &quot;typedLiteral&quot;;
+&nbsp;
+&nbsp;	/** The attribute for language tags of plain literal. */
+&nbsp;	String LANGUAGE_ATT = &quot;xml:lang&quot;;
+&nbsp;
+&nbsp;	/** The attribute for datatypes of typed literal. */
+&nbsp;	String DATATYPE_ATT = &quot;datatype&quot;;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

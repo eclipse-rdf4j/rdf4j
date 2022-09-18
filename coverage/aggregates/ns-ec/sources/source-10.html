@@ -1,0 +1,373 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Query</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.core.query</a>
+</div>
+
+<h1>Coverage Summary for Class: Query (org.eclipse.rdf4j.sparqlbuilder.core.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Query</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.core.query;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.Expression;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Dataset;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.From;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.GroupBy;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Groupable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Having;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.OrderBy;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Orderable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.QueryPattern;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphPattern;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * The base class for all SPARQL Queries. Contains elements and methods common to all queries.
+&nbsp; *
+&nbsp; * @param &lt;T&gt; They type of query. Used to support fluency.
+&nbsp; */
+&nbsp;@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;public abstract class Query&lt;T extends Query&lt;T&gt;&gt; implements QueryElement {</b>
+&nbsp;	protected static final String LIMIT = &quot;LIMIT&quot;;
+&nbsp;	protected static final String OFFSET = &quot;OFFSET&quot;;
+&nbsp;
+<b class="nc">&nbsp;	protected Optional&lt;Dataset&gt; from = Optional.empty();</b>
+<b class="nc">&nbsp;	protected QueryPattern where = SparqlBuilder.where();</b>
+<b class="nc">&nbsp;	protected Optional&lt;GroupBy&gt; groupBy = Optional.empty();</b>
+<b class="nc">&nbsp;	protected Optional&lt;OrderBy&gt; orderBy = Optional.empty();</b>
+<b class="nc">&nbsp;	protected Optional&lt;Having&gt; having = Optional.empty();</b>
+<b class="nc">&nbsp;	protected int limit = -1, offset = -1, varCount = -1, bnodeCount = -1;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add datasets to this query
+&nbsp;	 *
+&nbsp;	 * @param graphs the graph specifiers to add
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T from(From... graphs) {
+<b class="nc">&nbsp;		from = SparqlBuilderUtils.getOrCreateAndModifyOptional(from, SparqlBuilder::dataset, f -&gt; f.from(graphs));</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the Dataset clause for this query
+&nbsp;	 *
+&nbsp;	 * @param from the {@link Dataset} clause to set
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T from(Dataset from) {
+<b class="nc">&nbsp;		this.from = Optional.of(from);</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add graph patterns to this query&#39;s query pattern
+&nbsp;	 *
+&nbsp;	 * @param queryPatterns the patterns to add
+&nbsp;	 * @return this
+&nbsp;	 *
+&nbsp;	 * @see QueryPattern
+&nbsp;	 */
+&nbsp;	public T where(GraphPattern... queryPatterns) {
+<b class="nc">&nbsp;		where.where(queryPatterns);</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the query pattern of this query
+&nbsp;	 *
+&nbsp;	 * @param where the query pattern to set
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T where(QueryPattern where) {
+<b class="nc">&nbsp;		this.where = where;</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add grouping specifiers for the query results.
+&nbsp;	 *
+&nbsp;	 * @param groupables the objects to group on, in order (appended to the end of any existing grouping specifiers)
+&nbsp;	 * @return this
+&nbsp;	 *
+&nbsp;	 * @see GroupBy
+&nbsp;	 */
+&nbsp;	public T groupBy(Groupable... groupables) {
+<b class="nc">&nbsp;		groupBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(groupBy, SparqlBuilder::groupBy,</b>
+<b class="nc">&nbsp;				gb -&gt; gb.by(groupables));</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set this query&#39;s Group By clause
+&nbsp;	 *
+&nbsp;	 * @param groupBy the {@link GroupBy} clause to set
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T groupBy(GroupBy groupBy) {
+<b class="nc">&nbsp;		this.groupBy = Optional.of(groupBy);</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify orderings for the query results
+&nbsp;	 *
+&nbsp;	 * @param conditions the objects to order on, in order
+&nbsp;	 * @return this
+&nbsp;	 *
+&nbsp;	 * @see OrderBy
+&nbsp;	 */
+&nbsp;	public T orderBy(Orderable... conditions) {
+<b class="nc">&nbsp;		orderBy = SparqlBuilderUtils.getOrCreateAndModifyOptional(orderBy, SparqlBuilder::orderBy,</b>
+<b class="nc">&nbsp;				ob -&gt; ob.by(conditions));</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set this query&#39;s Order By clause
+&nbsp;	 *
+&nbsp;	 * @param orderBy the {@link OrderBy} clause to set
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T orderBy(OrderBy orderBy) {
+<b class="nc">&nbsp;		this.orderBy = Optional.of(orderBy);</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify constraints for this query&#39;s Having clause.
+&nbsp;	 *
+&nbsp;	 * @param constraints the constraints to add to the clause
+&nbsp;	 * @return this
+&nbsp;	 *
+&nbsp;	 * @see Having
+&nbsp;	 */
+&nbsp;	public T having(Expression&lt;?&gt;... constraints) {
+<b class="nc">&nbsp;		having = SparqlBuilderUtils.getOrCreateAndModifyOptional(having, SparqlBuilder::having,</b>
+<b class="nc">&nbsp;				h -&gt; h.having(constraints));</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set this query&#39;s Having clause
+&nbsp;	 *
+&nbsp;	 * @param having the Having clause to set
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T having(Having having) {
+<b class="nc">&nbsp;		this.having = Optional.of(having);</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a limit on the number of results returned by this query.
+&nbsp;	 *
+&nbsp;	 * @param limit
+&nbsp;	 * @return this
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modResultLimit&quot;&gt; Limits in SPARQL
+&nbsp;	 *      Queries&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public T limit(int limit) {
+<b class="nc">&nbsp;		this.limit = limit;</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify an offset in query results.
+&nbsp;	 *
+&nbsp;	 * @param offset
+&nbsp;	 * @return this
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOffset&quot;&gt;Offsets in SPARQL Queries&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public T offset(int offset) {
+<b class="nc">&nbsp;		this.offset = offset;</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A shortcut. Each call to this method returns a new {@link Variable} that is unique (i.e., has a unique alias) to
+&nbsp;	 * this query instance.
+&nbsp;	 *
+&nbsp;	 * @return a {@link Variable} object that is unique to this query instance
+&nbsp;	 */
+&nbsp;	public Variable var() {
+<b class="nc">&nbsp;		return SparqlBuilder.var(&quot;x&quot; + ++varCount);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A shortcut. Each call to this method returns a new
+&nbsp;	 * {@link org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode RdfBlankNode.LabeledBlankNode} that is
+&nbsp;	 * unique (i.e., has a unique alias) to this query instance.
+&nbsp;	 *
+&nbsp;	 * @return a {@link org.eclipse.rdf4j.sparqlbuilder.rdf.RdfBlankNode.LabeledBlankNode RdfBlankNode.LabeledBlankNode}
+&nbsp;	 *         object that is unique to this query instance
+&nbsp;	 */
+&nbsp;	public RdfBlankNode.LabeledBlankNode bNode() {
+<b class="nc">&nbsp;		return Rdf.bNode(&quot;b&quot; + ++bnodeCount);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract String getQueryActionString();
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		StringBuilder query = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		query.append(getQueryActionString()).append(&quot;\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendAndNewlineIfPresent(from, query);</b>
+&nbsp;
+<b class="nc">&nbsp;		query.append(where.getQueryString()).append(&quot;\n&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendAndNewlineIfPresent(groupBy, query);</b>
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendAndNewlineIfPresent(having, query);</b>
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendAndNewlineIfPresent(orderBy, query);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (limit &gt;= 0) {</b>
+<b class="nc">&nbsp;			query.append(LIMIT + &quot; &quot;).append(limit).append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (offset &gt;= 0) {</b>
+<b class="nc">&nbsp;			query.append(OFFSET + &quot; &quot;).append(offset).append(&quot;\n&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return query.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

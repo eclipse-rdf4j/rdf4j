@@ -1,0 +1,319 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MinCountConstraintComponent</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents</a>
+</div>
+
+<h1>Coverage Summary for Class: MinCountConstraintComponent (org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MinCountConstraintComponent</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/79)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.literal;
+&nbsp;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SHACL;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BulkedExternalLeftOuterJoin;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.GroupByCountFilter;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.LeftOuterJoin;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.TrimToTarget;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationTuple;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.targets.EffectiveTarget;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;
+&nbsp;public class MinCountConstraintComponent extends AbstractConstraintComponent {
+&nbsp;
+&nbsp;	long minCount;
+&nbsp;
+<b class="nc">&nbsp;	public MinCountConstraintComponent(long minCount) {</b>
+<b class="nc">&nbsp;		this.minCount = minCount;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void toModel(Resource subject, IRI predicate, Model model, Set&lt;Resource&gt; cycleDetection) {
+<b class="nc">&nbsp;		model.add(subject, SHACL.MIN_COUNT, literal(BigInteger.valueOf(minCount)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SourceConstraintComponent getConstraintComponent() {
+<b class="nc">&nbsp;		return SourceConstraintComponent.MinCountConstraintComponent;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings,
+&nbsp;			PlanNodeProvider overrideTargetNode, Scope scope) {
+&nbsp;
+<b class="nc">&nbsp;		if (minCount &lt;= 0) {</b>
+<b class="nc">&nbsp;			return EmptyNode.getInstance();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();</b>
+&nbsp;
+&nbsp;		PlanNode target;
+<b class="nc">&nbsp;		if (overrideTargetNode != null) {</b>
+<b class="nc">&nbsp;			target = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.extend(overrideTargetNode.getPlanNode(), connectionsGroup, validationSettings.getDataGraph(),</b>
+&nbsp;							scope, EffectiveTarget.Extend.right,
+&nbsp;							false, null);
+<b class="nc">&nbsp;			if (connectionsGroup.hasAddedStatements()) {</b>
+<b class="nc">&nbsp;				PlanNode addedByPath = getTargetChain().getPath()</b>
+<b class="nc">&nbsp;						.get()</b>
+<b class="nc">&nbsp;						.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);</b>
+<b class="nc">&nbsp;				LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);</b>
+<b class="nc">&nbsp;				target = new GroupByCountFilter(leftOuterJoin, count -&gt; count &lt; minCount);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+&nbsp;			// we can assume that we are not doing bulk validation, so it is worth checking our added statements before
+&nbsp;			// we go to the base sail
+&nbsp;
+<b class="nc">&nbsp;			target = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.getPlanNode(connectionsGroup, validationSettings.getDataGraph(), scope, true, null);</b>
+&nbsp;
+<b class="nc">&nbsp;			PlanNode addedByPath = getTargetChain().getPath()</b>
+<b class="nc">&nbsp;					.get()</b>
+<b class="nc">&nbsp;					.getAdded(connectionsGroup, validationSettings.getDataGraph(), null);</b>
+<b class="nc">&nbsp;			LeftOuterJoin leftOuterJoin = new LeftOuterJoin(target, addedByPath);</b>
+<b class="nc">&nbsp;			target = new GroupByCountFilter(leftOuterJoin, count -&gt; count &lt; minCount);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		PlanNode relevantTargetsWithPath = new BulkedExternalLeftOuterJoin(</b>
+<b class="nc">&nbsp;				Unique.getInstance(new TrimToTarget(target), false),</b>
+<b class="nc">&nbsp;				connectionsGroup.getBaseConnection(),</b>
+<b class="nc">&nbsp;				validationSettings.getDataGraph(), getTargetChain().getPath()</b>
+<b class="nc">&nbsp;						.get()</b>
+<b class="nc">&nbsp;						.getTargetQueryFragment(new StatementMatcher.Variable(&quot;a&quot;), new StatementMatcher.Variable(&quot;c&quot;),</b>
+<b class="nc">&nbsp;								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider),</b>
+<b class="nc">&nbsp;				(b) -&gt; new ValidationTuple(b.getValue(&quot;a&quot;), b.getValue(&quot;c&quot;), scope, true,</b>
+<b class="nc">&nbsp;						validationSettings.getDataGraph())</b>
+&nbsp;		);
+&nbsp;
+<b class="nc">&nbsp;		relevantTargetsWithPath = connectionsGroup.getCachedNodeFor(relevantTargetsWithPath);</b>
+&nbsp;
+<b class="nc">&nbsp;		PlanNode groupByCount = new GroupByCountFilter(relevantTargetsWithPath, count -&gt; count &lt; minCount);</b>
+&nbsp;
+<b class="nc">&nbsp;		return Unique.getInstance(new TrimToTarget(groupByCount), false);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+<b class="nc">&nbsp;		return EmptyNode.getInstance();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ConstraintComponent deepClone() {
+<b class="nc">&nbsp;		return new MinCountConstraintComponent(minCount);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+<b class="nc">&nbsp;		if (minCount &lt;= 0) {</b>
+<b class="nc">&nbsp;			return ValidationQuery.Deactivated.getInstance();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider = new StatementMatcher.StableRandomVariableProvider();</b>
+&nbsp;
+<b class="nc">&nbsp;		EffectiveTarget effectiveTarget = getTargetChain().getEffectiveTarget(scope,</b>
+<b class="nc">&nbsp;				connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider);</b>
+<b class="nc">&nbsp;		String query = effectiveTarget.getQuery(false);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (minCount == 1) {</b>
+<b class="nc">&nbsp;			StatementMatcher.Variable value = StatementMatcher.Variable.VALUE;</b>
+&nbsp;
+<b class="nc">&nbsp;			String pathQuery = getTargetChain().getPath()</b>
+<b class="nc">&nbsp;					.map(p -&gt; p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,</b>
+<b class="nc">&nbsp;							connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))</b>
+<b class="nc">&nbsp;					.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;			query += &quot;\nFILTER(NOT EXISTS{&quot; + pathQuery + &quot;})&quot;;</b>
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;
+<b class="nc">&nbsp;			StringBuilder condition = new StringBuilder();</b>
+<b class="nc">&nbsp;			ArrayList&lt;StatementMatcher.Variable&gt; valueVariables = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; i &lt; minCount; i++) {</b>
+<b class="nc">&nbsp;				StatementMatcher.Variable value = stableRandomVariableProvider.next();</b>
+<b class="nc">&nbsp;				valueVariables.add(value);</b>
+&nbsp;
+<b class="nc">&nbsp;				String pathQuery = getTargetChain().getPath()</b>
+<b class="nc">&nbsp;						.map(p -&gt; p.getTargetQueryFragment(effectiveTarget.getTargetVar(), value,</b>
+<b class="nc">&nbsp;								connectionsGroup.getRdfsSubClassOfReasoner(), stableRandomVariableProvider))</b>
+<b class="nc">&nbsp;						.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;				condition.append(pathQuery).append(&quot;\n&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;String&gt; notEquals = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 0; i &lt; valueVariables.size(); i++) {</b>
+<b class="nc">&nbsp;				for (int j = 0; j &lt; valueVariables.size(); j++) {</b>
+<b class="nc">&nbsp;					if (i == j) {</b>
+<b class="nc">&nbsp;						continue;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (i &gt; j) {</b>
+<b class="nc">&nbsp;						notEquals.add(valueVariables.get(i).asSparqlVariable() + &quot; != &quot;</b>
+<b class="nc">&nbsp;								+ valueVariables.get(j).asSparqlVariable());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						notEquals.add(valueVariables.get(j).asSparqlVariable() + &quot; != &quot;</b>
+<b class="nc">&nbsp;								+ valueVariables.get(i).asSparqlVariable());</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			String innerCondition = String.join(&quot; &amp;&amp; &quot;, notEquals);</b>
+&nbsp;
+<b class="nc">&nbsp;			query += &quot;\nFILTER(NOT EXISTS{&quot; + condition + &quot;FILTER(&quot; + innerCondition + &quot;)\n})&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		List&lt;StatementMatcher.Variable&gt; allTargetVariables = effectiveTarget.getAllTargetVariables();</b>
+&nbsp;
+<b class="nc">&nbsp;		return new ValidationQuery(query, allTargetVariables, null, scope, getConstraintComponent(), null, null);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationApproach getOptimalBulkValidationApproach() {
+<b class="nc">&nbsp;		return ValidationApproach.SPARQL;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

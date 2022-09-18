@@ -1,0 +1,233 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractLuceneSailConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene.config</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractLuceneSailConfig (org.eclipse.rdf4j.sail.lucene.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractLuceneSailConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene.config;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.lucene.config.LuceneSailConfigSchema.INDEX_DIR;
+&nbsp;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.sail.config.AbstractDelegatingSailImplConfig;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailConfigException;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailImplConfig;
+&nbsp;
+&nbsp;public abstract class AbstractLuceneSailConfig extends AbstractDelegatingSailImplConfig {
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private String indexDir;
+&nbsp;
+<b class="nc">&nbsp;	private final Properties parameters = new Properties();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	protected AbstractLuceneSailConfig(String type) {
+<b class="nc">&nbsp;		super(type);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected AbstractLuceneSailConfig(String type, SailImplConfig delegate) {
+<b class="nc">&nbsp;		super(type, delegate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected AbstractLuceneSailConfig(String type, String luceneDir) {
+<b class="nc">&nbsp;		super(type);</b>
+<b class="nc">&nbsp;		setIndexDir(luceneDir);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected AbstractLuceneSailConfig(String type, String luceneDir, SailImplConfig delegate) {
+<b class="nc">&nbsp;		super(type, delegate);</b>
+<b class="nc">&nbsp;		setIndexDir(luceneDir);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public String getIndexDir() {
+<b class="nc">&nbsp;		return indexDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setIndexDir(String luceneDir) {
+<b class="nc">&nbsp;		this.indexDir = luceneDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getParameter(String key) {
+<b class="nc">&nbsp;		return parameters.getProperty(key);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setParameter(String key, String value) {
+<b class="nc">&nbsp;		parameters.setProperty(key, value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;String&gt; getParameterNames() {
+<b class="nc">&nbsp;		return parameters.stringPropertyNames();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model m) {
+<b class="nc">&nbsp;		Resource implNode = super.export(m);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = SimpleValueFactory.getInstance();</b>
+<b class="nc">&nbsp;		m.setNamespace(&quot;sl&quot;, LuceneSailConfigSchema.NAMESPACE);</b>
+<b class="nc">&nbsp;		if (indexDir != null) {</b>
+<b class="nc">&nbsp;			m.add(implNode, INDEX_DIR, SimpleValueFactory.getInstance().createLiteral(indexDir));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (String key : getParameterNames()) {</b>
+<b class="nc">&nbsp;			m.add(implNode, vf.createIRI(LuceneSailConfigSchema.NAMESPACE, key), vf.createLiteral(getParameter(key)));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return implNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model graph, Resource implNode) throws SailConfigException {
+<b class="nc">&nbsp;		super.parse(graph, implNode);</b>
+&nbsp;
+<b class="nc">&nbsp;		Literal indexDirLit = Models.objectLiteral(graph.getStatements(implNode, INDEX_DIR, null))</b>
+<b class="nc">&nbsp;				.orElseThrow(() -&gt; new SailConfigException(&quot;no value found for &quot; + INDEX_DIR));</b>
+&nbsp;
+<b class="nc">&nbsp;		setIndexDir(indexDirLit.getLabel());</b>
+<b class="nc">&nbsp;		for (Statement stmt : graph.getStatements(implNode, null, null)) {</b>
+<b class="nc">&nbsp;			if (stmt.getPredicate().getNamespace().equals(LuceneSailConfigSchema.NAMESPACE)) {</b>
+<b class="nc">&nbsp;				if (stmt.getObject() instanceof Literal) {</b>
+<b class="nc">&nbsp;					String key = stmt.getPredicate().getLocalName();</b>
+<b class="nc">&nbsp;					setParameter(key, stmt.getObject().stringValue());</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

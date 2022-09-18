@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > FilterTuple</title>
+  <title>Coverage Report > FilterValueExpr</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
 </div>
 
-<h1>Coverage Summary for Class: FilterTuple (org.eclipse.rdf4j.federated.algebra)</h1>
+<h1>Coverage Summary for Class: FilterValueExpr (org.eclipse.rdf4j.federated.algebra)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">FilterTuple</td>
+  <td class="name">FilterValueExpr</td>
 </tr>
 
 </table>
@@ -50,69 +50,20 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.federated.algebra;
 &nbsp;
-&nbsp;import java.util.List;
-&nbsp;
-&nbsp;import org.eclipse.rdf4j.model.Value;
-&nbsp;import org.eclipse.rdf4j.query.BindingSet;
-&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
 &nbsp;
 &nbsp;/**
-&nbsp; * Expressions implementing this interface can apply some {@link FilterValueExpr} during evaluation.
+&nbsp; * Interface to indicate filter expressions. Does not provide methods since implementing classes have different
+&nbsp; * purposes, this interface is just a marker.
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
 &nbsp; *
-&nbsp; * @see StatementSourcePattern
-&nbsp; * @see ExclusiveStatement
-&nbsp; * @see ExclusiveGroup
-&nbsp; *
+&nbsp; * @see FilterExpr
+&nbsp; * @see ConjunctiveFilterExpr
 &nbsp; */
-&nbsp;public interface FilterTuple extends QueryModelNode {
+&nbsp;public interface FilterValueExpr extends ValueExpr {
 &nbsp;
-&nbsp;	/**
-&nbsp;	 * @return true if this expression has a filter to apply
-&nbsp;	 */
-&nbsp;	boolean hasFilter();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * register a new filter expression. If the expr has already a filter registered, the new expression is added to a
-&nbsp;	 * {@link ConjunctiveFilterExpr}.
-&nbsp;	 *
-&nbsp;	 * @param expr
-&nbsp;	 */
-&nbsp;	void addFilterExpr(FilterExpr expr);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * register a filter that can be directly expressed as a binding, e.g.
-&nbsp;	 *
-&nbsp;	 * SELECT * WHERE { ?s p o . FILTER (?s = X) }
-&nbsp;	 *
-&nbsp;	 * is equivalent to
-&nbsp;	 *
-&nbsp;	 * SELECT * WHERE { X p o . }
-&nbsp;	 *
-&nbsp;	 * @param varName
-&nbsp;	 * @param value
-&nbsp;	 */
-&nbsp;	void addBoundFilter(String varName, Value value);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 *
-&nbsp;	 * @return the currently registered filter expressions, usually of type {@link FilterExpr} or
-&nbsp;	 *         {@link ConjunctiveFilterExpr}
-&nbsp;	 */
-&nbsp;	FilterValueExpr getFilterExpr();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * @return the free variables of this expression
-&nbsp;	 */
-&nbsp;	List&lt;String&gt; getFreeVars();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Returns bound filter bindings, that need to be added as additional bindings to the final result
-&nbsp;	 *
-&nbsp;	 * @return the bound filters, or &lt;code&gt;null&lt;/code&gt;
-&nbsp;	 */
-&nbsp;	BindingSet getBoundFilters();
+&nbsp;	// TODO add methods for both use cases
 &nbsp;}
 </code>
 </pre>
@@ -137,7 +88,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

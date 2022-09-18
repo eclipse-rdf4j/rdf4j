@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > FilterValueExpr</title>
+  <title>Coverage Report > EmptyResult</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
 </div>
 
-<h1>Coverage Summary for Class: FilterValueExpr (org.eclipse.rdf4j.federated.algebra)</h1>
+<h1>Coverage Summary for Class: EmptyResult (org.eclipse.rdf4j.federated.algebra)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">FilterValueExpr</td>
+  <td class="name">EmptyResult</td>
 </tr>
 
 </table>
@@ -50,20 +50,17 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.federated.algebra;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
-&nbsp;
 &nbsp;/**
-&nbsp; * Interface to indicate filter expressions. Does not provide methods since implementing classes have different
-&nbsp; * purposes, this interface is just a marker.
+&nbsp; * A generic interface to mark some TupleExpr as empty.
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
 &nbsp; *
-&nbsp; * @see FilterExpr
-&nbsp; * @see ConjunctiveFilterExpr
+&nbsp; * @see EmptyStatementPattern
+&nbsp; * @see EmptyNJoin
+&nbsp; *
 &nbsp; */
-&nbsp;public interface FilterValueExpr extends ValueExpr {
+&nbsp;public interface EmptyResult {
 &nbsp;
-&nbsp;	// TODO add methods for both use cases
 &nbsp;}
 </code>
 </pre>
@@ -88,7 +85,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

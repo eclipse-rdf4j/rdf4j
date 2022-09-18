@@ -1,0 +1,272 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractRDFWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractRDFWriter (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractRDFWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.function.Consumer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.Sink;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Statements;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link RDFWriter}s offering common functionality for RDF writers.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+<b class="nc">&nbsp;public abstract class AbstractRDFWriter implements RDFWriter, Sink {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Mapping from namespace prefixes to namespace names.
+&nbsp;	 */
+<b class="nc">&nbsp;	protected Map&lt;String, String&gt; namespaceTable = new LinkedHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A collection of configuration options for this writer.
+&nbsp;	 */
+<b class="nc">&nbsp;	private WriterConfig writerConfig = new WriterConfig();</b>
+&nbsp;
+&nbsp;	private boolean writingStarted;
+&nbsp;
+&nbsp;	protected Consumer&lt;Statement&gt; statementConsumer;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+<b class="nc">&nbsp;		namespaceTable.put(prefix, uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFWriter setWriterConfig(WriterConfig config) {
+<b class="nc">&nbsp;		this.writerConfig = config;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public WriterConfig getWriterConfig() {
+<b class="nc">&nbsp;		return this.writerConfig;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FileFormat getFileFormat() {
+<b class="nc">&nbsp;		return getRDFFormat();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Default implementation. Implementing classes must override this to specify that they support given settings.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		return Collections.emptyList();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;T&gt; RDFWriter set(RioSetting&lt;T&gt; setting, T value) {
+<b class="nc">&nbsp;		getWriterConfig().set(setting, value);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		if (writingStarted) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(&quot;Document writing has already started&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		writingStarted = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		statementConsumer = this::consumeStatement;</b>
+<b class="nc">&nbsp;		if (getWriterConfig().get(BasicWriterSettings.CONVERT_RDF_STAR_TO_REIFICATION)) {</b>
+&nbsp;			// All writers can convert RDF-star to reification on request
+<b class="nc">&nbsp;			statementConsumer = this::handleStatementConvertRDFStar;</b>
+<b class="nc">&nbsp;		} else if (!getRDFFormat().supportsRDFStar() &amp;&amp; getWriterConfig().get(BasicWriterSettings.ENCODE_RDF_STAR)) {</b>
+&nbsp;			// By default non-RDF-star writers encode RDF-star to special RDF IRIs
+&nbsp;			// (all parsers, including RDF-star will convert back the encoded IRIs)
+<b class="nc">&nbsp;			statementConsumer = this::handleStatementEncodeRDFStar;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+<b class="nc">&nbsp;		statementConsumer.accept(st);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Consume a statement.
+&nbsp;	 *
+&nbsp;	 * Extending classes must override this method instead of overriding {@link #handleStatement(Statement)} in order to
+&nbsp;	 * benefit from automatic handling of RDF-star conversion or encoding.
+&nbsp;	 *
+&nbsp;	 * @param st the statement to consume.
+&nbsp;	 */
+&nbsp;	protected void consumeStatement(Statement st) {
+&nbsp;		// this method intended to be abstract, implemented as no-op to provide basic backward compatibility.
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See if writing has started
+&nbsp;	 *
+&nbsp;	 * @return {@code true} if writing has started, {@code false} otherwise
+&nbsp;	 */
+&nbsp;	protected boolean isWritingStarted() {
+<b class="nc">&nbsp;		return writingStarted;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verify that writing has started.
+&nbsp;	 *
+&nbsp;	 * @throws RDFHandlerException if writing has not yet started.
+&nbsp;	 */
+&nbsp;	protected void checkWritingStarted() {
+<b class="nc">&nbsp;		if (!writingStarted) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(&quot;Document writing has not started yet&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void handleStatementConvertRDFStar(Statement st) {
+<b class="nc">&nbsp;		Statements.convertRDFStarToReification(st, this::consumeStatement);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void handleStatementEncodeRDFStar(Statement st) {
+<b class="nc">&nbsp;		Resource s = st.getSubject();</b>
+<b class="nc">&nbsp;		Value o = st.getObject();</b>
+<b class="nc">&nbsp;		if (s instanceof Triple || o instanceof Triple) {</b>
+<b class="nc">&nbsp;			consumeStatement(new RDFStarEncodingStatement(st));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			consumeStatement(st);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

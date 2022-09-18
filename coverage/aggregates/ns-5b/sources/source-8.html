@@ -1,0 +1,1353 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Models</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.util</a>
+</div>
+
+<h1>Coverage Summary for Class: Models (org.eclipse.rdf4j.model.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Models</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    2.8%
+  </span>
+  <span class="absValue">
+    (2/72)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    2.3%
+  </span>
+  <span class="absValue">
+    (3/130)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    3.7%
+  </span>
+  <span class="absValue">
+    (11/297)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.util;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Supplier;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;import java.util.stream.StreamSupport;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.Experimental;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility functions for working with {@link Model}s and other {@link Statement} collections.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @see org.eclipse.rdf4j.model.Model
+&nbsp; * @see org.eclipse.rdf4j.model.util.ModelBuilder
+&nbsp; */
+&nbsp;public class Models {
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * hidden constructor to avoid instantiation
+&nbsp;	 */
+<b class="nc">&nbsp;	protected Models() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link Value} from the supplied statements. If more than one possible object value exists,
+&nbsp;	 * any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement } {@link Iterable} from which to retrieve an object value.
+&nbsp;	 * @return an object value from the given statement collection, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #object(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Value&gt; object(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false).map(st -&gt; st.getObject()).findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link Value} from the statements in the given model. If more than one possible object value
+&nbsp;	 * exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve an object value.
+&nbsp;	 * @return an object value from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #object(Iterable)}. This method signature kept for binary
+&nbsp;	 *          compatibility.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Value&gt; object(Model m) {
+<b class="nc">&nbsp;		return object((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link Literal} value from the supplied statements. If more than one possible Literal value
+&nbsp;	 * exists, any one Literal value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object Literal value.
+&nbsp;	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectLiteral(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Literal&gt; objectLiteral(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getObject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof Literal)</b>
+<b class="nc">&nbsp;				.map(l -&gt; (Literal) l)</b>
+<b class="nc">&nbsp;				.findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link Literal} value from the statements in the given model. If more than one possible
+&nbsp;	 * Literal value exists, any one Literal value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the {@link Model} from which to retrieve an object Literal value.
+&nbsp;	 * @return an object Literal value from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectLiteral(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Literal&gt; objectLiteral(Model m) {
+<b class="nc">&nbsp;		return objectLiteral((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object {@link Literal} values from the supplied statements.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object {@link Literal}
+&nbsp;	 *                   values.
+&nbsp;	 * @return a {@link Set} containing object {@link Literal} values from the given model, which will be empty if no
+&nbsp;	 *         such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectLiterals(Model)}.
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;Literal&gt; objectLiterals(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getObject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof Literal)</b>
+<b class="nc">&nbsp;				.map(l -&gt; (Literal) l)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object {@link Literal} values from the statements in the given model.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve all object {@link Literal} values.
+&nbsp;	 * @return a {@link Set} containing object {@link Literal} values from the given model, which will be empty if no
+&nbsp;	 *         such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectLiterals(Iterable)}. This method signature kept
+&nbsp;	 *          for binary compatibility.
+&nbsp;	 *
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;Literal&gt; objectLiterals(Model m) {
+<b class="nc">&nbsp;		return objectLiterals((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link Resource} value from the supplied statements. If more than one possible Resource value
+&nbsp;	 * exists, any one Resource value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object Resource value.
+&nbsp;	 * @return an {@link Optional} object Resource value from the given model, which will be {@link Optional#empty()
+&nbsp;	 *         empty} if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectResource(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Resource&gt; objectResource(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getObject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof Resource)</b>
+<b class="nc">&nbsp;				.map(r -&gt; (Resource) r)</b>
+<b class="nc">&nbsp;				.findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link Resource} value from the statements in the given model. If more than one possible
+&nbsp;	 * Resource value exists, any one Resource value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve an object Resource value.
+&nbsp;	 * @return an {@link Optional} object Resource value from the given model, which will be {@link Optional#empty()
+&nbsp;	 *         empty} if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectResource(Iterable)}. This method signature kept
+&nbsp;	 *          for binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Resource&gt; objectResource(Model m) {
+<b class="nc">&nbsp;		return objectResource((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object {@link Resource} values from the supplied statements.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object {@link Resource}
+&nbsp;	 *                   values.
+&nbsp;	 * @return a {@link Set} containing object {@link Resource} values from the given model, which will be empty if no
+&nbsp;	 *         such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectResources(Model)}.
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;Resource&gt; objectResources(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getObject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof Resource)</b>
+<b class="nc">&nbsp;				.map(r -&gt; (Resource) r)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object {@link Resource} values from the supplied model.
+&nbsp;	 *
+&nbsp;	 * @param m the {@link Model} from which to retrieve all object {@link Resource} values.
+&nbsp;	 * @return a {@link Set} containing object {@link Resource} values from the given model, which will be empty if no
+&nbsp;	 *         such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectResources(Iterable)}. This method signature kept
+&nbsp;	 *          for binary compatibility.
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;Resource&gt; objectResources(Model m) {
+<b class="nc">&nbsp;		return objectResources((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link IRI} value from the supplied statements. If more than one possible IRI value exists,
+&nbsp;	 * any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object IRI value.
+&nbsp;	 * @return an {@link Optional} object IRI value from the given model, which will be {@link Optional#empty() empty}
+&nbsp;	 *         if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectIRI(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;IRI&gt; objectIRI(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getObject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof IRI)</b>
+<b class="nc">&nbsp;				.map(r -&gt; (IRI) r)</b>
+<b class="nc">&nbsp;				.findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object {@link IRI} value from the supplied statements in the given model. If more than one possible
+&nbsp;	 * IRI value exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve an object IRI value.
+&nbsp;	 * @return an {@link Optional} object IRI value from the given model, which will be {@link Optional#empty() empty}
+&nbsp;	 *         if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectIRI(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;IRI&gt; objectIRI(Model m) {
+<b class="nc">&nbsp;		return objectIRI((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object {@link IRI} values from the supplied statements.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object IRI values.
+&nbsp;	 * @return a {@link Set} containing object IRI values from the given model, which will be empty if no such value
+&nbsp;	 *         exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectIRIs(Model)}.
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;IRI&gt; objectIRIs(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getObject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof IRI)</b>
+<b class="nc">&nbsp;				.map(r -&gt; (IRI) r)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object {@link IRI} values from the statements in the given model.
+&nbsp;	 *
+&nbsp;	 * @param m the {@link Model} from which to retrieve all object IRI values.
+&nbsp;	 * @return a {@link Set} containing object IRI values from the given model, which will be empty if no such value
+&nbsp;	 *         exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectIRIs(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;IRI&gt; objectIRIs(Model m) {
+<b class="nc">&nbsp;		return objectIRIs((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object value as a String from the supplied statements. If more than one possible object value
+&nbsp;	 * exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve an object String value.
+&nbsp;	 * @return an {@link Optional} object String value from the given model, which will be {@link Optional#empty()
+&nbsp;	 *         empty} if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectString(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;String&gt; objectString(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false).map(st -&gt; st.getObject().stringValue()).findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves an object value as a String from the statements in the given model. If more than one possible object
+&nbsp;	 * value exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve an object String value.
+&nbsp;	 * @return an {@link Optional} object String value from the given model, which will be {@link Optional#empty()
+&nbsp;	 *         empty} if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectString(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;String&gt; objectString(Model m) {
+<b class="nc">&nbsp;		return objectString((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object String values from the supplied statements.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve all object String values.
+&nbsp;	 * @return a {@link Set} containing object String values from the given model, which will be empty if no such value
+&nbsp;	 *         exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #objectStrings(Model)}.
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;String&gt; objectStrings(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getObject().stringValue())</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all object String values from the statements in the given model.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve all object String values.
+&nbsp;	 * @return a {@link Set} containing object String values from the given model, which will be empty if no such value
+&nbsp;	 *         exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #objectStrings(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 * @see Model#objects()
+&nbsp;	 */
+&nbsp;	public static Set&lt;String&gt; objectStrings(Model m) {
+<b class="nc">&nbsp;		return objectStrings((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a subject {@link Resource} from the supplied statements. If more than one possible resource value
+&nbsp;	 * exists, any one resource value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject Resource.
+&nbsp;	 * @return an {@link Optional} subject resource from the given model, which will be {@link Optional#empty() empty}
+&nbsp;	 *         if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subject(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Resource&gt; subject(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false).map(st -&gt; st.getSubject()).findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a subject {@link Resource} from the statements in the given model. If more than one possible resource
+&nbsp;	 * value exists, any one resource value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve a subject Resource.
+&nbsp;	 * @return an {@link Optional} subject resource from the given model, which will be {@link Optional#empty() empty}
+&nbsp;	 *         if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #subject(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Resource&gt; subject(Model m) {
+<b class="nc">&nbsp;		return subject((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a subject {@link IRI} from the supplied statements. If more than one possible IRI value exists, any one
+&nbsp;	 * IRI value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject IRI value.
+&nbsp;	 * @return an {@link Optional} subject IRI value from the given model, which will be {@link Optional#empty() empty}
+&nbsp;	 *         if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectIRI(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;IRI&gt; subjectIRI(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getSubject())</b>
+<b class="nc">&nbsp;				.filter(s -&gt; s instanceof IRI)</b>
+<b class="nc">&nbsp;				.map(s -&gt; (IRI) s)</b>
+<b class="nc">&nbsp;				.findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a subject {@link IRI} from the statements in the given model. If more than one possible IRI value
+&nbsp;	 * exists, any one IRI value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve a subject IRI value.
+&nbsp;	 * @return an {@link Optional} subject IRI value from the given model, which will be {@link Optional#empty() empty}
+&nbsp;	 *         if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectIRI(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;IRI&gt; subjectIRI(Model m) {
+<b class="nc">&nbsp;		return subjectIRI((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all subject {@link IRI}s from the supplied statements.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject IRI value.
+&nbsp;	 * @return a {@link Set} of subject IRI values from the given model. The returned Set may be empty.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectIRIs(Model)}.
+&nbsp;	 */
+&nbsp;	public static Set&lt;IRI&gt; subjectIRIs(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getSubject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof IRI)</b>
+<b class="nc">&nbsp;				.map(r -&gt; (IRI) r)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all subject {@link IRI}s from the statements in the given model.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve a subject IRI value.
+&nbsp;	 * @return a {@link Set} of subject IRI values from the given model. The returned Set may be empty.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectIRIs(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Set&lt;IRI&gt; subjectIRIs(Model m) {
+<b class="nc">&nbsp;		return subjectIRIs((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a subject {@link BNode} from the supplied statements. If more than one possible blank node value
+&nbsp;	 * exists, any one blank node value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject BNode value.
+&nbsp;	 * @return an {@link Optional} subject BNode value from the given model, which will be {@link Optional#empty()
+&nbsp;	 *         empty} if no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectBNode(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;BNode&gt; subjectBNode(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getSubject())</b>
+<b class="nc">&nbsp;				.filter(s -&gt; s instanceof BNode)</b>
+<b class="nc">&nbsp;				.map(s -&gt; (BNode) s)</b>
+<b class="nc">&nbsp;				.findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a subject {@link BNode} from the statements in the given model. If more than one possible blank node
+&nbsp;	 * value exists, any one blank node value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve a subject BNode value.
+&nbsp;	 * @return an {@link Optional} subject BNode value from the given model, which will be {@link Optional#empty()
+&nbsp;	 *         empty} if no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectBNode(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;BNode&gt; subjectBNode(Model m) {
+<b class="nc">&nbsp;		return subjectBNode((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all subject {@link BNode}s from the supplied statements.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a subject IRI value.
+&nbsp;	 * @return a {@link Set} of subject {@link BNode} values from the given model. The returned Set may be empty.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #subjectBNodes(Model)}.
+&nbsp;	 */
+&nbsp;	public static Set&lt;BNode&gt; subjectBNodes(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false)</b>
+<b class="nc">&nbsp;				.map(st -&gt; st.getSubject())</b>
+<b class="nc">&nbsp;				.filter(o -&gt; o instanceof BNode)</b>
+<b class="nc">&nbsp;				.map(r -&gt; (BNode) r)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toSet());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves all subject {@link BNode}s from the statements in the given model.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve a subject IRI value.
+&nbsp;	 * @return a {@link Set} of subject {@link BNode} values from the given model. The returned Set may be empty.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #subjectBNodes(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Set&lt;BNode&gt; subjectBNodes(Model m) {
+<b class="nc">&nbsp;		return subjectBNodes((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a predicate from the supplied statements. If more than one possible predicate value exists, any one
+&nbsp;	 * value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param statements the {@link Statement} {@link Iterable} from which to retrieve a predicate value.
+&nbsp;	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty() empty} if
+&nbsp;	 *         no such value exists.
+&nbsp;	 * @apiNote this method signature is new in 3.2.0, and is a generalization of {@link #predicate(Model)}.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;IRI&gt; predicate(Iterable&lt;Statement&gt; statements) {
+<b class="nc">&nbsp;		return StreamSupport.stream(statements.spliterator(), false).map(st -&gt; st.getPredicate()).findAny();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a predicate from the statements in the given model. If more than one possible predicate value exists,
+&nbsp;	 * any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m the model from which to retrieve a predicate value.
+&nbsp;	 * @return an {@link Optional} predicate value from the given model, which will be {@link Optional#empty() empty} if
+&nbsp;	 *         no such value exists.
+&nbsp;	 * @apiNote replaced in 3.2.0 with the more generic {@link #predicate(Iterable)}. This method signature kept for
+&nbsp;	 *          binary compatibility.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;IRI&gt; predicate(Model m) {
+<b class="nc">&nbsp;		return predicate((Iterable&lt;Statement&gt;) m);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the property value for the given subject to the given object value, replacing any existing value(s) for the
+&nbsp;	 * subject&#39;s property. This method updates the original input Model and then returns that same Model object.
+&nbsp;	 *
+&nbsp;	 * @param m        the model in which to set the property value. May not be null.
+&nbsp;	 * @param subject  the subject for which to set/replace the property value. May not be null.
+&nbsp;	 * @param property the property for which to set/replace the value. May not be null.
+&nbsp;	 * @param value    the value to set for the given subject and property. May not be null.
+&nbsp;	 * @param contexts the context(s) in which to set/replace the property value. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return the Model object, containing the updated property value.
+&nbsp;	 */
+&nbsp;	public static Model setProperty(Model m, Resource subject, IRI property, Value value, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(value, &quot;value may not be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (m.contains(subject, property, null, contexts)) {</b>
+<b class="nc">&nbsp;			m.remove(subject, property, null, contexts);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		m.add(subject, property, value, contexts);</b>
+<b class="nc">&nbsp;		return m;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a property value for the supplied subject from the given model. If more than one property value exists,
+&nbsp;	 * any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve an object value.
+&nbsp;	 * @param subject  the subject resource for which to retrieve a property value.
+&nbsp;	 * @param property the property for which to retrieve a value.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a property value from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Value&gt; getProperty(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return object(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve all property values for the supplied subject and property from the given model.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve the property values.
+&nbsp;	 * @param subject  the subject resource for which to retrieve all property values.
+&nbsp;	 * @param property the property for which to retrieve all values.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a Set of all property values for the supplied input. The resulting set may be empty.
+&nbsp;	 */
+&nbsp;	public static Set&lt;Value&gt; getProperties(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return m.filter(subject, property, null, contexts).objects();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a property value as an IRI for the supplied subject from the given model. If more than one property
+&nbsp;	 * value exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve an object value.
+&nbsp;	 * @param subject  the subject resource for which to retrieve a property value.
+&nbsp;	 * @param property the property for which to retrieve a value.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a property value Resource from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Resource&gt; getPropertyResource(Model m, Resource subject, IRI property,
+&nbsp;			Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectResource(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve all property Resource values for the supplied subject and property from the given model.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve the property Resource values.
+&nbsp;	 * @param subject  the subject resource for which to retrieve all property Resource values.
+&nbsp;	 * @param property the property for which to retrieve all Resource values.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a Set of all property Resource values for the supplied input. The resulting set may be empty.
+&nbsp;	 */
+&nbsp;	public static Set&lt;Resource&gt; getPropertyResources(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectResources(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a property value as an IRI for the supplied subject from the given model. If more than one property
+&nbsp;	 * value exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve an object value.
+&nbsp;	 * @param subject  the subject resource for which to retrieve a property value.
+&nbsp;	 * @param property the property for which to retrieve a value.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a property value IRI from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;IRI&gt; getPropertyIRI(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectIRI(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve all property IRI values for the supplied subject and property from the given model.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve the property IRI values.
+&nbsp;	 * @param subject  the subject resource for which to retrieve all property IRI values.
+&nbsp;	 * @param property the property for which to retrieve all IRI values.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a Set of all property IRI values for the supplied input. The resulting set may be empty.
+&nbsp;	 */
+&nbsp;	public static Set&lt;IRI&gt; getPropertyIRIs(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectIRIs(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a property value as a {@link Literal} for the supplied subject from the given model. If more than one
+&nbsp;	 * property value exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve an object value.
+&nbsp;	 * @param subject  the subject resource for which to retrieve a property literal value.
+&nbsp;	 * @param property the property for which to retrieve a value.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a property value Literal from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Literal&gt; getPropertyLiteral(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectLiteral(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve all property Literal values for the supplied subject and property from the given model.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve the property Literal values.
+&nbsp;	 * @param subject  the subject resource for which to retrieve all property Literal values.
+&nbsp;	 * @param property the property for which to retrieve all Literal values.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a Set of all property IRI values for the supplied input. The resulting set may be empty.
+&nbsp;	 */
+&nbsp;	public static Set&lt;Literal&gt; getPropertyLiterals(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectLiterals(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a property value as a String for the supplied subject from the given model. If more than one property
+&nbsp;	 * value exists, any one value is picked and returned.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve an object value.
+&nbsp;	 * @param subject  the subject resource for which to retrieve a property literal value.
+&nbsp;	 * @param property the property for which to retrieve a value.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property value. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a property value String from the given model, or {@link Optional#empty()} if no such value exists.
+&nbsp;	 */
+&nbsp;	public static Optional&lt;String&gt; getPropertyString(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectString(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve all property values as Strings for the supplied subject and property from the given model.
+&nbsp;	 *
+&nbsp;	 * @param m        the model from which to retrieve the property values as Strings.
+&nbsp;	 * @param subject  the subject resource for which to retrieve all property values as Strings.
+&nbsp;	 * @param property the property for which to retrieve all values as Strings.
+&nbsp;	 * @param contexts the contexts from which to retrieve the property values. Optional vararg argument. If not
+&nbsp;	 *                 specified the operations works on the entire Model.
+&nbsp;	 * @return a Set of all property values as Strings for the supplied input. The resulting set may be empty.
+&nbsp;	 */
+&nbsp;	public static Set&lt;String&gt; getPropertyStrings(Model m, Resource subject, IRI property, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;model may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;subject may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(property, &quot;property may not be null&quot;);</b>
+<b class="nc">&nbsp;		return objectStrings(m.getStatements(subject, property, null, contexts));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two RDF models, and returns &lt;var&gt;true&lt;/var&gt; if they consist of isomorphic graphs and the isomorphic
+&nbsp;	 * graph identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be
+&nbsp;	 * mapped 1:1 on to statements in the other graphs. In this mapping, blank nodes are not considered mapped when
+&nbsp;	 * having an identical internal id, but are mapped from one graph to the other by looking at the statements in which
+&nbsp;	 * the blank nodes occur. A Model can consist of more than one graph (denoted by context identifiers). Two models
+&nbsp;	 * are considered isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model,
+&nbsp;	 * and the context identifiers of these graphs are either identical or (in the case of blank nodes) map 1:1 on each
+&nbsp;	 * other.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism&quot;&gt;RDF Concepts &amp;amp; Abstract Syntax, section
+&nbsp;	 *      3.6 (Graph Comparison)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static boolean isomorphic(Iterable&lt;? extends Statement&gt; model1, Iterable&lt;? extends Statement&gt; model2) {
+<b class="pc">&nbsp;		if (model1 == model2) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		Model set1 = toModel(model1);</b>
+<b class="fc">&nbsp;		Model set2 = toModel(model2);</b>
+&nbsp;
+<b class="fc">&nbsp;		return GraphComparisons.isomorphic(set1, set2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Legacy implementation of {@link #isomorphic(Iterable, Iterable) isomorphic comparison}. This method is offered as
+&nbsp;	 * a temporary fallback for corner cases where the newly introduced isomorphism algorithm (in release 3.6.0) has
+&nbsp;	 * worse performance or an unexpected result.
+&nbsp;	 *
+&nbsp;	 * @apiNote This method is offered as a temporary fallback only, and will likely be removed again quite soon in a
+&nbsp;	 *          future minor or major release.
+&nbsp;	 * @implNote This uses an algorithm that has poor performance in many cases and can potentially get stuck in an
+&nbsp;	 *           endless loop. We &lt;strong&gt;strongly recommend&lt;/strong&gt; using the new algorithm available in the
+&nbsp;	 *           {@link #isomorphic(Iterable, Iterable)} implementation.
+&nbsp;	 *
+&nbsp;	 * @deprecated since 3.6.0 - use {@link #isomorphic(Iterable, Iterable)} instead.
+&nbsp;	 *
+&nbsp;	 * @since 3.6.0
+&nbsp;	 * @see #isomorphic(Iterable, Iterable)
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	@Deprecated
+&nbsp;	public static boolean legacyIsomorphic(Iterable&lt;? extends Statement&gt; model1, Iterable&lt;? extends Statement&gt; model2) {
+<b class="nc">&nbsp;		if (model1 == model2) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;Statement&gt; set1 = toSet(model1);</b>
+<b class="nc">&nbsp;		Model set2 = toModel(model2);</b>
+&nbsp;		// Compare the number of statements in both sets
+<b class="nc">&nbsp;		if (set1.size() != set2.size()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return isSubsetInternal(set1, set2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two RDF models, and returns &lt;var&gt;true&lt;/var&gt; if the first model is a subset of the second model, using
+&nbsp;	 * graph isomorphism to map statements between models.
+&nbsp;	 */
+&nbsp;	public static boolean isSubset(Iterable&lt;? extends Statement&gt; model1, Iterable&lt;? extends Statement&gt; model2) {
+&nbsp;		// Filter duplicates
+<b class="nc">&nbsp;		Set&lt;Statement&gt; set1 = toSet(model1);</b>
+<b class="nc">&nbsp;		Model set2 = toModel(model2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return isSubset(set1, set2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two RDF models, and returns &lt;var&gt;true&lt;/var&gt; if the first model is a subset of the second model, using
+&nbsp;	 * graph isomorphism to map statements between models.
+&nbsp;	 */
+&nbsp;	public static boolean isSubset(Set&lt;? extends Statement&gt; model1, Set&lt;? extends Statement&gt; model2) {
+&nbsp;		// Compare the number of statements in both sets
+<b class="nc">&nbsp;		if (model1.size() &gt; model2.size()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return isSubsetInternal(toSet(model1), toModel(model2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Strips contexts from the input model. This method provides a new {@link Model} containing all statements from the
+&nbsp;	 * input model, with the supplied contexts removed from those statements.
+&nbsp;	 *
+&nbsp;	 * @param model    the input model
+&nbsp;	 * @param contexts the contexts to remove. This is a vararg and as such is optional. If not supplied, the method
+&nbsp;	 *                 strips &lt;i&gt;all&lt;/i&gt; contexts.
+&nbsp;	 * @return a new {@link Model} object containg the same statements as the input model, with the supplied contexts
+&nbsp;	 *         stripped.
+&nbsp;	 */
+&nbsp;	public static Model stripContexts(Model model, Resource... contexts) {
+<b class="nc">&nbsp;		final List&lt;Resource&gt; contextList = Arrays.asList(contexts);</b>
+<b class="nc">&nbsp;		return model.stream().map(st -&gt; {</b>
+<b class="nc">&nbsp;			if (contextList.isEmpty() || contextList.contains(st.getContext())) {</b>
+<b class="nc">&nbsp;				return Statements.stripContext(st);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return st;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}).collect(ModelCollector.toModel());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link Supplier} of {@link ModelException} objects that be passed to
+&nbsp;	 * {@link Optional#orElseThrow(Supplier)} to generate exceptions as necessary.
+&nbsp;	 *
+&nbsp;	 * @param message The message to be used for the exception
+&nbsp;	 * @return A {@link Supplier} that will create {@link ModelException} objects with the given message.
+&nbsp;	 */
+&nbsp;	public static Supplier&lt;ModelException&gt; modelException(String message) {
+<b class="nc">&nbsp;		return () -&gt; new ModelException(message);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Make a model thread-safe by synchronizing all its methods. Iterators will still not be thread-safe!
+&nbsp;	 *
+&nbsp;	 * @param toSynchronize the model that should be synchronized
+&nbsp;	 * @return Synchronized Model
+&nbsp;	 */
+&nbsp;	public static Model synchronizedModel(Model toSynchronize) {
+<b class="nc">&nbsp;		return new SynchronizedModel(toSynchronize);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF-star model to RDF reification statements. The converted statements are sent to the
+&nbsp;	 * supplied consumer function.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 *
+&nbsp;	 * @param vf       the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param model    the {@link Model} to convert.
+&nbsp;	 * @param consumer the {@link Consumer} function for the produced statements.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static void convertRDFStarToReification(ValueFactory vf, Model model, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		model.forEach(st -&gt; Statements.convertRDFStarToReification(vf, st, consumer));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF-star model to RDF reification statements. The converted statements are sent to the
+&nbsp;	 * supplied consumer function.
+&nbsp;	 *
+&nbsp;	 * @param model    the {@link Model} to convert.
+&nbsp;	 * @param consumer the {@link Consumer} function for the produced statements.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static void convertRDFStarToReification(Model model, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		convertRDFStarToReification(SimpleValueFactory.getInstance(), model, consumer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the statements in supplied RDF-star model to a new RDF model using reificiation.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 *
+&nbsp;	 * @param vf    the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param model the {@link Model} to convert.
+&nbsp;	 * @return a new {@link Model} with RDF-star statements converted to reified triples.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static Model convertRDFStarToReification(ValueFactory vf, Model model) {
+<b class="nc">&nbsp;		Model reificationModel = new LinkedHashModel();</b>
+<b class="nc">&nbsp;		convertRDFStarToReification(vf, model, (Consumer&lt;Statement&gt;) reificationModel::add);</b>
+<b class="nc">&nbsp;		return reificationModel;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the statements in supplied RDF-star model to a new RDF model using reificiation.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 *
+&nbsp;	 * @param vf           the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param model        the {@link Model} to convert.
+&nbsp;	 * @param modelFactory the {@link ModelFactory} used to create the new output {@link Model}.
+&nbsp;	 * @return a new {@link Model} with RDF-star statements converted to reified triples.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static Model convertRDFStarToReification(ValueFactory vf, Model model, ModelFactory modelFactory) {
+<b class="nc">&nbsp;		Model reificationModel = modelFactory.createEmptyModel();</b>
+<b class="nc">&nbsp;		convertRDFStarToReification(vf, model, (Consumer&lt;Statement&gt;) reificationModel::add);</b>
+<b class="nc">&nbsp;		return reificationModel;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the statements in the supplied RDF-star model to a new RDF model using reification.
+&nbsp;	 *
+&nbsp;	 * @param model the {@link Model} to convert.
+&nbsp;	 * @return a new {@link Model} with RDF-star statements converted to reified triples.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static Model convertRDFStarToReification(Model model) {
+<b class="nc">&nbsp;		return convertRDFStarToReification(SimpleValueFactory.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF reification model to RDF-star statements. The converted statements are sent to the
+&nbsp;	 * supplied consumer function.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 *
+&nbsp;	 * @param vf       the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param model    the {@link Model} to convert.
+&nbsp;	 * @param consumer the {@link Consumer} function for the produced statements.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static void convertReificationToRDFStar(ValueFactory vf, Model model, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		Map&lt;Resource, Triple&gt; convertedStatements = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		model.filter(null, RDF.TYPE, RDF.STATEMENT).forEach((s) -&gt; {</b>
+<b class="nc">&nbsp;			Value subject = object(model.filter(s.getSubject(), RDF.SUBJECT, null)).orElse(null);</b>
+<b class="nc">&nbsp;			if (!(subject instanceof IRI) &amp;&amp; !(subject instanceof BNode)) {</b>
+&nbsp;				return;
+&nbsp;			}
+<b class="nc">&nbsp;			Value predicate = object(model.filter(s.getSubject(), RDF.PREDICATE, null)).orElse(null);</b>
+<b class="nc">&nbsp;			if (!(predicate instanceof IRI)) {</b>
+&nbsp;				return;
+&nbsp;			}
+<b class="nc">&nbsp;			Value object = object(model.filter(s.getSubject(), RDF.OBJECT, null)).orElse(null);</b>
+<b class="nc">&nbsp;			if (!(object instanceof Value)) {</b>
+&nbsp;				return;
+&nbsp;			}
+<b class="nc">&nbsp;			Triple t = vf.createTriple((Resource) subject, (IRI) predicate, object);</b>
+<b class="nc">&nbsp;			convertedStatements.put(s.getSubject(), t);</b>
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		for (Map.Entry&lt;Resource, Triple&gt; e : convertedStatements.entrySet()) {</b>
+<b class="nc">&nbsp;			Triple t = e.getValue();</b>
+<b class="nc">&nbsp;			Resource subject = convertedStatements.get(t.getSubject());</b>
+<b class="nc">&nbsp;			Resource object = convertedStatements.get(t.getObject());</b>
+<b class="nc">&nbsp;			if (subject != null || object != null) {</b>
+&nbsp;				// Triples within triples, replace them in the map
+<b class="nc">&nbsp;				Triple nt = vf.createTriple(subject != null ? subject : t.getSubject(), t.getPredicate(),</b>
+<b class="nc">&nbsp;						object != null ? object : t.getObject());</b>
+<b class="nc">&nbsp;				e.setValue(nt);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		model.forEach((s) -&gt; {</b>
+<b class="nc">&nbsp;			Resource subject = s.getSubject();</b>
+<b class="nc">&nbsp;			IRI predicate = s.getPredicate();</b>
+<b class="nc">&nbsp;			Value object = s.getObject();</b>
+<b class="nc">&nbsp;			Triple subjectTriple = convertedStatements.get(subject);</b>
+<b class="nc">&nbsp;			Triple objectTriple = convertedStatements.get(object);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (subjectTriple == null &amp;&amp; objectTriple == null) {</b>
+&nbsp;				// Statement not part of detected reification, add it as is
+<b class="nc">&nbsp;				consumer.accept(s);</b>
+<b class="nc">&nbsp;			} else if (subjectTriple == null || ((!RDF.TYPE.equals(predicate) || !RDF.STATEMENT.equals(object))</b>
+<b class="nc">&nbsp;					&amp;&amp; !RDF.SUBJECT.equals(predicate) &amp;&amp; !RDF.PREDICATE.equals(predicate)</b>
+<b class="nc">&nbsp;					&amp;&amp; !RDF.OBJECT.equals(predicate))) {</b>
+&nbsp;				// Statement uses reified data and needs to be converted
+<b class="nc">&nbsp;				Statement ns = vf.createStatement(subjectTriple != null ? subjectTriple : s.getSubject(),</b>
+<b class="nc">&nbsp;						s.getPredicate(), objectTriple != null ? objectTriple : s.getObject(), s.getContext());</b>
+<b class="nc">&nbsp;				consumer.accept(ns);</b>
+&nbsp;			} // else: Statement part of reification and needs to be removed (skipped)
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF reification model to RDF-star statements. The converted statements are sent to the
+&nbsp;	 * supplied consumer function.
+&nbsp;	 *
+&nbsp;	 * @param model    the {@link Model} to convert.
+&nbsp;	 * @param consumer the {@link Consumer} function for the produced statements.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static void convertReificationToRDFStar(Model model, Consumer&lt;Statement&gt; consumer) {
+<b class="nc">&nbsp;		convertReificationToRDFStar(SimpleValueFactory.getInstance(), model, consumer);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the statements in supplied RDF reification model to a new RDF-star model.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 *
+&nbsp;	 * @param vf           the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param model        the {@link Model} to convert.
+&nbsp;	 * @param modelFactory the {@link ModelFactory} to use for creating a new Model object for the output.
+&nbsp;	 * @return a new {@link Model} with reification statements converted to RDF-star {@link Triple}s.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static Model convertReificationToRDFStar(ValueFactory vf, Model model, ModelFactory modelFactory) {
+<b class="nc">&nbsp;		Model rdfStarModel = modelFactory.createEmptyModel();</b>
+<b class="nc">&nbsp;		convertReificationToRDFStar(vf, model, (Consumer&lt;Statement&gt;) rdfStarModel::add);</b>
+<b class="nc">&nbsp;		return rdfStarModel;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the statements in supplied RDF reification model to a new RDF-star model.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The supplied value factory is used to create all new statements.
+&nbsp;	 *
+&nbsp;	 * @param vf    the {@link ValueFactory} to use for creating statements.
+&nbsp;	 * @param model the {@link Model} to convert.
+&nbsp;	 * @return a new {@link Model} with reification statements converted to RDF-star {@link Triple}s.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static Model convertReificationToRDFStar(ValueFactory vf, Model model) {
+<b class="nc">&nbsp;		return convertReificationToRDFStar(vf, model, new DynamicModelFactory());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied RDF reification model to a new RDF-star model.
+&nbsp;	 *
+&nbsp;	 * @param model the {@link Model} to convert.
+&nbsp;	 * @return a new {@link Model} with reification statements converted to RDF-star {@link Triple}s.
+&nbsp;	 */
+&nbsp;	@Experimental
+&nbsp;	public static Model convertReificationToRDFStar(Model model) {
+<b class="nc">&nbsp;		return convertReificationToRDFStar(SimpleValueFactory.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isSubsetInternal(Set&lt;Statement&gt; model1, Model model2) {
+&nbsp;		// try to create a full blank node mapping
+<b class="nc">&nbsp;		return matchModels(model1, model2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean matchModels(Set&lt;Statement&gt; model1, Model model2) {
+&nbsp;		// Compare statements without blank nodes first, save the rest for later
+<b class="nc">&nbsp;		List&lt;Statement&gt; model1BNodes = new ArrayList&lt;&gt;(model1.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Statement st : model1) {</b>
+<b class="nc">&nbsp;			if (isBlank(st.getSubject()) || isBlank(st.getObject()) || isBlank(st.getContext())) {</b>
+<b class="nc">&nbsp;				model1BNodes.add(st);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (!model2.contains(st)) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return matchModels(Collections.unmodifiableList(model1BNodes), model2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A recursive method for finding a complete mapping between blank nodes in model1 and blank nodes in model2. The
+&nbsp;	 * algorithm does a depth-first search trying to establish a mapping for each blank node occurring in model1.
+&nbsp;	 *
+&nbsp;	 * @param model1
+&nbsp;	 * @param model2
+&nbsp;	 * @return true if a complete mapping has been found, false otherwise.
+&nbsp;	 */
+&nbsp;	private static boolean matchModels(final List&lt;? extends Statement&gt; model1, final Model model2) {
+&nbsp;
+<b class="nc">&nbsp;		ArrayDeque&lt;Iterator&lt;Statement&gt;&gt; iterators = new ArrayDeque&lt;&gt;();</b>
+<b class="nc">&nbsp;		ArrayDeque&lt;Map&lt;Resource, Resource&gt;&gt; bNodeMappings = new ArrayDeque&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;Resource, Resource&gt; bNodeMapping = Collections.emptyMap();</b>
+<b class="nc">&nbsp;		int idx = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;		Iterator&lt;Statement&gt; iterator = null;</b>
+&nbsp;		while (true) {
+&nbsp;
+<b class="nc">&nbsp;			if (idx &gt;= model1.size()) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			Statement st1 = model1.get(idx);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (iterator == null) {</b>
+&nbsp;
+<b class="nc">&nbsp;				List&lt;Statement&gt; matchingStats = findMatchingStatements(st1, model2, bNodeMapping);</b>
+&nbsp;
+<b class="nc">&nbsp;				iterator = matchingStats.iterator();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (iterator.hasNext()) {</b>
+<b class="nc">&nbsp;				Statement st2 = iterator.next();</b>
+&nbsp;
+&nbsp;				// Map bNodes in st1 to bNodes in st2
+<b class="nc">&nbsp;				Map&lt;Resource, Resource&gt; newBNodeMapping = createNewBnodeMapping(bNodeMapping, st1, st2);</b>
+&nbsp;
+<b class="nc">&nbsp;				iterators.addLast(iterator);</b>
+<b class="nc">&nbsp;				bNodeMappings.addLast(bNodeMapping);</b>
+&nbsp;
+<b class="nc">&nbsp;				iterator = null;</b>
+&nbsp;
+<b class="nc">&nbsp;				bNodeMapping = newBNodeMapping;</b>
+<b class="nc">&nbsp;				idx++;</b>
+&nbsp;
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (iterator != null) {</b>
+<b class="nc">&nbsp;				idx--;</b>
+<b class="nc">&nbsp;				if (idx &lt; 0) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				iterator = iterators.removeLast();</b>
+<b class="nc">&nbsp;				bNodeMapping = bNodeMappings.removeLast();</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Map&lt;Resource, Resource&gt; createNewBnodeMapping(Map&lt;Resource, Resource&gt; bNodeMapping, Statement st1,
+&nbsp;			Statement st2) {
+<b class="nc">&nbsp;		Map&lt;Resource, Resource&gt; newBNodeMapping = new HashMap&lt;&gt;(bNodeMapping);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isBlank(st1.getSubject()) &amp;&amp; isBlank(st2.getSubject())) {</b>
+<b class="nc">&nbsp;			newBNodeMapping.put(st1.getSubject(), st2.getSubject());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (isBlank(st1.getObject()) &amp;&amp; isBlank(st2.getObject())) {</b>
+<b class="nc">&nbsp;			newBNodeMapping.put((Resource) st1.getObject(), (Resource) st2.getObject());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (isBlank(st1.getContext()) &amp;&amp; isBlank(st2.getContext())) {</b>
+<b class="nc">&nbsp;			newBNodeMapping.put(st1.getContext(), st2.getContext());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return newBNodeMapping;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static List&lt;Statement&gt; findMatchingStatements(Statement st, Model model,
+&nbsp;			Map&lt;Resource, Resource&gt; bNodeMapping) {
+<b class="nc">&nbsp;		Resource s = isBlank(st.getSubject()) ? null : st.getSubject();</b>
+<b class="nc">&nbsp;		IRI p = st.getPredicate();</b>
+<b class="nc">&nbsp;		Value o = isBlank(st.getObject()) ? null : st.getObject();</b>
+<b class="nc">&nbsp;		Resource[] g = isBlank(st.getContext()) ? new Resource[0] : new Resource[] { st.getContext() };</b>
+<b class="nc">&nbsp;		List&lt;Statement&gt; result = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Statement modelSt : model.filter(s, p, o, g)) {</b>
+<b class="nc">&nbsp;			if (statementsMatch(st, modelSt, bNodeMapping)) {</b>
+&nbsp;				// All components possibly match
+<b class="nc">&nbsp;				result.add(modelSt);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return Collections.unmodifiableList(result);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean statementsMatch(Statement st1, Statement st2, Map&lt;Resource, Resource&gt; bNodeMapping) {
+<b class="nc">&nbsp;		IRI pred1 = st1.getPredicate();</b>
+<b class="nc">&nbsp;		IRI pred2 = st2.getPredicate();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!pred1.equals(pred2)) {</b>
+&nbsp;			// predicates don&#39;t match
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Resource subj1 = st1.getSubject();</b>
+<b class="nc">&nbsp;		Resource subj2 = st2.getSubject();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (bnodeValueMatching(bNodeMapping, subj1, subj2)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Value obj1 = st1.getObject();</b>
+<b class="nc">&nbsp;		Value obj2 = st2.getObject();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (bnodeValueMatching(bNodeMapping, obj1, obj2)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Resource context1 = st1.getContext();</b>
+<b class="nc">&nbsp;		Resource context2 = st2.getContext();</b>
+&nbsp;
+&nbsp;		// no match if in different contexts
+<b class="nc">&nbsp;		if (context1 == null) {</b>
+<b class="nc">&nbsp;			return context2 == null;</b>
+<b class="nc">&nbsp;		} else if (context2 == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (bnodeValueMatching(bNodeMapping, context1, context2)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean bnodeValueMatching(Map&lt;Resource, Resource&gt; bNodeMapping, Value obj1, Value obj2) {
+<b class="nc">&nbsp;		if (isBlank(obj1) &amp;&amp; isBlank(obj2)) {</b>
+<b class="nc">&nbsp;			Resource mappedBNode = bNodeMapping.get(obj1);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (mappedBNode != null) {</b>
+&nbsp;				// bNode &#39;obj1&#39; was already mapped to some other bNode
+&nbsp;				// &#39;obj1&#39; and &#39;obj2&#39; do not match
+<b class="nc">&nbsp;				return !obj2.equals(mappedBNode);</b>
+&nbsp;			} else {
+&nbsp;				// &#39;obj1&#39; was not yet mapped. we need to check if &#39;obj2&#39; is a
+&nbsp;				// possible mapping candidate
+&nbsp;				// &#39;obj2&#39; is already mapped to some other value.
+<b class="nc">&nbsp;				return bNodeMapping.containsValue(obj2);</b>
+&nbsp;			}
+&nbsp;		} else {
+&nbsp;			// objects are not (both) bNodes
+<b class="nc">&nbsp;			return !obj1.equals(obj2);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isBlank(Value value) {
+<b class="nc">&nbsp;		if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			boolean skolemizedBNode = value.stringValue().contains(&quot;/.well-known/genid/&quot;);</b>
+<b class="nc">&nbsp;			return skolemizedBNode;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Model toModel(Iterable&lt;? extends Statement&gt; iterable) {
+<b class="pc">&nbsp;		if (iterable instanceof Model) {</b>
+<b class="nc">&nbsp;			return (Model) iterable;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		final Model set;
+<b class="pc">&nbsp;		if (iterable instanceof Collection) {</b>
+<b class="fc">&nbsp;			int size = ((Collection&lt;? extends Statement&gt;) iterable).size();</b>
+<b class="fc">&nbsp;			set = new LinkedHashModel(size);</b>
+<b class="fc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			set = new LinkedHashModel();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(set::add);</b>
+<b class="fc">&nbsp;		return set;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Set&lt;Statement&gt; toSet(Iterable&lt;? extends Statement&gt; iterable) {
+<b class="nc">&nbsp;		if (iterable instanceof Set) {</b>
+<b class="nc">&nbsp;			return (Set&lt;Statement&gt;) iterable;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (iterable instanceof Collection) {</b>
+<b class="nc">&nbsp;			return new HashSet&lt;&gt;((Collection&lt;? extends Statement&gt;) iterable);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			HashSet&lt;Statement&gt; statements = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			StreamSupport.stream(iterable.spliterator(), false).filter(Objects::nonNull).forEach(statements::add);</b>
+<b class="nc">&nbsp;			return statements;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

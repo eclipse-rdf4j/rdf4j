@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > BoundJoinTupleExpr</title>
+  <title>Coverage Report > StatementTupleExpr</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
 </div>
 
-<h1>Coverage Summary for Class: BoundJoinTupleExpr (org.eclipse.rdf4j.federated.algebra)</h1>
+<h1>Coverage Summary for Class: StatementTupleExpr (org.eclipse.rdf4j.federated.algebra)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">BoundJoinTupleExpr</td>
+  <td class="name">StatementTupleExpr</td>
 </tr>
 
 </table>
@@ -50,16 +50,51 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.federated.algebra;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.federated.evaluation.join.ControlledWorkerBoundJoin;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
 &nbsp;
 &nbsp;/**
-&nbsp; * Marker interface indicating that instances are applicable for bound join processing (see
-&nbsp; * {@link ControlledWorkerBoundJoin}
+&nbsp; * Interface for any expression that can be evaluated
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
-&nbsp; * @see ControlledWorkerBoundJoin
+&nbsp; *
+&nbsp; * @see StatementSourcePattern
+&nbsp; * @see ExclusiveStatement
+&nbsp; * @see ExclusiveGroup
 &nbsp; */
-&nbsp;public interface BoundJoinTupleExpr {
+&nbsp;public interface StatementTupleExpr extends FedXTupleExpr {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the id of this expr
+&nbsp;	 */
+&nbsp;	String getId();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return a list of sources that are relevant for evaluation of this expression
+&nbsp;	 */
+&nbsp;	List&lt;StatementSource&gt; getStatementSources();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * returns true iff this statement has free variables in the presence of the specified binding set
+&nbsp;	 *
+&nbsp;	 * @param binding
+&nbsp;	 * @return whether the statement has free vars
+&nbsp;	 */
+&nbsp;	boolean hasFreeVarsFor(BindingSet binding);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate this expression using the provided bindings
+&nbsp;	 *
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the result iteration
+&nbsp;	 *
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings)
+&nbsp;			throws QueryEvaluationException;
 &nbsp;
 &nbsp;}
 </code>
@@ -85,7 +120,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

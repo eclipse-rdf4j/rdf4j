@@ -1,0 +1,224 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConfigController</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.config</a>
+</div>
+
+<h1>Coverage Summary for Class: ConfigController (org.eclipse.rdf4j.http.server.repository.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConfigController</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.config;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.apache.http.HttpStatus;
+&nbsp;import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
+&nbsp;import org.eclipse.rdf4j.http.server.ClientHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.HTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.ModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.springframework.context.ApplicationContextException;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.mvc.AbstractController;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles requests related to repository configuration.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class ConfigController extends AbstractController {
+&nbsp;
+&nbsp;	private RepositoryManager repositoryManager;
+&nbsp;
+<b class="nc">&nbsp;	private final ModelFactory modelFactory = new LinkedHashModelFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;	public ConfigController() throws ApplicationContextException {</b>
+<b class="nc">&nbsp;		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_HEAD });</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setRepositoryManager(RepositoryManager repositoryManager) {
+<b class="nc">&nbsp;		this.repositoryManager = repositoryManager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		switch (request.getMethod()) {</b>
+&nbsp;		case METHOD_GET:
+&nbsp;		case METHOD_HEAD:
+<b class="nc">&nbsp;			return handleQuery(request, response);</b>
+&nbsp;		case METHOD_POST:
+<b class="nc">&nbsp;			return handleUpdate(request, response);</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			throw new ClientHTTPException(&quot;unrecognized method &quot; + request.getMethod());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView handleQuery(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws ClientHTTPException {
+&nbsp;
+<b class="nc">&nbsp;		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,</b>
+<b class="nc">&nbsp;				RDFWriterRegistry.getInstance());</b>
+<b class="nc">&nbsp;		String repId = RepositoryInterceptor.getRepositoryID(request);</b>
+<b class="nc">&nbsp;		RepositoryConfig repositoryConfig = repositoryManager.getRepositoryConfig(repId);</b>
+&nbsp;
+<b class="nc">&nbsp;		Model configData = modelFactory.createEmptyModel();</b>
+<b class="nc">&nbsp;		String baseURI = request.getRequestURL().toString();</b>
+<b class="nc">&nbsp;		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + &quot;#&quot; + repositoryConfig.getID());</b>
+&nbsp;
+<b class="nc">&nbsp;		repositoryConfig.export(configData, ctx);</b>
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		model.put(ConfigView.FORMAT_KEY, rdfWriterFactory.getRDFFormat());</b>
+<b class="nc">&nbsp;		model.put(ConfigView.CONFIG_DATA_KEY, configData);</b>
+<b class="nc">&nbsp;		model.put(ConfigView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));</b>
+<b class="nc">&nbsp;		return new ModelAndView(ConfigView.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView handleUpdate(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws RDFParseException, UnsupportedRDFormatException, IOException, HTTPException {
+<b class="nc">&nbsp;		String repId = RepositoryInterceptor.getRepositoryID(request);</b>
+<b class="nc">&nbsp;		Model model = Rio.parse(request.getInputStream(), &quot;&quot;,</b>
+<b class="nc">&nbsp;				Rio.getParserFormatForMIMEType(request.getContentType())</b>
+<b class="nc">&nbsp;						.orElseThrow(() -&gt; new HTTPException(HttpStatus.SC_BAD_REQUEST,</b>
+<b class="nc">&nbsp;								&quot;unrecognized content type &quot; + request.getContentType())));</b>
+<b class="nc">&nbsp;		RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(model, repId);</b>
+<b class="nc">&nbsp;		repositoryManager.addRepositoryConfig(config);</b>
+<b class="nc">&nbsp;		return new ModelAndView(EmptySuccessView.getInstance());</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,345 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MathUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.util</a>
+</div>
+
+<h1>Coverage Summary for Class: MathUtil (org.eclipse.rdf4j.query.algebra.evaluation.util)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MathUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (3/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.5%
+  </span>
+  <span class="absValue">
+    (27/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.7%
+  </span>
+  <span class="absValue">
+    (42/62)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">MathUtil$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (4/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.5%
+  </span>
+  <span class="absValue">
+    (27/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    68.3%
+  </span>
+  <span class="absValue">
+    (43/63)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.util;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.math.MathContext;
+&nbsp;import java.math.RoundingMode;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A utility class for evaluation of mathematical expressions on RDF literals.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class MathUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default expansion scale used in division operations resulting in a decimal value with non-terminating decimal
+&nbsp;	 * expansion. The OpenRDF default is 24 digits, a value used in various other SPARQL implementations, to make
+&nbsp;	 * comparison between these systems easy.
+&nbsp;	 */
+&nbsp;	public static final int DEFAULT_DECIMAL_EXPANSION_SCALE = 24;
+&nbsp;
+<b class="fc">&nbsp;	private static int decimalExpansionScale = DEFAULT_DECIMAL_EXPANSION_SCALE;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the result of applying the supplied math operator on the supplied left and right operand.
+&nbsp;	 *
+&nbsp;	 * @param leftLit  a numeric datatype literal
+&nbsp;	 * @param rightLit a numeric datatype literal
+&nbsp;	 * @param op       a mathematical operator, as definied by MathExpr.MathOp.
+&nbsp;	 * @return a numeric datatype literal containing the result of the operation. The result will be datatype according
+&nbsp;	 *         to the most specific data type the two operands have in common per the SPARQL/XPath spec.
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static Literal compute(Literal leftLit, Literal rightLit, MathOp op) throws ValueExprEvaluationException {
+<b class="fc">&nbsp;		final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="fc">&nbsp;		IRI leftDatatype = leftLit.getDatatype();</b>
+<b class="fc">&nbsp;		IRI rightDatatype = rightLit.getDatatype();</b>
+&nbsp;
+&nbsp;		// Only numeric value can be used in math expressions
+<b class="fc">&nbsp;		if (!XMLDatatypeUtil.isNumericDatatype(leftDatatype)) {</b>
+<b class="fc">&nbsp;			throw new ValueExprEvaluationException(&quot;Not a number: &quot; + leftLit);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (!XMLDatatypeUtil.isNumericDatatype(rightDatatype)) {</b>
+<b class="fc">&nbsp;			throw new ValueExprEvaluationException(&quot;Not a number: &quot; + rightLit);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Determine most specific datatype that the arguments have in common,
+&nbsp;		// choosing from xsd:integer, xsd:decimal, xsd:float and xsd:double as
+&nbsp;		// per the SPARQL/XPATH spec
+&nbsp;		IRI commonDatatype;
+&nbsp;
+<b class="fc">&nbsp;		if (leftDatatype.equals(XSD.DOUBLE) || rightDatatype.equals(XSD.DOUBLE)) {</b>
+<b class="fc">&nbsp;			commonDatatype = XSD.DOUBLE;</b>
+<b class="pc">&nbsp;		} else if (leftDatatype.equals(XSD.FLOAT) || rightDatatype.equals(XSD.FLOAT)) {</b>
+<b class="nc">&nbsp;			commonDatatype = XSD.FLOAT;</b>
+<b class="fc">&nbsp;		} else if (leftDatatype.equals(XSD.DECIMAL) || rightDatatype.equals(XSD.DECIMAL)) {</b>
+<b class="fc">&nbsp;			commonDatatype = XSD.DECIMAL;</b>
+<b class="fc">&nbsp;		} else if (op == MathOp.DIVIDE) {</b>
+&nbsp;			// Result of integer divide is decimal and requires the arguments to
+&nbsp;			// be handled as such, see for details:
+&nbsp;			// http://www.w3.org/TR/xpath-functions/#func-numeric-divide
+<b class="fc">&nbsp;			commonDatatype = XSD.DECIMAL;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			commonDatatype = XSD.INTEGER;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Note: Java already handles cases like divide-by-zero appropriately
+&nbsp;		// for floats and doubles, see:
+&nbsp;		// http://www.particle.kth.se/~lindsey/JavaCourse/Book/Part1/Tech/
+&nbsp;		// Chapter02/floatingPt2.html
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			if (commonDatatype.equals(XSD.DOUBLE)) {</b>
+<b class="fc">&nbsp;				double left = leftLit.doubleValue();</b>
+<b class="fc">&nbsp;				double right = rightLit.doubleValue();</b>
+&nbsp;
+<b class="pc">&nbsp;				switch (op) {</b>
+&nbsp;				case PLUS:
+<b class="fc">&nbsp;					return vf.createLiteral(left + right);</b>
+&nbsp;				case MINUS:
+<b class="nc">&nbsp;					return vf.createLiteral(left - right);</b>
+&nbsp;				case MULTIPLY:
+<b class="nc">&nbsp;					return vf.createLiteral(left * right);</b>
+&nbsp;				case DIVIDE:
+<b class="fc">&nbsp;					return vf.createLiteral(left / right);</b>
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Unknown operator: &quot; + op);</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (commonDatatype.equals(XSD.FLOAT)) {</b>
+<b class="nc">&nbsp;				float left = leftLit.floatValue();</b>
+<b class="nc">&nbsp;				float right = rightLit.floatValue();</b>
+&nbsp;
+<b class="nc">&nbsp;				switch (op) {</b>
+&nbsp;				case PLUS:
+<b class="nc">&nbsp;					return vf.createLiteral(left + right);</b>
+&nbsp;				case MINUS:
+<b class="nc">&nbsp;					return vf.createLiteral(left - right);</b>
+&nbsp;				case MULTIPLY:
+<b class="nc">&nbsp;					return vf.createLiteral(left * right);</b>
+&nbsp;				case DIVIDE:
+<b class="nc">&nbsp;					return vf.createLiteral(left / right);</b>
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Unknown operator: &quot; + op);</b>
+&nbsp;				}
+<b class="fc">&nbsp;			} else if (commonDatatype.equals(XSD.DECIMAL)) {</b>
+<b class="fc">&nbsp;				BigDecimal left = leftLit.decimalValue();</b>
+<b class="fc">&nbsp;				BigDecimal right = rightLit.decimalValue();</b>
+&nbsp;
+<b class="pc">&nbsp;				switch (op) {</b>
+&nbsp;				case PLUS:
+<b class="fc">&nbsp;					return vf.createLiteral(left.add(right));</b>
+&nbsp;				case MINUS:
+<b class="nc">&nbsp;					return vf.createLiteral(left.subtract(right));</b>
+&nbsp;				case MULTIPLY:
+<b class="nc">&nbsp;					return vf.createLiteral(left.multiply(right));</b>
+&nbsp;				case DIVIDE:
+&nbsp;					// Divide by zero handled through NumberFormatException
+&nbsp;					BigDecimal result;
+&nbsp;					try {
+&nbsp;						// try to return the exact quotient if possible.
+<b class="fc">&nbsp;						result = left.divide(right, MathContext.UNLIMITED);</b>
+<b class="fc">&nbsp;					} catch (ArithmeticException e) {</b>
+&nbsp;						// non-terminating decimal expansion in quotient, using
+&nbsp;						// scaling and rounding.
+<b class="fc">&nbsp;						result = left.setScale(getDecimalExpansionScale(), RoundingMode.HALF_UP)</b>
+<b class="fc">&nbsp;								.divide(right, RoundingMode.HALF_UP);</b>
+<b class="fc">&nbsp;					}</b>
+&nbsp;
+<b class="fc">&nbsp;					return vf.createLiteral(result);</b>
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Unknown operator: &quot; + op);</b>
+&nbsp;				}
+&nbsp;			} else { // XMLSchema.INTEGER
+<b class="fc">&nbsp;				BigInteger left = leftLit.integerValue();</b>
+<b class="fc">&nbsp;				BigInteger right = rightLit.integerValue();</b>
+&nbsp;
+<b class="pc">&nbsp;				switch (op) {</b>
+&nbsp;				case PLUS:
+<b class="fc">&nbsp;					return vf.createLiteral(left.add(right));</b>
+&nbsp;				case MINUS:
+<b class="nc">&nbsp;					return vf.createLiteral(left.subtract(right));</b>
+&nbsp;				case MULTIPLY:
+<b class="fc">&nbsp;					return vf.createLiteral(left.multiply(right));</b>
+&nbsp;				case DIVIDE:
+<b class="nc">&nbsp;					throw new RuntimeException(&quot;Integer divisions should be processed as decimal divisions&quot;);</b>
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Unknown operator: &quot; + op);</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;		} catch (NumberFormatException | ArithmeticException e) {</b>
+<b class="fc">&nbsp;			throw new ValueExprEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the decimal expansion scale used in division operations resulting in a decimal value with non-terminating
+&nbsp;	 * decimal expansion. By default, this value is set to 24.
+&nbsp;	 *
+&nbsp;	 * @return The decimal expansion scale.
+&nbsp;	 */
+&nbsp;	public static int getDecimalExpansionScale() {
+<b class="fc">&nbsp;		return decimalExpansionScale;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the decimal expansion scale used in divisions resulting in a decimal value with non-terminating decimal
+&nbsp;	 * expansion.
+&nbsp;	 *
+&nbsp;	 * @param decimalExpansionScale The decimal expansion scale to set. Note that a mimimum of 18 is required to stay
+&nbsp;	 *                              compliant with the XPath specification of xsd:decimal operations.
+&nbsp;	 */
+&nbsp;	public static void setDecimalExpansionScale(int decimalExpansionScale) {
+<b class="nc">&nbsp;		MathUtil.decimalExpansionScale = decimalExpansionScale;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

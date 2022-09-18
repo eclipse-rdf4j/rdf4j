@@ -1,0 +1,306 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FilterUtils</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.util</a>
+</div>
+
+<h1>Coverage Summary for Class: FilterUtils (org.eclipse.rdf4j.federated.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FilterUtils</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/73)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.util;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FilterConversionException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;
+&nbsp;/**
+&nbsp; * Various utility functions to handle filter expressions.
+&nbsp; *
+&nbsp; * NOTE: currently only implemented for {@link Compare}, other filter expressions need to be added. If an unexpected
+&nbsp; * filter expression occurs, the filter evaluation is done locally.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+<b class="nc">&nbsp;public class FilterUtils {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a SPARQL representation of the provided expression,
+&nbsp;	 *
+&nbsp;	 * e.g Compare(?v, &quot;&lt;&quot;, 3) is converted to &quot;?v &lt; &#39;3&#39;&quot;
+&nbsp;	 *
+&nbsp;	 * @param filterExpr
+&nbsp;	 * @return the SPARQL string
+&nbsp;	 * @throws FilterConversionException
+&nbsp;	 */
+&nbsp;	public static String toSparqlString(FilterValueExpr filterExpr) throws FilterConversionException {
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr instanceof FilterExpr) {</b>
+<b class="nc">&nbsp;			return toSparqlString((FilterExpr) filterExpr);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (filterExpr instanceof ConjunctiveFilterExpr) {</b>
+<b class="nc">&nbsp;			return toSparqlString((ConjunctiveFilterExpr) filterExpr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Unsupported type: &quot; + filterExpr.getClass().getCanonicalName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String toSparqlString(FilterExpr filterExpr) throws FilterConversionException {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		append(filterExpr.getExpression(), sb);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String toSparqlString(ConjunctiveFilterExpr filterExpr) throws FilterConversionException {
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		int count = 0;</b>
+<b class="nc">&nbsp;		sb.append(&quot;( &quot;);</b>
+<b class="nc">&nbsp;		for (FilterExpr expr : filterExpr.getExpressions()) {</b>
+<b class="nc">&nbsp;			append(expr.getExpression(), sb);</b>
+<b class="nc">&nbsp;			if (++count &lt; filterExpr.getExpressions().size()) {</b>
+<b class="nc">&nbsp;				sb.append(&quot; &amp;&amp; &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		sb.append(&quot; )&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static ValueExpr toFilter(FilterValueExpr filterExpr) throws FilterConversionException {
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr instanceof FilterExpr) {</b>
+<b class="nc">&nbsp;			return toFilter((FilterExpr) filterExpr);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (filterExpr instanceof ConjunctiveFilterExpr) {</b>
+<b class="nc">&nbsp;			return toFilter((ConjunctiveFilterExpr) filterExpr);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Unsupported type: &quot; + filterExpr.getClass().getCanonicalName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static ValueExpr toFilter(FilterExpr filterExpr) throws FilterConversionException {
+<b class="nc">&nbsp;		return filterExpr.getExpression();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static ValueExpr toFilter(ConjunctiveFilterExpr filterExpr) throws FilterConversionException {
+<b class="nc">&nbsp;		List&lt;FilterExpr&gt; expressions = filterExpr.getExpressions();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (expressions.size() == 2) {</b>
+<b class="nc">&nbsp;			return new And(expressions.get(0).getExpression(), expressions.get(0).getExpression());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		And and = new And();</b>
+<b class="nc">&nbsp;		and.setLeftArg(expressions.get(0).getExpression());</b>
+<b class="nc">&nbsp;		And tmp = and;</b>
+&nbsp;		int idx;
+<b class="nc">&nbsp;		for (idx = 1; idx &lt; expressions.size() - 1; idx++) {</b>
+<b class="nc">&nbsp;			And _a = new And();</b>
+<b class="nc">&nbsp;			_a.setLeftArg(expressions.get(idx).getExpression());</b>
+<b class="nc">&nbsp;			tmp.setRightArg(_a);</b>
+<b class="nc">&nbsp;			tmp = _a;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		tmp.setRightArg(expressions.get(idx).getExpression());</b>
+&nbsp;
+<b class="nc">&nbsp;		return and;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static void append(ValueExpr expr, StringBuilder sb) throws FilterConversionException {
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof Compare) {</b>
+<b class="nc">&nbsp;			append((Compare) expr, sb);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof Var) {</b>
+<b class="nc">&nbsp;			append((Var) expr, sb);</b>
+<b class="nc">&nbsp;		} else if (expr instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;			append((ValueConstant) expr, sb);</b>
+&nbsp;		} else {
+&nbsp;			// TODO add more!
+<b class="nc">&nbsp;			throw new FilterConversionException(&quot;Expression type not supported, fallback to sesame evaluation: &quot;</b>
+<b class="nc">&nbsp;					+ expr.getClass().getCanonicalName());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static void append(Compare cmp, StringBuilder sb) throws FilterConversionException {
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;( &quot;);</b>
+<b class="nc">&nbsp;		append(cmp.getLeftArg(), sb);</b>
+<b class="nc">&nbsp;		sb.append(&quot; &quot;).append(cmp.getOperator().getSymbol()).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		append(cmp.getRightArg(), sb);</b>
+<b class="nc">&nbsp;		sb.append(&quot; )&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static void append(Var var, StringBuilder sb) {
+<b class="nc">&nbsp;		if (var.hasValue()) {</b>
+<b class="nc">&nbsp;			appendValue(sb, var.getValue());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			sb.append(&quot;?&quot;).append(var.getName());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static void append(ValueConstant vc, StringBuilder sb) {
+<b class="nc">&nbsp;		appendValue(sb, vc.getValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
+&nbsp;
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			return appendURI(sb, (IRI) value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			return appendLiteral(sb, (Literal) value);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// XXX check for other types ? BNode ?
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Type not supported: &quot; + value.getClass().getCanonicalName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static StringBuilder appendURI(StringBuilder sb, IRI uri) {
+<b class="nc">&nbsp;		sb.append(&quot;&lt;&quot;).append(uri.stringValue()).append(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;		return sb;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
+<b class="nc">&nbsp;		sb.append(&#39;\&#39;&#39;);</b>
+<b class="nc">&nbsp;		sb.append(lit.getLabel().replace(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;));</b>
+<b class="nc">&nbsp;		sb.append(&#39;\&#39;&#39;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (lit.getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;			sb.append(&#39;@&#39;);</b>
+<b class="nc">&nbsp;			sb.append(lit.getLanguage());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (lit.getDatatype() != null) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;^^&lt;&quot;);</b>
+<b class="nc">&nbsp;			sb.append(lit.getDatatype().stringValue());</b>
+<b class="nc">&nbsp;			sb.append(&#39;&gt;&#39;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return sb;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,168 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Example04LanguageTags</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.examples.model</a>
+</div>
+
+<h1>Coverage Summary for Class: Example04LanguageTags (org.eclipse.rdf4j.examples.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Example04LanguageTags</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.examples.model;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.literal;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelBuilder;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.DC;
+&nbsp;
+&nbsp;/**
+&nbsp; * RDF Tutorial example 04: Language tags
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class Example04LanguageTags {</b>
+&nbsp;
+&nbsp;	public static void main(String[] args) {
+&nbsp;
+&nbsp;		// Create a new RDF model containing some information about the painting &quot;The Potato Eaters&quot;
+<b class="nc">&nbsp;		ModelBuilder builder = new ModelBuilder();</b>
+<b class="nc">&nbsp;		Model model = builder</b>
+<b class="nc">&nbsp;				.setNamespace(&quot;ex&quot;, &quot;http://example.org/&quot;)</b>
+<b class="nc">&nbsp;				.subject(&quot;ex:PotatoEaters&quot;)</b>
+&nbsp;				// In English, this painting is called &quot;The Potato Eaters&quot;
+<b class="nc">&nbsp;				.add(DC.TITLE, literal(&quot;The Potato Eaters&quot;, &quot;en&quot;))</b>
+&nbsp;				// In Dutch, it&#39;s called &quot;De Aardappeleters&quot;
+<b class="nc">&nbsp;				.add(DC.TITLE, literal(&quot;De Aardappeleters&quot;, &quot;nl&quot;))</b>
+<b class="nc">&nbsp;				.build();</b>
+&nbsp;
+&nbsp;		// To see what&#39;s in our model, let&#39;s just print it to the screen
+<b class="nc">&nbsp;		for (Statement st : model) {</b>
+&nbsp;			// we want to see the object values of each statement
+<b class="nc">&nbsp;			Value value = st.getObject();</b>
+<b class="nc">&nbsp;			if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;				Literal title = (Literal) value;</b>
+<b class="nc">&nbsp;				System.out.println(&quot;language: &quot; + title.getLanguage().orElse(&quot;unknown&quot;));</b>
+<b class="nc">&nbsp;				System.out.println(&quot; title: &quot; + title.getLabel());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

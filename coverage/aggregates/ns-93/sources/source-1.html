@@ -1,0 +1,512 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > InterceptingRepositoryConnectionWrapper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.event.base</a>
+</div>
+
+<h1>Coverage Summary for Class: InterceptingRepositoryConnectionWrapper (org.eclipse.rdf4j.repository.event.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">InterceptingRepositoryConnectionWrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/100)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/111)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">InterceptingRepositoryConnectionWrapper$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/108)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/133)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.event.base;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.CopyOnWriteArraySet;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+&nbsp;import org.eclipse.rdf4j.repository.event.InterceptingRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.event.RepositoryConnectionInterceptor;
+&nbsp;
+&nbsp;/**
+&nbsp; * Wrapper that notifies interceptors of events on RepositoryConnections before they happen. Any interceptor can block
+&nbsp; * the operation by returning true from the relevant notification method. To do so will also cause the notification
+&nbsp; * process to stop, i.e. no other interceptors will be notified. The order in which interceptors are notified is
+&nbsp; * unspecified.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; * @see InterceptingRepositoryWrapper
+&nbsp; */
+&nbsp;public class InterceptingRepositoryConnectionWrapper extends RepositoryConnectionWrapper
+&nbsp;		implements InterceptingRepositoryConnection {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private boolean activated;
+&nbsp;
+<b class="nc">&nbsp;	private final Set&lt;RepositoryConnectionInterceptor&gt; interceptors = new CopyOnWriteArraySet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Construcotrs *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public InterceptingRepositoryConnectionWrapper(Repository repository, RepositoryConnection connection) {
+<b class="nc">&nbsp;		super(repository, connection);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registers a &lt;var&gt;RepositoryConnectionInterceptor&lt;/var&gt; that will receive notifications of operations that are
+&nbsp;	 * performed on this connection.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void addRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
+<b class="nc">&nbsp;		interceptors.add(interceptor);</b>
+<b class="nc">&nbsp;		activated = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a registered &lt;var&gt;RepositoryConnectionInterceptor&lt;/var&gt; from this connection.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void removeRepositoryConnectionInterceptor(RepositoryConnectionInterceptor interceptor) {
+<b class="nc">&nbsp;		interceptors.remove(interceptor);</b>
+<b class="nc">&nbsp;		activated = !interceptors.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean isDelegatingAdd() {
+<b class="nc">&nbsp;		return !activated;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected boolean isDelegatingRemove() {
+<b class="nc">&nbsp;		return !activated;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.add(getDelegate(), subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().add(subject, predicate, object, contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.clear(getDelegate(), contexts);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().clear(contexts);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.begin(getDelegate());</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			super.begin();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.close(getDelegate());</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			super.close();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.commit(getDelegate());</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().commit();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeWithoutCommit(Resource subject, IRI predicate, Value object, Resource... contexts)
+&nbsp;			throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.remove(getDelegate(), subject, predicate, object, contexts);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().remove(subject, predicate, object, contexts);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeNamespace(String prefix) throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.removeNamespace(getDelegate(), prefix);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().removeNamespace(prefix);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearNamespaces() throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.clearNamespaces(getDelegate());</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().clearNamespaces();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.rollback(getDelegate());</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().rollback();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	@Deprecated
+&nbsp;	public void setAutoCommit(boolean autoCommit) throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		boolean wasAutoCommit = !isActive();</b>
+<b class="nc">&nbsp;		if (activated &amp;&amp; wasAutoCommit != autoCommit) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.setAutoCommit(getDelegate(), autoCommit);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().setAutoCommit(autoCommit);</b>
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(String prefix, String name) throws RepositoryException {
+<b class="nc">&nbsp;		boolean denied = false;</b>
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;				denied = interceptor.setNamespace(getDelegate(), prefix, name);</b>
+<b class="nc">&nbsp;				if (denied) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!denied) {</b>
+<b class="nc">&nbsp;			getDelegate().setNamespace(prefix, name);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update prepareUpdate(final QueryLanguage ql, final String update, final String baseURI)
+&nbsp;			throws MalformedQueryException, RepositoryException {
+<b class="nc">&nbsp;		if (activated) {</b>
+<b class="nc">&nbsp;			return new Update() {</b>
+&nbsp;
+<b class="nc">&nbsp;				private final RepositoryConnection conn = getDelegate();</b>
+&nbsp;
+<b class="nc">&nbsp;				private final Update delegate = conn.prepareUpdate(ql, update, baseURI);</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void execute() throws UpdateExecutionException {
+<b class="nc">&nbsp;					boolean denied = false;</b>
+<b class="nc">&nbsp;					if (activated) {</b>
+<b class="nc">&nbsp;						for (RepositoryConnectionInterceptor interceptor : interceptors) {</b>
+<b class="nc">&nbsp;							denied = interceptor.execute(conn, ql, update, baseURI, delegate);</b>
+<b class="nc">&nbsp;							if (denied) {</b>
+<b class="nc">&nbsp;								break;</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+&nbsp;					}
+<b class="nc">&nbsp;					if (!denied) {</b>
+<b class="nc">&nbsp;						delegate.execute();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setBinding(String name, Value value) {
+<b class="nc">&nbsp;					delegate.setBinding(name, value);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void removeBinding(String name) {
+<b class="nc">&nbsp;					delegate.removeBinding(name);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void clearBindings() {
+<b class="nc">&nbsp;					delegate.clearBindings();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public BindingSet getBindings() {
+<b class="nc">&nbsp;					return delegate.getBindings();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setDataset(Dataset dataset) {
+<b class="nc">&nbsp;					delegate.setDataset(dataset);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public Dataset getDataset() {
+<b class="nc">&nbsp;					return delegate.getDataset();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setIncludeInferred(boolean includeInferred) {
+<b class="nc">&nbsp;					delegate.setIncludeInferred(includeInferred);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public boolean getIncludeInferred() {
+<b class="nc">&nbsp;					return delegate.getIncludeInferred();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void setMaxExecutionTime(int maxExecutionTimeSeconds) {
+<b class="nc">&nbsp;					delegate.setMaxExecutionTime(maxExecutionTimeSeconds);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public int getMaxExecutionTime() {
+<b class="nc">&nbsp;					return delegate.getMaxExecutionTime();</b>
+&nbsp;				}
+&nbsp;			};
+&nbsp;		} else {
+<b class="nc">&nbsp;			return getDelegate().prepareUpdate(ql, update, baseURI);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

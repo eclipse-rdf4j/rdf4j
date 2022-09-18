@@ -1,0 +1,510 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFContainers</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.util</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFContainers (org.eclipse.rdf4j.model.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFContainers</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.model.util;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Supplier;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utilities for working with RDF Containers and converting to/from Java {@link Collection} classes.
+&nbsp; * &lt;P&gt;
+&nbsp; * RDF Containers are represented using 3 different types of structures:
+&nbsp; *
+&nbsp; * 1. {@link RDF#BAG} : A Bag (a resource having type rdf:Bag) represents a group of resources or literals, possibly
+&nbsp; * including duplicate members, where there is no significance in the order of the members.
+&nbsp; *
+&nbsp; * 2. {@link RDF#SEQ} : A Sequence or Seq (a resource having type rdf:Seq) represents a group of resources or literals,
+&nbsp; * possibly including duplicate members, where the order of the members is significant.
+&nbsp; *
+&nbsp; * 3. {@link RDF#ALT} : An Alternative or Alt (a resource having type rdf:Alt) represents a group of resources or
+&nbsp; * literals that are alternatives (typically for a single value of a property).
+&nbsp; *
+&nbsp; * So, in each of the above types, the container starts with a first resource node, via the rdf:_1 relation. Similarly,
+&nbsp; * the next member is connected via the rdf:_2 relation and so on.
+&nbsp; *
+&nbsp; * For eg. Bag containing three literal values &quot;A&quot;, &quot;B&quot;, and &quot;C&quot; looks like this as an RDF Container:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; *   _:n1 -rdf:type--&gt; rdf:Bag
+&nbsp; *     |
+&nbsp; *     +---rdf:_1--&gt; &quot;A&quot;
+&nbsp; *     |
+&nbsp; *     +---rdf:_2--&gt; &quot;B&quot;
+&nbsp; *     |
+&nbsp; *     +---rdf:_3--&gt; &quot;C&quot;
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Schema 1.1 section on Collection vocabulary&lt;/a&gt;
+&nbsp; */
+<b class="nc">&nbsp;public class RDFContainers {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied {@link Iterable} to an &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF
+&nbsp;	 * Container&lt;/a&gt;, using the supplied {@code head} resource as the starting resource of the RDF Containter. The
+&nbsp;	 * statements making up the new RDF Containter will be added to the supplied statement collection.
+&nbsp;	 *
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param values        an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted
+&nbsp;	 *                      to an RDF Containter. May not be {@code null}. The method attempts to convert each value
+&nbsp;	 *                      that is not already an instance of {@link Value} to a {@link Literal}. This conversion will
+&nbsp;	 *                      fail with a {@link LiteralUtilException} if the value&#39;s object type is not supported. See
+&nbsp;	 *                      {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported
+&nbsp;	 *                      types.
+&nbsp;	 * @param container     a {@link Resource} which will be used as the head of the container, that is, the starting
+&nbsp;	 *                      point of the created RDF Container. May be {@code null}, in which case a new resource is
+&nbsp;	 *                      generated to represent the container head.
+&nbsp;	 * @param sink          a {@link Collection} of {@link Statement} objects (for example a {@link Model}) to which the
+&nbsp;	 *                      RDF Collection statements will be added. May not be {@code null}.
+&nbsp;	 * @param contexts      the context(s) in which to add the RDF Containter. This argument is an optional vararg and
+&nbsp;	 *                      can be left out.
+&nbsp;	 * @return the supplied sink {@link Collection} of {@link Statement}s, with the new Statements forming the RDF
+&nbsp;	 *         Collection added.
+&nbsp;	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Schema 1.1 section on Collection vocabulary&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static &lt;C extends Collection&lt;Statement&gt;&gt; C toRDF(IRI containerType, Iterable&lt;?&gt; values, Resource container,
+&nbsp;			C sink,
+&nbsp;			Resource... contexts) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(sink);</b>
+<b class="nc">&nbsp;		consumeContainer(containerType, values, container, st -&gt; sink.add(st), contexts);</b>
+<b class="nc">&nbsp;		return sink;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied {@link Iterable} to an &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF
+&nbsp;	 * Container&lt;/a&gt;, using the supplied {@code head} resource as the starting resource of the RDF Containter. The
+&nbsp;	 * statements making up the new RDF Containter will be added to the supplied statement collection.
+&nbsp;	 *
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param values        an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted
+&nbsp;	 *                      to an RDF Containter. May not be {@code null}. The method attempts to convert each value
+&nbsp;	 *                      that is not already an instance of {@link Value} to a {@link Literal}. This conversion will
+&nbsp;	 *                      fail with a {@link LiteralUtilException} if the value&#39;s object type is not supported. See
+&nbsp;	 *                      {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported
+&nbsp;	 *                      types.
+&nbsp;	 * @param container     a {@link Resource} which will be used as the head of the container, that is, the starting
+&nbsp;	 *                      point of the created RDF Container. May be {@code null}, in which case a new resource is
+&nbsp;	 *                      generated to represent the container head.
+&nbsp;	 * @param sink          a {@link Collection} of {@link Statement} objects (for example a {@link Model}) to which the
+&nbsp;	 *                      RDF Collection statements will be added. May not be {@code null}.
+&nbsp;	 * @param vf            the {@link ValueFactory} to be used for creation of RDF model objects. May not be
+&nbsp;	 *                      {@code null}.
+&nbsp;	 * @param contexts      the context(s) in which to add the RDF Containter. This argument is an optional vararg and
+&nbsp;	 *                      can be left out.
+&nbsp;	 * @return the supplied sink {@link Collection} of {@link Statement}s, with the new Statements forming the RDF
+&nbsp;	 *         Collection added.
+&nbsp;	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Schema 1.1 section on Collection vocabulary&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static &lt;C extends Collection&lt;Statement&gt;&gt; C toRDF(IRI containerType, Iterable&lt;?&gt; values, Resource container,
+&nbsp;			C sink,
+&nbsp;			ValueFactory vf, Resource... contexts) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(sink);</b>
+<b class="nc">&nbsp;		consumeContainer(containerType, values, container, st -&gt; sink.add(st), vf, contexts);</b>
+<b class="nc">&nbsp;		return sink;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an RDF Containter to a Java {@link Collection} of {@link Value} objects. The RDF Containter is given by
+&nbsp;	 * the supplied {@link Model} and {@code container}. This method expects the RDF Containter to be well-formed. If
+&nbsp;	 * the collection is not well-formed the method may return part of the collection, or may throw a
+&nbsp;	 * {@link ModelException}.
+&nbsp;	 *
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param m             the Model containing the collection to read.
+&nbsp;	 * @param container     the {@link Resource} that represents the container head, that is the start resource of the
+&nbsp;	 *                      RDF Container to be read. May not be {@code null}.
+&nbsp;	 * @param collection    the Java {@link Collection} to add the collection items to.
+&nbsp;	 * @param contexts      the context(s) from which to read the RDF Containter. This argument is an optional vararg
+&nbsp;	 *                      and can be left out.
+&nbsp;	 * @return the supplied Java {@link Collection}, filled with the items from the RDF Containter (if any).
+&nbsp;	 * @throws ModelException if a problem occurs reading the RDF Containter, for example if the Collection is not
+&nbsp;	 *                        well-formed.
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Schema 1.1 section on Collection vocabulary&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static &lt;C extends Collection&lt;Value&gt;&gt; C toValues(IRI containerType, final Model m, Resource container,
+&nbsp;			C collection,
+&nbsp;			Resource... contexts) throws ModelException {
+<b class="nc">&nbsp;		Objects.requireNonNull(collection, &quot;collection may not be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		consumeValues(m, container, containerType, v -&gt; collection.add(v), contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;		return collection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied {@link Iterable} to an &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF
+&nbsp;	 * Container&lt;/a&gt;, using the supplied {@code head} resource as the starting resource of the RDF Containter. The
+&nbsp;	 * statements making up the new RDF Containter will be reported to the supplied {@link Consumer} function.
+&nbsp;	 *
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param values        an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted
+&nbsp;	 *                      to an RDF Containter. May not be {@code null}. The method attempts to convert each value
+&nbsp;	 *                      that is not already an instance of {@link Value} to a {@link Literal}. This conversion will
+&nbsp;	 *                      fail with a {@link LiteralUtilException} if the value&#39;s object type is not supported. See
+&nbsp;	 *                      {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported
+&nbsp;	 *                      types.
+&nbsp;	 * @param container     a {@link Resource} which will be used as the head of the container, that is, the starting
+&nbsp;	 *                      point of the created RDF Containter. May be {@code null}, in which case a new resource is
+&nbsp;	 *                      generated to represent the containter head.
+&nbsp;	 * @param consumer      the {@link Consumer} function for the Statements of the RDF Containter. May not be
+&nbsp;	 *                      {@code null}.
+&nbsp;	 * @param contexts      the context(s) in which to add the RDF Containter. This argument is an optional vararg and
+&nbsp;	 *                      can be left out.
+&nbsp;	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Schema 1.1 section on Collection vocabulary&lt;/a&gt;
+&nbsp;	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
+&nbsp;	 */
+&nbsp;	public static void consumeContainer(IRI containerType, Iterable&lt;?&gt; values, Resource container,
+&nbsp;			Consumer&lt;Statement&gt; consumer,
+&nbsp;			Resource... contexts) {
+<b class="nc">&nbsp;		consumeContainer(containerType, values, container, consumer, SimpleValueFactory.getInstance(), contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the supplied {@link Iterable} to an &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF
+&nbsp;	 * Container&lt;/a&gt;, using the supplied {@code head} resource as the starting resource of the RDF Container. The
+&nbsp;	 * statements making up the new RDF Container will be reported to the supplied {@link Consumer} function.
+&nbsp;	 *
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param values        an {@link Iterable} of objects (such as a Java {@link Collection} ), which will be converted
+&nbsp;	 *                      to an RDF Container. May not be {@code null}. The method attempts to convert each value that
+&nbsp;	 *                      is not already an instance of {@link Value} to a {@link Literal}. This conversion will fail
+&nbsp;	 *                      with a {@link LiteralUtilException} if the value&#39;s object type is not supported. See
+&nbsp;	 *                      {@link Literals#createLiteralOrFail(ValueFactory, Object)} for an overview of supported
+&nbsp;	 *                      types.
+&nbsp;	 * @param container     a {@link Resource} which will be used as the head of the container, that is, the starting
+&nbsp;	 *                      point of the created RDF Container. May be {@code null}, in which case a new resource is
+&nbsp;	 *                      generated to represent the containter head.
+&nbsp;	 * @param consumer      the {@link Consumer} function for the Statements of the RDF Container. May not be
+&nbsp;	 *                      {@code null}.
+&nbsp;	 * @param vf            the {@link ValueFactory} to use for creation of new model objects. May not be {@code null}
+&nbsp;	 * @param contexts      the context(s) in which to add the RDF Container. This argument is an optional vararg and
+&nbsp;	 *                      can be left out.
+&nbsp;	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Schema 1.1 section on Collection vocabulary&lt;/a&gt;
+&nbsp;	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
+&nbsp;	 *
+&nbsp;	 * @since 3.3.0
+&nbsp;	 */
+&nbsp;	public static void consumeContainer(IRI containerType, Iterable&lt;?&gt; values, Resource container,
+&nbsp;			Consumer&lt;Statement&gt; consumer,
+&nbsp;			ValueFactory vf, Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(values, &quot;input collection may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(consumer, &quot;consumer may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(vf, &quot;injected value factory may not be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource current = container != null ? container : vf.createBNode();</b>
+<b class="nc">&nbsp;		boolean validType = Objects.equals(containerType, RDF.ALT) ||</b>
+<b class="nc">&nbsp;				Objects.equals(containerType, RDF.BAG) ||</b>
+<b class="nc">&nbsp;				Objects.equals(containerType, RDF.SEQ);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!validType) {</b>
+<b class="nc">&nbsp;			throw new ModelException(&quot;containerType should be one of ALT, BAG or SEQ&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Statements.consume(vf, current, RDF.TYPE, containerType, consumer, contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;		Iterator&lt;?&gt; iter = values.iterator();</b>
+<b class="nc">&nbsp;		int elementCounter = 1;</b>
+<b class="nc">&nbsp;		while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;			Object o = iter.next();</b>
+<b class="nc">&nbsp;			Value v = o instanceof Value ? (Value) o : Literals.createLiteralOrFail(vf, o);</b>
+<b class="nc">&nbsp;			IRI elementCounterPredicate = getAnnotatedMemberPredicate(vf, elementCounter);</b>
+<b class="nc">&nbsp;			elementCounter++;</b>
+<b class="nc">&nbsp;			Statements.consume(vf, current, elementCounterPredicate, v, consumer, contexts);</b>
+<b class="nc">&nbsp;			Statements.consume(vf, current, RDFS.MEMBER, v, consumer, contexts);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates the IRI of the element counter predicate in the {@link RDF} namespace, rdf:_nnn
+&nbsp;	 *
+&nbsp;	 * @param vf             the {@link ValueFactory} to use for creation of new model objects. May not be {@code null}
+&nbsp;	 * @param elementCounter the counter varialbe for which IRI has to be created
+&nbsp;	 * @return {@link IRI} of the rdf:_nnn
+&nbsp;	 */
+&nbsp;	private static IRI getAnnotatedMemberPredicate(ValueFactory vf, int elementCounter) {
+<b class="nc">&nbsp;		return vf.createIRI(RDF.NAMESPACE, &quot;_&quot; + elementCounter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Reads an RDF Container starting with the supplied containter head from the supplied {@link Model} and sends each
+&nbsp;	 * collection member {@link Value} to the supplied {@link Consumer} function. This method expects the RDF Container
+&nbsp;	 * to be well-formed. If the collection is not well-formed the method may report only part of the collection, or may
+&nbsp;	 * throw a {@link ModelException}.
+&nbsp;	 *
+&nbsp;	 * @param m             the Model containing the collection to read.
+&nbsp;	 * @param container     the {@link Resource} that represents the containter head, that is the start resource of the
+&nbsp;	 *                      RDF Container to be read. May not be {@code null}.
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param consumer      the Java {@link Consumer} function to which the collection items are reported.
+&nbsp;	 * @param contexts      the context(s) from which to read the RDF Container. This argument is an optional vararg and
+&nbsp;	 *                      can be left out.
+&nbsp;	 * @throws ModelException if a problem occurs reading the RDF Container, for example if the Collection is not
+&nbsp;	 *                        well-formed.
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Schema 1.1 section on Collection vocabulary&lt;/a&gt;
+&nbsp;	 */
+&nbsp;
+&nbsp;	public static void consumeValues(final Model m, Resource container, IRI containerType, Consumer&lt;Value&gt; consumer,
+&nbsp;			Resource... contexts)
+&nbsp;			throws ModelException {
+<b class="nc">&nbsp;		Objects.requireNonNull(consumer, &quot;consumer may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(m, &quot;input model may not be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		GetStatementOptional statementSupplier = (s, p, o, c) -&gt; m.filter(s, p, o, c).stream().findAny();</b>
+<b class="nc">&nbsp;		Function&lt;String, Supplier&lt;ModelException&gt;&gt; exceptionSupplier = Models::modelException;</b>
+&nbsp;
+&nbsp;		// TODO add proper documentation
+<b class="nc">&nbsp;		Pattern annotatedMembershipPredicatePattern = Pattern</b>
+<b class="nc">&nbsp;				.compile(&quot;^&quot; + vf.createIRI(RDF.NAMESPACE, &quot;_&quot;) + &quot;[1-9][0-9]*$&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		extract(containerType, statementSupplier, container, st -&gt; {</b>
+<b class="nc">&nbsp;			if (RDFS.MEMBER.equals(st.getPredicate()) ||</b>
+<b class="nc">&nbsp;					annotatedMembershipPredicatePattern.matcher(st.getPredicate().toString()).matches()) {</b>
+<b class="nc">&nbsp;				consumer.accept(st.getObject());</b>
+&nbsp;			}
+&nbsp;		}, exceptionSupplier, contexts);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Extracts the &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Container&lt;/a&gt; starting with the
+&nbsp;	 * supplied {@code head} resource from the supplied source {@link Model}. The statements making up the RDF Container
+&nbsp;	 * will be added to the supplied statement collection, which will also be returned.
+&nbsp;	 *
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param sourceModel   the source model, containing the RDF Container to be read.
+&nbsp;	 * @param container     the {@link Resource} that represents the container head, that is the start resource of the
+&nbsp;	 *                      RDF Container to be read. May not be {@code null}. a {@link Collection} of {@link Statement}
+&nbsp;	 *                      objects (for example a {@link Model}) to which the RDF Container statements will be added.
+&nbsp;	 *                      May not be {@code null}.
+&nbsp;	 * @param sink          a {@link Collection} of {@link Statement} objects (for example a {@link Model}) to which the
+&nbsp;	 *                      RDF Container statements will be added. May not be {@code null}.
+&nbsp;	 * @param contexts      the context(s) from which to read the RDF Container. This argument is an optional vararg and
+&nbsp;	 *                      can be left out.
+&nbsp;	 * @return the supplied sink {@link Collection} of {@link Statement}s, with the Statements of the RDF Container
+&nbsp;	 *         added.
+&nbsp;	 */
+&nbsp;	public static &lt;C extends Collection&lt;Statement&gt;&gt; C getContainer(IRI containerType, Model sourceModel,
+&nbsp;			Resource container, C sink,
+&nbsp;			Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(sourceModel, &quot;input model may not be null&quot;);</b>
+<b class="nc">&nbsp;		extract(containerType, sourceModel, container, st -&gt; sink.add(st), contexts);</b>
+<b class="nc">&nbsp;		return sink;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Extracts the &lt;a href=&quot;https://www.w3.org/TR/rdf-schema/#ch_container&quot;&gt;RDF Container&lt;/a&gt; starting with supplied
+&nbsp;	 * {@code head} resource from the supplied source {@link Model} and sends the statements that make up the collection
+&nbsp;	 * to the supplied {@link Consumer}.
+&nbsp;	 *
+&nbsp;	 * @param containerType defines the type of RDF Container
+&nbsp;	 * @param sourceModel   the source model, containing the RDF Container to be read.
+&nbsp;	 * @param container     the {@link Resource} that represents the container head, that is the start resource of the
+&nbsp;	 *                      RDF Container to be read. May not be {@code null}. a {@link Collection} of {@link Statement}
+&nbsp;	 *                      objects (for example a {@link Model}) to which the RDF Container statements will be added.
+&nbsp;	 *                      May not be {@code null}.
+&nbsp;	 * @param consumer      the {@link Consumer} function for the Statements of the RDF Container. May not be
+&nbsp;	 *                      {@code null}.
+&nbsp;	 * @param contexts      the context(s) from which to read the RDF Container. This argument is an optional vararg and
+&nbsp;	 *                      can be left out.
+&nbsp;	 */
+&nbsp;	public static void extract(IRI containerType, Model sourceModel, Resource container, Consumer&lt;Statement&gt; consumer,
+&nbsp;			Resource... contexts) {
+<b class="nc">&nbsp;		Objects.requireNonNull(sourceModel, &quot;source model may not be null&quot;);</b>
+<b class="nc">&nbsp;		GetStatementOptional statementSupplier = (s, p, o,</b>
+<b class="nc">&nbsp;				c) -&gt; ((Model) sourceModel).filter(s, p, o, c).stream().findAny();</b>
+<b class="nc">&nbsp;		extract(containerType, statementSupplier, container, consumer, Models::modelException, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Extracts an RDF Container starting with the supplied container head from the statement supplier and sends all
+&nbsp;	 * statements that make up the collection to the supplied {@link Consumer} function. This method expects the RDF
+&nbsp;	 * Container to be well-formed. If the collection is not well-formed the method may report only part of the
+&nbsp;	 * collection, or may throw an exception.
+&nbsp;	 *
+&nbsp;	 * @param containerType      defines the type of RDF Container
+&nbsp;	 * @param statementSupplier  the source of the statements from which the RDF Container is to be read, specified as a
+&nbsp;	 *                           functional interface.
+&nbsp;	 * @param container          the {@link Resource} that represents the container head, that is the start resource of
+&nbsp;	 *                           the RDF Container to be read. May not be {@code null}.
+&nbsp;	 * @param collectionConsumer the Java {@link Consumer} function to which the collection statements are reported.
+&nbsp;	 * @param exceptionSupplier  a functional interface that produces the exception type this method will throw when an
+&nbsp;	 *                           error occurs.
+&nbsp;	 * @param contexts           the context(s) from which to read the RDF Container. This argument is an optional
+&nbsp;	 *                           vararg and can be left out.
+&nbsp;	 * @throws E if a problem occurs reading the RDF Container, for example if it is not well-formed.
+&nbsp;	 */
+&nbsp;	public static &lt;E extends RDF4JException&gt; void extract(IRI containerType, GetStatementOptional statementSupplier,
+&nbsp;			Resource container,
+&nbsp;			Consumer&lt;Statement&gt; collectionConsumer, Function&lt;String, Supplier&lt;E&gt;&gt; exceptionSupplier,
+&nbsp;			Resource... contexts) throws E {
+<b class="nc">&nbsp;		Objects.requireNonNull(contexts,</b>
+&nbsp;				&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+<b class="nc">&nbsp;		Objects.requireNonNull(container, &quot;container head may not be null&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(collectionConsumer, &quot;collection consumer may not be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource current = container;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int annotatedMembershipPropertyCounter = 1; true; annotatedMembershipPropertyCounter++) {</b>
+&nbsp;
+<b class="nc">&nbsp;			IRI annotatedMembershipPredicate = getAnnotatedMemberPredicate(vf, annotatedMembershipPropertyCounter);</b>
+<b class="nc">&nbsp;			if (statementSupplier.get(container, annotatedMembershipPredicate, null, contexts)</b>
+<b class="nc">&nbsp;					.equals(Optional.empty())) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Statement statement = statementSupplier.get(container, annotatedMembershipPredicate, null, contexts).get();</b>
+&nbsp;
+<b class="nc">&nbsp;			collectionConsumer.accept(statement);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

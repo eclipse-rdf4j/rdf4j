@@ -1,0 +1,321 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractRDFInserter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.util</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractRDFInserter (org.eclipse.rdf4j.repository.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractRDFInserter</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (6/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    35%
+  </span>
+  <span class="absValue">
+    (7/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    59.1%
+  </span>
+  <span class="absValue">
+    (26/44)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.util;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
+&nbsp;
+&nbsp;/**
+&nbsp; * An RDFHandler that adds RDF data to some RDF sink.
+&nbsp; */
+&nbsp;public abstract class AbstractRDFInserter extends AbstractRDFHandler {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The contexts to add the statements to. If this variable is a non-empty array, statements will be added to the
+&nbsp;	 * corresponding contexts.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected Resource[] contexts = new Resource[0];</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether blank node IDs should be preserved.
+&nbsp;	 */
+&nbsp;	private boolean preserveBNodeIDs;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Map that stores namespaces that are reported during the evaluation of the query. Key is the namespace prefix,
+&nbsp;	 * value is the namespace name.
+&nbsp;	 */
+&nbsp;	private final Map&lt;String, String&gt; namespaceMap;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Map used to keep track of which blank node IDs have been mapped to which BNode object in case preserveBNodeIDs is
+&nbsp;	 * false.
+&nbsp;	 */
+&nbsp;	private final Map&lt;String, BNode&gt; bNodesMap;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * ValueFactory used to create BNodes.
+&nbsp;	 */
+&nbsp;	private final ValueFactory valueFactory;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFInserter object that preserves bnode IDs and that does not enforce any context upon statements
+&nbsp;	 * that are reported to it.
+&nbsp;	 */
+<b class="fc">&nbsp;	protected AbstractRDFInserter(ValueFactory vf) {</b>
+<b class="fc">&nbsp;		preserveBNodeIDs = true;</b>
+<b class="fc">&nbsp;		namespaceMap = new HashMap&lt;&gt;();</b>
+<b class="fc">&nbsp;		bNodesMap = new HashMap&lt;&gt;();</b>
+<b class="fc">&nbsp;		valueFactory = vf;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets whether this RDFInserter should preserve blank node IDs.
+&nbsp;	 *
+&nbsp;	 * @param preserveBNodeIDs The new value for this flag.
+&nbsp;	 */
+&nbsp;	public void setPreserveBNodeIDs(boolean preserveBNodeIDs) {
+<b class="nc">&nbsp;		this.preserveBNodeIDs = preserveBNodeIDs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this RDFInserter preserves blank node IDs.
+&nbsp;	 */
+&nbsp;	public boolean preservesBNodeIDs() {
+<b class="nc">&nbsp;		return preserveBNodeIDs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enforces the supplied contexts upon all statements that are reported to this RDFInserter.
+&nbsp;	 *
+&nbsp;	 * @param contexts the contexts to use. Use an empty array (not null!) to indicate no context(s) should be enforced.
+&nbsp;	 */
+&nbsp;	public void enforceContext(Resource... contexts) {
+<b class="fc">&nbsp;		Objects.requireNonNull(contexts,</b>
+&nbsp;				&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+<b class="fc">&nbsp;		this.contexts = Arrays.copyOf(contexts, contexts.length);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether this RDFInserter enforces its contexts upon all statements that are reported to it.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if it enforces its contexts, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public boolean enforcesContext() {
+<b class="fc">&nbsp;		return contexts.length != 0;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the contexts that this RDFInserter enforces upon all statements that are reported to it (in case
+&nbsp;	 * &lt;var&gt;enforcesContext()&lt;/var&gt; returns &lt;var&gt;true&lt;/var&gt;).
+&nbsp;	 *
+&nbsp;	 * @return A Resource[] identifying the contexts, or an empty array if no contexts is enforced.
+&nbsp;	 */
+&nbsp;	public Resource[] getContexts() {
+<b class="nc">&nbsp;		return Arrays.copyOf(contexts, contexts.length);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract void addNamespace(String prefix, String name) throws RDF4JException;
+&nbsp;
+&nbsp;	protected abstract void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) throws RDF4JException;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="fc">&nbsp;		for (Map.Entry&lt;String, String&gt; entry : namespaceMap.entrySet()) {</b>
+<b class="fc">&nbsp;			String prefix = entry.getKey();</b>
+<b class="fc">&nbsp;			String name = entry.getValue();</b>
+&nbsp;
+&nbsp;			try {
+<b class="fc">&nbsp;				addNamespace(prefix, name);</b>
+<b class="nc">&nbsp;			} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;				throw new RDFHandlerException(e);</b>
+<b class="fc">&nbsp;			}</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		namespaceMap.clear();</b>
+<b class="fc">&nbsp;		bNodesMap.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String name) {
+&nbsp;		// FIXME: set namespaces directly when they are properly handled wrt
+&nbsp;		// rollback
+&nbsp;		// don&#39;t replace earlier declarations
+<b class="pc">&nbsp;		if (prefix != null &amp;&amp; !namespaceMap.containsKey(prefix)) {</b>
+<b class="fc">&nbsp;			namespaceMap.put(prefix, name);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="fc">&nbsp;		Resource subj = st.getSubject();</b>
+<b class="fc">&nbsp;		IRI pred = st.getPredicate();</b>
+<b class="fc">&nbsp;		Value obj = st.getObject();</b>
+<b class="fc">&nbsp;		Resource ctxt = st.getContext();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (!preserveBNodeIDs) {</b>
+<b class="nc">&nbsp;			if (subj instanceof BNode) {</b>
+<b class="nc">&nbsp;				subj = mapBNode((BNode) subj);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (obj instanceof BNode) {</b>
+<b class="nc">&nbsp;				obj = mapBNode((BNode) obj);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!enforcesContext() &amp;&amp; ctxt instanceof BNode) {</b>
+<b class="nc">&nbsp;				ctxt = mapBNode((BNode) ctxt);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			addStatement(subj, pred, obj, ctxt);</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps the supplied BNode, which comes from the data, to a new BNode object. Consecutive calls with equal BNode
+&nbsp;	 * objects returns the same object everytime.
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	private BNode mapBNode(BNode bNode) {
+<b class="nc">&nbsp;		BNode result = bNodesMap.get(bNode.getID());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (result == null) {</b>
+<b class="nc">&nbsp;			result = valueFactory.createBNode();</b>
+<b class="nc">&nbsp;			bNodesMap.put(bNode.getID(), result);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

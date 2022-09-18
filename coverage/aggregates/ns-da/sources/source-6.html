@@ -1,0 +1,188 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConstraintComponent</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents</a>
+</div>
+
+<h1>Coverage Summary for Class: ConstraintComponent (org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+  <tr>
+    <td class="name">ConstraintComponent$Scope</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.Exportable;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.TargetChainInterface;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationApproach;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.ValidationQuery;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+&nbsp;
+&nbsp;public interface ConstraintComponent extends Exportable, TargetChainInterface {
+&nbsp;
+&nbsp;	ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings,
+&nbsp;			boolean negatePlan, boolean negateChildren, Scope scope);
+&nbsp;
+&nbsp;	PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
+&nbsp;			Scope scope);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A constraint component should decide which validation approach is going to be the optimal performance wise based
+&nbsp;	 * on the state of the transaction and base sail.
+&nbsp;	 */
+&nbsp;	ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Should return the fastest validation approach for bulk validation. When aggregating multiple constraint
+&nbsp;	 * components the most compatible should be chosen.
+&nbsp;	 */
+&nbsp;	ValidationApproach getOptimalBulkValidationApproach();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param connectionsGroup
+&nbsp;	 * @param scope
+&nbsp;	 * @param dataGraph
+&nbsp;	 * @param stableRandomVariableProvider
+&nbsp;	 * @return true if the constraint component should be evaluated, eg. if validation is needed.
+&nbsp;	 */
+&nbsp;	boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
+&nbsp;
+&nbsp;	SourceConstraintComponent getConstraintComponent();
+&nbsp;
+&nbsp;	PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
+&nbsp;
+&nbsp;	SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+&nbsp;			StatementMatcher.Variable object,
+&nbsp;			RdfsSubClassOfReasoner rdfsSubClassOfReasoner,
+&nbsp;			Scope scope, StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider);
+&nbsp;
+<b class="nc">&nbsp;	enum Scope {</b>
+<b class="nc">&nbsp;		none,</b>
+<b class="nc">&nbsp;		nodeShape,</b>
+<b class="nc">&nbsp;		propertyShape</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	ConstraintComponent deepClone();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

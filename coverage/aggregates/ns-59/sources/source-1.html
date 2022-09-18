@@ -1,0 +1,2381 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > XMLDatatypeUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.datatypes</a>
+</div>
+
+<h1>Coverage Summary for Class: XMLDatatypeUtil (org.eclipse.rdf4j.model.datatypes)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">XMLDatatypeUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    37.7%
+  </span>
+  <span class="absValue">
+    (43/114)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    31.2%
+  </span>
+  <span class="absValue">
+    (200/641)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    39.4%
+  </span>
+  <span class="absValue">
+    (293/744)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">XMLDatatypeUtil$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">XMLDatatypeUtil$IllegalArgumentExceptionWithoutStackTrace</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    39.3%
+  </span>
+  <span class="absValue">
+    (46/117)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    31.2%
+  </span>
+  <span class="absValue">
+    (200/641)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    39.6%
+  </span>
+  <span class="absValue">
+    (296/747)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.datatypes;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.StringTokenizer;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import javax.xml.datatype.DatatypeConfigurationException;
+&nbsp;import javax.xml.datatype.DatatypeConstants;
+&nbsp;import javax.xml.datatype.DatatypeFactory;
+&nbsp;import javax.xml.datatype.Duration;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;import javax.xml.namespace.QName;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.net.ParsedIRI;
+&nbsp;import org.eclipse.rdf4j.common.text.ASCIIUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;
+&nbsp;/**
+&nbsp; * Provides methods for handling the standard XML Schema datatypes.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class XMLDatatypeUtil {</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final IllegalArgumentExceptionWithoutStackTrace VALUE_SMALLER_THAN_MINIMUM_VALUE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;			&quot;Value smaller than minimum value&quot;);
+<b class="fc">&nbsp;	private static final IllegalArgumentExceptionWithoutStackTrace VALUE_LARGER_THAN_MAXIMUM_VALUE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;			&quot;Value larger than maximum value&quot;);
+<b class="fc">&nbsp;	private static final IllegalArgumentExceptionWithoutStackTrace NAN_COMPARE_EXCEPTION = new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;			&quot;NaN cannot be compared to other floats&quot;);
+&nbsp;
+&nbsp;	public static final String POSITIVE_INFINITY = &quot;INF&quot;;
+&nbsp;
+&nbsp;	public static final String NEGATIVE_INFINITY = &quot;-INF&quot;;
+&nbsp;
+&nbsp;	public static final String NaN = &quot;NaN&quot;;
+&nbsp;
+&nbsp;	private static final DatatypeFactory dtFactory;
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="fc">&nbsp;			dtFactory = DatatypeFactory.newInstance();</b>
+<b class="nc">&nbsp;		} catch (DatatypeConfigurationException e) {</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private final static Pattern P_DURATION = Pattern.compile(</b>
+&nbsp;			&quot;-?P((\\d)+Y)?((\\d)+M)?((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?&quot;);
+<b class="fc">&nbsp;	private final static Pattern P_DAYTIMEDURATION = Pattern.compile(</b>
+&nbsp;			&quot;-?P((\\d)+D)?((T(\\d)+H((\\d)+M)?((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+M((\\d)+(\\.(\\d)+)?S)?)|(T(\\d)+(\\.(\\d)+)?S))?&quot;);
+<b class="fc">&nbsp;	private final static Pattern P_YEARMONTHDURATION = Pattern.compile(&quot;-?P((\\d)+Y)?((\\d)+M)?&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_TIMEZONE = Pattern.compile(&quot;.*(Z|[+-]((0\\d|1[0-3]):[0-5]\\d|14:00))$&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_DATE = Pattern.compile(&quot;-?\\d{4,}-\\d\\d-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_TIME = Pattern.compile(&quot;\\d\\d:\\d\\d:\\d\\d(\\.\\d+)?(Z|([+\\-])\\d\\d:\\d\\d)?&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_GDAY = Pattern.compile(&quot;---\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_GMONTH = Pattern.compile(&quot;--\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_GMONTHDAY = Pattern.compile(&quot;--\\d\\d-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_GYEAR = Pattern.compile(&quot;-?\\d{4,}(Z|([+\\-])\\d\\d:\\d\\d)?&quot;);</b>
+<b class="fc">&nbsp;	private final static Pattern P_GYEARMONTH = Pattern.compile(&quot;-?\\d{4,}-\\d\\d(Z|([+\\-])\\d\\d:\\d\\d)?&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final Set&lt;IRI&gt; primitiveDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.DURATION,</b>
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME, org.eclipse.rdf4j.model.vocabulary.XSD.TIME,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DATE,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.GYEARMONTH, org.eclipse.rdf4j.model.vocabulary.XSD.GYEAR,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTHDAY, org.eclipse.rdf4j.model.vocabulary.XSD.GDAY,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTH, org.eclipse.rdf4j.model.vocabulary.XSD.STRING,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN, org.eclipse.rdf4j.model.vocabulary.XSD.BASE64BINARY,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.HEXBINARY, org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL, org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI, org.eclipse.rdf4j.model.vocabulary.XSD.QNAME,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NOTATION);
+&nbsp;
+<b class="fc">&nbsp;	private static final Set&lt;IRI&gt; derivedDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.NORMALIZEDSTRING,</b>
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.TOKEN, org.eclipse.rdf4j.model.vocabulary.XSD.LANGUAGE,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NMTOKEN,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NMTOKENS, org.eclipse.rdf4j.model.vocabulary.XSD.NAME,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NCNAME, org.eclipse.rdf4j.model.vocabulary.XSD.ID,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.IDREF, org.eclipse.rdf4j.model.vocabulary.XSD.IDREFS,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.ENTITY, org.eclipse.rdf4j.model.vocabulary.XSD.ENTITIES,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.LONG, org.eclipse.rdf4j.model.vocabulary.XSD.INT,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.SHORT, org.eclipse.rdf4j.model.vocabulary.XSD.BYTE,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG, org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DAYTIMEDURATION,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.YEARMONTHDURATION,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP);
+&nbsp;
+<b class="fc">&nbsp;	private static final Set&lt;IRI&gt; integerDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER,</b>
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.LONG, org.eclipse.rdf4j.model.vocabulary.XSD.INT,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.SHORT, org.eclipse.rdf4j.model.vocabulary.XSD.BYTE,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG, org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE);
+&nbsp;
+<b class="fc">&nbsp;	private static final Set&lt;IRI&gt; calendarDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME,</b>
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DATE, org.eclipse.rdf4j.model.vocabulary.XSD.TIME,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.GYEARMONTH,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTHDAY, org.eclipse.rdf4j.model.vocabulary.XSD.GYEAR,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.GMONTH, org.eclipse.rdf4j.model.vocabulary.XSD.GDAY,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP);
+&nbsp;
+<b class="fc">&nbsp;	private static final Set&lt;IRI&gt; durationDatatypes = Set.of(org.eclipse.rdf4j.model.vocabulary.XSD.DURATION,</b>
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.DAYTIMEDURATION,
+&nbsp;			org.eclipse.rdf4j.model.vocabulary.XSD.YEARMONTHDURATION);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is a primitive XML Schema datatype.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if the datatype is a primitive type
+&nbsp;	 */
+&nbsp;	public static boolean isPrimitiveDatatype(IRI datatype) {
+<b class="fc">&nbsp;		return primitiveDatatypes.contains(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is a derived XML Schema datatype.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if the datatype is a derived type
+&nbsp;	 */
+&nbsp;	public static boolean isDerivedDatatype(IRI datatype) {
+<b class="fc">&nbsp;		return derivedDatatypes.contains(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is a built-in XML Schema datatype.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if it is a primitive or derived XML Schema type
+&nbsp;	 */
+&nbsp;	public static boolean isBuiltInDatatype(IRI datatype) {
+<b class="fc">&nbsp;		return isPrimitiveDatatype(datatype) || isDerivedDatatype(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is a numeric datatype, i.e.if it is equal to xsd:float, xsd:double,
+&nbsp;	 * xsd:decimal or one of the datatypes derived from xsd:decimal.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true of it is a decimal or floating point type
+&nbsp;	 */
+&nbsp;	public static boolean isNumericDatatype(IRI datatype) {
+<b class="fc">&nbsp;		return isDecimalDatatype(datatype) || isFloatingPointDatatype(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is equal to xsd:decimal or one of the built-in datatypes that is derived
+&nbsp;	 * from xsd:decimal.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if it is a decimal datatype
+&nbsp;	 */
+&nbsp;	public static boolean isDecimalDatatype(IRI datatype) {
+<b class="fc">&nbsp;		return datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL) || isIntegerDatatype(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is equal to xsd:integer or one of the built-in datatypes that is derived
+&nbsp;	 * from xsd:integer.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if it is an integer type
+&nbsp;	 */
+&nbsp;	public static boolean isIntegerDatatype(IRI datatype) {
+<b class="fc">&nbsp;		return integerDatatypes.contains(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is equal to xsd:float or xsd:double.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if it is a floating point type
+&nbsp;	 */
+&nbsp;	public static boolean isFloatingPointDatatype(IRI datatype) {
+<b class="pc">&nbsp;		return datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)</b>
+<b class="fc">&nbsp;				|| datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is equal to xsd:dateTime, xsd:date, xsd:time, xsd:gYearMonth, xsd:gMonthDay,
+&nbsp;	 * xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates and/or times.
+&nbsp;	 *
+&nbsp;	 * @see XMLGregorianCalendar
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if it is a calendar type
+&nbsp;	 */
+&nbsp;	public static boolean isCalendarDatatype(IRI datatype) {
+<b class="fc">&nbsp;		return calendarDatatypes.contains(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration. These
+&nbsp;	 * are the datatypes that represents durations.
+&nbsp;	 *
+&nbsp;	 * @see Duration
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if it is a duration type
+&nbsp;	 */
+&nbsp;	public static boolean isDurationDatatype(IRI datatype) {
+<b class="nc">&nbsp;		return durationDatatypes.contains(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied datatype is ordered.The values of an ordered datatype can be compared to each other
+&nbsp;	 * using operators like &lt;var&gt;&amp;lt;&lt;/var&gt; and &lt;var&gt;&amp;gt;&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param datatype
+&nbsp;	 * @return true if the datatype is ordered
+&nbsp;	 */
+&nbsp;	public static boolean isOrderedDatatype(IRI datatype) {
+<b class="nc">&nbsp;		return isNumericDatatype(datatype) || isCalendarDatatype(datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*----------------*
+&nbsp;	 * Value checking *
+&nbsp;	 *----------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is valid for the given datatype.
+&nbsp;	 *
+&nbsp;	 * @param value    a lexical value
+&nbsp;	 * @param datatype an XML Schema datatatype.
+&nbsp;	 * @return true if the supplied lexical value is valid, false otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isValidValue(String value, IRI datatype) {
+<b class="fc">&nbsp;		if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL)) {</b>
+<b class="fc">&nbsp;			return isValidDecimal(value);</b>
+<b class="fc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER)) {</b>
+<b class="fc">&nbsp;			return isValidInteger(value);</b>
+<b class="fc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER)) {</b>
+<b class="fc">&nbsp;			return isValidNegativeInteger(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return isValidNonPositiveInteger(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return isValidNonNegativeInteger(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return isValidPositiveInteger(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LONG)) {</b>
+<b class="nc">&nbsp;			return isValidLong(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INT)) {</b>
+<b class="nc">&nbsp;			return isValidInt(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.SHORT)) {</b>
+<b class="nc">&nbsp;			return isValidShort(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BYTE)) {</b>
+<b class="nc">&nbsp;			return isValidByte(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG)) {</b>
+<b class="nc">&nbsp;			return isValidUnsignedLong(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT)) {</b>
+<b class="nc">&nbsp;			return isValidUnsignedInt(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT)) {</b>
+<b class="nc">&nbsp;			return isValidUnsignedShort(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE)) {</b>
+<b class="nc">&nbsp;			return isValidUnsignedByte(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)) {</b>
+<b class="nc">&nbsp;			return isValidFloat(value);</b>
+<b class="fc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE)) {</b>
+<b class="fc">&nbsp;			return isValidDouble(value);</b>
+<b class="fc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN)) {</b>
+<b class="fc">&nbsp;			return isValidBoolean(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)) {</b>
+<b class="nc">&nbsp;			return isValidDateTime(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP)) {</b>
+<b class="nc">&nbsp;			return isValidDateTimeStamp(value);</b>
+<b class="fc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATE)) {</b>
+<b class="fc">&nbsp;			return isValidDate(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.TIME)) {</b>
+<b class="nc">&nbsp;			return isValidTime(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GDAY)) {</b>
+<b class="nc">&nbsp;			return isValidGDay(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GMONTH)) {</b>
+<b class="nc">&nbsp;			return isValidGMonth(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GMONTHDAY)) {</b>
+<b class="nc">&nbsp;			return isValidGMonthDay(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GYEAR)) {</b>
+<b class="nc">&nbsp;			return isValidGYear(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.GYEARMONTH)) {</b>
+<b class="nc">&nbsp;			return isValidGYearMonth(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DURATION)) {</b>
+<b class="nc">&nbsp;			return isValidDuration(value);</b>
+<b class="fc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DAYTIMEDURATION)) {</b>
+<b class="fc">&nbsp;			return isValidDayTimeDuration(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.YEARMONTHDURATION)) {</b>
+<b class="nc">&nbsp;			return isValidYearMonthDuration(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.QNAME)) {</b>
+<b class="nc">&nbsp;			return isValidQName(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI)) {</b>
+<b class="nc">&nbsp;			return isValidAnyURI(value);</b>
+<b class="pc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LANGUAGE)) {</b>
+<b class="nc">&nbsp;			return Literals.isValidLanguageTag(value);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isValidValue(String value, CoreDatatype datatype) {
+<b class="pc">&nbsp;		if (datatype.isXSDDatatype()) {</b>
+<b class="fc">&nbsp;			return isValidValue(value, ((CoreDatatype.XSD) datatype));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static boolean isValidValue(String value, CoreDatatype.XSD datatype) {
+<b class="pc">&nbsp;		switch (datatype) {</b>
+&nbsp;		case DECIMAL:
+<b class="fc">&nbsp;			return isValidDecimal(value);</b>
+&nbsp;		case INTEGER:
+<b class="fc">&nbsp;			return isValidInteger(value);</b>
+&nbsp;		case NEGATIVE_INTEGER:
+<b class="nc">&nbsp;			return isValidNegativeInteger(value);</b>
+&nbsp;		case NON_POSITIVE_INTEGER:
+<b class="nc">&nbsp;			return isValidNonPositiveInteger(value);</b>
+&nbsp;		case NON_NEGATIVE_INTEGER:
+<b class="nc">&nbsp;			return isValidNonNegativeInteger(value);</b>
+&nbsp;		case POSITIVE_INTEGER:
+<b class="nc">&nbsp;			return isValidPositiveInteger(value);</b>
+&nbsp;		case LONG:
+<b class="nc">&nbsp;			return isValidLong(value);</b>
+&nbsp;		case INT:
+<b class="fc">&nbsp;			return isValidInt(value);</b>
+&nbsp;		case SHORT:
+<b class="nc">&nbsp;			return isValidShort(value);</b>
+&nbsp;		case BYTE:
+<b class="nc">&nbsp;			return isValidByte(value);</b>
+&nbsp;		case UNSIGNED_LONG:
+<b class="nc">&nbsp;			return isValidUnsignedLong(value);</b>
+&nbsp;		case UNSIGNED_INT:
+<b class="nc">&nbsp;			return isValidUnsignedInt(value);</b>
+&nbsp;		case UNSIGNED_SHORT:
+<b class="nc">&nbsp;			return isValidUnsignedShort(value);</b>
+&nbsp;		case UNSIGNED_BYTE:
+<b class="nc">&nbsp;			return isValidUnsignedByte(value);</b>
+&nbsp;		case FLOAT:
+<b class="nc">&nbsp;			return isValidFloat(value);</b>
+&nbsp;		case DOUBLE:
+<b class="nc">&nbsp;			return isValidDouble(value);</b>
+&nbsp;		case BOOLEAN:
+<b class="nc">&nbsp;			return isValidBoolean(value);</b>
+&nbsp;		case DATETIME:
+<b class="fc">&nbsp;			return isValidDateTime(value);</b>
+&nbsp;		case DATETIMESTAMP:
+<b class="nc">&nbsp;			return isValidDateTimeStamp(value);</b>
+&nbsp;		case DATE:
+<b class="nc">&nbsp;			return isValidDate(value);</b>
+&nbsp;		case TIME:
+<b class="nc">&nbsp;			return isValidTime(value);</b>
+&nbsp;		case GDAY:
+<b class="nc">&nbsp;			return isValidGDay(value);</b>
+&nbsp;		case GMONTH:
+<b class="nc">&nbsp;			return isValidGMonth(value);</b>
+&nbsp;		case GMONTHDAY:
+<b class="nc">&nbsp;			return isValidGMonthDay(value);</b>
+&nbsp;		case GYEAR:
+<b class="nc">&nbsp;			return isValidGYear(value);</b>
+&nbsp;		case GYEARMONTH:
+<b class="nc">&nbsp;			return isValidGYearMonth(value);</b>
+&nbsp;		case DURATION:
+<b class="nc">&nbsp;			return isValidDuration(value);</b>
+&nbsp;		case DAYTIMEDURATION:
+<b class="nc">&nbsp;			return isValidDayTimeDuration(value);</b>
+&nbsp;		case YEARMONTHDURATION:
+<b class="nc">&nbsp;			return isValidYearMonthDuration(value);</b>
+&nbsp;		case QNAME:
+<b class="nc">&nbsp;			return isValidQName(value);</b>
+&nbsp;		case ANYURI:
+<b class="nc">&nbsp;			return isValidAnyURI(value);</b>
+&nbsp;		case LANGUAGE:
+<b class="nc">&nbsp;			return Literals.isValidLanguageTag(value);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid decimal or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidDecimal(String value) {
+&nbsp;		try {
+<b class="fc">&nbsp;			normalizeDecimal(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="fc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid integer or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidInteger(String value) {
+&nbsp;		try {
+<b class="fc">&nbsp;			normalizeInteger(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="fc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid negative integer or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidNegativeInteger(String value) {
+&nbsp;		try {
+<b class="fc">&nbsp;			normalizeNegativeInteger(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="fc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid non-positive integer or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidNonPositiveInteger(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeNonPositiveInteger(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid non-negative integer or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidNonNegativeInteger(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeNonNegativeInteger(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid positive integer or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidPositiveInteger(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizePositiveInteger(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid long or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidLong(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeLong(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid integer or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidInt(String value) {
+&nbsp;		try {
+<b class="fc">&nbsp;			normalizeInt(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid short or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidShort(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeShort(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid byte or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidByte(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeByte(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid unsigned long or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidUnsignedLong(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeUnsignedLong(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid unsigned int.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidUnsignedInt(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeUnsignedInt(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid unsigned short or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidUnsignedShort(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeUnsignedShort(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid unsigned byte or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidUnsignedByte(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeUnsignedByte(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid float or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidFloat(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			normalizeFloat(value);</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid double or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidDouble(String value) {
+&nbsp;		try {
+<b class="fc">&nbsp;			normalizeDouble(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="fc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid boolean or not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidBoolean(String value) {
+&nbsp;		try {
+<b class="fc">&nbsp;			normalizeBoolean(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid duration.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidDuration(String value) {
+&nbsp;		// voodoo regex for checking valid xsd:duration string. See
+&nbsp;		// http://www.w3.org/TR/xmlschema-2/#duration for details.
+<b class="nc">&nbsp;		return value.length() &gt; 1 &amp;&amp; P_DURATION.matcher(value).matches();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid day-time duration ot not.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidDayTimeDuration(String value) {
+<b class="pc">&nbsp;		return value.length() &gt; 1 &amp;&amp; P_DAYTIMEDURATION.matcher(value).matches();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid year-month duration.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidYearMonthDuration(String value) {
+<b class="nc">&nbsp;		return value.length() &gt; 1 &amp;&amp; P_YEARMONTHDURATION.matcher(value).matches();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid date-time.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidDateTime(String value) {
+&nbsp;		try {
+&nbsp;			@SuppressWarnings(&quot;unused&quot;)
+<b class="fc">&nbsp;			XMLDateTime dt = new XMLDateTime(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied lexical value is a valid date-timestamp.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidDateTimeStamp(String value) {
+&nbsp;		try {
+&nbsp;			@SuppressWarnings(&quot;unused&quot;)
+<b class="nc">&nbsp;			XMLDateTime dt = new XMLDateTime(value);</b>
+<b class="nc">&nbsp;			return P_TIMEZONE.matcher(value).matches();</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:date string.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidDate(String value) {
+<b class="pc">&nbsp;		return P_DATE.matcher(value).matches() &amp;&amp; isValidCalendarValue(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:time string.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidTime(String value) {
+<b class="nc">&nbsp;		return P_TIME.matcher(value).matches() &amp;&amp; isValidCalendarValue(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:gDay string.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidGDay(String value) {
+<b class="nc">&nbsp;		return P_GDAY.matcher(value).matches() &amp;&amp; isValidCalendarValue(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:gMonth string.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidGMonth(String value) {
+<b class="nc">&nbsp;		return P_GMONTH.matcher(value).matches() &amp;&amp; isValidCalendarValue(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:gMonthDay string.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidGMonthDay(String value) {
+<b class="nc">&nbsp;		return P_GMONTHDAY.matcher(value).matches() &amp;&amp; isValidCalendarValue(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:gYear string.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidGYear(String value) {
+<b class="nc">&nbsp;		return P_GYEAR.matcher(value).matches() &amp;&amp; isValidCalendarValue(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:gYearMonth string.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidGYearMonth(String value) {
+<b class="nc">&nbsp;		return P_GYEARMONTH.matcher(value).matches() &amp;&amp; isValidCalendarValue(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is a valid xsd:QName string. Note that this method only checks for syntax errors
+&nbsp;	 * in the supplied string itself. It does not validate that the prefix is a declared and in-scope namespace prefix.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if valid, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidQName(String value) {
+&nbsp;
+<b class="nc">&nbsp;		String[] split = value.split(&quot;:&quot;, -2);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (split.length != 2) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// check prefix
+<b class="nc">&nbsp;		String prefix = split[0];</b>
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(prefix)) {</b>
+<b class="nc">&nbsp;			if (isNotPrefixStartChar(prefix.charAt(0))) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 1; i &lt; prefix.length(); i++) {</b>
+<b class="nc">&nbsp;				if (isNotNameChar(prefix.charAt(i))) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String name = split[1];</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!&quot;&quot;.equals(name)) {</b>
+&nbsp;			// check name
+<b class="nc">&nbsp;			if (isNotNameStartChar(name.charAt(0))) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			for (int i = 1; i &lt; name.length(); i++) {</b>
+<b class="nc">&nbsp;				if (isNotNameChar(name.charAt(i))) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied value is an Internationalized Resource Identifier Reference (IRI). An anyURI value can
+&nbsp;	 * be absolute or relative, and may have an optional fragment identifier (i.e., it may be an IRI Reference). This
+&nbsp;	 * type should be used when the value fulfills the role of an IRI, as defined in [RFC&amp;nbsp;3987] or its successor(s)
+&nbsp;	 * in the IETF Standards Track.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if a valid IRI, &lt;var&gt;false&lt;/var&gt; otherwise
+&nbsp;	 */
+&nbsp;	public static boolean isValidAnyURI(String value) {
+&nbsp;		try {
+<b class="nc">&nbsp;			new ParsedIRI(value.trim());</b>
+<b class="nc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isNotPrefixStartChar(int c) {
+<b class="nc">&nbsp;		return !ASCIIUtil.isLetter(c) &amp;&amp; (c &lt; 0x00C0 || c &gt; 0x00D6) &amp;&amp; (c &lt; 0x00D8 || c &gt; 0x00F6)</b>
+&nbsp;				&amp;&amp; (c &lt; 0x00F8 || c &gt; 0x02FF) &amp;&amp; (c &lt; 0x0370 || c &gt; 0x037D) &amp;&amp; (c &lt; 0x037F || c &gt; 0x1FFF)
+&nbsp;				&amp;&amp; (c &lt; 0x200C || c &gt; 0x200D) &amp;&amp; (c &lt; 0x2070 || c &gt; 0x218F) &amp;&amp; (c &lt; 0x2C00 || c &gt; 0x2FEF)
+&nbsp;				&amp;&amp; (c &lt; 0x3001 || c &gt; 0xD7FF) &amp;&amp; (c &lt; 0xF900 || c &gt; 0xFDCF) &amp;&amp; (c &lt; 0xFDF0 || c &gt; 0xFFFD)
+&nbsp;				&amp;&amp; (c &lt; 0x10000 || c &gt; 0xEFFFF);
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isNotNameStartChar(int c) {
+<b class="nc">&nbsp;		return c != &#39;_&#39; &amp;&amp; isNotPrefixStartChar(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isNotNameChar(int c) {
+<b class="nc">&nbsp;		return isNotNameStartChar(c) &amp;&amp; !ASCIIUtil.isNumber(c) &amp;&amp; c != &#39;-&#39; &amp;&amp; c != 0x00B7 &amp;&amp; (c &lt; 0x0300 || c &gt; 0x036F)</b>
+&nbsp;				&amp;&amp; (c &lt; 0x203F || c &gt; 0x2040);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if the supplied string can be parsed to a valid XMLGregorianCalendar value.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return true if the supplied string is a parsable calendar value, false otherwise.
+&nbsp;	 */
+&nbsp;	private static boolean isValidCalendarValue(String value) {
+&nbsp;		try {
+<b class="fc">&nbsp;			XMLDatatypeUtil.parseCalendar(value);</b>
+<b class="fc">&nbsp;			return true;</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------------------*
+&nbsp;	 * Value normalization *
+&nbsp;	 *---------------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes the supplied value according to the normalization rules for the supplied datatype.
+&nbsp;	 *
+&nbsp;	 * @param value    The value to normalize.
+&nbsp;	 * @param datatype The value&#39;s datatype.
+&nbsp;	 * @return The normalized value if there are any (supported) normalization rules for the supplied datatype, or the
+&nbsp;	 *         original supplied value otherwise.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is illegal considering the supplied datatype.
+&nbsp;	 */
+&nbsp;	public static String normalize(String value, IRI datatype) {
+<b class="nc">&nbsp;		if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL)) {</b>
+<b class="nc">&nbsp;			return normalizeDecimal(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER)) {</b>
+<b class="nc">&nbsp;			return normalizeInteger(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return normalizeNegativeInteger(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return normalizeNonPositiveInteger(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return normalizeNonNegativeInteger(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return normalizePositiveInteger(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LONG)) {</b>
+<b class="nc">&nbsp;			return normalizeLong(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INT)) {</b>
+<b class="nc">&nbsp;			return normalizeInt(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.SHORT)) {</b>
+<b class="nc">&nbsp;			return normalizeShort(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BYTE)) {</b>
+<b class="nc">&nbsp;			return normalizeByte(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG)) {</b>
+<b class="nc">&nbsp;			return normalizeUnsignedLong(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT)) {</b>
+<b class="nc">&nbsp;			return normalizeUnsignedInt(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT)) {</b>
+<b class="nc">&nbsp;			return normalizeUnsignedShort(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE)) {</b>
+<b class="nc">&nbsp;			return normalizeUnsignedByte(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)) {</b>
+<b class="nc">&nbsp;			return normalizeFloat(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE)) {</b>
+<b class="nc">&nbsp;			return normalizeDouble(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BOOLEAN)) {</b>
+<b class="nc">&nbsp;			return normalizeBoolean(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)) {</b>
+<b class="nc">&nbsp;			return normalizeDateTime(value);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.ANYURI)) {</b>
+<b class="nc">&nbsp;			return collapseWhiteSpace(value);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String normalize(String value, CoreDatatype.XSD datatype) {
+&nbsp;
+<b class="nc">&nbsp;		switch (datatype) {</b>
+&nbsp;		case DECIMAL:
+<b class="nc">&nbsp;			return normalizeDecimal(value);</b>
+&nbsp;		case INTEGER:
+<b class="nc">&nbsp;			return normalizeInteger(value);</b>
+&nbsp;		case NEGATIVE_INTEGER:
+<b class="nc">&nbsp;			return normalizeNegativeInteger(value);</b>
+&nbsp;		case NON_POSITIVE_INTEGER:
+<b class="nc">&nbsp;			return normalizeNonPositiveInteger(value);</b>
+&nbsp;		case NON_NEGATIVE_INTEGER:
+<b class="nc">&nbsp;			return normalizeNonNegativeInteger(value);</b>
+&nbsp;		case POSITIVE_INTEGER:
+<b class="nc">&nbsp;			return normalizePositiveInteger(value);</b>
+&nbsp;		case LONG:
+<b class="nc">&nbsp;			return normalizeLong(value);</b>
+&nbsp;		case INT:
+<b class="nc">&nbsp;			return normalizeInt(value);</b>
+&nbsp;		case SHORT:
+<b class="nc">&nbsp;			return normalizeShort(value);</b>
+&nbsp;		case BYTE:
+<b class="nc">&nbsp;			return normalizeByte(value);</b>
+&nbsp;		case UNSIGNED_LONG:
+<b class="nc">&nbsp;			return normalizeUnsignedLong(value);</b>
+&nbsp;		case UNSIGNED_INT:
+<b class="nc">&nbsp;			return normalizeUnsignedInt(value);</b>
+&nbsp;		case UNSIGNED_SHORT:
+<b class="nc">&nbsp;			return normalizeUnsignedShort(value);</b>
+&nbsp;		case UNSIGNED_BYTE:
+<b class="nc">&nbsp;			return normalizeUnsignedByte(value);</b>
+&nbsp;		case FLOAT:
+<b class="nc">&nbsp;			return normalizeFloat(value);</b>
+&nbsp;		case DOUBLE:
+<b class="nc">&nbsp;			return normalizeDouble(value);</b>
+&nbsp;		case BOOLEAN:
+<b class="nc">&nbsp;			return normalizeBoolean(value);</b>
+&nbsp;		case DATETIME:
+<b class="nc">&nbsp;			return normalizeDateTime(value);</b>
+&nbsp;		case ANYURI:
+<b class="nc">&nbsp;			return collapseWhiteSpace(value);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes a boolean value to its canonical representation. More specifically, the values &lt;var&gt;1&lt;/var&gt; and
+&nbsp;	 * &lt;var&gt;0&lt;/var&gt; will be normalized to the canonical values &lt;var&gt;true&lt;/var&gt; and &lt;var&gt;false&lt;/var&gt;, respectively.
+&nbsp;	 * Supplied canonical values will remain as is.
+&nbsp;	 *
+&nbsp;	 * @param value The boolean value to normalize.
+&nbsp;	 * @return The normalized value.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is not a legal boolean.
+&nbsp;	 */
+&nbsp;	public static String normalizeBoolean(String value) {
+<b class="fc">&nbsp;		value = collapseWhiteSpace(value);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (value.equals(&quot;1&quot;)) {</b>
+<b class="nc">&nbsp;			return &quot;true&quot;;</b>
+<b class="pc">&nbsp;		} else if (value.equals(&quot;0&quot;)) {</b>
+<b class="nc">&nbsp;			return &quot;false&quot;;</b>
+<b class="pc">&nbsp;		} else if (value.equals(&quot;true&quot;) || value.equals(&quot;false&quot;)) {</b>
+<b class="fc">&nbsp;			return value;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal boolean value: &quot; + value);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes a decimal to its canonical representation. For example: &lt;var&gt;120&lt;/var&gt; becomes &lt;var&gt;120.0&lt;/var&gt;,
+&nbsp;	 * &lt;var&gt;+.3&lt;/var&gt; becomes &lt;var&gt;0.3&lt;/var&gt;, &lt;var&gt;00012.45000&lt;/var&gt; becomes &lt;var&gt;12.45&lt;/var&gt; and &lt;var&gt;-.0&lt;/var&gt; becomes
+&nbsp;	 * &lt;var&gt;0.0&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param decimal The decimal to normalize.
+&nbsp;	 * @return The canonical representation of &lt;var&gt;decimal&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal decimal.
+&nbsp;	 */
+&nbsp;	public static String normalizeDecimal(String decimal) {
+<b class="fc">&nbsp;		decimal = collapseWhiteSpace(decimal);</b>
+&nbsp;
+<b class="fc">&nbsp;		int decLength = decimal.length();</b>
+<b class="fc">&nbsp;		StringBuilder result = new StringBuilder(decLength + 2);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (decLength == 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal decimal: &quot; + decimal);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean isZeroPointZero = true;</b>
+&nbsp;
+&nbsp;		// process any sign info
+<b class="fc">&nbsp;		int idx = 0;</b>
+<b class="fc">&nbsp;		if (decimal.charAt(idx) == &#39;-&#39;) {</b>
+<b class="fc">&nbsp;			result.append(&#39;-&#39;);</b>
+<b class="fc">&nbsp;			idx++;</b>
+<b class="pc">&nbsp;		} else if (decimal.charAt(idx) == &#39;+&#39;) {</b>
+<b class="nc">&nbsp;			idx++;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (idx == decLength) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal decimal: &quot; + decimal);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// skip any leading zeros
+<b class="fc">&nbsp;		while (idx &lt; decLength &amp;&amp; decimal.charAt(idx) == &#39;0&#39;) {</b>
+<b class="fc">&nbsp;			idx++;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Process digits before the dot
+<b class="fc">&nbsp;		if (idx == decLength) {</b>
+&nbsp;			// decimal consists of zeros only
+<b class="fc">&nbsp;			result.append(&#39;0&#39;);</b>
+<b class="pc">&nbsp;		} else if (idx &lt; decLength &amp;&amp; decimal.charAt(idx) == &#39;.&#39;) {</b>
+&nbsp;			// no non-zero digit before the dot
+<b class="fc">&nbsp;			result.append(&#39;0&#39;);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			isZeroPointZero = false;</b>
+&nbsp;
+&nbsp;			// Copy any digits before the dot
+<b class="fc">&nbsp;			while (idx &lt; decLength) {</b>
+<b class="fc">&nbsp;				char c = decimal.charAt(idx);</b>
+<b class="fc">&nbsp;				if (c == &#39;.&#39;) {</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="pc">&nbsp;				if (isNotDigit(c)) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal decimal: &quot; + decimal);</b>
+&nbsp;				}
+<b class="fc">&nbsp;				result.append(c);</b>
+<b class="fc">&nbsp;				idx++;</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		result.append(&#39;.&#39;);</b>
+&nbsp;
+&nbsp;		// Process digits after the dot
+<b class="fc">&nbsp;		if (idx == decLength) {</b>
+&nbsp;			// No dot was found in the decimal
+<b class="fc">&nbsp;			result.append(&#39;0&#39;);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			idx++;</b>
+&nbsp;
+&nbsp;			// search last non-zero digit
+<b class="fc">&nbsp;			int lastIdx = decLength - 1;</b>
+<b class="pc">&nbsp;			while (lastIdx &gt;= 0 &amp;&amp; decimal.charAt(lastIdx) == &#39;0&#39;) {</b>
+<b class="fc">&nbsp;				lastIdx--;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (idx &gt; lastIdx) {</b>
+&nbsp;				// No non-zero digits found
+<b class="fc">&nbsp;				result.append(&#39;0&#39;);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				isZeroPointZero = false;</b>
+&nbsp;
+<b class="fc">&nbsp;				while (idx &lt;= lastIdx) {</b>
+<b class="fc">&nbsp;					char c = decimal.charAt(idx);</b>
+<b class="fc">&nbsp;					if (isNotDigit(c)) {</b>
+<b class="fc">&nbsp;						throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal decimal: &quot; + decimal);</b>
+&nbsp;					}
+<b class="fc">&nbsp;					result.append(c);</b>
+<b class="fc">&nbsp;					idx++;</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (isZeroPointZero) {</b>
+&nbsp;			// Make sure we don&#39;t return &quot;-0.0&quot;
+<b class="fc">&nbsp;			return &quot;0.0&quot;;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return result.toString();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an integer to its canonical representation. For example: &lt;var&gt;+120&lt;/var&gt; becomes &lt;var&gt;120&lt;/var&gt; and
+&nbsp;	 * &lt;var&gt;00012&lt;/var&gt; becomes &lt;var&gt;12&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param value The value to normalize.
+&nbsp;	 * @return The canonical representation of &lt;var&gt;value&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is not a legal integer.
+&nbsp;	 */
+&nbsp;	public static String normalizeInteger(String value) {
+<b class="fc">&nbsp;		return normalizeIntegerValue(value, null, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:negativeInteger.
+&nbsp;	 */
+&nbsp;	public static String normalizeNegativeInteger(String value) {
+<b class="fc">&nbsp;		return normalizeIntegerValue(value, null, &quot;-1&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:nonPositiveInteger.
+&nbsp;	 */
+&nbsp;	public static String normalizeNonPositiveInteger(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, null, &quot;0&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:nonNegativeInteger.
+&nbsp;	 */
+&nbsp;	public static String normalizeNonNegativeInteger(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;0&quot;, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:positiveInteger.
+&nbsp;	 */
+&nbsp;	public static String normalizePositiveInteger(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;1&quot;, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:long.
+&nbsp;	 */
+&nbsp;	public static String normalizeLong(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;-9223372036854775808&quot;, &quot;9223372036854775807&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:int.
+&nbsp;	 */
+&nbsp;	public static String normalizeInt(String value) {
+<b class="fc">&nbsp;		return normalizeIntegerValue(value, &quot;-2147483648&quot;, &quot;2147483647&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:short.
+&nbsp;	 */
+&nbsp;	public static String normalizeShort(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;-32768&quot;, &quot;32767&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:byte.
+&nbsp;	 */
+&nbsp;	public static String normalizeByte(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;-128&quot;, &quot;127&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:unsignedLong.
+&nbsp;	 */
+&nbsp;	public static String normalizeUnsignedLong(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;0&quot;, &quot;18446744073709551615&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:unsignedInt.
+&nbsp;	 */
+&nbsp;	public static String normalizeUnsignedInt(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;0&quot;, &quot;4294967295&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:unsignedShort.
+&nbsp;	 */
+&nbsp;	public static String normalizeUnsignedShort(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;0&quot;, &quot;65535&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:unsignedByte.
+&nbsp;	 */
+&nbsp;	public static String normalizeUnsignedByte(String value) {
+<b class="nc">&nbsp;		return normalizeIntegerValue(value, &quot;0&quot;, &quot;255&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an integer to its canonical representation and checks that the value is in the range [minValue,
+&nbsp;	 * maxValue].
+&nbsp;	 */
+&nbsp;	private static String normalizeIntegerValue(String integer, String minValue, String maxValue) {
+<b class="fc">&nbsp;		integer = collapseWhiteSpace(integer);</b>
+&nbsp;
+<b class="fc">&nbsp;		int intLength = integer.length();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (intLength == 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal integer: &quot; + integer);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		int idx = 0;</b>
+&nbsp;
+&nbsp;		// process any sign info
+<b class="fc">&nbsp;		boolean isNegative = false;</b>
+<b class="fc">&nbsp;		if (integer.charAt(idx) == &#39;-&#39;) {</b>
+<b class="fc">&nbsp;			isNegative = true;</b>
+<b class="fc">&nbsp;			idx++;</b>
+<b class="pc">&nbsp;		} else if (integer.charAt(idx) == &#39;+&#39;) {</b>
+<b class="nc">&nbsp;			idx++;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (idx == intLength) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal integer: &quot; + integer);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (integer.charAt(idx) == &#39;0&#39; &amp;&amp; idx &lt; intLength - 1) {</b>
+&nbsp;			// integer starts with a zero followed by more characters,
+&nbsp;			// skip any leading zeros
+<b class="nc">&nbsp;			idx++;</b>
+<b class="nc">&nbsp;			while (idx &lt; intLength - 1 &amp;&amp; integer.charAt(idx) == &#39;0&#39;) {</b>
+<b class="nc">&nbsp;				idx++;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		String norm = integer.substring(idx);</b>
+&nbsp;
+&nbsp;		// Check that all characters in &#39;norm&#39; are digits
+<b class="fc">&nbsp;		for (int i = 0; i &lt; norm.length(); i++) {</b>
+<b class="fc">&nbsp;			if (isNotDigit(norm.charAt(i))) {</b>
+<b class="fc">&nbsp;				throw new IllegalArgumentExceptionWithoutStackTrace(&quot;Not a legal integer: &quot; + integer);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (isNegative &amp;&amp; norm.charAt(0) != &#39;0&#39;) {</b>
+<b class="fc">&nbsp;			norm = &quot;-&quot; + norm;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check lower and upper bounds, if applicable
+<b class="fc">&nbsp;		if (minValue != null) {</b>
+<b class="pc">&nbsp;			if (compareCanonicalIntegers(norm, minValue) &lt; 0) {</b>
+<b class="nc">&nbsp;				throw VALUE_SMALLER_THAN_MINIMUM_VALUE_EXCEPTION;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		if (maxValue != null) {</b>
+<b class="fc">&nbsp;			if (compareCanonicalIntegers(norm, maxValue) &gt; 0) {</b>
+<b class="fc">&nbsp;				throw VALUE_LARGER_THAN_MAXIMUM_VALUE_EXCEPTION;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return norm;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes a float to its canonical representation.
+&nbsp;	 *
+&nbsp;	 * @param value The value to normalize.
+&nbsp;	 * @return The canonical representation of &lt;var&gt;value&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is not a legal float.
+&nbsp;	 */
+&nbsp;	public static String normalizeFloat(String value) {
+<b class="nc">&nbsp;		return normalizeFPNumber(value, &quot;-16777215.0&quot;, &quot;16777215.0&quot;, &quot;-149&quot;, &quot;104&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes a double to its canonical representation.
+&nbsp;	 *
+&nbsp;	 * @param value The value to normalize.
+&nbsp;	 * @return The canonical representation of &lt;var&gt;value&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is not a legal double.
+&nbsp;	 */
+&nbsp;	public static String normalizeDouble(String value) {
+<b class="fc">&nbsp;		return normalizeFPNumber(value, &quot;-9007199254740991.0&quot;, &quot;9007199254740991.0&quot;, &quot;-1075&quot;, &quot;970&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes a floating point number to its canonical representation.
+&nbsp;	 *
+&nbsp;	 * @param value The value to normalize.
+&nbsp;	 * @return The canonical representation of &lt;var&gt;value&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is not a legal floating point number.
+&nbsp;	 */
+&nbsp;	public static String normalizeFPNumber(String value) {
+<b class="nc">&nbsp;		return normalizeFPNumber(value, null, null, null, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes a floating point lexical value to its canonical representation.
+&nbsp;	 *
+&nbsp;	 * @param value       The lexical value to normalize.
+&nbsp;	 * @param minMantissa A normalized decimal indicating the lowest value that the mantissa may have.
+&nbsp;	 * @param maxMantissa A normalized decimal indicating the highest value that the mantissa may have.
+&nbsp;	 * @param minExponent A normalized integer indicating the lowest value that the exponent may have.
+&nbsp;	 * @param maxExponent A normalized integer indicating the highest value that the exponent may have.
+&nbsp;	 * @return The canonical representation of &lt;var&gt;value&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is not a legal floating point lexical value.
+&nbsp;	 */
+&nbsp;	private static String normalizeFPNumber(String value, String minMantissa, String maxMantissa, String minExponent,
+&nbsp;			String maxExponent) {
+<b class="fc">&nbsp;		value = collapseWhiteSpace(value);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (value.contains(&quot; &quot;)) {</b>
+&nbsp;			// floating point lexical value can not contain spaces after collapse
+<b class="fc">&nbsp;			throw new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;					&quot;No space allowed in floating point lexical value (&quot; + value + &quot;)&quot;);
+&nbsp;		}
+&nbsp;
+&nbsp;		// handle special values
+<b class="pc">&nbsp;		if (value.equals(POSITIVE_INFINITY) || value.equals(NEGATIVE_INFINITY) || value.equals(NaN)) {</b>
+<b class="nc">&nbsp;			return value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Search for the exponent character E or e
+<b class="fc">&nbsp;		int eIdx = value.indexOf(&#39;E&#39;);</b>
+<b class="fc">&nbsp;		if (eIdx == -1) {</b>
+&nbsp;			// try lower case
+<b class="fc">&nbsp;			eIdx = value.indexOf(&#39;e&#39;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Extract mantissa and exponent
+&nbsp;		String mantissa, exponent;
+<b class="fc">&nbsp;		if (eIdx == -1) {</b>
+<b class="fc">&nbsp;			mantissa = normalizeDecimal(value);</b>
+<b class="fc">&nbsp;			exponent = &quot;0&quot;;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			mantissa = normalizeDecimal(value.substring(0, eIdx));</b>
+<b class="fc">&nbsp;			exponent = normalizeInteger(value.substring(eIdx + 1));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Normalize mantissa to one non-zero digit before the dot
+<b class="fc">&nbsp;		int shift = 0;</b>
+&nbsp;
+<b class="fc">&nbsp;		int dotIdx = mantissa.indexOf(&#39;.&#39;);</b>
+<b class="fc">&nbsp;		int digitCount = dotIdx;</b>
+<b class="pc">&nbsp;		if (mantissa.charAt(0) == &#39;-&#39;) {</b>
+<b class="nc">&nbsp;			digitCount--;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (digitCount &gt; 1) {</b>
+&nbsp;			// more than one digit before the dot, e.g 123.45, -10.0 or 100.0
+<b class="fc">&nbsp;			StringBuilder sb = new StringBuilder(mantissa.length());</b>
+<b class="fc">&nbsp;			int firstDigitIdx = 0;</b>
+<b class="pc">&nbsp;			if (mantissa.charAt(0) == &#39;-&#39;) {</b>
+<b class="nc">&nbsp;				sb.append(&#39;-&#39;);</b>
+<b class="nc">&nbsp;				firstDigitIdx = 1;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			sb.append(mantissa.charAt(firstDigitIdx));</b>
+<b class="fc">&nbsp;			sb.append(&#39;.&#39;);</b>
+<b class="fc">&nbsp;			sb.append(mantissa, firstDigitIdx + 1, dotIdx);</b>
+<b class="fc">&nbsp;			sb.append(mantissa.substring(dotIdx + 1));</b>
+&nbsp;
+<b class="fc">&nbsp;			mantissa = sb.toString();</b>
+&nbsp;
+&nbsp;			// Check if the mantissa has excessive trailing zeros.
+&nbsp;			// For example, 100.0 will be normalize to 1.000 and
+&nbsp;			// -10.0 to -1.00.
+<b class="fc">&nbsp;			int nonZeroIdx = mantissa.length() - 1;</b>
+<b class="pc">&nbsp;			while (nonZeroIdx &gt;= 3 &amp;&amp; mantissa.charAt(nonZeroIdx) == &#39;0&#39;) {</b>
+<b class="fc">&nbsp;				nonZeroIdx--;</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (nonZeroIdx &lt; 3 &amp;&amp; mantissa.charAt(0) == &#39;-&#39;) {</b>
+<b class="nc">&nbsp;				nonZeroIdx++;</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (nonZeroIdx &lt; mantissa.length() - 1) {</b>
+<b class="fc">&nbsp;				mantissa = mantissa.substring(0, nonZeroIdx + 1);</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			shift = 1 - digitCount;</b>
+<b class="pc">&nbsp;		} else if (mantissa.startsWith(&quot;0.&quot;) || mantissa.startsWith(&quot;-0.&quot;)) {</b>
+&nbsp;			// Example mantissas: 0.0, -0.1, 0.00345 and 0.09
+&nbsp;			// search first non-zero digit
+<b class="fc">&nbsp;			int nonZeroIdx = 2;</b>
+<b class="fc">&nbsp;			boolean negative = false;</b>
+<b class="pc">&nbsp;			if (mantissa.charAt(0) == &#39;-&#39;) {</b>
+<b class="nc">&nbsp;				nonZeroIdx++;</b>
+<b class="nc">&nbsp;				negative = true;</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			while (nonZeroIdx &lt; mantissa.length() &amp;&amp; mantissa.charAt(nonZeroIdx) == &#39;0&#39;) {</b>
+<b class="nc">&nbsp;				nonZeroIdx++;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// 0.0 does not need any normalization:
+<b class="pc">&nbsp;			if (nonZeroIdx &lt; mantissa.length()) {</b>
+<b class="fc">&nbsp;				StringBuilder sb = new StringBuilder(mantissa.length());</b>
+<b class="pc">&nbsp;				if (negative) {</b>
+<b class="nc">&nbsp;					sb.append(&#39;-&#39;);</b>
+&nbsp;				}
+<b class="fc">&nbsp;				sb.append(mantissa.charAt(nonZeroIdx));</b>
+<b class="fc">&nbsp;				sb.append(&#39;.&#39;);</b>
+<b class="pc">&nbsp;				if (nonZeroIdx == mantissa.length() - 1) {</b>
+&nbsp;					// There was only one non-zero digit, e.g. as in 0.09
+<b class="fc">&nbsp;					sb.append(&#39;0&#39;);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					sb.append(mantissa.substring(nonZeroIdx + 1));</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				mantissa = sb.toString();</b>
+&nbsp;
+&nbsp;				// subtract position for minus sign from shift if a negative number
+<b class="pc">&nbsp;				shift = negative ? nonZeroIdx - 2 : nonZeroIdx - 1;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (shift != 0) {</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				int exp = Integer.parseInt(exponent);</b>
+<b class="fc">&nbsp;				exponent = String.valueOf(exp - shift);</b>
+<b class="nc">&nbsp;			} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(&quot;NumberFormatException: &quot; + e.getMessage());</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check lower and upper bounds of canonicalized representation, if
+&nbsp;		// applicable
+<b class="pc">&nbsp;		if (minMantissa != null) {</b>
+<b class="pc">&nbsp;			if (compareCanonicalDecimals(mantissa, minMantissa) &lt; 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;						&quot;Mantissa smaller than minimum value (&quot; + minMantissa + &quot;)&quot;);
+&nbsp;			}
+&nbsp;		}
+<b class="pc">&nbsp;		if (maxMantissa != null) {</b>
+<b class="pc">&nbsp;			if (compareCanonicalDecimals(mantissa, maxMantissa) &gt; 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;						&quot;Mantissa larger than maximum value (&quot; + maxMantissa + &quot;)&quot;);
+&nbsp;			}
+&nbsp;		}
+<b class="pc">&nbsp;		if (minExponent != null) {</b>
+<b class="pc">&nbsp;			if (compareCanonicalIntegers(exponent, minExponent) &lt; 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;						&quot;Exponent smaller than minimum value (&quot; + minExponent + &quot;)&quot;);
+&nbsp;			}
+&nbsp;		}
+<b class="pc">&nbsp;		if (maxExponent != null) {</b>
+<b class="pc">&nbsp;			if (compareCanonicalIntegers(exponent, maxExponent) &gt; 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentExceptionWithoutStackTrace(</b>
+&nbsp;						&quot;Exponent larger than maximum value (&quot; + maxExponent + &quot;)&quot;);
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return mantissa + &quot;E&quot; + exponent;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalizes an xsd:dateTime.
+&nbsp;	 *
+&nbsp;	 * @param value The value to normalize.
+&nbsp;	 * @return The normalized value.
+&nbsp;	 * @throws IllegalArgumentException If the supplied value is not a legal xsd:dateTime value.
+&nbsp;	 */
+&nbsp;	public static String normalizeDateTime(String value) {
+<b class="nc">&nbsp;		XMLDateTime dt = new XMLDateTime(value);</b>
+<b class="nc">&nbsp;		dt.normalize();</b>
+<b class="nc">&nbsp;		return dt.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Replaces all contiguous sequences of #x9 (tab), #xA (line feed) and #xD (carriage return) with a single #x20
+&nbsp;	 * (space) character, and removes any leading and trailing whitespace characters, as specified for whiteSpace facet
+&nbsp;	 * &lt;var&gt;collapse&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param s
+&nbsp;	 * @return new string
+&nbsp;	 */
+&nbsp;	public static String collapseWhiteSpace(String s) {
+<b class="fc">&nbsp;		StringBuilder sb = new StringBuilder(s.length());</b>
+&nbsp;
+<b class="fc">&nbsp;		StringTokenizer st = new StringTokenizer(s, &quot;\t\r\n &quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (st.hasMoreTokens()) {</b>
+<b class="fc">&nbsp;			sb.append(st.nextToken());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		while (st.hasMoreTokens()) {</b>
+<b class="fc">&nbsp;			sb.append(&#39; &#39;).append(st.nextToken());</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------*
+&nbsp;	 * Value comparison *
+&nbsp;	 *------------------*/
+&nbsp;
+&nbsp;	public static int compare(String value1, String value2, IRI datatype) {
+<b class="nc">&nbsp;		if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DECIMAL)) {</b>
+<b class="nc">&nbsp;			return compareDecimals(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER)) {</b>
+<b class="nc">&nbsp;			return compareIntegers(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NEGATIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return compareNegativeIntegers(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_POSITIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return compareNonPositiveIntegers(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.NON_NEGATIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return compareNonNegativeIntegers(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.POSITIVE_INTEGER)) {</b>
+<b class="nc">&nbsp;			return comparePositiveIntegers(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.LONG)) {</b>
+<b class="nc">&nbsp;			return compareLongs(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.INT)) {</b>
+<b class="nc">&nbsp;			return compareInts(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.SHORT)) {</b>
+<b class="nc">&nbsp;			return compareShorts(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.BYTE)) {</b>
+<b class="nc">&nbsp;			return compareBytes(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_LONG)) {</b>
+<b class="nc">&nbsp;			return compareUnsignedLongs(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_INT)) {</b>
+<b class="nc">&nbsp;			return compareUnsignedInts(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_SHORT)) {</b>
+<b class="nc">&nbsp;			return compareUnsignedShorts(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.UNSIGNED_BYTE)) {</b>
+<b class="nc">&nbsp;			return compareUnsignedBytes(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.FLOAT)) {</b>
+<b class="nc">&nbsp;			return compareFloats(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DOUBLE)) {</b>
+<b class="nc">&nbsp;			return compareDoubles(value1, value2);</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIME)</b>
+<b class="nc">&nbsp;				|| datatype.equals(org.eclipse.rdf4j.model.vocabulary.XSD.DATETIMESTAMP)) {</b>
+<b class="nc">&nbsp;			return compareDateTime(value1, value2);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;datatype is not ordered&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two decimals to eachother.
+&nbsp;	 *
+&nbsp;	 * @param dec1
+&nbsp;	 * @param dec2
+&nbsp;	 * @return A negative number if &lt;var&gt;dec1&lt;/var&gt; is smaller than &lt;var&gt;dec2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal, or
+&nbsp;	 *         positive (&amp;gt;0) if &lt;var&gt;dec1&lt;/var&gt; is larger than &lt;var&gt;dec2&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal decimal.
+&nbsp;	 */
+&nbsp;	public static int compareDecimals(String dec1, String dec2) {
+<b class="nc">&nbsp;		dec1 = normalizeDecimal(dec1);</b>
+<b class="nc">&nbsp;		dec2 = normalizeDecimal(dec2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalDecimals(dec1, dec2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two canonical decimals to each other.
+&nbsp;	 *
+&nbsp;	 * @param dec1
+&nbsp;	 * @param dec2
+&nbsp;	 * @return A negative number if &lt;var&gt;dec1&lt;/var&gt; is smaller than &lt;var&gt;dec2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal, or
+&nbsp;	 *         positive (&amp;gt;0) if &lt;var&gt;dec1&lt;/var&gt; is larger than &lt;var&gt;dec2&lt;/var&gt;. The result is undefined when one or
+&nbsp;	 *         both of the arguments is not a canonical decimal.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal decimal.
+&nbsp;	 */
+&nbsp;	public static int compareCanonicalDecimals(String dec1, String dec2) {
+<b class="pc">&nbsp;		if (dec1.equals(dec2)) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check signs
+<b class="pc">&nbsp;		if (dec1.charAt(0) == &#39;-&#39; &amp;&amp; dec2.charAt(0) != &#39;-&#39;) {</b>
+&nbsp;			// dec1 is negative, dec2 is not
+<b class="nc">&nbsp;			return -1;</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (dec2.charAt(0) == &#39;-&#39; &amp;&amp; dec1.charAt(0) != &#39;-&#39;) {</b>
+&nbsp;			// dec2 is negative, dec1 is not
+<b class="fc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		int dotIdx1 = dec1.indexOf(&#39;.&#39;);</b>
+<b class="fc">&nbsp;		int dotIdx2 = dec2.indexOf(&#39;.&#39;);</b>
+&nbsp;
+&nbsp;		// The decimal with the most digits before the dot is the largest
+<b class="fc">&nbsp;		int result = dotIdx1 - dotIdx2;</b>
+&nbsp;
+<b class="pc">&nbsp;		if (result == 0) {</b>
+&nbsp;			// equal number of digits before the dot, compare them
+<b class="nc">&nbsp;			for (int i = 0; result == 0 &amp;&amp; i &lt; dotIdx1; i++) {</b>
+<b class="nc">&nbsp;				result = dec1.charAt(i) - dec2.charAt(i);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Continue comparing digits after the dot if necessary
+<b class="nc">&nbsp;			int dec1Length = dec1.length();</b>
+<b class="nc">&nbsp;			int dec2Length = dec2.length();</b>
+<b class="nc">&nbsp;			int lastIdx = Math.min(dec1Length, dec2Length);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (int i = dotIdx1 + 1; result == 0 &amp;&amp; i &lt; lastIdx; i++) {</b>
+<b class="nc">&nbsp;				result = dec1.charAt(i) - dec2.charAt(i);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Still equal? The decimal with the most digits is the largest
+<b class="nc">&nbsp;			if (result == 0) {</b>
+<b class="nc">&nbsp;				result = dec1Length - dec2Length;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (dec1.charAt(0) == &#39;-&#39;) {</b>
+&nbsp;			// reverse result for negative values
+<b class="nc">&nbsp;			result = -result;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two integers to each other.
+&nbsp;	 *
+&nbsp;	 * @param int1
+&nbsp;	 * @param int2
+&nbsp;	 * @return A negative number if &lt;var&gt;int1&lt;/var&gt; is smaller than &lt;var&gt;int2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal, or
+&nbsp;	 *         positive (&amp;gt;0) if &lt;var&gt;int1&lt;/var&gt; is larger than &lt;var&gt;int2&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal integer.
+&nbsp;	 */
+&nbsp;	public static int compareIntegers(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeInteger(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeInteger(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two canonical integers to each other.
+&nbsp;	 *
+&nbsp;	 * @param int1
+&nbsp;	 * @param int2
+&nbsp;	 * @return A negative number if &lt;var&gt;int1&lt;/var&gt; is smaller than &lt;var&gt;int2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal, or
+&nbsp;	 *         positive (&amp;gt;0) if &lt;var&gt;int1&lt;/var&gt; is larger than &lt;var&gt;int2&lt;/var&gt;. The result is undefined when one or
+&nbsp;	 *         both of the arguments is not a canonical integer.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal integer.
+&nbsp;	 */
+&nbsp;	public static int compareCanonicalIntegers(String int1, String int2) {
+<b class="pc">&nbsp;		if (int1.equals(int2)) {</b>
+<b class="nc">&nbsp;			return 0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check signs
+<b class="fc">&nbsp;		if (int1.charAt(0) == &#39;-&#39; &amp;&amp; int2.charAt(0) != &#39;-&#39;) {</b>
+&nbsp;			// int1 is negative, int2 is not
+<b class="fc">&nbsp;			return -1;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (int2.charAt(0) == &#39;-&#39; &amp;&amp; int1.charAt(0) != &#39;-&#39;) {</b>
+&nbsp;			// int2 is negative, int1 is not
+<b class="fc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// The integer with the most digits is the largest
+<b class="fc">&nbsp;		int result = int1.length() - int2.length();</b>
+&nbsp;
+<b class="fc">&nbsp;		if (result == 0) {</b>
+&nbsp;			// equal number of digits, compare them
+<b class="pc">&nbsp;			for (int i = 0; result == 0 &amp;&amp; i &lt; int1.length(); i++) {</b>
+<b class="fc">&nbsp;				result = int1.charAt(i) - int2.charAt(i);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (int1.charAt(0) == &#39;-&#39;) {</b>
+&nbsp;			// reverse result for negative values
+<b class="fc">&nbsp;			result = -result;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareNegativeIntegers(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeNegativeInteger(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeNegativeInteger(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareNonPositiveIntegers(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeNonPositiveInteger(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeNonPositiveInteger(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareNonNegativeIntegers(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeNonNegativeInteger(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeNonNegativeInteger(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int comparePositiveIntegers(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizePositiveInteger(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizePositiveInteger(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareLongs(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeLong(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeLong(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareInts(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeInt(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeInt(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareShorts(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeShort(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeShort(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareBytes(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeByte(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeByte(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareUnsignedLongs(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeUnsignedLong(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeUnsignedLong(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareUnsignedInts(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeUnsignedInt(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeUnsignedInt(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareUnsignedShorts(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeUnsignedShort(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeUnsignedShort(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static int compareUnsignedBytes(String int1, String int2) {
+<b class="nc">&nbsp;		int1 = normalizeUnsignedByte(int1);</b>
+<b class="nc">&nbsp;		int2 = normalizeUnsignedByte(int2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalIntegers(int1, int2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two floats to each other.
+&nbsp;	 *
+&nbsp;	 * @param float1
+&nbsp;	 * @param float2
+&nbsp;	 * @return A negative number if &lt;var&gt;float1&lt;/var&gt; is smaller than &lt;var&gt;float2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal,
+&nbsp;	 *         or positive (&amp;gt;0) if &lt;var&gt;float1&lt;/var&gt; is larger than &lt;var&gt;float2&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal float or if &lt;var&gt;NaN&lt;/var&gt; is
+&nbsp;	 *                                  compared to a float other than &lt;var&gt;NaN&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static int compareFloats(String float1, String float2) {
+<b class="nc">&nbsp;		float1 = normalizeFloat(float1);</b>
+<b class="nc">&nbsp;		float2 = normalizeFloat(float2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalFloats(float1, float2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two canonical floats to each other.
+&nbsp;	 *
+&nbsp;	 * @param float1
+&nbsp;	 * @param float2
+&nbsp;	 * @return A negative number if &lt;var&gt;float1&lt;/var&gt; is smaller than &lt;var&gt;float2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal,
+&nbsp;	 *         or positive (&amp;gt;0) if &lt;var&gt;float1&lt;/var&gt; is larger than &lt;var&gt;float2&lt;/var&gt;. The result is undefined when
+&nbsp;	 *         one or both of the arguments is not a canonical float.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal float or if &lt;var&gt;NaN&lt;/var&gt; is
+&nbsp;	 *                                  compared to a float other than &lt;var&gt;NaN&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static int compareCanonicalFloats(String float1, String float2) {
+<b class="nc">&nbsp;		return compareCanonicalFPNumbers(float1, float2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two doubles to each other.
+&nbsp;	 *
+&nbsp;	 * @param double1
+&nbsp;	 * @param double2
+&nbsp;	 * @return A negative number if &lt;var&gt;double1&lt;/var&gt; is smaller than &lt;var&gt;double2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are
+&nbsp;	 *         equal, or positive (&amp;gt;0) if &lt;var&gt;double1&lt;/var&gt; is larger than &lt;var&gt;double2&lt;/var&gt;.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal double or if &lt;var&gt;NaN&lt;/var&gt; is
+&nbsp;	 *                                  compared to a double other than &lt;var&gt;NaN&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static int compareDoubles(String double1, String double2) {
+<b class="nc">&nbsp;		double1 = normalizeDouble(double1);</b>
+<b class="nc">&nbsp;		double2 = normalizeDouble(double2);</b>
+&nbsp;
+<b class="nc">&nbsp;		return compareCanonicalDoubles(double1, double2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two canonical doubles to eachother.
+&nbsp;	 *
+&nbsp;	 * @param double1
+&nbsp;	 * @param double2
+&nbsp;	 * @return A negative number if &lt;var&gt;double1&lt;/var&gt; is smaller than &lt;var&gt;double2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are
+&nbsp;	 *         equal, or positive (&amp;gt;0) if &lt;var&gt;double1&lt;/var&gt; is larger than &lt;var&gt;double2&lt;/var&gt;. The result is
+&nbsp;	 *         undefined when one or both of the arguments is not a canonical double.
+&nbsp;	 * @throws IllegalArgumentException If one of the supplied strings is not a legal double or if &lt;var&gt;NaN&lt;/var&gt; is
+&nbsp;	 *                                  compared to a double other than &lt;var&gt;NaN&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static int compareCanonicalDoubles(String double1, String double2) {
+<b class="nc">&nbsp;		return compareCanonicalFPNumbers(double1, double2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two floating point numbers to eachother.
+&nbsp;	 *
+&nbsp;	 * @param fp1
+&nbsp;	 * @param fp2
+&nbsp;	 * @return A negative number if &lt;var&gt;float1&lt;/var&gt; is smaller than &lt;var&gt;float2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal,
+&nbsp;	 *         or positive (&amp;gt;0) if &lt;var&gt;float1&lt;/var&gt; is larger than &lt;var&gt;float2&lt;/var&gt;. &amp;#64;throws
+&nbsp;	 *         IllegalArgumentException If one of the supplied strings is not a legal floating point number or if
+&nbsp;	 *         &lt;var&gt;NaN&lt;/var&gt; is compared to a floating point number other than &lt;var&gt;NaN&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static int compareFPNumbers(String fp1, String fp2) {
+<b class="nc">&nbsp;		return compareCanonicalFPNumbers(normalizeFPNumber(fp1), normalizeFPNumber(fp2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two canonical floating point numbers to each other.
+&nbsp;	 *
+&nbsp;	 * @param float1
+&nbsp;	 * @param float2
+&nbsp;	 * @return A negative number if &lt;var&gt;float1&lt;/var&gt; is smaller than &lt;var&gt;float2&lt;/var&gt;, &lt;var&gt;0&lt;/var&gt; if they are equal,
+&nbsp;	 *         or positive (&amp;gt;0) if &lt;var&gt;float1&lt;/var&gt; is larger than &lt;var&gt;float2&lt;/var&gt;. The result is undefined when
+&nbsp;	 *         one or both of the arguments is not a canonical floating point number. &amp;#64;throws
+&nbsp;	 *         IllegalArgumentException If one of the supplied strings is not a legal floating point number or if
+&nbsp;	 *         &lt;var&gt;NaN&lt;/var&gt; is compared to a floating point number other than &lt;var&gt;NaN&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public static int compareCanonicalFPNumbers(String float1, String float2) {
+&nbsp;		// Handle special case NaN
+<b class="nc">&nbsp;		if (float1.equals(NaN) || float2.equals(NaN)) {</b>
+<b class="nc">&nbsp;			if (float1.equals(float2)) {</b>
+&nbsp;				// NaN is equal to itself
+<b class="nc">&nbsp;				return 0;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw NAN_COMPARE_EXCEPTION;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		// Handle special case INF
+<b class="nc">&nbsp;		if (float1.equals(POSITIVE_INFINITY)) {</b>
+<b class="nc">&nbsp;			return (float2.equals(POSITIVE_INFINITY)) ? 0 : 1;</b>
+<b class="nc">&nbsp;		} else if (float2.equals(POSITIVE_INFINITY)) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Handle special case -INF
+<b class="nc">&nbsp;		if (float1.equals(NEGATIVE_INFINITY)) {</b>
+<b class="nc">&nbsp;			return (float2.equals(NEGATIVE_INFINITY)) ? 0 : -1;</b>
+<b class="nc">&nbsp;		} else if (float2.equals(NEGATIVE_INFINITY)) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Check signs
+<b class="nc">&nbsp;		if (float1.charAt(0) == &#39;-&#39; &amp;&amp; float2.charAt(0) != &#39;-&#39;) {</b>
+&nbsp;			// float1 is negative, float2 is not
+<b class="nc">&nbsp;			return -1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (float2.charAt(0) == &#39;-&#39; &amp;&amp; float1.charAt(0) != &#39;-&#39;) {</b>
+&nbsp;			// float2 is negative, float1 is not
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int eIdx1 = float1.indexOf(&#39;E&#39;);</b>
+<b class="nc">&nbsp;		String mantissa1 = float1.substring(0, eIdx1);</b>
+<b class="nc">&nbsp;		String exponent1 = float1.substring(eIdx1 + 1);</b>
+&nbsp;
+<b class="nc">&nbsp;		int eIdx2 = float2.indexOf(&#39;E&#39;);</b>
+<b class="nc">&nbsp;		String mantissa2 = float2.substring(0, eIdx2);</b>
+<b class="nc">&nbsp;		String exponent2 = float2.substring(eIdx2 + 1);</b>
+&nbsp;
+&nbsp;		// Compare exponents
+<b class="nc">&nbsp;		int result = compareCanonicalIntegers(exponent1, exponent2);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (result != 0 &amp;&amp; float1.charAt(0) == &#39;-&#39;) {</b>
+&nbsp;			// reverse result for negative values
+<b class="nc">&nbsp;			result = -result;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (result == 0) {</b>
+&nbsp;			// Equal exponents, compare mantissas
+<b class="nc">&nbsp;			result = compareCanonicalDecimals(mantissa1, mantissa2);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two dateTime objects. &lt;b&gt;Important:&lt;/b&gt; The comparison only works if both values have, or both values
+&nbsp;	 * don&#39;t have specified a valid value for the timezone.
+&nbsp;	 *
+&nbsp;	 * @param value1 An xsd:dateTime value.
+&nbsp;	 * @param value2 An xsd:dateTime value.
+&nbsp;	 * @return &lt;var&gt;-1&lt;/var&gt; if &lt;var&gt;value1&lt;/var&gt; is before &lt;var&gt;value2&lt;/var&gt; (i.e. if the dateTime object represented
+&nbsp;	 *         by value1 is before the dateTime object represented by value2), &lt;var&gt;0&lt;/var&gt; if both are equal and
+&nbsp;	 *         &lt;var&gt;1&lt;/var&gt; if &lt;var&gt;value2&lt;/var&gt; is before &lt;var&gt;value1&lt;/var&gt;&lt;br&gt;
+&nbsp;	 *         .
+&nbsp;	 */
+&nbsp;	public static int compareDateTime(String value1, String value2) {
+<b class="nc">&nbsp;		XMLDateTime dateTime1 = new XMLDateTime(value1);</b>
+<b class="nc">&nbsp;		XMLDateTime dateTime2 = new XMLDateTime(value2);</b>
+&nbsp;
+<b class="nc">&nbsp;		dateTime1.normalize();</b>
+<b class="nc">&nbsp;		dateTime2.normalize();</b>
+&nbsp;
+<b class="nc">&nbsp;		return dateTime1.compareTo(dateTime2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------------*
+&nbsp;	 * Value parsing *
+&nbsp;	 *---------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:boolean string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:boolean value.
+&nbsp;	 * @return The &lt;var&gt;boolean&lt;/var&gt; value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:boolean value.
+&nbsp;	 */
+&nbsp;	public static boolean parseBoolean(String s) {
+<b class="fc">&nbsp;		return normalizeBoolean(s).equals(&quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:byte string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:byte value.
+&nbsp;	 * @return The &lt;var&gt;byte&lt;/var&gt; value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:byte value.
+&nbsp;	 */
+&nbsp;	public static byte parseByte(String s) {
+<b class="nc">&nbsp;		s = trimPlusSign(s);</b>
+<b class="nc">&nbsp;		return Byte.parseByte(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:short string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:short value.
+&nbsp;	 * @return The &lt;var&gt;short&lt;/var&gt; value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:short value.
+&nbsp;	 */
+&nbsp;	public static short parseShort(String s) {
+<b class="nc">&nbsp;		s = trimPlusSign(s);</b>
+<b class="nc">&nbsp;		return Short.parseShort(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:int strings and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:int value.
+&nbsp;	 * @return The &lt;var&gt;int&lt;/var&gt; value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:int value.
+&nbsp;	 */
+&nbsp;	public static int parseInt(String s) {
+<b class="fc">&nbsp;		s = trimPlusSign(s);</b>
+<b class="fc">&nbsp;		return Integer.parseInt(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:long string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:long value.
+&nbsp;	 * @return The &lt;var&gt;long&lt;/var&gt; value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:long value.
+&nbsp;	 */
+&nbsp;	public static long parseLong(String s) {
+<b class="nc">&nbsp;		s = trimPlusSign(s);</b>
+<b class="nc">&nbsp;		return Long.parseLong(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:float string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:float value.
+&nbsp;	 * @return The &lt;var&gt;float&lt;/var&gt; value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:float value.
+&nbsp;	 */
+&nbsp;	public static float parseFloat(String s) {
+<b class="nc">&nbsp;		if (POSITIVE_INFINITY.equals(s)) {</b>
+<b class="nc">&nbsp;			return Float.POSITIVE_INFINITY;</b>
+<b class="nc">&nbsp;		} else if (NEGATIVE_INFINITY.equals(s)) {</b>
+<b class="nc">&nbsp;			return Float.NEGATIVE_INFINITY;</b>
+<b class="nc">&nbsp;		} else if (NaN.equals(s)) {</b>
+<b class="nc">&nbsp;			return Float.NaN;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			s = trimPlusSign(s);</b>
+<b class="nc">&nbsp;			return Float.parseFloat(s);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:double string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:double value.
+&nbsp;	 * @return The &lt;var&gt;double&lt;/var&gt; value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:double value.
+&nbsp;	 */
+&nbsp;	public static double parseDouble(String s) {
+<b class="pc">&nbsp;		if (POSITIVE_INFINITY.equals(s)) {</b>
+<b class="nc">&nbsp;			return Double.POSITIVE_INFINITY;</b>
+<b class="pc">&nbsp;		} else if (NEGATIVE_INFINITY.equals(s)) {</b>
+<b class="nc">&nbsp;			return Double.NEGATIVE_INFINITY;</b>
+<b class="pc">&nbsp;		} else if (NaN.equals(s)) {</b>
+<b class="nc">&nbsp;			return Double.NaN;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			s = trimPlusSign(s);</b>
+<b class="fc">&nbsp;			return Double.parseDouble(s);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:integer string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:integer value.
+&nbsp;	 * @return The integer value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:integer value.
+&nbsp;	 */
+&nbsp;	public static BigInteger parseInteger(String s) {
+<b class="fc">&nbsp;		s = trimPlusSign(s);</b>
+<b class="fc">&nbsp;		return new BigInteger(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied decimal/floating point string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:decimal or xsd:double value.
+&nbsp;	 * @return The decimal/floating point value represented by the supplied string argument.
+&nbsp;	 * @throws NumberFormatException If the supplied string is not a valid xsd:decimal or xsd:double value.
+&nbsp;	 */
+&nbsp;	public static BigDecimal parseDecimal(String s) {
+&nbsp;		// Note: BigDecimal can handle leading plus signs itself
+<b class="fc">&nbsp;		return new BigDecimal(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied calendar value string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:dateTime, xsd:time, xsd:date, xsd:gYearMonth, xsd:gMonthDay,
+&nbsp;	 *          xsd:gYear, xsd:gMonth or xsd:gDay value.
+&nbsp;	 * @return The calendar value represented by the supplied string argument.
+&nbsp;	 * @throws IllegalArgumentException If the supplied string is not a valid calendar value.
+&nbsp;	 */
+&nbsp;	public static XMLGregorianCalendar parseCalendar(String s) {
+<b class="fc">&nbsp;		return dtFactory.newXMLGregorianCalendar(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied xsd:duration value string and returns its value.
+&nbsp;	 *
+&nbsp;	 * @param s A string representation of an xsd:duration value.
+&nbsp;	 * @return The {@link Duration} value represented by the supplied string argument.
+&nbsp;	 * @throws IllegalArgumentException      If the supplied string is not a valid xsd:duration value.
+&nbsp;	 * @throws UnsupportedOperationException If implementation cannot support requested values. The XML Schema
+&nbsp;	 *                                       specification states that values can be of an arbitrary size.
+&nbsp;	 *                                       Implementations may chose not to or be incapable of supporting arbitrarily
+&nbsp;	 *                                       large and/or small values. An UnsupportedOperationException will be thrown
+&nbsp;	 *                                       with a message indicating implementation limits if implementation
+&nbsp;	 *                                       capacities are exceeded.
+&nbsp;	 */
+&nbsp;	public static Duration parseDuration(String s) {
+<b class="nc">&nbsp;		return dtFactory.newDuration(s);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes the first character from the supplied string if this is a plus sign (&#39;+&#39;). Number strings with leading
+&nbsp;	 * plus signs cannot be parsed by methods such as {@link Integer#parseInt(String)}.
+&nbsp;	 */
+&nbsp;	private static String trimPlusSign(String s) {
+<b class="pc">&nbsp;		if (s.length() &gt; 0 &amp;&amp; s.charAt(0) == &#39;+&#39;) {</b>
+<b class="fc">&nbsp;			return s.substring(1);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return s;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Maps a datatype QName from the javax.xml.namespace package to an XML Schema 1.0 URI for the corresponding
+&nbsp;	 * datatype. This method recognizes the XML Schema qname mentioned in {@link DatatypeConstants}.
+&nbsp;	 *
+&nbsp;	 * Note that Java 8 / 11 do not have constants for XML Schema 1.1 datatypes like xsd:dateTimeStamp.
+&nbsp;	 *
+&nbsp;	 * @param qname One of the XML Schema qnames from {@link DatatypeConstants}.
+&nbsp;	 * @return A URI for the specified datatype.
+&nbsp;	 * @throws IllegalArgumentException If the supplied qname was not recognized by this method.
+&nbsp;	 * @see DatatypeConstants
+&nbsp;	 */
+&nbsp;	public static IRI qnameToURI(QName qname) {
+<b class="nc">&nbsp;		if (DatatypeConstants.DATETIME == qname) {</b>
+<b class="nc">&nbsp;			return XSD.DATETIME;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DATE == qname) {</b>
+<b class="nc">&nbsp;			return XSD.DATE;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.TIME == qname) {</b>
+<b class="nc">&nbsp;			return XSD.TIME;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GYEARMONTH == qname) {</b>
+<b class="nc">&nbsp;			return XSD.GYEARMONTH;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GMONTHDAY == qname) {</b>
+<b class="nc">&nbsp;			return XSD.GMONTHDAY;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GYEAR == qname) {</b>
+<b class="nc">&nbsp;			return XSD.GYEAR;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GMONTH == qname) {</b>
+<b class="nc">&nbsp;			return XSD.GMONTH;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GDAY == qname) {</b>
+<b class="nc">&nbsp;			return XSD.GDAY;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DURATION == qname) {</b>
+<b class="nc">&nbsp;			return XSD.DURATION;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DURATION_DAYTIME == qname) {</b>
+<b class="nc">&nbsp;			return XSD.DAYTIMEDURATION;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DURATION_YEARMONTH == qname) {</b>
+<b class="nc">&nbsp;			return XSD.YEARMONTHDURATION;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;QName cannot be mapped to an XML Schema IRI: &quot; + qname.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static CoreDatatype.XSD qnameToCoreDatatype(QName qname) {
+<b class="pc">&nbsp;		if (DatatypeConstants.DATETIME == qname) {</b>
+<b class="fc">&nbsp;			return CoreDatatype.XSD.DATETIME;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DATE == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.DATE;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.TIME == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.TIME;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GYEARMONTH == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.GYEARMONTH;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GMONTHDAY == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.GMONTHDAY;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GYEAR == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.GYEAR;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GMONTH == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.GMONTH;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.GDAY == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.GDAY;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DURATION == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.DURATION;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DURATION_DAYTIME == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.DAYTIMEDURATION;</b>
+<b class="nc">&nbsp;		} else if (DatatypeConstants.DURATION_YEARMONTH == qname) {</b>
+<b class="nc">&nbsp;			return CoreDatatype.XSD.YEARMONTHDURATION;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;QName cannot be mapped to an XML Schema IRI: &quot; + qname.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String toString(Number value) {
+<b class="fc">&nbsp;		double d = value.doubleValue();</b>
+<b class="pc">&nbsp;		if (Double.POSITIVE_INFINITY == d) {</b>
+<b class="nc">&nbsp;			return XMLDatatypeUtil.POSITIVE_INFINITY;</b>
+<b class="pc">&nbsp;		} else if (Double.NEGATIVE_INFINITY == d) {</b>
+<b class="nc">&nbsp;			return XMLDatatypeUtil.NEGATIVE_INFINITY;</b>
+<b class="pc">&nbsp;		} else if (Double.isNaN(d)) {</b>
+<b class="nc">&nbsp;			return XMLDatatypeUtil.NaN;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return value.toString();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------------*
+&nbsp;	 * Utility methods *
+&nbsp;	 *-----------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is a digit.
+&nbsp;	 */
+&nbsp;	private static boolean isNotDigit(char c) {
+<b class="fc">&nbsp;		return c &lt; &#39;0&#39; || c &gt; &#39;9&#39;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class IllegalArgumentExceptionWithoutStackTrace extends IllegalArgumentException {
+&nbsp;		public IllegalArgumentExceptionWithoutStackTrace(String msg) {
+<b class="fc">&nbsp;			super(msg);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized Throwable fillInStackTrace() {
+&nbsp;			// no-op because we don&#39;t need to have the entire stacktrace when we are just using these exceptions for
+&nbsp;			// control flow
+<b class="fc">&nbsp;			return this;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

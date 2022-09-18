@@ -1,0 +1,178 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryConnectionInterceptor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.event</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryConnectionInterceptor (org.eclipse.rdf4j.repository.event)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">RepositoryConnectionInterceptor</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.event;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interceptor interface for connection modification.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public interface RepositoryConnectionInterceptor {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#close()} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the close operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean close(RepositoryConnection conn);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#begin()} or
+&nbsp;	 *             {@link RepositoryConnection#begin(org.eclipse.rdf4j.IsolationLevel)} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the begin operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean begin(RepositoryConnection conn);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
+&nbsp;	 * @param conn       the RepositoryConnection to perform the
+&nbsp;	 *                   {@link RepositoryConnectionInterceptor#setAutoCommit(RepositoryConnection, boolean) }operation
+&nbsp;	 *                   on.
+&nbsp;	 * @param autoCommit
+&nbsp;	 * @return true if the interceptor has been denied access to the setAutoCommit operation, false otherwise.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	boolean setAutoCommit(RepositoryConnection conn, boolean autoCommit);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#commit()} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the commit operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean commit(RepositoryConnection conn);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#rollback()} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the rollback operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean rollback(RepositoryConnection conn);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the
+&nbsp;	 *             {@link RepositoryConnection#add(Resource, IRI, Value, Resource...)} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the add operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean add(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
+&nbsp;			Resource... contexts);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the
+&nbsp;	 *             {@link RepositoryConnection#remove(Resource, IRI, Value, Resource...)} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the remove operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean remove(RepositoryConnection conn, Resource subject, IRI predicate, Value object,
+&nbsp;			Resource... contexts);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#clear(Resource...)} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the clear operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean clear(RepositoryConnection conn, Resource... contexts);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#setNamespace(String, String)}
+&nbsp;	 *             operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the setNamespace operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean setNamespace(RepositoryConnection conn, String prefix, String name);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#removeNamespace(String)}
+&nbsp;	 *             operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the removeNamespace operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean removeNamespace(RepositoryConnection conn, String prefix);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the {@link RepositoryConnection#clearNamespaces()} operation on.
+&nbsp;	 * @return true if the interceptor has been denied access to the clearNamespaces operation, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean clearNamespaces(RepositoryConnection conn);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param conn the RepositoryConnection to perform the query execution operations on.
+&nbsp;	 * @return true if the interceptor has been denied access to the query execution operations, false otherwise.
+&nbsp;	 */
+&nbsp;	boolean execute(RepositoryConnection conn, QueryLanguage ql, String update, String baseURI,
+&nbsp;			Update operation);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,352 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ElasticsearchDocument</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.elasticsearch</a>
+</div>
+
+<h1>Coverage Summary for Class: ElasticsearchDocument (org.eclipse.rdf4j.sail.elasticsearch)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ElasticsearchDocument</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/82)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.elasticsearch;
+&nbsp;
+&nbsp;import java.text.ParseException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchDocument;
+&nbsp;import org.eclipse.rdf4j.sail.lucene.SearchFields;
+&nbsp;import org.elasticsearch.common.geo.GeoPoint;
+&nbsp;import org.elasticsearch.common.lucene.uid.Versions;
+&nbsp;import org.elasticsearch.index.seqno.SequenceNumbers;
+&nbsp;import org.elasticsearch.search.SearchHit;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContext;
+&nbsp;import org.locationtech.spatial4j.shape.Point;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;
+&nbsp;import com.google.common.base.Function;
+&nbsp;
+&nbsp;public class ElasticsearchDocument implements SearchDocument {
+&nbsp;
+&nbsp;	private final String id;
+&nbsp;
+&nbsp;	private final String type;
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	private long version;
+&nbsp;
+&nbsp;	private final long seqNo;
+&nbsp;	private final long primaryTerm;
+&nbsp;
+&nbsp;	private final String index;
+&nbsp;
+&nbsp;	private final Map&lt;String, Object&gt; fields;
+&nbsp;
+&nbsp;	private final Function&lt;? super String, ? extends SpatialContext&gt; geoContextMapper;
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	public ElasticsearchDocument(SearchHit hit) {
+<b class="nc">&nbsp;		this(hit, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ElasticsearchDocument(SearchHit hit, Function&lt;? super String, ? extends SpatialContext&gt; geoContextMapper) {
+<b class="nc">&nbsp;		this(hit.getId(), hit.getType(), hit.getIndex(), hit.getSeqNo(), hit.getPrimaryTerm(),</b>
+<b class="nc">&nbsp;				hit.getSourceAsMap(), geoContextMapper);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ElasticsearchDocument(String id, String type, String index, String resourceId, String context,
+&nbsp;			Function&lt;? super String, ? extends SpatialContext&gt; geoContextMapper) {
+<b class="nc">&nbsp;		this(id, type, index, SequenceNumbers.UNASSIGNED_SEQ_NO, SequenceNumbers.UNASSIGNED_PRIMARY_TERM,</b>
+&nbsp;				new HashMap&lt;&gt;(), geoContextMapper);
+<b class="nc">&nbsp;		fields.put(SearchFields.URI_FIELD_NAME, resourceId);</b>
+<b class="nc">&nbsp;		if (context != null) {</b>
+<b class="nc">&nbsp;			fields.put(SearchFields.CONTEXT_FIELD_NAME, context);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	public ElasticsearchDocument(String id, String type, String index, long version, Map&lt;String, Object&gt; fields,
+&nbsp;			Function&lt;? super String, ? extends SpatialContext&gt; geoContextMapper) {
+<b class="nc">&nbsp;		this(id, type, index, SequenceNumbers.UNASSIGNED_SEQ_NO, SequenceNumbers.UNASSIGNED_PRIMARY_TERM,</b>
+&nbsp;				new HashMap&lt;&gt;(), geoContextMapper);
+<b class="nc">&nbsp;		this.version = version;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ElasticsearchDocument(String id, String type, String index, long seqNo, long primaryTerm,
+<b class="nc">&nbsp;			Map&lt;String, Object&gt; fields, Function&lt;? super String, ? extends SpatialContext&gt; geoContextMapper) {</b>
+<b class="nc">&nbsp;		this.id = id;</b>
+<b class="nc">&nbsp;		this.type = type;</b>
+<b class="nc">&nbsp;		this.version = Versions.MATCH_ANY;</b>
+<b class="nc">&nbsp;		this.seqNo = seqNo;</b>
+<b class="nc">&nbsp;		this.primaryTerm = primaryTerm;</b>
+<b class="nc">&nbsp;		this.index = index;</b>
+<b class="nc">&nbsp;		this.fields = fields;</b>
+<b class="nc">&nbsp;		this.geoContextMapper = geoContextMapper;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getId() {
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getType() {
+<b class="nc">&nbsp;		return type;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	public long getVersion() {
+<b class="nc">&nbsp;		return version;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getSeqNo() {
+<b class="nc">&nbsp;		return seqNo;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getPrimaryTerm() {
+<b class="nc">&nbsp;		return primaryTerm;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getIndex() {
+<b class="nc">&nbsp;		return index;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Map&lt;String, Object&gt; getSource() {
+<b class="nc">&nbsp;		return fields;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getResource() {
+<b class="nc">&nbsp;		return (String) fields.get(SearchFields.URI_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getContext() {
+<b class="nc">&nbsp;		return (String) fields.get(SearchFields.CONTEXT_FIELD_NAME);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getPropertyNames() {
+<b class="nc">&nbsp;		Set&lt;String&gt; propertyFields = ElasticsearchIndex.getPropertyFields(fields.keySet());</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; propertyNames = new HashSet&lt;&gt;(propertyFields.size() + 1);</b>
+<b class="nc">&nbsp;		for (String f : propertyFields) {</b>
+<b class="nc">&nbsp;			propertyNames.add(ElasticsearchIndex.toPropertyName(f));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return propertyNames;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addProperty(String name) {
+<b class="nc">&nbsp;		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);</b>
+&nbsp;		// in elastic search, fields must have an explicit value
+<b class="nc">&nbsp;		if (fields.containsKey(fieldName)) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Property already added: &quot; + name);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		fields.put(fieldName, null);</b>
+<b class="nc">&nbsp;		if (!fields.containsKey(SearchFields.TEXT_FIELD_NAME)) {</b>
+<b class="nc">&nbsp;			fields.put(SearchFields.TEXT_FIELD_NAME, null);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addProperty(String name, String text) {
+<b class="nc">&nbsp;		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);</b>
+<b class="nc">&nbsp;		addField(fieldName, text, fields);</b>
+<b class="nc">&nbsp;		addField(SearchFields.TEXT_FIELD_NAME, text, fields);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addGeoProperty(String name, String text) {
+<b class="nc">&nbsp;		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);</b>
+<b class="nc">&nbsp;		addField(fieldName, text, fields);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			Shape shape = geoContextMapper.apply(name).readShapeFromWkt(text);</b>
+<b class="nc">&nbsp;			if (shape instanceof Point) {</b>
+<b class="nc">&nbsp;				Point p = (Point) shape;</b>
+<b class="nc">&nbsp;				fields.put(ElasticsearchIndex.toGeoPointFieldName(name), new GeoPoint(p.getY(), p.getX()).getGeohash());</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				fields.put(ElasticsearchIndex.toGeoShapeFieldName(name),</b>
+<b class="nc">&nbsp;						ElasticsearchSpatialSupport.getSpatialSupport().toGeoJSON(shape));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (ParseException e) {</b>
+&nbsp;			// ignore
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasProperty(String name, String value) {
+<b class="nc">&nbsp;		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);</b>
+<b class="nc">&nbsp;		List&lt;String&gt; fieldValues = asStringList(fields.get(fieldName));</b>
+<b class="nc">&nbsp;		if (fieldValues != null) {</b>
+<b class="nc">&nbsp;			for (String fieldValue : fieldValues) {</b>
+<b class="nc">&nbsp;				if (value.equals(fieldValue)) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public List&lt;String&gt; getProperty(String name) {
+<b class="nc">&nbsp;		String fieldName = ElasticsearchIndex.toPropertyFieldName(name);</b>
+<b class="nc">&nbsp;		return asStringList(fields.get(fieldName));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static void addField(String name, String value, Map&lt;String, Object&gt; document) {
+<b class="nc">&nbsp;		Object oldValue = document.get(name);</b>
+&nbsp;		Object newValue;
+<b class="nc">&nbsp;		if (oldValue != null) {</b>
+<b class="nc">&nbsp;			List&lt;String&gt; newList = makeModifiable(asStringList(oldValue));</b>
+<b class="nc">&nbsp;			newList.add(value);</b>
+<b class="nc">&nbsp;			newValue = newList;</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			newValue = value;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		document.put(name, newValue);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static List&lt;String&gt; makeModifiable(List&lt;String&gt; l) {
+&nbsp;		List&lt;String&gt; modList;
+<b class="nc">&nbsp;		if (!(l instanceof ArrayList&lt;?&gt;)) {</b>
+<b class="nc">&nbsp;			modList = new ArrayList&lt;&gt;(l.size() + 1);</b>
+<b class="nc">&nbsp;			modList.addAll(l);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			modList = l;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return modList;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	private static List&lt;String&gt; asStringList(Object value) {
+&nbsp;		List&lt;String&gt; l;
+<b class="nc">&nbsp;		if (value == null) {</b>
+<b class="nc">&nbsp;			l = null;</b>
+<b class="nc">&nbsp;		} else if (value instanceof List&lt;?&gt;) {</b>
+<b class="nc">&nbsp;			l = (List&lt;String&gt;) value;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			l = Collections.singletonList((String) value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return l;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,185 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RemoteRepositoryRepositoryInformation</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.endpoint.provider</a>
+</div>
+
+<h1>Coverage Summary for Class: RemoteRepositoryRepositoryInformation (org.eclipse.rdf4j.federated.endpoint.provider)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RemoteRepositoryRepositoryInformation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.endpoint.provider;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.EndpointType;
+&nbsp;import org.eclipse.rdf4j.federated.util.Vocabulary;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.repository.http.HTTPRepository;
+&nbsp;
+&nbsp;/**
+&nbsp; * Class holding information for RDF4J {@link HTTPRepository} initialization.
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * Format:
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * &lt;%name%&gt; a sd:Service ;
+&nbsp; *  	fedx:store &quot;RemoteRepository&quot; ;
+&nbsp; *  	fedx:repositoryServer &quot;%location%&quot; ;
+&nbsp; *  	fedx:repositoryName &quot;%name%&quot; .
+&nbsp; *
+&nbsp; * &lt;http://dbpedia&gt; a sd:Service ;
+&nbsp; *  	fedx:store &quot;RemoteRepository&quot;;
+&nbsp; *  	fedx:repositoryServer &quot;http://&lt;host&gt;/openrdf-sesame&quot; ;
+&nbsp; *  	fedx:repositoryName &quot;dbpedia&quot; .
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * Note: the id is constructed from the name: http://dbpedia.org/ =&gt; remote_dbpedia.org
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class RemoteRepositoryRepositoryInformation extends RepositoryInformation {
+&nbsp;
+&nbsp;	public RemoteRepositoryRepositoryInformation(Model graph, Resource repNode) {
+<b class="nc">&nbsp;		super(EndpointType.RemoteRepository);</b>
+<b class="nc">&nbsp;		initialize(graph, repNode);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RemoteRepositoryRepositoryInformation(String repositoryServer, String repositoryName) {
+<b class="nc">&nbsp;		super(&quot;remote_&quot; + repositoryName, &quot;http://&quot; + repositoryName, repositoryServer + &quot;/&quot; + repositoryName,</b>
+&nbsp;				EndpointType.RemoteRepository);
+<b class="nc">&nbsp;		setProperty(&quot;repositoryServer&quot;, repositoryServer);</b>
+<b class="nc">&nbsp;		setProperty(&quot;repositoryName&quot;, repositoryName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void initialize(Model graph, Resource repNode) {
+&nbsp;
+&nbsp;		// name: the node&#39;s value
+<b class="nc">&nbsp;		setProperty(&quot;name&quot;, repNode.stringValue());</b>
+&nbsp;
+&nbsp;		// repositoryServer / location
+<b class="nc">&nbsp;		Model repositoryServer = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_SERVER,</b>
+&nbsp;				null);
+<b class="nc">&nbsp;		String repoLocation = repositoryServer.iterator().next().getObject().stringValue();</b>
+<b class="nc">&nbsp;		setProperty(&quot;location&quot;, repoLocation);</b>
+<b class="nc">&nbsp;		setProperty(&quot;repositoryServer&quot;, repoLocation);</b>
+&nbsp;
+&nbsp;		// repositoryName
+<b class="nc">&nbsp;		Model repositoryName = graph.filter(repNode, Vocabulary.FEDX.REPOSITORY_NAME, null);</b>
+<b class="nc">&nbsp;		String repoName = repositoryName.iterator().next().getObject().stringValue();</b>
+<b class="nc">&nbsp;		setProperty(&quot;repositoryName&quot;, repoName);</b>
+&nbsp;
+&nbsp;		// id: the name of the location
+<b class="nc">&nbsp;		String id = repNode.stringValue().replace(&quot;http://&quot;, &quot;&quot;);</b>
+<b class="nc">&nbsp;		id = &quot;remote_&quot; + id.replace(&quot;/&quot;, &quot;_&quot;);</b>
+<b class="nc">&nbsp;		setProperty(&quot;id&quot;, id);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

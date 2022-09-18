@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > NotifyingSailConnection</title>
+  <title>Coverage Report > SailChangedEvent</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail</a>
 </div>
 
-<h1>Coverage Summary for Class: NotifyingSailConnection (org.eclipse.rdf4j.sail)</h1>
+<h1>Coverage Summary for Class: SailChangedEvent (org.eclipse.rdf4j.sail)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">NotifyingSailConnection</td>
+  <td class="name">SailChangedEvent</td>
 </tr>
 
 </table>
@@ -51,28 +51,29 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;package org.eclipse.rdf4j.sail;
 &nbsp;
 &nbsp;/**
-&nbsp; * A connection to an RDF Sail object. A SailConnection is active from the moment it is created until it is closed. Care
-&nbsp; * should be taken to properly close SailConnections as they might block concurrent queries and/or updates on the Sail
-&nbsp; * while active, depending on the Sail-implementation that is being used.
-&nbsp; *
-&nbsp; * @author James Leigh
+&nbsp; * Event object that is send to {@link SailChangedListener}s to indicate that the contents of the Sail that sent the
+&nbsp; * event have changed.
 &nbsp; */
-&nbsp;public interface NotifyingSailConnection extends SailConnection {
+&nbsp;public interface SailChangedEvent {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Registers a SailConnection listener with this SailConnection. The listener should be notified of any statements
-&nbsp;	 * that are added or removed as part of this SailConnection.
-&nbsp;	 *
-&nbsp;	 * @param listener A SailConnectionListener.
+&nbsp;	 * The Sail object that sent this event.
 &nbsp;	 */
-&nbsp;	void addConnectionListener(SailConnectionListener listener);
+&nbsp;	Sail getSail();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Deregisters a SailConnection listener with this SailConnection.
+&nbsp;	 * Indicates if statements were added to the Sail.
 &nbsp;	 *
-&nbsp;	 * @param listener A SailConnectionListener.
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if statements were added during a transaction, &lt;var&gt;false&lt;/var&gt; otherwise.
 &nbsp;	 */
-&nbsp;	void removeConnectionListener(SailConnectionListener listener);
+&nbsp;	boolean statementsAdded();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates if statements were removed from the Sail.
+&nbsp;	 *
+&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if statements were removed during a transaction, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	boolean statementsRemoved();
 &nbsp;
 &nbsp;}
 </code>
@@ -98,7 +99,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

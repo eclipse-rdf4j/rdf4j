@@ -1,0 +1,410 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryProvider</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.manager</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryProvider (org.eclipse.rdf4j.repository.manager)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositoryProvider</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/59)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RepositoryProvider$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RepositoryProvider$SynchronizedManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/76)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.manager;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.net.URI;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A static access point to manage {@link RepositoryManager}s and {@link Repository Repositories}. RepositoryProvider
+&nbsp; * ensures that all managers and repositories obtained through it are automatically shutdown when the JVM exits.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="nc">&nbsp;public class RepositoryProvider {</b>
+&nbsp;
+&nbsp;	private static final String REPOSITORIES = &quot;repositories/&quot;;
+&nbsp;
+&nbsp;	private static class SynchronizedManager {
+&nbsp;
+&nbsp;		private final String url;
+&nbsp;
+&nbsp;		private RepositoryManager manager;
+&nbsp;
+<b class="nc">&nbsp;		public SynchronizedManager(String url) {</b>
+<b class="nc">&nbsp;			this.url = url;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public synchronized RepositoryManager get() throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;			if (manager == null || !manager.isInitialized()) {</b>
+<b class="nc">&nbsp;				shutDown();</b>
+<b class="nc">&nbsp;				RepositoryManager m = createRepositoryManager(url);</b>
+<b class="nc">&nbsp;				m.init();</b>
+<b class="nc">&nbsp;				manager = m;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return manager;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public synchronized boolean isInitialized() {
+<b class="nc">&nbsp;			return manager != null &amp;&amp; manager.isInitialized();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public synchronized void shutDown() {
+<b class="nc">&nbsp;			if (manager != null) {</b>
+<b class="nc">&nbsp;				manager.shutDown();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	static final Map&lt;String, SynchronizedManager&gt; managers = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	static {
+<b class="nc">&nbsp;		Runtime.getRuntime().addShutdownHook(new Thread(&quot;RepositoryProvider-shutdownHook&quot;) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void run() {
+<b class="nc">&nbsp;				synchronized (managers) {</b>
+<b class="nc">&nbsp;					for (SynchronizedManager manager : managers.values()) {</b>
+<b class="nc">&nbsp;						manager.shutDown();</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link RepositoryManager}, if not already created, that will be shutdown when the JVM exits cleanly.
+&nbsp;	 *
+&nbsp;	 * @param url location of the data directory for the RepositoryManager. This should be a URL of the form
+&nbsp;	 *            http://host:port/path/ (for a RemoteRepositoryManager) or file:///path/ (for a
+&nbsp;	 *            LocalRepositoryManager).
+&nbsp;	 * @return a (new or existing) {@link RepositoryManager} using the supplied url as its data dir.
+&nbsp;	 */
+&nbsp;	public static RepositoryManager getRepositoryManager(String url)
+&nbsp;			throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		String uri = normalizeDirectory(url);</b>
+&nbsp;		SynchronizedManager sync;
+<b class="nc">&nbsp;		synchronized (managers) {</b>
+<b class="nc">&nbsp;			Iterator&lt;SynchronizedManager&gt; iter = managers.values().iterator();</b>
+<b class="nc">&nbsp;			while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;				SynchronizedManager sm = iter.next();</b>
+<b class="nc">&nbsp;				if (!sm.isInitialized()) {</b>
+<b class="nc">&nbsp;					sm.shutDown();</b>
+<b class="nc">&nbsp;					iter.remove();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (managers.containsKey(uri)) {</b>
+<b class="nc">&nbsp;				sync = managers.get(uri);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				managers.put(uri, sync = new SynchronizedManager(url));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return sync.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a {@link LocalRepositoryManager}, if not already created, that will be shutdown when the JVM exits
+&nbsp;	 * cleanly.
+&nbsp;	 *
+&nbsp;	 * @param dir the data directory for the repository manager.
+&nbsp;	 * @return a (new or existing) {@link LocalRepositoryManager}.
+&nbsp;	 * @throws RepositoryConfigException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	public static LocalRepositoryManager getRepositoryManager(File dir)
+&nbsp;			throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		String url = dir.toURI().toASCIIString();</b>
+<b class="nc">&nbsp;		return (LocalRepositoryManager) getRepositoryManager(url);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the {@link RepositoryManager} that will be used for the given repository URL. Creates a
+&nbsp;	 * {@link RepositoryManager}, if not already created, that will be shutdown when the JVM exits cleanly.
+&nbsp;	 *
+&nbsp;	 * @param url the location of the repository for which to retrieve the corresponding RepositoryManager. The
+&nbsp;	 *            parameter must be a URL of the form http://host:port/path/repositories/id or
+&nbsp;	 *            file:///path/repositories/id.
+&nbsp;	 * @return the {@link RepositoryManager} that manages the repository identified by the URL.
+&nbsp;	 * @throws IllegalArgumentException  if the supplied URL is not a repository URL.
+&nbsp;	 * @throws RepositoryConfigException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	public static RepositoryManager getRepositoryManagerOfRepository(String url)
+&nbsp;			throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		if (!url.contains(REPOSITORIES)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;URL is not repository URL: &quot; + url);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		int idx = url.lastIndexOf(REPOSITORIES);</b>
+<b class="nc">&nbsp;		String server = url.substring(0, idx);</b>
+<b class="nc">&nbsp;		if (server.length() == 0) {</b>
+<b class="nc">&nbsp;			server = &quot;.&quot;;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return getRepositoryManager(server);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the Repository ID that will be passed to a RepositoryManager for the given repository URL.
+&nbsp;	 *
+&nbsp;	 * @param url the location URL for the repository. The parameter must be a URL of the form
+&nbsp;	 *            http://host:port/path/repositories/id or file:///path/repositories/id.
+&nbsp;	 * @return the repository identifier string for the given repository URL.
+&nbsp;	 * @throws IllegalArgumentException if the supplied URL is not a repository URL.
+&nbsp;	 */
+&nbsp;	public static String getRepositoryIdOfRepository(String url) {
+<b class="nc">&nbsp;		if (!url.contains(REPOSITORIES)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;URL is not repository URL: &quot; + url);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		int idx = url.lastIndexOf(REPOSITORIES);</b>
+<b class="nc">&nbsp;		String id = url.substring(idx + REPOSITORIES.length());</b>
+<b class="nc">&nbsp;		if (id.endsWith(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;			id = id.substring(0, id.length() - 1);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves a (new or existing) Repository object for the supplied repository URL. The Repository will be shutdown
+&nbsp;	 * when the JVM exits cleanly.
+&nbsp;	 *
+&nbsp;	 * @param url the repository URL. The parameter must be a URL of the form http://host:port/path/repositories/id or
+&nbsp;	 *            file:///path/repositories/id.
+&nbsp;	 * @return Repository from a RepositoryManager or null if repository is not defined
+&nbsp;	 */
+&nbsp;	public static Repository getRepository(String url) throws RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		RepositoryManager manager = getRepositoryManagerOfRepository(url);</b>
+<b class="nc">&nbsp;		String id = getRepositoryIdOfRepository(url);</b>
+<b class="nc">&nbsp;		return manager.getRepository(id);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static RepositoryManager createRepositoryManager(String url) throws RepositoryConfigException {
+<b class="nc">&nbsp;		if (url.startsWith(&quot;http&quot;)) {</b>
+<b class="nc">&nbsp;			return new RemoteRepositoryManager(url);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return new LocalRepositoryManager(asLocalFile(url));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static File asLocalFile(String url) throws RepositoryConfigException {
+<b class="nc">&nbsp;		URI uri = new File(&quot;.&quot;).toURI().resolve(url);</b>
+<b class="nc">&nbsp;		return new File(uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static String normalizeDirectory(String url) throws IllegalArgumentException {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!url.endsWith(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;				return normalizeDirectory(url + &#39;/&#39;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			URI norm = URI.create(url);</b>
+<b class="nc">&nbsp;			if (!norm.isAbsolute()) {</b>
+<b class="nc">&nbsp;				norm = new File(&quot;.&quot;).toURI().resolve(url);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			norm = norm.normalize();</b>
+<b class="nc">&nbsp;			if (norm.isOpaque()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Repository Manager URL must not be opaque: &quot; + url);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String sch = norm.getScheme();</b>
+<b class="nc">&nbsp;			String host = norm.getAuthority();</b>
+<b class="nc">&nbsp;			String path = norm.getPath();</b>
+<b class="nc">&nbsp;			if (sch != null) {</b>
+<b class="nc">&nbsp;				sch = sch.toLowerCase();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (host != null) {</b>
+<b class="nc">&nbsp;				host = host.toLowerCase();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return new URI(sch, host, path, null, null).toASCIIString();</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

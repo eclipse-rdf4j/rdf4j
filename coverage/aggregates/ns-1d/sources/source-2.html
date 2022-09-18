@@ -1,0 +1,224 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > IsolationLevels</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: IsolationLevels (org.eclipse.rdf4j.common.transaction)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">IsolationLevels</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.9%
+  </span>
+  <span class="absValue">
+    (6/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    60.9%
+  </span>
+  <span class="absValue">
+    (14/23)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.transaction;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;/**
+&nbsp; * Enumeration of Transaction {@link IsolationLevel}s supported by Sesame. Note that Sesame stores are not required to
+&nbsp; * support all levels, consult the documentatation for the specific SAIL implementation you are using to find out which
+&nbsp; * levels are supported.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="fc">&nbsp;public enum IsolationLevels implements IsolationLevel {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * None: the lowest isolation level; transactions can see their own changes, but may not be able to roll them back
+&nbsp;	 * and no support for isolation among transactions is guaranteed
+&nbsp;	 */
+<b class="fc">&nbsp;	NONE,</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read Uncommitted: transactions can be rolled back, but not necessarily isolated: concurrent transactions might
+&nbsp;	 * see each other&#39;s uncommitted data (so-called &#39;dirty reads&#39;)
+&nbsp;	 */
+<b class="fc">&nbsp;	READ_UNCOMMITTED(NONE),</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read Committed: in this isolation level only statements from other transactions that have been committed (at some
+&nbsp;	 * point) can be seen by this transaction.
+&nbsp;	 */
+<b class="fc">&nbsp;	READ_COMMITTED(READ_UNCOMMITTED, NONE),</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Snapshot Read: in addition to {@link #READ_COMMITTED}, query results in this isolation level that are observed
+&nbsp;	 * within a successful transaction will observe a consistent snapshot. Changes to the data occurring while a query
+&nbsp;	 * is evaluated will not affect that query result.
+&nbsp;	 */
+<b class="fc">&nbsp;	SNAPSHOT_READ(READ_COMMITTED, READ_UNCOMMITTED, NONE),</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Snapshot: in addition to {@link #SNAPSHOT_READ}, successful transactions in this isolation level will operate
+&nbsp;	 * against a particular dataset snapshot. Transactions in this isolation level will see either the complete effects
+&nbsp;	 * of other transactions (consistently throughout) or not at all.
+&nbsp;	 */
+<b class="fc">&nbsp;	SNAPSHOT(SNAPSHOT_READ, READ_COMMITTED, READ_UNCOMMITTED, NONE),</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Serializable: in addition to {@link #SNAPSHOT}, this isolation level requires that all other successful
+&nbsp;	 * transactions must appear to occur either completely before or completely after a successful serializable
+&nbsp;	 * transaction.
+&nbsp;	 */
+<b class="fc">&nbsp;	SERIALIZABLE(SNAPSHOT, SNAPSHOT_READ, READ_COMMITTED, READ_UNCOMMITTED, NONE);</b>
+&nbsp;
+&nbsp;	private final List&lt;? extends IsolationLevels&gt; compatibleLevels;
+&nbsp;
+<b class="fc">&nbsp;	IsolationLevels(IsolationLevels... compatibleLevels) {</b>
+<b class="fc">&nbsp;		this.compatibleLevels = Arrays.asList(compatibleLevels);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isCompatibleWith(IsolationLevel otherLevel) {
+<b class="pc">&nbsp;		return this.equals(otherLevel) || compatibleLevels.contains(otherLevel);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines the first compatible isolation level in the list of supported levels, for the given level. Returns the
+&nbsp;	 * level itself if it is in the list of supported levels. Returns null if no compatible level can be found.
+&nbsp;	 *
+&nbsp;	 * @param level           the {@link IsolationLevel} for which to determine a compatible level.
+&nbsp;	 * @param supportedLevels a list of supported isolation levels from which to select the closest compatible level.
+&nbsp;	 * @return the given level if it occurs in the list of supported levels. Otherwise, the first compatible level in
+&nbsp;	 *         the list of supported isolation levels, or &lt;code&gt;null&lt;/code&gt; if no compatible level can be found.
+&nbsp;	 * @throws IllegalArgumentException if either one of the input parameters is &lt;code&gt;null&lt;/code&gt;.
+&nbsp;	 */
+&nbsp;	public static IsolationLevel getCompatibleIsolationLevel(IsolationLevel level,
+&nbsp;			List&lt;? extends IsolationLevel&gt; supportedLevels) {
+<b class="pc">&nbsp;		if (supportedLevels == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;list of supported levels may not be null&quot;);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (level == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;level may not be null&quot;);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (!supportedLevels.contains(level)) {</b>
+<b class="nc">&nbsp;			IsolationLevel compatibleLevel = null;</b>
+&nbsp;			// see we if we can find a compatible level that is supported
+<b class="nc">&nbsp;			for (IsolationLevel supportedLevel : supportedLevels) {</b>
+<b class="nc">&nbsp;				if (supportedLevel.isCompatibleWith(level)) {</b>
+<b class="nc">&nbsp;					compatibleLevel = supportedLevel;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return compatibleLevel;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return level;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

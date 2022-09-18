@@ -1,0 +1,181 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedXRepositoryFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: FedXRepositoryFactory (org.eclipse.rdf4j.federated.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedXRepositoryFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.repository;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryFactory;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryImplConfig;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link RepositoryFactory} to use FedX in settings with a repository manager, e.g. in the RDF4J workbench.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * See {@link FedXRepositoryConfig} for the configuration.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @see FedXRepositoryConfig
+&nbsp; *
+&nbsp; */
+<b class="nc">&nbsp;public class FedXRepositoryFactory implements RepositoryFactory {</b>
+&nbsp;
+&nbsp;	public static final String REPOSITORY_TYPE = &quot;fedx:FedXRepository&quot;;
+&nbsp;
+<b class="nc">&nbsp;	protected static final Logger log = LoggerFactory.getLogger(FedXRepositoryFactory.class);</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getRepositoryType() {
+<b class="nc">&nbsp;		return REPOSITORY_TYPE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public FedXRepositoryConfig getConfig() {
+<b class="nc">&nbsp;		return new FedXRepositoryConfig();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Repository getRepository(RepositoryImplConfig config) throws RepositoryConfigException {
+&nbsp;
+<b class="nc">&nbsp;		if (!(config instanceof FedXRepositoryConfig)) {</b>
+<b class="nc">&nbsp;			throw new RepositoryConfigException(&quot;Unexpected configuration type: &quot; + config.getClass());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		FedXRepositoryConfig fedXConfig = (FedXRepositoryConfig) config;</b>
+&nbsp;
+<b class="nc">&nbsp;		log.info(&quot;Configuring FedX for the RDF4J repository manager&quot;);</b>
+&nbsp;
+&nbsp;		// wrap the FedX Repository in order to allow lazy initialization
+&nbsp;		// =&gt; RDF4J repository manager requires control over the repository instance
+&nbsp;		// Note: data dir is handled by RDF4J repository manager and used as a
+&nbsp;		// base directory.
+<b class="nc">&nbsp;		return new FedXRepositoryWrapper(fedXConfig);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

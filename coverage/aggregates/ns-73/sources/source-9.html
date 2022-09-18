@@ -1,0 +1,343 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ValueComparator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.util</a>
+</div>
+
+<h1>Coverage Summary for Class: ValueComparator (org.eclipse.rdf4j.query.algebra.evaluation.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ValueComparator</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    72.7%
+  </span>
+  <span class="absValue">
+    (8/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.6%
+  </span>
+  <span class="absValue">
+    (53/92)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67.4%
+  </span>
+  <span class="absValue">
+    (64/95)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.util;
+&nbsp;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;
+&nbsp;/**
+&nbsp; * A comparator that compares values according the SPARQL value ordering as specified in
+&nbsp; * &lt;A href=&quot;http://www.w3.org/TR/rdf-sparql-query/#modOrderBy&quot;&gt;SPARQL Query Language for RDF&lt;/a&gt;.
+&nbsp; *
+&nbsp; * @author james
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;public class ValueComparator implements Comparator&lt;Value&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;	private boolean strict = true;</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int compare(Value o1, Value o2) {
+&nbsp;		// check equality
+<b class="fc">&nbsp;		if (o1 == o2) {</b>
+<b class="fc">&nbsp;			return 0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// 1. (Lowest) no value assigned to the variable
+<b class="fc">&nbsp;		if (o1 == null) {</b>
+<b class="fc">&nbsp;			return -1;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (o2 == null) {</b>
+<b class="fc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// 2. Blank nodes
+<b class="fc">&nbsp;		boolean b1 = o1.isBNode();</b>
+<b class="fc">&nbsp;		boolean b2 = o2.isBNode();</b>
+<b class="fc">&nbsp;		if (b1 &amp;&amp; b2) {</b>
+<b class="fc">&nbsp;			return compareBNodes((BNode) o1, (BNode) o2);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (b1) {</b>
+<b class="fc">&nbsp;			return -1;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (b2) {</b>
+<b class="fc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// 3. IRIs
+<b class="fc">&nbsp;		boolean iri1 = o1.isIRI();</b>
+<b class="fc">&nbsp;		boolean iri2 = o2.isIRI();</b>
+<b class="fc">&nbsp;		if (iri1 &amp;&amp; iri2) {</b>
+<b class="fc">&nbsp;			return compareURIs((IRI) o1, (IRI) o2);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (iri1) {</b>
+<b class="fc">&nbsp;			return -1;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		if (iri2) {</b>
+<b class="fc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// 4. Literals
+<b class="fc">&nbsp;		boolean l1 = o1.isLiteral();</b>
+<b class="fc">&nbsp;		boolean l2 = o2.isLiteral();</b>
+<b class="pc">&nbsp;		if (l1 &amp;&amp; l2) {</b>
+<b class="fc">&nbsp;			return compareLiterals((Literal) o1, (Literal) o2);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (l1) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (l2) {</b>
+<b class="nc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// 5. RDF-star triples
+<b class="nc">&nbsp;		return compareTriples((Triple) o1, (Triple) o2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setStrict(boolean flag) {
+<b class="nc">&nbsp;		this.strict = flag;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isStrict() {
+<b class="nc">&nbsp;		return this.strict;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int compareBNodes(BNode leftBNode, BNode rightBNode) {
+<b class="fc">&nbsp;		return leftBNode.getID().compareTo(rightBNode.getID());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int compareURIs(IRI leftURI, IRI rightURI) {
+<b class="fc">&nbsp;		return leftURI.toString().compareTo(rightURI.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int compareLiterals(Literal leftLit, Literal rightLit) {
+&nbsp;		// Additional constraint for ORDER BY: &quot;A plain literal is lower
+&nbsp;		// than an RDF literal with type CoreDatatype.XSD:string of the same lexical
+&nbsp;		// form.&quot;
+&nbsp;
+<b class="fc">&nbsp;		if (!(QueryEvaluationUtility.isPlainLiteral(leftLit) || QueryEvaluationUtility.isPlainLiteral(rightLit))) {</b>
+<b class="fc">&nbsp;			QueryEvaluationUtility.Order order = compareNonPlainLiterals(leftLit, rightLit);</b>
+<b class="fc">&nbsp;			if (order.isValid()) {</b>
+<b class="fc">&nbsp;				return order.asInt();</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (order == QueryEvaluationUtility.Order.illegalArgument) {</b>
+<b class="nc">&nbsp;				throw new IllegalStateException();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return comparePlainLiterals(leftLit, rightLit);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private QueryEvaluationUtility.Order compareNonPlainLiterals(Literal leftLit, Literal rightLit) {
+&nbsp;
+<b class="fc">&nbsp;		QueryEvaluationUtility.Order order = QueryEvaluationUtility.compareLiterals(leftLit, rightLit, strict);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (order == QueryEvaluationUtility.Order.notEqual) {</b>
+<b class="nc">&nbsp;			return QueryEvaluationUtility.Order.smaller;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return order;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int comparePlainLiterals(Literal leftLit, Literal rightLit) {
+&nbsp;		int result;
+&nbsp;
+&nbsp;		// FIXME: Confirm these rules work with RDF-1.1
+&nbsp;		// Sort by datatype first, plain literals come before datatyped literals
+<b class="fc">&nbsp;		IRI leftDatatype = leftLit.getDatatype();</b>
+<b class="fc">&nbsp;		IRI rightDatatype = rightLit.getDatatype();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (leftDatatype != null) {</b>
+<b class="pc">&nbsp;			if (rightDatatype != null) {</b>
+&nbsp;				// Both literals have datatypes
+<b class="fc">&nbsp;				CoreDatatype.XSD leftXmlDatatype = leftLit.getCoreDatatype().asXSDDatatype().orElse(null);</b>
+<b class="fc">&nbsp;				CoreDatatype.XSD rightXmlDatatype = rightLit.getCoreDatatype().asXSDDatatype().orElse(null);</b>
+&nbsp;
+<b class="fc">&nbsp;				result = compareDatatypes(leftXmlDatatype, rightXmlDatatype, leftDatatype, rightDatatype);</b>
+<b class="fc">&nbsp;				if (result != 0) {</b>
+<b class="fc">&nbsp;					return result;</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				return 1;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (rightDatatype != null) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// datatypes are equal or both literals are untyped; sort by language
+&nbsp;		// tags, simple literals come before literals with language tags
+<b class="fc">&nbsp;		Optional&lt;String&gt; leftLanguage = leftLit.getLanguage();</b>
+<b class="fc">&nbsp;		Optional&lt;String&gt; rightLanguage = rightLit.getLanguage();</b>
+&nbsp;
+<b class="pc">&nbsp;		if (leftLanguage.isPresent()) {</b>
+<b class="nc">&nbsp;			if (rightLanguage.isPresent()) {</b>
+<b class="nc">&nbsp;				result = leftLanguage.get().compareTo(rightLanguage.get());</b>
+<b class="nc">&nbsp;				if (result != 0) {</b>
+<b class="nc">&nbsp;					return result;</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				return 1;</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (rightLanguage.isPresent()) {</b>
+<b class="nc">&nbsp;			return -1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Literals are equal as fas as their datatypes and language tags are
+&nbsp;		// concerned, compare their labels
+<b class="fc">&nbsp;		return leftLit.getLabel().compareTo(rightLit.getLabel());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private int compareDatatypes(CoreDatatype.XSD leftDatatype, CoreDatatype.XSD rightDatatype, IRI leftDatatypeIRI,
+&nbsp;			IRI rightDatatypeIRI) {
+<b class="pc">&nbsp;		if (leftDatatype != null &amp;&amp; leftDatatype == rightDatatype) {</b>
+<b class="fc">&nbsp;			return 0;</b>
+<b class="pc">&nbsp;		} else if (leftDatatype != null &amp;&amp; leftDatatype.isNumericDatatype()) {</b>
+<b class="pc">&nbsp;			if (rightDatatype != null &amp;&amp; rightDatatype.isNumericDatatype()) {</b>
+&nbsp;				// both are numeric datatypes
+<b class="nc">&nbsp;				return leftDatatype.compareTo(rightDatatype);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				return -1;</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (rightDatatype != null &amp;&amp; rightDatatype.isNumericDatatype()) {</b>
+<b class="fc">&nbsp;			return 1;</b>
+<b class="pc">&nbsp;		} else if (leftDatatype != null &amp;&amp; leftDatatype.isCalendarDatatype()) {</b>
+<b class="nc">&nbsp;			if (rightDatatype != null &amp;&amp; rightDatatype.isCalendarDatatype()) {</b>
+<b class="nc">&nbsp;				return leftDatatype.compareTo(rightDatatype);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return -1;</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (rightDatatype != null &amp;&amp; rightDatatype.isCalendarDatatype()) {</b>
+<b class="fc">&nbsp;			return 1;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (leftDatatype != null &amp;&amp; rightDatatype != null) {</b>
+<b class="nc">&nbsp;			return leftDatatype.compareTo(rightDatatype);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// incompatible or unordered datatype
+<b class="nc">&nbsp;		return compareURIs(leftDatatypeIRI, rightDatatypeIRI);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private int compareTriples(Triple leftTriple, Triple rightTriple) {
+<b class="nc">&nbsp;		int c = compare(leftTriple.getSubject(), rightTriple.getSubject());</b>
+<b class="nc">&nbsp;		if (c == 0) {</b>
+<b class="nc">&nbsp;			c = compare(leftTriple.getPredicate(), rightTriple.getPredicate());</b>
+<b class="nc">&nbsp;			if (c == 0) {</b>
+<b class="nc">&nbsp;				c = compare(leftTriple.getObject(), rightTriple.getObject());</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return c;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

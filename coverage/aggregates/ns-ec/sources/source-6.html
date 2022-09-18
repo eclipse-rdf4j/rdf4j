@@ -1,0 +1,167 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DeleteDataQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.core.query</a>
+</div>
+
+<h1>Coverage Summary for Class: DeleteDataQuery (org.eclipse.rdf4j.sparqlbuilder.core.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DeleteDataQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.core.query;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.TriplesTemplate;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphName;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
+&nbsp;
+&nbsp;/**
+&nbsp; * The SPARQL Delete Data Query
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/#deleteData&quot;&gt; SPARQL DELETE DATA Query&lt;/a&gt;
+&nbsp; *
+&nbsp; */
+<b class="nc">&nbsp;public class DeleteDataQuery extends UpdateDataQuery&lt;DeleteDataQuery&gt; {</b>
+&nbsp;	private static final String DELETE_DATA = &quot;DELETE DATA&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add triples to be deleted
+&nbsp;	 *
+&nbsp;	 * @param triples the triples to add to this delete data query
+&nbsp;	 *
+&nbsp;	 * @return this Delete Data query instance
+&nbsp;	 */
+&nbsp;	public DeleteDataQuery deleteData(TriplePattern... triples) {
+<b class="nc">&nbsp;		return addTriples(triples);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set this query&#39;s triples template
+&nbsp;	 *
+&nbsp;	 * @param triplesTemplate the {@link TriplesTemplate} instance to set
+&nbsp;	 *
+&nbsp;	 * @return this instance
+&nbsp;	 */
+&nbsp;	public DeleteDataQuery deleteData(TriplesTemplate triplesTemplate) {
+<b class="nc">&nbsp;		return setTriplesTemplate(triplesTemplate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Specify a graph to delete the data from
+&nbsp;	 *
+&nbsp;	 * @param graph the identifier of the graph
+&nbsp;	 *
+&nbsp;	 * @return this Delete Data query instance
+&nbsp;	 */
+&nbsp;	public DeleteDataQuery from(GraphName graph) {
+<b class="nc">&nbsp;		return graph(graph);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected String getPrefix() {
+<b class="nc">&nbsp;		return DELETE_DATA;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

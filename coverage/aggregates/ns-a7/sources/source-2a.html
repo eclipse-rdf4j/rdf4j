@@ -1,0 +1,146 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TurtleWriterSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: TurtleWriterSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TurtleWriterSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * A class encapsulating writer settings that Turtle writers may support.
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public class TurtleWriterSettings {
+&nbsp;	/**
+&nbsp;	 * Boolean setting for Turtle/TriG Writer to determine if the abbreviated syntax for numeric datatypes is to be used
+&nbsp;	 * when {@link org.eclipse.rdf4j.rio.helpers.BasicWriterSettings.html#PRETTY_PRINT} is &lt;code&gt;true&lt;/code&gt;.
+&nbsp;	 *
+&nbsp;	 * This setting has no effect when pretty print is false.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.turtle.abbreviate_numbers}
+&nbsp;	 *
+&nbsp;	 * @since 3.7.0
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/turtle/#abbrev&quot;&gt;https://www.w3.org/TR/turtle/#abbrev&lt;/a&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; ABBREVIATE_NUMBERS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.turtle.abbreviate_numbers&quot;, &quot;Abbreviate numbers&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private default constructor.
+&nbsp;	 */
+&nbsp;	private TurtleWriterSettings() {
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

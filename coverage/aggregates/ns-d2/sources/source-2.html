@@ -1,0 +1,470 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailModel</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.model</a>
+</div>
+
+<h1>Coverage Summary for Class: SailModel (org.eclipse.rdf4j.sail.model)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailModel</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/90)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailModel$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailModel$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/101)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.model;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.ObjectInputStream;
+&nbsp;import java.io.ObjectOutputStream;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.UUID;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.AbstractModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.FilteredModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Model implementation for a {@link org.eclipse.rdf4j.sail.SailConnection}. All
+&nbsp; * {@link org.eclipse.rdf4j.sail.SailException}s are wrapped in a {@link org.eclipse.rdf4j.model.util.ModelException}.
+&nbsp; * Not thread-safe.
+&nbsp; *
+&nbsp; * @author Mark
+&nbsp; *
+&nbsp; * @apiNote this feature is for internal use only: its existence, signature or behavior may change without warning from
+&nbsp; *          one release to the next.
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class SailModel extends AbstractModel {
+&nbsp;
+&nbsp;	private static final long serialVersionUID = -2104886971549374410L;
+&nbsp;
+&nbsp;	private transient SailConnection conn;
+&nbsp;
+&nbsp;	private UUID connKey;
+&nbsp;
+&nbsp;	private final boolean includeInferred;
+&nbsp;
+<b class="nc">&nbsp;	public SailModel(SailConnection conn, boolean includeInferred) {</b>
+<b class="nc">&nbsp;		this.conn = conn;</b>
+<b class="nc">&nbsp;		this.includeInferred = includeInferred;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setConnection(SailConnection conn) {
+<b class="nc">&nbsp;		this.conn = conn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;Namespace&gt; getNamespaces() {
+&nbsp;		Set&lt;Namespace&gt; namespaces;
+&nbsp;		try {
+<b class="nc">&nbsp;			try (CloseableIteration&lt;? extends Namespace, SailException&gt; iter = conn.getNamespaces()) {</b>
+<b class="nc">&nbsp;				namespaces = Iterations.asSet(conn.getNamespaces());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return namespaces;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Optional&lt;Namespace&gt; getNamespace(String prefix) {
+&nbsp;		try {
+<b class="nc">&nbsp;			String name = conn.getNamespace(prefix);</b>
+<b class="nc">&nbsp;			return (name != null) ? Optional.of(new SimpleNamespace(prefix, name)) : Optional.ofNullable(null);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Namespace setNamespace(String prefix, String name) {
+&nbsp;		try {
+<b class="nc">&nbsp;			conn.setNamespace(prefix, name);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return new SimpleNamespace(prefix, name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(Namespace namespace) {
+&nbsp;		try {
+<b class="nc">&nbsp;			conn.setNamespace(namespace.getPrefix(), namespace.getName());</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Optional&lt;Namespace&gt; removeNamespace(String prefix) {
+<b class="nc">&nbsp;		Namespace namespace = getNamespace(prefix).orElse(null);</b>
+<b class="nc">&nbsp;		if (namespace != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				conn.removeNamespace(prefix);</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return Optional.ofNullable(namespace);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
+&nbsp;		try {
+<b class="nc">&nbsp;			return conn.hasStatement(subj, pred, obj, includeInferred, contexts);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		if (subj == null || pred == null || obj == null) {</b>
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(&quot;Incomplete statement&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		boolean exists = contains(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		if (!exists) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				conn.addStatement(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return !exists;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		boolean exists = contains(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		if (exists) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				conn.removeStatements(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return exists;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean clear(Resource... contexts) {
+<b class="nc">&nbsp;		boolean exists = contains(null, null, null, contexts);</b>
+<b class="nc">&nbsp;		if (exists) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				conn.clear(contexts);</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return exists;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Model filter(Resource subj, IRI pred, Value obj, Resource... contexts) {
+<b class="nc">&nbsp;		return new FilteredModel(this, subj, pred, obj, contexts) {</b>
+&nbsp;
+&nbsp;			private static final long serialVersionUID = -3834026632361358191L;
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Iterator&lt;Statement&gt; iterator() {
+<b class="nc">&nbsp;				return SailModel.this.iterator(subj, pred, obj, contexts);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected void removeFilteredTermIteration(Iterator&lt;Statement&gt; iter, Resource subj, IRI pred, Value obj,
+&nbsp;					Resource... contexts) {
+<b class="nc">&nbsp;				SailModel.this.removeTermIteration(iter, subj, pred, obj, contexts);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeTermIteration(Iterator&lt;Statement&gt; iter, Resource subj, IRI pred, Value obj,
+&nbsp;			Resource... contexts) {
+&nbsp;		try {
+<b class="nc">&nbsp;			conn.removeStatements(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The returned Iterator implements Closeable. If it is not exhausted then it should be explicitly closed.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Iterator&lt;Statement&gt; iterator() {
+<b class="nc">&nbsp;		return iterator(null, null, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Iterator&lt;Statement&gt; iterator(Resource subj, IRI pred, Value obj, Resource... contexts) {
+&nbsp;		try {
+<b class="nc">&nbsp;			CloseableIteration&lt;? extends Statement, ?&gt; iter = conn.getStatements(subj, pred, obj, includeInferred,</b>
+&nbsp;					contexts);
+<b class="nc">&nbsp;			return new CloseableIterationIterator&lt;&gt;(</b>
+<b class="nc">&nbsp;					new ExceptionConvertingIteration&lt;Statement, ModelException&gt;(iter) {</b>
+&nbsp;
+&nbsp;						private Statement last;
+&nbsp;
+&nbsp;						@Override
+&nbsp;						public Statement next() {
+<b class="nc">&nbsp;							last = super.next();</b>
+<b class="nc">&nbsp;							return last;</b>
+&nbsp;						}
+&nbsp;
+&nbsp;						@Override
+&nbsp;						public void remove() {
+<b class="nc">&nbsp;							if (last == null) {</b>
+<b class="nc">&nbsp;								throw new IllegalStateException(&quot;next() not yet called&quot;);</b>
+&nbsp;							}
+<b class="nc">&nbsp;							SailModel.this.remove(last);</b>
+<b class="nc">&nbsp;							last = null;</b>
+&nbsp;						}
+&nbsp;
+&nbsp;						@Override
+&nbsp;						protected ModelException convert(Exception e) {
+<b class="nc">&nbsp;							throw new ModelException(e);</b>
+&nbsp;						}
+&nbsp;					});
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new ModelException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void closeIterator(Iterator&lt;?&gt; iter) {
+<b class="nc">&nbsp;		if (iter instanceof Closeable) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				((Closeable) iter).close();</b>
+<b class="nc">&nbsp;			} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;				throw new ModelException(ioe);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			super.closeIterator(iter);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int size() {
+&nbsp;		long lsize;
+<b class="nc">&nbsp;		if (!includeInferred) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				lsize = conn.size();</b>
+<b class="nc">&nbsp;			} catch (SailException e) {</b>
+<b class="nc">&nbsp;				throw new ModelException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			lsize = 0L;</b>
+<b class="nc">&nbsp;			Iterator&lt;Statement&gt; iter = iterator();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;					lsize++;</b>
+<b class="nc">&nbsp;					iter.next();</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				closeIterator(iter);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (lsize &lt; Integer.MAX_VALUE) ? (int) lsize : Integer.MAX_VALUE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeObject(ObjectOutputStream out) throws IOException {
+<b class="nc">&nbsp;		this.connKey = NonSerializables.register(this.conn);</b>
+<b class="nc">&nbsp;		out.defaultWriteObject();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
+<b class="nc">&nbsp;		in.defaultReadObject();</b>
+<b class="nc">&nbsp;		this.conn = SailConnection.class.cast(NonSerializables.get(this.connKey));</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,1398 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDF4JProtocolSession</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.client</a>
+</div>
+
+<h1>Coverage Summary for Class: RDF4JProtocolSession (org.eclipse.rdf4j.http.client)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDF4JProtocolSession</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/53)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/166)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/509)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">RDF4JProtocolSession$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">RDF4JProtocolSession$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/67)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/172)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/534)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.client;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.TRANSACTION_SETTINGS_PREFIX;
+&nbsp;
+&nbsp;import java.io.ByteArrayInputStream;
+&nbsp;import java.io.ByteArrayOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.io.OutputStreamWriter;
+&nbsp;import java.io.Reader;
+&nbsp;import java.net.HttpURLConnection;
+&nbsp;import java.net.URISyntaxException;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.concurrent.ExecutorService;
+&nbsp;import java.util.concurrent.Executors;
+&nbsp;import java.util.concurrent.ScheduledExecutorService;
+&nbsp;import java.util.concurrent.ScheduledFuture;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.apache.http.Header;
+&nbsp;import org.apache.http.HttpEntity;
+&nbsp;import org.apache.http.HttpResponse;
+&nbsp;import org.apache.http.NameValuePair;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.apache.http.client.entity.UrlEncodedFormEntity;
+&nbsp;import org.apache.http.client.methods.HttpDelete;
+&nbsp;import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
+&nbsp;import org.apache.http.client.methods.HttpGet;
+&nbsp;import org.apache.http.client.methods.HttpPost;
+&nbsp;import org.apache.http.client.methods.HttpPut;
+&nbsp;import org.apache.http.client.methods.HttpRequestBase;
+&nbsp;import org.apache.http.client.methods.HttpUriRequest;
+&nbsp;import org.apache.http.client.methods.RequestBuilder;
+&nbsp;import org.apache.http.client.utils.URIBuilder;
+&nbsp;import org.apache.http.entity.AbstractHttpEntity;
+&nbsp;import org.apache.http.entity.ContentType;
+&nbsp;import org.apache.http.entity.InputStreamEntity;
+&nbsp;import org.apache.http.entity.StringEntity;
+&nbsp;import org.apache.http.message.BasicHeader;
+&nbsp;import org.apache.http.message.BasicNameValuePair;
+&nbsp;import org.apache.http.util.EntityUtils;
+&nbsp;import org.eclipse.rdf4j.common.exception.RDF4JException;
+&nbsp;import org.eclipse.rdf4j.common.io.IOUtil;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol.Action;
+&nbsp;import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.TransactionWriter;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link SPARQLProtocolSession} subclass which extends the standard SPARQL 1.1 Protocol with additional
+&nbsp; * functionality, as documented in the &lt;a href=&quot;http://docs.rdf4j.org/rest-api&quot;&gt;RDF4J REST API&lt;/a&gt;.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @see &lt;a href=&quot;http://docs.rdf4j.org/rest-api&quot;&gt;RDF4J REST API&lt;/a&gt;
+&nbsp; */
+&nbsp;public class RDF4JProtocolSession extends SPARQLProtocolSession {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * How long the client should wait before sending another PING to the server
+&nbsp;	 */
+<b class="nc">&nbsp;	private static final long PINGDELAY = TimeUnit.MILLISECONDS.convert(Protocol.DEFAULT_TIMEOUT, TimeUnit.SECONDS) / 2;</b>
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(RDF4JProtocolSession.class);</b>
+&nbsp;
+&nbsp;	private String serverURL;
+&nbsp;
+&nbsp;	private String transactionURL;
+&nbsp;
+&nbsp;	private final ScheduledExecutorService pingScheduler;
+&nbsp;
+&nbsp;	private ScheduledFuture&lt;?&gt; ping;
+&nbsp;
+<b class="nc">&nbsp;	private long pingDelay = PINGDELAY;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @deprecated since 3.6.2 - use {@link #RDF4JProtocolSession(HttpClient, ExecutorService)} instead
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public RDF4JProtocolSession(HttpClient client, ScheduledExecutorService executor) {
+<b class="nc">&nbsp;		this(client, (ExecutorService) executor);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RDF4JProtocolSession(HttpClient client, ExecutorService executor) {
+<b class="nc">&nbsp;		super(client, executor);</b>
+&nbsp;
+&nbsp;		// we want to preserve bnode ids to allow RDF4J API methods to match
+&nbsp;		// blank nodes.
+<b class="nc">&nbsp;		getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);</b>
+&nbsp;
+&nbsp;		// RDF4J Protocol has a preference for binary response formats, as these are
+&nbsp;		// most performant
+<b class="nc">&nbsp;		setPreferredTupleQueryResultFormat(TupleQueryResultFormat.BINARY);</b>
+<b class="nc">&nbsp;		setPreferredRDFFormat(RDFFormat.BINARY);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			final String configuredValue = System.getProperty(Protocol.CACHE_TIMEOUT_PROPERTY);</b>
+<b class="nc">&nbsp;			if (configuredValue != null) {</b>
+<b class="nc">&nbsp;				int timeout = Integer.parseInt(configuredValue);</b>
+<b class="nc">&nbsp;				pingDelay = TimeUnit.MILLISECONDS.convert(Math.max(timeout, 1), TimeUnit.SECONDS) / 2;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Could not read integer value of system property {}&quot;, Protocol.CACHE_TIMEOUT_PROPERTY);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// use a single-threaded scheduled executor to handle keepalive pings for transactions
+<b class="nc">&nbsp;		pingScheduler = Executors.newSingleThreadScheduledExecutor((Runnable runnable) -&gt; {</b>
+<b class="nc">&nbsp;			Thread thread = Executors.defaultThreadFactory().newThread(runnable);</b>
+<b class="nc">&nbsp;			thread.setName(&quot;rdf4j-pingScheduler&quot;);</b>
+<b class="nc">&nbsp;			thread.setDaemon(true);</b>
+<b class="nc">&nbsp;			return thread;</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setServerURL(String serverURL) {
+<b class="nc">&nbsp;		if (serverURL == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;serverURL must not be null&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		this.serverURL = serverURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getServerURL() {
+<b class="nc">&nbsp;		return serverURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getRepositoryURL() {
+<b class="nc">&nbsp;		return this.getQueryURL();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setRepository(String repositoryURL) {
+&nbsp;		// Try to parse the server URL from the repository URL
+<b class="nc">&nbsp;		Pattern urlPattern = Pattern.compile(&quot;(.*)/&quot; + Protocol.REPOSITORIES + &quot;/[^/]*/?&quot;);</b>
+<b class="nc">&nbsp;		Matcher matcher = urlPattern.matcher(repositoryURL);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (matcher.matches() &amp;&amp; matcher.groupCount() == 1) {</b>
+<b class="nc">&nbsp;			setServerURL(matcher.group(1));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		setQueryURL(repositoryURL);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void checkRepositoryURL() {
+<b class="nc">&nbsp;		if (getRepositoryURL() == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Repository URL has not been set&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void checkServerURL() {
+<b class="nc">&nbsp;		if (serverURL == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Server URL has not been set&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getUpdateURL() {
+<b class="nc">&nbsp;		return Protocol.getStatementsLocation(getQueryURL());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.close();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			transactionURL = null;</b>
+<b class="nc">&nbsp;			if (ping != null) {</b>
+<b class="nc">&nbsp;				ping.cancel(false);</b>
+<b class="nc">&nbsp;				ping = null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			pingScheduler.shutdownNow();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized String getTransactionURL() {
+<b class="nc">&nbsp;		return transactionURL;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------------*
+&nbsp;	 * Repository list *
+&nbsp;	 *-----------------*/
+&nbsp;
+&nbsp;	public TupleQueryResult getRepositoryList()
+&nbsp;			throws IOException, RepositoryException, UnauthorizedException, QueryInterruptedException {
+&nbsp;		try {
+<b class="nc">&nbsp;			TupleQueryResultBuilder builder = new TupleQueryResultBuilder();</b>
+<b class="nc">&nbsp;			getRepositoryList(builder);</b>
+<b class="nc">&nbsp;			return builder.getQueryResult();</b>
+<b class="nc">&nbsp;		} catch (TupleQueryResultHandlerException e) {</b>
+&nbsp;			// Found a bug in TupleQueryResultBuilder?
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void getRepositoryList(TupleQueryResultHandler handler) throws IOException, TupleQueryResultHandlerException,
+&nbsp;			RepositoryException, UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		checkServerURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getRepositoriesLocation(serverURL)));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			getTupleQueryResult(method, handler);</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+&nbsp;			// This shouldn&#39;t happen as no queries are involved
+<b class="nc">&nbsp;			logger.warn(&quot;Server reported unexpected malfored query error&quot;, e);</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e.getMessage(), e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*------------------*
+&nbsp;	 * Protocol version *
+&nbsp;	 *------------------*/
+&nbsp;
+&nbsp;	public String getServerProtocol() throws IOException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		checkServerURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getProtocolLocation(serverURL)));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			return EntityUtils.toString(executeOK(method).getEntity());</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------------------*
+&nbsp;	 * Repository/context size *
+&nbsp;	 *-------------------------*/
+&nbsp;
+&nbsp;	public long size(Resource... contexts) throws IOException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			String transactionURL = getTransactionURL();</b>
+<b class="nc">&nbsp;			final boolean useTransaction = transactionURL != null;</b>
+&nbsp;
+<b class="nc">&nbsp;			String baseLocation = useTransaction ? appendAction(transactionURL, Action.SIZE)</b>
+<b class="nc">&nbsp;					: Protocol.getSizeLocation(getQueryURL());</b>
+<b class="nc">&nbsp;			URIBuilder url = new URIBuilder(baseLocation);</b>
+&nbsp;
+<b class="nc">&nbsp;			String[] encodedContexts = Protocol.encodeContexts(contexts);</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; encodedContexts.length; i++) {</b>
+<b class="nc">&nbsp;				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContexts[i]);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());</b>
+<b class="nc">&nbsp;			applyAdditionalHeaders(method);</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				String response = EntityUtils.toString(executeOK(method).getEntity());</b>
+<b class="nc">&nbsp;				pingTransaction();</b>
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					return Long.parseLong(response);</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new RepositoryException(&quot;Server responded with invalid size value: &quot; + response);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				method.reset();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new AssertionError(e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new repository.
+&nbsp;	 *
+&nbsp;	 * @param config the repository configuration
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	public void createRepository(RepositoryConfig config) throws IOException, RepositoryException {
+<b class="nc">&nbsp;		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());</b>
+<b class="nc">&nbsp;		setRepository(baseURI);</b>
+<b class="nc">&nbsp;		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + &quot;#&quot; + config.getID());</b>
+<b class="nc">&nbsp;		Model model = new LinkedHashModel();</b>
+<b class="nc">&nbsp;		config.export(model, ctx);</b>
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		Rio.write(model, baos, getPreferredRDFFormat());</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpEntityEnclosingRequestBase method = null;</b>
+<b class="nc">&nbsp;		try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {</b>
+<b class="nc">&nbsp;			HttpEntity entity = new InputStreamEntity(contents, -1,</b>
+<b class="nc">&nbsp;					ContentType.parse(getPreferredRDFFormat().getDefaultMIMEType()));</b>
+<b class="nc">&nbsp;			method = applyAdditionalHeaders(new HttpPut(baseURI));</b>
+<b class="nc">&nbsp;			method.setEntity(entity);</b>
+<b class="nc">&nbsp;			executeNoContent((HttpUriRequest) method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | RDFParseException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (method != null) {</b>
+<b class="nc">&nbsp;				method.reset();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Update the config of an existing repository.
+&nbsp;	 *
+&nbsp;	 * @param config the repository configuration
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	public void updateRepository(RepositoryConfig config) throws IOException, RepositoryException {
+<b class="nc">&nbsp;		String baseURI = Protocol.getRepositoryLocation(serverURL, config.getID());</b>
+<b class="nc">&nbsp;		setRepository(baseURI);</b>
+<b class="nc">&nbsp;		Resource ctx = SimpleValueFactory.getInstance().createIRI(baseURI + &quot;#&quot; + config.getID());</b>
+<b class="nc">&nbsp;		Model model = new LinkedHashModel();</b>
+<b class="nc">&nbsp;		config.export(model, ctx);</b>
+<b class="nc">&nbsp;		ByteArrayOutputStream baos = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;		Rio.write(model, baos, getPreferredRDFFormat());</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpEntityEnclosingRequestBase method = null;</b>
+<b class="nc">&nbsp;		try (InputStream contents = new ByteArrayInputStream(baos.toByteArray())) {</b>
+<b class="nc">&nbsp;			HttpEntity entity = new InputStreamEntity(contents, -1,</b>
+<b class="nc">&nbsp;					ContentType.parse(getPreferredRDFFormat().getDefaultMIMEType()));</b>
+<b class="nc">&nbsp;			method = applyAdditionalHeaders(new HttpPost(Protocol.getRepositoryConfigLocation(baseURI)));</b>
+<b class="nc">&nbsp;			method.setEntity(entity);</b>
+<b class="nc">&nbsp;			executeNoContent((HttpUriRequest) method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException | RDFParseException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (method != null) {</b>
+<b class="nc">&nbsp;				method.reset();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void deleteRepository(String repositoryID) throws IOException, RepositoryException {
+&nbsp;
+<b class="nc">&nbsp;		HttpDelete method = applyAdditionalHeaders(</b>
+<b class="nc">&nbsp;				new HttpDelete(Protocol.getRepositoryLocation(serverURL, repositoryID)));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			executeNoContent(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve configuration of the current repository and send it to the supplied {@link StatementCollector}
+&nbsp;	 *
+&nbsp;	 * @param statementCollector receiver of the repository config information
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws RDFHandlerException
+&nbsp;	 * @throws QueryInterruptedException
+&nbsp;	 * @throws UnauthorizedException
+&nbsp;	 *
+&nbsp;	 * @since 3.1.0
+&nbsp;	 */
+&nbsp;	public void getRepositoryConfig(StatementCollector statementCollector) throws UnauthorizedException,
+&nbsp;			QueryInterruptedException, RDFHandlerException, RepositoryException, IOException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			String baseLocation = Protocol.getRepositoryConfigLocation(getRepositoryURL());</b>
+<b class="nc">&nbsp;			URIBuilder url = new URIBuilder(baseLocation);</b>
+&nbsp;
+<b class="nc">&nbsp;			HttpRequestBase method = new HttpGet(url.build());</b>
+<b class="nc">&nbsp;			method = applyAdditionalHeaders(method);</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				getRDF(method, statementCollector, true);</b>
+<b class="nc">&nbsp;			} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Server reported unexpected malformed query error&quot;, e);</b>
+<b class="nc">&nbsp;				throw new RepositoryException(e.getMessage(), e);</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				method.reset();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new AssertionError(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------------------------*
+&nbsp;	 * Get/add/remove namespaces *
+&nbsp;	 *---------------------------*/
+&nbsp;
+&nbsp;	public TupleQueryResult getNamespaces()
+&nbsp;			throws IOException, RepositoryException, UnauthorizedException, QueryInterruptedException {
+&nbsp;		try {
+<b class="nc">&nbsp;			TupleQueryResultBuilder builder = new TupleQueryResultBuilder();</b>
+<b class="nc">&nbsp;			getNamespaces(builder);</b>
+<b class="nc">&nbsp;			return builder.getQueryResult();</b>
+<b class="nc">&nbsp;		} catch (TupleQueryResultHandlerException e) {</b>
+&nbsp;			// Found a bug in TupleQueryResultBuilder?
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void getNamespaces(TupleQueryResultHandler handler) throws IOException, TupleQueryResultHandlerException,
+&nbsp;			RepositoryException, UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getNamespacesLocation(getQueryURL())));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			getTupleQueryResult(method, handler);</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Server reported unexpected malfored query error&quot;, e);</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e.getMessage(), e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getNamespace(String prefix) throws IOException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpGet method = applyAdditionalHeaders(</b>
+<b class="nc">&nbsp;				new HttpGet(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			HttpResponse response = execute(method);</b>
+<b class="nc">&nbsp;			int code = response.getStatusLine().getStatusCode();</b>
+<b class="nc">&nbsp;			if (code == HttpURLConnection.HTTP_OK || code == HttpURLConnection.HTTP_NOT_AUTHORITATIVE) {</b>
+<b class="nc">&nbsp;				return EntityUtils.toString(response.getEntity());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				EntityUtils.consume(response.getEntity());</b>
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setNamespacePrefix(String prefix, String name)
+&nbsp;			throws IOException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpPut method = applyAdditionalHeaders(</b>
+<b class="nc">&nbsp;				new HttpPut(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			method.setEntity(new StringEntity(name, ContentType.create(&quot;text/plain&quot;, StandardCharsets.UTF_8)));</b>
+<b class="nc">&nbsp;			executeNoContent(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removeNamespacePrefix(String prefix) throws IOException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpDelete method = applyAdditionalHeaders(</b>
+<b class="nc">&nbsp;				new HttpDelete(Protocol.getNamespacePrefixLocation(getQueryURL(), prefix)));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			executeNoContent(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void clearNamespaces() throws IOException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpDelete method = applyAdditionalHeaders(new HttpDelete(Protocol.getNamespacesLocation(getQueryURL())));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			executeNoContent(method);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw e;</b>
+<b class="nc">&nbsp;		} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-------------*
+&nbsp;	 * Context IDs *
+&nbsp;	 *-------------*/
+&nbsp;
+&nbsp;	public TupleQueryResult getContextIDs()
+&nbsp;			throws IOException, RepositoryException, UnauthorizedException, QueryInterruptedException {
+&nbsp;		try {
+<b class="nc">&nbsp;			TupleQueryResultBuilder builder = new TupleQueryResultBuilder();</b>
+<b class="nc">&nbsp;			getContextIDs(builder);</b>
+<b class="nc">&nbsp;			return builder.getQueryResult();</b>
+<b class="nc">&nbsp;		} catch (TupleQueryResultHandlerException e) {</b>
+&nbsp;			// Found a bug in TupleQueryResultBuilder?
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void getContextIDs(TupleQueryResultHandler handler) throws IOException, TupleQueryResultHandlerException,
+&nbsp;			RepositoryException, UnauthorizedException, QueryInterruptedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpGet method = applyAdditionalHeaders(new HttpGet(Protocol.getContextsLocation(getQueryURL())));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			getTupleQueryResult(method, handler);</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Server reported unexpected malfored query error&quot;, e);</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e.getMessage(), e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------------------------*
+&nbsp;	 * Get/add/remove statements *
+&nbsp;	 *---------------------------*/
+&nbsp;
+&nbsp;	public void getStatements(Resource subj, IRI pred, Value obj, boolean includeInferred, RDFHandler handler,
+&nbsp;			Resource... contexts) throws IOException, RDFHandlerException, RepositoryException, UnauthorizedException,
+&nbsp;			QueryInterruptedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			String transactionURL = getTransactionURL();</b>
+<b class="nc">&nbsp;			final boolean useTransaction = transactionURL != null;</b>
+&nbsp;
+<b class="nc">&nbsp;			String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());</b>
+<b class="nc">&nbsp;			URIBuilder url = new URIBuilder(baseLocation);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (subj != null) {</b>
+<b class="nc">&nbsp;				url.setParameter(Protocol.SUBJECT_PARAM_NAME, Protocol.encodeValue(subj));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (pred != null) {</b>
+<b class="nc">&nbsp;				url.setParameter(Protocol.PREDICATE_PARAM_NAME, Protocol.encodeValue(pred));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (obj != null) {</b>
+<b class="nc">&nbsp;				url.setParameter(Protocol.OBJECT_PARAM_NAME, Protocol.encodeValue(obj));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			for (String encodedContext : Protocol.encodeContexts(contexts)) {</b>
+<b class="nc">&nbsp;				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			url.setParameter(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred));</b>
+<b class="nc">&nbsp;			if (useTransaction) {</b>
+<b class="nc">&nbsp;				url.setParameter(Protocol.ACTION_PARAM_NAME, Action.GET.toString());</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			HttpRequestBase method = useTransaction ? new HttpPut(url.build()) : new HttpGet(url.build());</b>
+<b class="nc">&nbsp;			method = applyAdditionalHeaders(method);</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				getRDF(method, handler, true);</b>
+<b class="nc">&nbsp;			} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Server reported unexpected malfored query error&quot;, e);</b>
+<b class="nc">&nbsp;				throw new RepositoryException(e.getMessage(), e);</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				method.reset();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new AssertionError(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		pingTransaction();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized void beginTransaction(IsolationLevel isolationLevel)
+&nbsp;			throws RDF4JException, IOException, UnauthorizedException {
+<b class="nc">&nbsp;		beginTransaction((TransactionSetting) isolationLevel);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized void beginTransaction(TransactionSetting... transactionSettings)
+&nbsp;			throws RDF4JException, IOException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (transactionURL != null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Transaction URL is already set&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		HttpPost method = applyAdditionalHeaders(new HttpPost(Protocol.getTransactionsLocation(getRepositoryURL())));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			method.setHeader(&quot;Content-Type&quot;, Protocol.FORM_MIME_TYPE + &quot;; charset=utf-8&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;NameValuePair&gt; params = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (TransactionSetting transactionSetting : transactionSettings) {</b>
+<b class="nc">&nbsp;				if (transactionSetting == null) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				params.add(</b>
+&nbsp;						new BasicNameValuePair(
+<b class="nc">&nbsp;								TRANSACTION_SETTINGS_PREFIX + transactionSetting.getName(),</b>
+<b class="nc">&nbsp;								transactionSetting.getValue()</b>
+&nbsp;						)
+&nbsp;				);
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			method.setEntity(new UrlEncodedFormEntity(params, UTF8));</b>
+<b class="nc">&nbsp;			HttpResponse response = execute(method);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				int code = response.getStatusLine().getStatusCode();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (code == HttpURLConnection.HTTP_CREATED) {</b>
+<b class="nc">&nbsp;					transactionURL = response.getFirstHeader(&quot;Location&quot;).getValue();</b>
+<b class="nc">&nbsp;					if (transactionURL == null) {</b>
+<b class="nc">&nbsp;						throw new RepositoryException(&quot;no valid transaction ID received in server response.&quot;);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						pingTransaction();</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new RepositoryException(&quot;unable to start transaction. HTTP error code &quot; + code);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				EntityUtils.consume(response.getEntity());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized void prepareTransaction() throws RDF4JException, IOException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (transactionURL == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Transaction URL has not been set&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		HttpPut method = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			URIBuilder url = new URIBuilder(transactionURL);</b>
+<b class="nc">&nbsp;			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PREPARE.toString());</b>
+<b class="nc">&nbsp;			method = applyAdditionalHeaders(new HttpPut(url.build()));</b>
+&nbsp;
+<b class="nc">&nbsp;			final HttpResponse response = execute(method);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				int code = response.getStatusLine().getStatusCode();</b>
+<b class="nc">&nbsp;				if (code == HttpURLConnection.HTTP_OK) {</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new RepositoryException(&quot;unable to prepare transaction. HTTP error code &quot; + code);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				EntityUtils.consumeQuietly(response.getEntity());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;could not create URL for transaction prepare&quot;, e);</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (method != null) {</b>
+<b class="nc">&nbsp;				method.reset();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized void commitTransaction() throws RDF4JException, IOException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (transactionURL == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Transaction URL has not been set&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		HttpPut method = null;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			URIBuilder url = new URIBuilder(transactionURL);</b>
+<b class="nc">&nbsp;			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.COMMIT.toString());</b>
+<b class="nc">&nbsp;			method = applyAdditionalHeaders(new HttpPut(url.build()));</b>
+&nbsp;
+<b class="nc">&nbsp;			final HttpResponse response = execute(method);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				int code = response.getStatusLine().getStatusCode();</b>
+<b class="nc">&nbsp;				if (code == HttpURLConnection.HTTP_OK) {</b>
+&nbsp;					// we&#39;re done.
+<b class="nc">&nbsp;					transactionURL = null;</b>
+<b class="nc">&nbsp;					if (ping != null) {</b>
+<b class="nc">&nbsp;						ping.cancel(false);</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new RepositoryException(&quot;unable to commit transaction. HTTP error code &quot; + code);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				EntityUtils.consumeQuietly(response.getEntity());</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;could not create URL for transaction commit&quot;, e);</b>
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (method != null) {</b>
+<b class="nc">&nbsp;				method.reset();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized void rollbackTransaction() throws RDF4JException, IOException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (transactionURL == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Transaction URL has not been set&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String requestURL = transactionURL;</b>
+<b class="nc">&nbsp;		HttpDelete method = applyAdditionalHeaders(new HttpDelete(requestURL));</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			final HttpResponse response = execute(method);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				int code = response.getStatusLine().getStatusCode();</b>
+<b class="nc">&nbsp;				if (code == HttpURLConnection.HTTP_NO_CONTENT) {</b>
+&nbsp;					// we&#39;re done.
+<b class="nc">&nbsp;					transactionURL = null;</b>
+<b class="nc">&nbsp;					if (ping != null) {</b>
+<b class="nc">&nbsp;						ping.cancel(false);</b>
+&nbsp;					}
+&nbsp;				} else {
+<b class="nc">&nbsp;					throw new RepositoryException(&quot;unable to rollback transaction. HTTP error code &quot; + code);</b>
+&nbsp;				}
+&nbsp;			} finally {
+<b class="nc">&nbsp;				EntityUtils.consumeQuietly(response.getEntity());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized void pingTransaction() {
+<b class="nc">&nbsp;		if (transactionURL == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		if (ping != null) {</b>
+<b class="nc">&nbsp;			ping.cancel(false);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (pingDelay &gt; 0) {</b>
+<b class="nc">&nbsp;			ping = pingScheduler.schedule(() -&gt; {</b>
+<b class="nc">&nbsp;				executeTransactionPing();</b>
+&nbsp;			}, pingDelay, TimeUnit.MILLISECONDS);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	void executeTransactionPing() {
+<b class="nc">&nbsp;		String transactionURL = getTransactionURL();</b>
+<b class="nc">&nbsp;		if (transactionURL == null) {</b>
+&nbsp;			return; // transaction has already been closed
+&nbsp;		}
+&nbsp;		HttpPost method;
+&nbsp;		try {
+<b class="nc">&nbsp;			URIBuilder url = new URIBuilder(transactionURL);</b>
+<b class="nc">&nbsp;			url.addParameter(Protocol.ACTION_PARAM_NAME, Action.PING.toString());</b>
+<b class="nc">&nbsp;			method = applyAdditionalHeaders(new HttpPost(url.build()));</b>
+<b class="nc">&nbsp;			String text = EntityUtils.toString(executeOK(method).getEntity());</b>
+<b class="nc">&nbsp;			long timeout = Long.parseLong(text);</b>
+&nbsp;			// clients should ping before server timeouts transaction
+<b class="nc">&nbsp;			long nextPingDelay = timeout / 2;</b>
+<b class="nc">&nbsp;			synchronized (this) {</b>
+<b class="nc">&nbsp;				if (pingDelay != nextPingDelay) {</b>
+<b class="nc">&nbsp;					pingDelay = nextPingDelay;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;Failed to ping transaction&quot;, e.toString());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		pingTransaction(); // reschedule</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Appends the action as a parameter to the supplied url
+&nbsp;	 *
+&nbsp;	 * @param url    a url on which to append the parameter. it is assumed the url has no parameters.
+&nbsp;	 * @param action the action to add as a parameter
+&nbsp;	 * @return the url parametrized with the supplied action
+&nbsp;	 */
+&nbsp;	private String appendAction(String url, Action action) {
+<b class="nc">&nbsp;		return url + &quot;?&quot; + Protocol.ACTION_PARAM_NAME + &quot;=&quot; + action.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sends a transaction list as serialized XML to the server.
+&nbsp;	 *
+&nbsp;	 * @deprecated since 2.8.0
+&nbsp;	 * @param txn
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws UnauthorizedException
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public void sendTransaction(final Iterable&lt;? extends TransactionOperation&gt; txn)
+&nbsp;			throws IOException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpPost method = applyAdditionalHeaders(new HttpPost(Protocol.getStatementsLocation(getQueryURL())));</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;			// Create a RequestEntity for the transaction data
+<b class="nc">&nbsp;			method.setEntity(new AbstractHttpEntity() {</b>
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public long getContentLength() {
+<b class="nc">&nbsp;					return -1; // don&#39;t know</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public Header getContentType() {
+<b class="nc">&nbsp;					return new BasicHeader(&quot;Content-Type&quot;, Protocol.TXN_MIME_TYPE);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public boolean isRepeatable() {
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public boolean isStreaming() {
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public InputStream getContent() throws IOException, IllegalStateException {
+<b class="nc">&nbsp;					ByteArrayOutputStream buf = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;					writeTo(buf);</b>
+<b class="nc">&nbsp;					return new ByteArrayInputStream(buf.toByteArray());</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				@Override
+&nbsp;				public void writeTo(OutputStream out) throws IOException {
+<b class="nc">&nbsp;					TransactionWriter txnWriter = new TransactionWriter();</b>
+<b class="nc">&nbsp;					txnWriter.serialize(txn, out);</b>
+&nbsp;				}
+&nbsp;			});
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				executeNoContent(method);</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			method.reset();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void addData(InputStream contents, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws UnauthorizedException, RDFParseException, RepositoryException, IOException {
+<b class="nc">&nbsp;		upload(contents, baseURI, dataFormat, false, true, Action.ADD, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void removeData(InputStream contents, String baseURI, RDFFormat dataFormat, Resource... contexts)
+&nbsp;			throws UnauthorizedException, RDFParseException, RepositoryException, IOException {
+<b class="nc">&nbsp;		upload(contents, baseURI, dataFormat, false, true, Action.DELETE, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void upload(InputStream contents, String baseURI, RDFFormat dataFormat, boolean overwrite,
+&nbsp;			boolean preserveNodeIds, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		upload(contents, baseURI, dataFormat, overwrite, preserveNodeIds, Action.ADD, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void upload(InputStream contents, String baseURI, RDFFormat dataFormat, boolean overwrite,
+&nbsp;			boolean preserveNodeIds, Action action, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException, UnauthorizedException {
+&nbsp;		// Set Content-Length to -1 as we don&#39;t know it and we also don&#39;t want to
+&nbsp;		// cache
+<b class="nc">&nbsp;		HttpEntity entity = new InputStreamEntity(contents, -1, ContentType.parse(dataFormat.getDefaultMIMEType()));</b>
+<b class="nc">&nbsp;		upload(entity, baseURI, overwrite, preserveNodeIds, action, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void upload(final Reader contents, String baseURI, final RDFFormat dataFormat, boolean overwrite,
+&nbsp;			boolean preserveNodeIds, Resource... contexts)
+&nbsp;			throws UnauthorizedException, RDFParseException, RepositoryException, IOException {
+<b class="nc">&nbsp;		upload(contents, baseURI, dataFormat, overwrite, preserveNodeIds, Action.ADD, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected HttpUriRequest getQueryMethod(QueryLanguage ql, String query, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, int maxQueryTime, Binding... bindings) {
+&nbsp;		RequestBuilder builder;
+<b class="nc">&nbsp;		String transactionURL = getTransactionURL();</b>
+<b class="nc">&nbsp;		if (transactionURL != null) {</b>
+<b class="nc">&nbsp;			builder = RequestBuilder.put(transactionURL);</b>
+<b class="nc">&nbsp;			builder.setHeader(&quot;Content-Type&quot;, Protocol.SPARQL_QUERY_MIME_TYPE + &quot;; charset=utf-8&quot;);</b>
+<b class="nc">&nbsp;			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.QUERY.toString());</b>
+<b class="nc">&nbsp;			for (NameValuePair nvp : getQueryMethodParameters(ql, null, baseURI, dataset, includeInferred, maxQueryTime,</b>
+&nbsp;					bindings)) {
+<b class="nc">&nbsp;				builder.addParameter(nvp);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			// in a PUT request, we carry the actual query string as the entity
+&nbsp;			// body rather than a parameter.
+<b class="nc">&nbsp;			builder.setEntity(new StringEntity(query, UTF8));</b>
+<b class="nc">&nbsp;			pingTransaction();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder = RequestBuilder.post(getQueryURL());</b>
+<b class="nc">&nbsp;			builder.setHeader(&quot;Content-Type&quot;, Protocol.FORM_MIME_TYPE + &quot;; charset=utf-8&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			builder.setEntity(new UrlEncodedFormEntity(</b>
+<b class="nc">&nbsp;					getQueryMethodParameters(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings),</b>
+&nbsp;					UTF8));
+&nbsp;		}
+&nbsp;		// functionality to provide custom http headers as required by the
+&nbsp;		// applications
+<b class="nc">&nbsp;		for (Map.Entry&lt;String, String&gt; additionalHeader : getAdditionalHttpHeaders().entrySet()) {</b>
+<b class="nc">&nbsp;			builder.addHeader(additionalHeader.getKey(), additionalHeader.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return builder.build();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected HttpUriRequest getUpdateMethod(QueryLanguage ql, String update, String baseURI, Dataset dataset,
+&nbsp;			boolean includeInferred, int maxExecutionTime, Binding... bindings) {
+&nbsp;		RequestBuilder builder;
+<b class="nc">&nbsp;		String transactionURL = getTransactionURL();</b>
+<b class="nc">&nbsp;		if (transactionURL != null) {</b>
+<b class="nc">&nbsp;			builder = RequestBuilder.put(transactionURL);</b>
+<b class="nc">&nbsp;			builder.addHeader(&quot;Content-Type&quot;, Protocol.SPARQL_UPDATE_MIME_TYPE + &quot;; charset=utf-8&quot;);</b>
+<b class="nc">&nbsp;			builder.addParameter(Protocol.ACTION_PARAM_NAME, Action.UPDATE.toString());</b>
+<b class="nc">&nbsp;			for (NameValuePair nvp : getUpdateMethodParameters(ql, null, baseURI, dataset, includeInferred,</b>
+&nbsp;					maxExecutionTime, bindings)) {
+<b class="nc">&nbsp;				builder.addParameter(nvp);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;			// in a PUT request, we carry the only actual update string as the
+&nbsp;			// request body - the rest is sent as request parameters
+<b class="nc">&nbsp;			builder.setEntity(new StringEntity(update, UTF8));</b>
+<b class="nc">&nbsp;			pingTransaction();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			builder = RequestBuilder.post(getUpdateURL());</b>
+<b class="nc">&nbsp;			builder.addHeader(&quot;Content-Type&quot;, Protocol.FORM_MIME_TYPE + &quot;; charset=utf-8&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			builder.setEntity(new UrlEncodedFormEntity(getUpdateMethodParameters(ql, update, baseURI, dataset,</b>
+&nbsp;					includeInferred, maxExecutionTime, bindings), UTF8));
+&nbsp;		}
+&nbsp;		// functionality to provide custom http headers as required by the
+&nbsp;		// applications
+<b class="nc">&nbsp;		for (Map.Entry&lt;String, String&gt; additionalHeader : getAdditionalHttpHeaders().entrySet()) {</b>
+<b class="nc">&nbsp;			builder.addHeader(additionalHeader.getKey(), additionalHeader.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return builder.build();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void upload(final Reader contents, String baseURI, final RDFFormat dataFormat, boolean overwrite,
+&nbsp;			boolean preserveNodeIds, Action action, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		final Charset charset = dataFormat.hasCharset() ? dataFormat.getCharset() : StandardCharsets.UTF_8;</b>
+&nbsp;
+<b class="nc">&nbsp;		HttpEntity entity = new AbstractHttpEntity() {</b>
+&nbsp;
+&nbsp;			private InputStream content;
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public long getContentLength() {
+<b class="nc">&nbsp;				return -1; // don&#39;t know</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Header getContentType() {
+<b class="nc">&nbsp;				return new BasicHeader(&quot;Content-Type&quot;, dataFormat.getDefaultMIMEType() + &quot;; charset=&quot; + charset.name());</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean isRepeatable() {
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean isStreaming() {
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public synchronized InputStream getContent() throws IOException, IllegalStateException {
+<b class="nc">&nbsp;				if (content == null) {</b>
+<b class="nc">&nbsp;					ByteArrayOutputStream buf = new ByteArrayOutputStream();</b>
+<b class="nc">&nbsp;					writeTo(buf);</b>
+<b class="nc">&nbsp;					content = new ByteArrayInputStream(buf.toByteArray());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return content;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void writeTo(OutputStream out) throws IOException {
+<b class="nc">&nbsp;				try (contents) {</b>
+<b class="nc">&nbsp;					OutputStreamWriter writer = new OutputStreamWriter(out, charset);</b>
+<b class="nc">&nbsp;					IOUtil.transfer(contents, writer);</b>
+<b class="nc">&nbsp;					writer.flush();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+<b class="nc">&nbsp;		upload(entity, baseURI, overwrite, preserveNodeIds, action, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void upload(HttpEntity reqEntity, String baseURI, boolean overwrite, boolean preserveNodeIds,
+&nbsp;			Action action, Resource... contexts)
+&nbsp;			throws IOException, RDFParseException, RepositoryException, UnauthorizedException {
+<b class="nc">&nbsp;		Objects.requireNonNull(contexts,</b>
+&nbsp;				&quot;contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied&quot;);
+&nbsp;
+<b class="nc">&nbsp;		checkRepositoryURL();</b>
+&nbsp;
+<b class="nc">&nbsp;		String transactionURL = getTransactionURL();</b>
+<b class="nc">&nbsp;		boolean useTransaction = transactionURL != null;</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			String baseLocation = useTransaction ? transactionURL : Protocol.getStatementsLocation(getQueryURL());</b>
+<b class="nc">&nbsp;			URIBuilder url = new URIBuilder(baseLocation);</b>
+&nbsp;
+&nbsp;			// Set relevant query parameters
+<b class="nc">&nbsp;			for (String encodedContext : Protocol.encodeContexts(contexts)) {</b>
+<b class="nc">&nbsp;				url.addParameter(Protocol.CONTEXT_PARAM_NAME, encodedContext);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (baseURI != null &amp;&amp; baseURI.trim().length() != 0) {</b>
+<b class="nc">&nbsp;				String encodedBaseURI = Protocol.encodeValue(SimpleValueFactory.getInstance().createIRI(baseURI));</b>
+<b class="nc">&nbsp;				url.setParameter(Protocol.BASEURI_PARAM_NAME, encodedBaseURI);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (preserveNodeIds) {</b>
+<b class="nc">&nbsp;				url.setParameter(Protocol.PRESERVE_BNODE_ID_PARAM_NAME, &quot;true&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (useTransaction) {</b>
+<b class="nc">&nbsp;				if (action == null) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;action can not be null on transaction operation&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				url.setParameter(Protocol.ACTION_PARAM_NAME, action.toString());</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Select appropriate HTTP method
+<b class="nc">&nbsp;			HttpEntityEnclosingRequestBase method = null;</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (overwrite || useTransaction) {</b>
+<b class="nc">&nbsp;					method = applyAdditionalHeaders(new HttpPut(url.build()));</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					method = applyAdditionalHeaders(new HttpPost(url.build()));</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Set payload
+<b class="nc">&nbsp;				method.setEntity(reqEntity);</b>
+&nbsp;
+&nbsp;				// Send request
+&nbsp;				try {
+<b class="nc">&nbsp;					executeNoContent((HttpUriRequest) method);</b>
+<b class="nc">&nbsp;				} catch (RepositoryException | RDFParseException e) {</b>
+<b class="nc">&nbsp;					throw e;</b>
+<b class="nc">&nbsp;				} catch (RDF4JException e) {</b>
+<b class="nc">&nbsp;					throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				if (method != null) {</b>
+<b class="nc">&nbsp;					method.reset();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (URISyntaxException e) {</b>
+<b class="nc">&nbsp;			throw new AssertionError(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		pingTransaction();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setUsernameAndPassword(String username, String password) {
+<b class="nc">&nbsp;		checkServerURL();</b>
+<b class="nc">&nbsp;		setUsernameAndPasswordForUrl(username, password, getServerURL());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected List&lt;NameValuePair&gt; getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
+&nbsp;			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
+<b class="nc">&nbsp;		Objects.requireNonNull(ql, &quot;QueryLanguage may not be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;NameValuePair&gt; queryParams = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));</b>
+<b class="nc">&nbsp;		queryParams.add(new BasicNameValuePair(Protocol.QUERY_PARAM_NAME, query));</b>
+&nbsp;
+<b class="nc">&nbsp;		if (baseURI != null) {</b>
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		queryParams</b>
+<b class="nc">&nbsp;				.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));</b>
+&nbsp;
+<b class="nc">&nbsp;		if (maxQueryTime &gt; 0) {</b>
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams.add(</b>
+<b class="nc">&nbsp;						new BasicNameValuePair(Protocol.DEFAULT_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			for (IRI namedGraphURI : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams.add(new BasicNameValuePair(Protocol.NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; bindings.length; i++) {</b>
+<b class="nc">&nbsp;			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();</b>
+<b class="nc">&nbsp;			String paramValue = Protocol.encodeValue(bindings[i].getValue());</b>
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(paramName, paramValue));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return queryParams;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected List&lt;NameValuePair&gt; getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
+&nbsp;			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
+<b class="nc">&nbsp;		Objects.requireNonNull(ql, &quot;QueryLanguage may not be null&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;NameValuePair&gt; queryParams = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		queryParams.add(new BasicNameValuePair(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));</b>
+&nbsp;
+<b class="nc">&nbsp;		if (update != null) {</b>
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(Protocol.UPDATE_PARAM_NAME, update));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (baseURI != null) {</b>
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(Protocol.BASEURI_PARAM_NAME, baseURI));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		queryParams</b>
+<b class="nc">&nbsp;				.add(new BasicNameValuePair(Protocol.INCLUDE_INFERRED_PARAM_NAME, Boolean.toString(includeInferred)));</b>
+&nbsp;
+<b class="nc">&nbsp;		if (dataset != null) {</b>
+<b class="nc">&nbsp;			for (IRI graphURI : dataset.getDefaultRemoveGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams.add(new BasicNameValuePair(Protocol.REMOVE_GRAPH_PARAM_NAME, String.valueOf(graphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (dataset.getDefaultInsertGraph() != null) {</b>
+<b class="nc">&nbsp;				queryParams.add(new BasicNameValuePair(Protocol.INSERT_GRAPH_PARAM_NAME,</b>
+<b class="nc">&nbsp;						String.valueOf(dataset.getDefaultInsertGraph())));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			for (IRI defaultGraphURI : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams</b>
+<b class="nc">&nbsp;						.add(new BasicNameValuePair(Protocol.USING_GRAPH_PARAM_NAME, String.valueOf(defaultGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			for (IRI namedGraphURI : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;				queryParams.add(</b>
+<b class="nc">&nbsp;						new BasicNameValuePair(Protocol.USING_NAMED_GRAPH_PARAM_NAME, String.valueOf(namedGraphURI)));</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (maxQueryTime &gt; 0) {</b>
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(maxQueryTime)));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (int i = 0; i &lt; bindings.length; i++) {</b>
+<b class="nc">&nbsp;			String paramName = Protocol.BINDING_PREFIX + bindings[i].getName();</b>
+<b class="nc">&nbsp;			String paramValue = Protocol.encodeValue(bindings[i].getValue());</b>
+<b class="nc">&nbsp;			queryParams.add(new BasicNameValuePair(paramName, paramValue));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return queryParams;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T extends HttpUriRequest&gt; T applyAdditionalHeaders(T method) {
+<b class="nc">&nbsp;		for (Map.Entry&lt;String, String&gt; additionalHeader : getAdditionalHttpHeaders().entrySet()) {</b>
+<b class="nc">&nbsp;			method.addHeader(additionalHeader.getKey(), additionalHeader.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return method;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

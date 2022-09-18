@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > LockManager</title>
+  <title>Coverage Report > NotifyingSailConnection</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail</a>
 </div>
 
-<h1>Coverage Summary for Class: LockManager (org.eclipse.rdf4j.sail)</h1>
+<h1>Coverage Summary for Class: NotifyingSailConnection (org.eclipse.rdf4j.sail)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">LockManager</td>
+  <td class="name">NotifyingSailConnection</td>
 </tr>
 
 </table>
@@ -50,46 +50,29 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Lock;
-&nbsp;
 &nbsp;/**
-&nbsp; * @author james
+&nbsp; * A connection to an RDF Sail object. A SailConnection is active from the moment it is created until it is closed. Care
+&nbsp; * should be taken to properly close SailConnections as they might block concurrent queries and/or updates on the Sail
+&nbsp; * while active, depending on the Sail-implementation that is being used.
+&nbsp; *
+&nbsp; * @author James Leigh
 &nbsp; */
-&nbsp;public interface LockManager {
+&nbsp;public interface NotifyingSailConnection extends SailConnection {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Technical description of where the lock is located, such as a URL.
-&nbsp;	 */
-&nbsp;	String getLocation();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Determines if the SAIL is locked.
+&nbsp;	 * Registers a SailConnection listener with this SailConnection. The listener should be notified of any statements
+&nbsp;	 * that are added or removed as part of this SailConnection.
 &nbsp;	 *
-&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the SAIL is already locked.
+&nbsp;	 * @param listener A SailConnectionListener.
 &nbsp;	 */
-&nbsp;	boolean isLocked();
+&nbsp;	void addConnectionListener(SailConnectionListener listener);
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Creates a lock in a SAIL if it does not yet exist.
+&nbsp;	 * Deregisters a SailConnection listener with this SailConnection.
 &nbsp;	 *
-&nbsp;	 * @return a newly acquired lock or null if the SAIL is already locked.
+&nbsp;	 * @param listener A SailConnectionListener.
 &nbsp;	 */
-&nbsp;	Lock tryLock();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Creates a lock in a SAIL if it does not yet exist.
-&nbsp;	 *
-&nbsp;	 * @return a newly acquired lock.
-&nbsp;	 * @throws SailLockedException if the directory is already locked.
-&nbsp;	 */
-&nbsp;	Lock lockOrFail() throws SailLockedException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Revokes a lock owned by another process.
-&nbsp;	 *
-&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if a lock was successfully revoked.
-&nbsp;	 */
-&nbsp;	boolean revokeLock();
+&nbsp;	void removeConnectionListener(SailConnectionListener listener);
 &nbsp;
 &nbsp;}
 </code>
@@ -115,7 +98,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

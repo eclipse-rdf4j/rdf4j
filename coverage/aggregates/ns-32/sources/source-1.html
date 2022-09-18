@@ -1,0 +1,243 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CacheUtils</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.cache</a>
+</div>
+
+<h1>Coverage Summary for Class: CacheUtils (org.eclipse.rdf4j.federated.cache)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CacheUtils</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.cache;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementSource;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
+&nbsp;import org.eclipse.rdf4j.federated.cache.SourceSelectionCache.StatementSourceAssurance;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.federated.exception.OptimizationException;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.structures.SubQuery;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;
+<b class="nc">&nbsp;public class CacheUtils {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Perform a &quot;ASK&quot; query for the provided statement to check if the endpoint can provide results. Update the cache
+&nbsp;	 * with the new information.
+&nbsp;	 *
+&nbsp;	 * @param cache
+&nbsp;	 * @param endpoint
+&nbsp;	 * @param subj
+&nbsp;	 * @param pred
+&nbsp;	 * @param obj
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @param contexts
+&nbsp;	 * @return
+&nbsp;	 * @throws OptimizationException
+&nbsp;	 */
+&nbsp;	private static boolean checkEndpointForResults(SourceSelectionCache cache, Endpoint endpoint, Resource subj,
+&nbsp;			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+&nbsp;			throws OptimizationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			TripleSource t = endpoint.getTripleSource();</b>
+<b class="nc">&nbsp;			boolean hasResults = t.hasStatements(subj, pred, obj, queryInfo, contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;			cache.updateInformation(new SubQuery(subj, pred, obj, contexts), endpoint, hasResults);</b>
+&nbsp;
+<b class="nc">&nbsp;			return hasResults;</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new OptimizationException(</b>
+<b class="nc">&nbsp;					&quot;Error checking results for endpoint &quot; + endpoint.getId() + &quot;: &quot; + e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks the cache if some endpoint can provide results to the subquery. If the cache has no knowledge a remote ask
+&nbsp;	 * query is performed and the cache is updated with appropriate information.
+&nbsp;	 *
+&nbsp;	 * @param cache
+&nbsp;	 * @param endpoints
+&nbsp;	 * @param subj
+&nbsp;	 * @param pred
+&nbsp;	 * @param obj
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @param contexts
+&nbsp;	 * @return whether some endpoint can provide results
+&nbsp;	 */
+&nbsp;	public static boolean checkCacheUpdateCache(SourceSelectionCache cache, List&lt;Endpoint&gt; endpoints, Resource subj,
+&nbsp;			IRI pred,
+&nbsp;			Value obj, QueryInfo queryInfo, Resource... contexts) {
+&nbsp;
+<b class="nc">&nbsp;		SubQuery q = new SubQuery(subj, pred, obj, contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Endpoint e : endpoints) {</b>
+<b class="nc">&nbsp;			StatementSourceAssurance a = cache.getAssurance(q, e);</b>
+<b class="nc">&nbsp;			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS</b>
+<b class="nc">&nbsp;					&amp;&amp; checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks the cache for relevant statement sources to the provided statement. If the cache has no knowledge ask the
+&nbsp;	 * endpoint for further information.
+&nbsp;	 *
+&nbsp;	 * @param cache
+&nbsp;	 * @param endpoints
+&nbsp;	 * @param subj
+&nbsp;	 * @param pred
+&nbsp;	 * @param obj
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @param contexts
+&nbsp;	 *
+&nbsp;	 * @return the list of relevant statement sources
+&nbsp;	 */
+&nbsp;	public static List&lt;StatementSource&gt; checkCacheForStatementSourcesUpdateCache(SourceSelectionCache cache,
+&nbsp;			List&lt;Endpoint&gt; endpoints,
+&nbsp;			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) {
+&nbsp;
+<b class="nc">&nbsp;		SubQuery q = new SubQuery(subj, pred, obj, contexts);</b>
+<b class="nc">&nbsp;		List&lt;StatementSource&gt; sources = new ArrayList&lt;&gt;(endpoints.size());</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Endpoint e : endpoints) {</b>
+<b class="nc">&nbsp;			StatementSourceAssurance a = cache.getAssurance(q, e);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (a == StatementSourceAssurance.HAS_REMOTE_STATEMENTS) {</b>
+<b class="nc">&nbsp;				sources.add(new StatementSource(e.getId(), StatementSourceType.REMOTE));</b>
+<b class="nc">&nbsp;			} else if (a == StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS) {</b>
+&nbsp;
+&nbsp;				// check if the endpoint has results (statistics + ask request)
+<b class="nc">&nbsp;				if (CacheUtils.checkEndpointForResults(cache, e, subj, pred, obj, queryInfo, contexts)) {</b>
+<b class="nc">&nbsp;					sources.add(new StatementSource(e.getId(), StatementSourceType.REMOTE));</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return sources;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

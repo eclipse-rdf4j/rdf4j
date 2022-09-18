@@ -1,0 +1,290 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > XMLParserSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: XMLParserSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">XMLParserSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (25/25)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import javax.xml.XMLConstants;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RioConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.xml.sax.XMLReader;
+&nbsp;
+&nbsp;/**
+&nbsp; * ParserSettings for the XML parser features.
+&nbsp; * &lt;p&gt;
+&nbsp; * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
+&nbsp; *
+&nbsp; * @author Michael Grove
+&nbsp; * @author Peter Ansell
+&nbsp; * @see XMLConstants
+&nbsp; * @see &lt;a href=&quot;http://xerces.apache.org/xerces2-j/features.html&quot;&gt;Apache XML Project - Features&lt;/a&gt;
+&nbsp; */
+&nbsp;public final class XMLParserSettings {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting for the secure processing feature of XML parsers to avoid DOS attacks
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code http://javax.xml.XMLConstants/feature/secure-processing}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href= &quot;http://docs.oracle.com/javase/6/docs/api/javax/xml/XMLConstants.html#FEATURE_SECURE_PROCESSING&quot;&gt;
+&nbsp;	 *      XMLConstants.FEATURE_SECURE_PROCESSING&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; SECURE_PROCESSING = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			XMLConstants.FEATURE_SECURE_PROCESSING, &quot;Secure processing feature of XMLConstants&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting specifying whether DOCTYPE declaration should be disallowed.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false. Can be overridden by setting system property
+&nbsp;	 * {@code http://apache.org/xml/features/disallow-doctype-decl}
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://xerces.apache.org/xerces2-j/features.html&quot;&gt;Apache XML Project - Features&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet&quot;&gt;XXE Prevention
+&nbsp;	 *      Cheat Sheet&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; DISALLOW_DOCTYPE_DECL = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;http://apache.org/xml/features/disallow-doctype-decl&quot;, &quot;Disallow DOCTYPE declaration in document&quot;, false);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting specifying whether external DTDs should be loaded.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property
+&nbsp;	 * {@code http://apache.org/xml/features/nonvalidating/load-external-dtd}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://xerces.apache.org/xerces2-j/features.html&quot;&gt;Apache XML Project - Features&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; LOAD_EXTERNAL_DTD = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;http://apache.org/xml/features/nonvalidating/load-external-dtd&quot;, &quot;Load External DTD&quot;, false);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting specifying whether external text entities should be included.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code http://xml.org/sax/features/external-general-entities}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://xerces.apache.org/xerces2-j/features.html&quot;&gt;Apache XML Project - Features&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet&quot;&gt;XXE Prevention
+&nbsp;	 *      Cheat Sheet&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; EXTERNAL_GENERAL_ENTITIES = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;http://xml.org/sax/features/external-general-entities&quot;, &quot;Include external general entities&quot;, false);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting specifying whether external parameter entities should be included.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code http://xml.org/sax/features/external-parameter-entities}
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://xerces.apache.org/xerces2-j/features.html&quot;&gt;Apache XML Project - Features&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;https://www.owasp.org/index.php/XML_External_Entity_(XXE)_Prevention_Cheat_Sheet&quot;&gt;XXE Prevention
+&nbsp;	 *      Cheat Sheet&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; EXTERNAL_PARAMETER_ENTITIES = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;http://xml.org/sax/features/external-parameter-entities&quot;, &quot;Include external parameter entities&quot;, false);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting to customise the XMLReader that is used by an XML based Rio parser.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * IMPORTANT: The XMLReader must not be shared across different readers, so this setting must be reset for each
+&nbsp;	 * parse operation.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to null, This settings is only useful if {@link RioConfig#isSet(RioSetting)} returns true.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;XMLReader&gt; CUSTOM_XML_READER = new RioSettingImpl&lt;&gt;(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.xmlreader&quot;, &quot;Custom XML Reader&quot;, null);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting to determine whether to ignore non-fatal errors that come from SAX parsers.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_sax_non_fatal_errors}
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_SAX_NON_FATAL_ERRORS = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_sax_non_fatal_errors&quot;, &quot;Fail on SAX non-fatal errors&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting to determine whether to ignore non-standard attributes that are found in an XML document.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_non_standard_attributes}
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_NON_STANDARD_ATTRIBUTES = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_non_standard_attributes&quot;, &quot;Fail on non-standard attributes&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting to determine whether to ignore XML documents containing invalid NCNAMEs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_invalid_ncname}
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_INVALID_NCNAME = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_invalid_ncname&quot;, &quot;Fail on invalid NCName&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting to determine whether to throw an error for duplicate uses of rdf:ID in a single document.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_duplicate_rdf_id}
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_DUPLICATE_RDF_ID = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_duplicate_rdf_id&quot;, &quot;Fail on duplicate RDF ID&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting to determine whether to ignore XML documents containing invalid QNAMEs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_invalid_qname}
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_INVALID_QNAME = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_invalid_qname&quot;, &quot;Fail on invalid QName&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parser setting to determine whether to throw an error for XML documents containing mismatched tags
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.fail_on_mismatched_tags}
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_MISMATCHED_TAGS = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.fail_on_mismatched_tags&quot;, &quot;Fail on mismatched tags&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the parser parses stand-alone RDF documents. In stand-alone documents, the rdf:RDF
+&nbsp;	 * element is optional if it contains just one element.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.parse_standalone_documents}
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RioSetting&lt;Boolean&gt; PARSE_STANDALONE_DOCUMENTS = new BooleanRioSetting(</b>
+<b class="fc">&nbsp;			&quot;org.eclipse.rdf4j.rio.parse_standalone_documents&quot;, &quot;Parse standalone documents&quot;, true);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private constructor
+&nbsp;	 */
+&nbsp;	private XMLParserSettings() {
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

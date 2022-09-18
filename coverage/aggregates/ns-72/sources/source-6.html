@@ -1,0 +1,246 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DisjunctiveConstraintOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: DisjunctiveConstraintOptimizer (org.eclipse.rdf4j.query.algebra.evaluation.optimizer)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DisjunctiveConstraintOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">DisjunctiveConstraintOptimizer$OrSameTermOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (16/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (29/29)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (16/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (31/31)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * A query optimizer that optimize disjunctive constraints on tuple expressions. Currently, this optimizer {@link Union
+&nbsp; * unions} a clone of the underlying tuple expression with the original expression for each {@link SameTerm} operator,
+&nbsp; * moving the SameTerm to the cloned tuple expression.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="fc">&nbsp;public class DisjunctiveConstraintOptimizer implements QueryOptimizer {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="fc">&nbsp;		tupleExpr.visit(new OrSameTermOptimizer());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class OrSameTermOptimizer extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+&nbsp;		protected OrSameTermOptimizer() {
+<b class="fc">&nbsp;			super(false);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter filter) {
+<b class="fc">&nbsp;			if (filter.getCondition() instanceof Or &amp;&amp; containsSameTerm(filter.getCondition())) {</b>
+<b class="fc">&nbsp;				Or orNode = (Or) filter.getCondition();</b>
+<b class="fc">&nbsp;				TupleExpr filterArg = filter.getArg();</b>
+&nbsp;
+<b class="fc">&nbsp;				ValueExpr leftConstraint = orNode.getLeftArg();</b>
+<b class="fc">&nbsp;				ValueExpr rightConstraint = orNode.getRightArg();</b>
+&nbsp;
+&nbsp;				// remove filter
+<b class="fc">&nbsp;				filter.replaceWith(filterArg);</b>
+&nbsp;
+&nbsp;				// Push UNION down below other filters to avoid cloning them
+<b class="fc">&nbsp;				TupleExpr node = findNotFilter(filterArg);</b>
+&nbsp;
+<b class="fc">&nbsp;				Filter leftFilter = new Filter(node.clone(), leftConstraint);</b>
+<b class="fc">&nbsp;				Filter rightFilter = new Filter(node.clone(), rightConstraint);</b>
+<b class="fc">&nbsp;				Union union = new Union(leftFilter, rightFilter);</b>
+<b class="fc">&nbsp;				node.replaceWith(union);</b>
+&nbsp;
+<b class="fc">&nbsp;				filter.getParentNode().visit(this);</b>
+<b class="fc">&nbsp;			} else {</b>
+<b class="fc">&nbsp;				super.meet(filter);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private TupleExpr findNotFilter(TupleExpr node) {
+<b class="fc">&nbsp;			if (node instanceof Filter) {</b>
+<b class="fc">&nbsp;				return findNotFilter(((Filter) node).getArg());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return node;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private boolean containsSameTerm(ValueExpr node) {
+<b class="fc">&nbsp;			if (node instanceof SameTerm) {</b>
+<b class="fc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (node instanceof Or) {</b>
+<b class="fc">&nbsp;				Or or = (Or) node;</b>
+<b class="fc">&nbsp;				boolean left = containsSameTerm(or.getLeftArg());</b>
+<b class="pc">&nbsp;				return left || containsSameTerm(or.getRightArg());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (node instanceof And) {</b>
+<b class="fc">&nbsp;				And and = (And) node;</b>
+<b class="fc">&nbsp;				boolean left = containsSameTerm(and.getLeftArg());</b>
+<b class="pc">&nbsp;				return left || containsSameTerm(and.getRightArg());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

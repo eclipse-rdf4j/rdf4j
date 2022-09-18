@@ -1,0 +1,227 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ParserConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: ParserConfig (org.eclipse.rdf4j.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ParserConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    37.5%
+  </span>
+  <span class="absValue">
+    (3/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.9%
+  </span>
+  <span class="absValue">
+    (6/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio;
+&nbsp;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * A container object for easy setting and passing of {@link RDFParser} configuration options.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class ParserConfig extends RioConfig {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 */
+&nbsp;	private static final long serialVersionUID = 270L;
+&nbsp;
+<b class="fc">&nbsp;	private Set&lt;RioSetting&lt;?&gt;&gt; nonFatalErrors = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a ParserConfig object starting with default settings.
+&nbsp;	 */
+&nbsp;	public ParserConfig() {
+<b class="fc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This method indicates a list of optional errors that the parser should attempt to recover from.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If recovery is not possible, then the parser will still abort with an exception.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Calls to this method will override previous calls, including the backwards-compatibility settings setup in the
+&nbsp;	 * deprecated constructor.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Non-Fatal errors that are detected MUST be reported to the error listener.
+&nbsp;	 *
+&nbsp;	 * @param nonFatalErrors The set of parser errors that are relevant to
+&nbsp;	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	public ParserConfig setNonFatalErrors(Set&lt;RioSetting&lt;?&gt;&gt; nonFatalErrors) {
+<b class="nc">&nbsp;		this.nonFatalErrors = new HashSet&lt;&gt;(nonFatalErrors);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add a non-fatal error to the set used by parsers to determine whether they should attempt to recover from a
+&nbsp;	 * particular parsing error.
+&nbsp;	 *
+&nbsp;	 * @param nextNonFatalError A non-fatal error that a parser should attempt to recover from.
+&nbsp;	 * @return Either a copy of this config, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	public ParserConfig addNonFatalError(RioSetting&lt;?&gt; nextNonFatalError) {
+<b class="fc">&nbsp;		this.nonFatalErrors.add(nextNonFatalError);</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This method is used by the parser to check whether they should throw an exception or attempt to recover from a
+&nbsp;	 * non-fatal error.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If this method returns false, then the given non-fatal error will cause the parser to throw an exception.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If this method returns true, then the parser will do its best to recover from the error, potentially by dropping
+&nbsp;	 * triples or creating triples that do not exactly match the source.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * By default this method will always return false until {@link #setNonFatalErrors(Set)} is called to specify the
+&nbsp;	 * set of errors that are non-fatal in the given context.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Non-Fatal errors that are detected MUST be reported to the error listener.
+&nbsp;	 *
+&nbsp;	 * @param errorToCheck
+&nbsp;	 * @return True if the user has setup the parser configuration to indicate that this error is not necessarily fatal
+&nbsp;	 *         and false if the user has not indicated that this error is fatal.
+&nbsp;	 */
+&nbsp;	public boolean isNonFatalError(RioSetting&lt;?&gt; errorToCheck) {
+<b class="nc">&nbsp;		return nonFatalErrors.contains(errorToCheck);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the current set of non-fatal errors.
+&nbsp;	 *
+&nbsp;	 * @return An unmodifiable set containing the current non-fatal errors.
+&nbsp;	 */
+&nbsp;	public Set&lt;RioSetting&lt;?&gt;&gt; getNonFatalErrors() {
+<b class="nc">&nbsp;		return Collections.unmodifiableSet(nonFatalErrors);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This method is preserved for backwards compatibility.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Code should be gradually migrated to use {@link BasicParserSettings#PRESERVE_BNODE_IDS}.
+&nbsp;	 *
+&nbsp;	 * @return Returns the {@link BasicParserSettings#PRESERVE_BNODE_IDS} setting.
+&nbsp;	 */
+&nbsp;	public boolean isPreserveBNodeIDs() {
+<b class="nc">&nbsp;		return this.get(BasicParserSettings.PRESERVE_BNODE_IDS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ParserConfig useDefaults() {
+<b class="nc">&nbsp;		super.useDefaults();</b>
+<b class="nc">&nbsp;		this.nonFatalErrors.clear();</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public &lt;T extends Object&gt; ParserConfig set(RioSetting&lt;T&gt; setting, T value) {
+<b class="fc">&nbsp;		super.set(setting, value);</b>
+<b class="fc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

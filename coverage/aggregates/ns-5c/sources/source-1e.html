@@ -1,0 +1,439 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SKOS</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: SKOS (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SKOS</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    97.1%
+  </span>
+  <span class="absValue">
+    (33/34)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Vocabulary constants for the &lt;a href=&quot;http://www.w3.org/2004/02/skos/&quot;&gt;Simple Knowledge Organization System
+&nbsp; * (SKOS)&lt;/a&gt;.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/&quot;&gt;SKOS Simple Knowledge Organization System Reference&lt;/a&gt;
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class SKOS {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The SKOS namespace: http://www.w3.org/2004/02/skos/core#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/2004/02/skos/core#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The recommended prefix for the SKOS namespace: &quot;skos&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;skos&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the SKOS namespace.
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	/* classes */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:Concept class
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#concepts&quot;&gt;The skos:Concept Class&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI CONCEPT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:ConceptScheme class
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#schemes&quot;&gt;Concept Schemes&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI CONCEPT_SCHEME;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:Collection class
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#collections&quot;&gt;Concept Collections&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI COLLECTION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:OrderedCollection class
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#collections&quot;&gt;Concept Collections&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI ORDERED_COLLECTION;
+&nbsp;
+&nbsp;	/* lexical labels */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:prefLabel lexical label property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#labels&quot;&gt;Lexical Labels&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI PREF_LABEL;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:altLabel lexical label property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#labels&quot;&gt;Lexical Labels&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI ALT_LABEL;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:hiddenLabel lexical label property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#labels&quot;&gt;Lexical Labels&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI HIDDEN_LABEL;
+&nbsp;
+&nbsp;	/* Concept Scheme properties */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:inScheme relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#schemes&quot;&gt;Concept Schemes&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI IN_SCHEME;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:hasTopConcept relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#schemes&quot;&gt;Concept Schemes&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI HAS_TOP_CONCEPT;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:topConceptOf relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#schemes&quot;&gt;Concept Schemes&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI TOP_CONCEPT_OF;
+&nbsp;
+&nbsp;	/* collection properties */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:member relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#collections&quot;&gt;Concept Collections&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI MEMBER;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:memberList relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#collections&quot;&gt;Concept Collections&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI MEMBER_LIST;
+&nbsp;
+&nbsp;	/* notation properties */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:notation property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notations&quot;&gt;Notations&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NOTATION;
+&nbsp;
+&nbsp;	/* documentation properties */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:changeNote property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notes&quot;&gt;Documentation Properties (Note Properties)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI CHANGE_NOTE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:definition property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notes&quot;&gt;Documentation Properties (Note Properties)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI DEFINITION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:editorialNote property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notes&quot;&gt;Documentation Properties (Note Properties)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI EDITORIAL_NOTE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:example property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notes&quot;&gt;Documentation Properties (Note Properties)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;
+&nbsp;	public static final IRI EXAMPLE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:historyNote property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notes&quot;&gt;Documentation Properties (Note Properties)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI HISTORY_NOTE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:note property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notes&quot;&gt;Documentation Properties (Note Properties)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NOTE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:scopeNote property.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#notes&quot;&gt;Documentation Properties (Note Properties)&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SCOPE_NOTE;
+&nbsp;
+&nbsp;	/* semantic relations */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:broader relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#semantic-relations&quot;&gt;SKOS Simple Knowledge Organization System
+&nbsp;	 *      Reference - Semantic Relations Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI BROADER;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:broaderTransitive relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#semantic-relations&quot;&gt;SKOS Simple Knowledge Organization System
+&nbsp;	 *      Reference - Semantic Relations Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI BROADER_TRANSITIVE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:narrower relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#semantic-relations&quot;&gt;SKOS Simple Knowledge Organization System
+&nbsp;	 *      Reference - Semantic Relations Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NARROWER;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:narrowerTransitive relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#semantic-relations&quot;&gt;SKOS Simple Knowledge Organization System
+&nbsp;	 *      Reference - Semantic Relations Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NARROWER_TRANSITIVE;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:related relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#semantic-relations&quot;&gt;SKOS Simple Knowledge Organization System
+&nbsp;	 *      Reference - Semantic Relations Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI RELATED;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:semanticRelation relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#semantic-relations&quot;&gt;SKOS Simple Knowledge Organization System
+&nbsp;	 *      Reference - Semantic Relations Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI SEMANTIC_RELATION;
+&nbsp;
+&nbsp;	/* mapping properties */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:broadMatch relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#mapping&quot;&gt;SKOS Simple Knowledge Organization System Reference -
+&nbsp;	 *      Mapping Properties Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI BROAD_MATCH;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:closeMatch relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#mapping&quot;&gt;SKOS Simple Knowledge Organization System Reference -
+&nbsp;	 *      Mapping Properties Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI CLOSE_MATCH;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:exactMatch relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#mapping&quot;&gt;SKOS Simple Knowledge Organization System Reference -
+&nbsp;	 *      Mapping Properties Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI EXACT_MATCH;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:mappingRelation relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#mapping&quot;&gt;SKOS Simple Knowledge Organization System Reference -
+&nbsp;	 *      Mapping Properties Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI MAPPING_RELATION;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:narrowMatch relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#mapping&quot;&gt;SKOS Simple Knowledge Organization System Reference -
+&nbsp;	 *      Mapping Properties Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI NARROW_MATCH;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The skos:relatedMatch relation.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/skos-reference/#mapping&quot;&gt;SKOS Simple Knowledge Organization System Reference -
+&nbsp;	 *      Mapping Properties Section&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	public static final IRI RELATED_MATCH;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="fc">&nbsp;		CONCEPT = Vocabularies.createIRI(NAMESPACE, &quot;Concept&quot;);</b>
+<b class="fc">&nbsp;		CONCEPT_SCHEME = Vocabularies.createIRI(NAMESPACE, &quot;ConceptScheme&quot;);</b>
+<b class="fc">&nbsp;		COLLECTION = Vocabularies.createIRI(NAMESPACE, &quot;Collection&quot;);</b>
+<b class="fc">&nbsp;		ORDERED_COLLECTION = Vocabularies.createIRI(NAMESPACE, &quot;OrderedCollection&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		PREF_LABEL = Vocabularies.createIRI(NAMESPACE, &quot;prefLabel&quot;);</b>
+<b class="fc">&nbsp;		ALT_LABEL = Vocabularies.createIRI(NAMESPACE, &quot;altLabel&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		BROADER = Vocabularies.createIRI(NAMESPACE, &quot;broader&quot;);</b>
+<b class="fc">&nbsp;		NARROWER = Vocabularies.createIRI(NAMESPACE, &quot;narrower&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		HAS_TOP_CONCEPT = Vocabularies.createIRI(NAMESPACE, &quot;hasTopConcept&quot;);</b>
+<b class="fc">&nbsp;		MEMBER = Vocabularies.createIRI(NAMESPACE, &quot;member&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		HIDDEN_LABEL = Vocabularies.createIRI(NAMESPACE, &quot;hiddenLabel&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		IN_SCHEME = Vocabularies.createIRI(NAMESPACE, &quot;inScheme&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		TOP_CONCEPT_OF = Vocabularies.createIRI(NAMESPACE, &quot;topConceptOf&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		MEMBER_LIST = Vocabularies.createIRI(NAMESPACE, &quot;memberList&quot;);</b>
+<b class="fc">&nbsp;		NOTATION = Vocabularies.createIRI(NAMESPACE, &quot;notation&quot;);</b>
+<b class="fc">&nbsp;		CHANGE_NOTE = Vocabularies.createIRI(NAMESPACE, &quot;changeNote&quot;);</b>
+<b class="fc">&nbsp;		DEFINITION = Vocabularies.createIRI(NAMESPACE, &quot;definition&quot;);</b>
+<b class="fc">&nbsp;		EDITORIAL_NOTE = Vocabularies.createIRI(NAMESPACE, &quot;editorialNote&quot;);</b>
+<b class="fc">&nbsp;		EXAMPLE = Vocabularies.createIRI(NAMESPACE, &quot;example&quot;);</b>
+<b class="fc">&nbsp;		HISTORY_NOTE = Vocabularies.createIRI(NAMESPACE, &quot;historyNote&quot;);</b>
+<b class="fc">&nbsp;		NOTE = Vocabularies.createIRI(NAMESPACE, &quot;note&quot;);</b>
+<b class="fc">&nbsp;		SCOPE_NOTE = Vocabularies.createIRI(NAMESPACE, &quot;scopeNote&quot;);</b>
+<b class="fc">&nbsp;		BROADER_TRANSITIVE = Vocabularies.createIRI(NAMESPACE, &quot;broaderTransitive&quot;);</b>
+<b class="fc">&nbsp;		NARROWER_TRANSITIVE = Vocabularies.createIRI(NAMESPACE, &quot;narrowerTransitive&quot;);</b>
+<b class="fc">&nbsp;		RELATED = Vocabularies.createIRI(NAMESPACE, &quot;related&quot;);</b>
+<b class="fc">&nbsp;		SEMANTIC_RELATION = Vocabularies.createIRI(NAMESPACE, &quot;semanticRelation&quot;);</b>
+<b class="fc">&nbsp;		BROAD_MATCH = Vocabularies.createIRI(NAMESPACE, &quot;broadMatch&quot;);</b>
+<b class="fc">&nbsp;		CLOSE_MATCH = Vocabularies.createIRI(NAMESPACE, &quot;closeMatch&quot;);</b>
+<b class="fc">&nbsp;		EXACT_MATCH = Vocabularies.createIRI(NAMESPACE, &quot;exactMatch&quot;);</b>
+<b class="fc">&nbsp;		MAPPING_RELATION = Vocabularies.createIRI(NAMESPACE, &quot;mappingRelation&quot;);</b>
+<b class="fc">&nbsp;		NARROW_MATCH = Vocabularies.createIRI(NAMESPACE, &quot;narrowMatch&quot;);</b>
+<b class="fc">&nbsp;		RELATED_MATCH = Vocabularies.createIRI(NAMESPACE, &quot;relatedMatch&quot;);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

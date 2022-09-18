@@ -1,0 +1,206 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractDelegatingSailImplConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.config</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractDelegatingSailImplConfig (org.eclipse.rdf4j.sail.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractDelegatingSailImplConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.config;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.config.SailConfigSchema.DELEGATE;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public abstract class AbstractDelegatingSailImplConfig extends AbstractSailImplConfig
+&nbsp;		implements DelegatingSailImplConfig {
+&nbsp;
+&nbsp;	private SailImplConfig delegate;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new RepositoryConfigImpl.
+&nbsp;	 */
+&nbsp;	public AbstractDelegatingSailImplConfig() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new RepositoryConfigImpl.
+&nbsp;	 */
+&nbsp;	public AbstractDelegatingSailImplConfig(String type) {
+<b class="nc">&nbsp;		super(type);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a new RepositoryConfigImpl.
+&nbsp;	 */
+&nbsp;	public AbstractDelegatingSailImplConfig(String type, SailImplConfig delegate) {
+<b class="nc">&nbsp;		this(type);</b>
+<b class="nc">&nbsp;		setDelegate(delegate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailImplConfig getDelegate() {
+<b class="nc">&nbsp;		return delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setDelegate(SailImplConfig delegate) {
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void validate() throws SailConfigException {
+<b class="nc">&nbsp;		super.validate();</b>
+<b class="nc">&nbsp;		if (delegate == null) {</b>
+<b class="nc">&nbsp;			throw new SailConfigException(&quot;No delegate specified for &quot; + getType() + &quot; Sail&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		delegate.validate();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model m) {
+<b class="nc">&nbsp;		Resource implNode = super.export(m);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (delegate != null) {</b>
+<b class="nc">&nbsp;			Resource delegateNode = delegate.export(m);</b>
+<b class="nc">&nbsp;			m.add(implNode, DELEGATE, delegateNode);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return implNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model m, Resource implNode) throws SailConfigException {
+<b class="nc">&nbsp;		super.parse(m, implNode);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Models.objectResource(m.getStatements(implNode, DELEGATE, null))</b>
+<b class="nc">&nbsp;					.ifPresent(delegate -&gt; setDelegate(SailConfigUtil.parseRepositoryImpl(m, delegate)));</b>
+<b class="nc">&nbsp;		} catch (ModelException e) {</b>
+<b class="nc">&nbsp;			throw new SailConfigException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

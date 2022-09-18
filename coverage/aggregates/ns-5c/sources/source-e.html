@@ -1,0 +1,265 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LDP</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.vocabulary</a>
+</div>
+
+<h1>Coverage Summary for Class: LDP (org.eclipse.rdf4j.model.vocabulary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LDP</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/**
+&nbsp; * Copyright (c) 2017 Eclipse RDF4J contributors, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; */
+&nbsp;package org.eclipse.rdf4j.model.vocabulary;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Constants for the Linked Data Platform.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/ldp/&quot;&gt;Linked Data Platform&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+<b class="nc">&nbsp;public class LDP {</b>
+&nbsp;	/**
+&nbsp;	 * The LDP namespace: http://www.w3.org/ns/ldp#
+&nbsp;	 */
+&nbsp;	public static final String NAMESPACE = &quot;http://www.w3.org/ns/ldp#&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Recommended prefix for the namespace: &quot;ldp&quot;
+&nbsp;	 */
+&nbsp;	public static final String PREFIX = &quot;ldp&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * An immutable {@link Namespace} constant that represents the namespace.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final Namespace NS = Vocabularies.createNamespace(PREFIX, NAMESPACE);</b>
+&nbsp;
+&nbsp;	// Classes
+&nbsp;	/** ldp:BasicContainer */
+&nbsp;	public static final IRI BASIC_CONTAINER;
+&nbsp;
+&nbsp;	/** ldp:Container */
+&nbsp;	public static final IRI CONTAINER;
+&nbsp;
+&nbsp;	/** ldp:DirectContainer */
+&nbsp;	public static final IRI DIRECT_CONTAINER;
+&nbsp;
+&nbsp;	/** ldp:IndirectContainer */
+&nbsp;	public static final IRI INDIRECT_CONTAINER;
+&nbsp;
+&nbsp;	/** ldp:NonRDFSource */
+&nbsp;	public static final IRI NON_RDF_SOURCE;
+&nbsp;
+&nbsp;	/** ldp:Page */
+&nbsp;	public static final IRI PAGE;
+&nbsp;
+&nbsp;	/** ldp:PageSortCriterion */
+&nbsp;	public static final IRI PAGE_SORT_CRITERION;
+&nbsp;
+&nbsp;	/** ldp:RDFSource */
+&nbsp;	public static final IRI RDF_SOURCE;
+&nbsp;
+&nbsp;	/** ldp:Resource */
+&nbsp;	public static final IRI RESOURCE;
+&nbsp;
+&nbsp;	// Properties
+&nbsp;	/** ldp:constrainedBy */
+&nbsp;	public static final IRI CONSTRAINED_BY;
+&nbsp;
+&nbsp;	/** ldp:contains */
+&nbsp;	public static final IRI CONTAINS;
+&nbsp;
+&nbsp;	/** ldp:hasMemberRelation */
+&nbsp;	public static final IRI HAS_MEMBER_RELATION;
+&nbsp;
+&nbsp;	/** ldp:inbox */
+&nbsp;	public static final IRI INBOX;
+&nbsp;
+&nbsp;	/** ldp:insertedContentRelation */
+&nbsp;	public static final IRI INSERTED_CONTENT_RELATION;
+&nbsp;
+&nbsp;	/** ldp:isMemberOfRelation */
+&nbsp;	public static final IRI IS_MEMBER_OF_RELATION;
+&nbsp;
+&nbsp;	/** ldp:member */
+&nbsp;	public static final IRI MEMBER;
+&nbsp;
+&nbsp;	/** ldp:membershipResource */
+&nbsp;	public static final IRI MEMBERSHIP_RESOURCE;
+&nbsp;
+&nbsp;	/** ldp:pageSequence */
+&nbsp;	public static final IRI PAGE_SEQUENCE;
+&nbsp;
+&nbsp;	/** ldp:pageSortCollation */
+&nbsp;	public static final IRI PAGE_SORT_COLLATION;
+&nbsp;
+&nbsp;	/** ldp:pageSortCriteria */
+&nbsp;	public static final IRI PAGE_SORT_CRITERIA;
+&nbsp;
+&nbsp;	/** ldp:pageSortOrder */
+&nbsp;	public static final IRI PAGE_SORT_ORDER;
+&nbsp;
+&nbsp;	/** ldp:pageSortPredicate */
+&nbsp;	public static final IRI PAGE_SORT_PREDICATE;
+&nbsp;
+&nbsp;	// Individuals
+&nbsp;	/** ldp:Ascending */
+&nbsp;	public static final IRI ASCENDING;
+&nbsp;
+&nbsp;	/** ldp:Descending */
+&nbsp;	public static final IRI DESCENDING;
+&nbsp;
+&nbsp;	/** ldp:MemberSubject */
+&nbsp;	public static final IRI MEMBER_SUBJECT;
+&nbsp;
+&nbsp;	/** ldp:PreferContainment */
+&nbsp;	public static final IRI PREFER_CONTAINMENT;
+&nbsp;
+&nbsp;	/** ldp:PreferEmptyContainer */
+&nbsp;	@Deprecated
+&nbsp;	public static final IRI PREFER_EMPTY_CONTAINER;
+&nbsp;
+&nbsp;	/** ldp:PreferMembership */
+&nbsp;	public static final IRI PREFER_MEMBERSHIP;
+&nbsp;
+&nbsp;	/** ldp:PreferMinimalContainer */
+&nbsp;	public static final IRI PREFER_MINIMAL_CONTAINER;
+&nbsp;
+&nbsp;	static {
+&nbsp;
+<b class="nc">&nbsp;		BASIC_CONTAINER = Vocabularies.createIRI(NAMESPACE, &quot;BasicContainer&quot;);</b>
+<b class="nc">&nbsp;		CONTAINER = Vocabularies.createIRI(NAMESPACE, &quot;Container&quot;);</b>
+<b class="nc">&nbsp;		DIRECT_CONTAINER = Vocabularies.createIRI(NAMESPACE, &quot;DirectContainer&quot;);</b>
+<b class="nc">&nbsp;		INDIRECT_CONTAINER = Vocabularies.createIRI(NAMESPACE, &quot;IndirectContainer&quot;);</b>
+<b class="nc">&nbsp;		NON_RDF_SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;NonRDFSource&quot;);</b>
+<b class="nc">&nbsp;		PAGE = Vocabularies.createIRI(NAMESPACE, &quot;Page&quot;);</b>
+<b class="nc">&nbsp;		PAGE_SORT_CRITERION = Vocabularies.createIRI(NAMESPACE, &quot;PageSortCriterion&quot;);</b>
+<b class="nc">&nbsp;		RDF_SOURCE = Vocabularies.createIRI(NAMESPACE, &quot;RDFSource&quot;);</b>
+<b class="nc">&nbsp;		RESOURCE = Vocabularies.createIRI(NAMESPACE, &quot;Resource&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		CONSTRAINED_BY = Vocabularies.createIRI(NAMESPACE, &quot;constrainedBy&quot;);</b>
+<b class="nc">&nbsp;		CONTAINS = Vocabularies.createIRI(NAMESPACE, &quot;contains&quot;);</b>
+<b class="nc">&nbsp;		HAS_MEMBER_RELATION = Vocabularies.createIRI(NAMESPACE, &quot;hasMemberRelation&quot;);</b>
+<b class="nc">&nbsp;		INBOX = Vocabularies.createIRI(NAMESPACE, &quot;inbox&quot;);</b>
+<b class="nc">&nbsp;		INSERTED_CONTENT_RELATION = Vocabularies.createIRI(NAMESPACE, &quot;insertedContentRelation&quot;);</b>
+<b class="nc">&nbsp;		IS_MEMBER_OF_RELATION = Vocabularies.createIRI(NAMESPACE, &quot;isMemberOfRelation&quot;);</b>
+<b class="nc">&nbsp;		MEMBER = Vocabularies.createIRI(NAMESPACE, &quot;member&quot;);</b>
+<b class="nc">&nbsp;		MEMBERSHIP_RESOURCE = Vocabularies.createIRI(NAMESPACE, &quot;membershipResource&quot;);</b>
+<b class="nc">&nbsp;		PAGE_SEQUENCE = Vocabularies.createIRI(NAMESPACE, &quot;pageSequence&quot;);</b>
+<b class="nc">&nbsp;		PAGE_SORT_COLLATION = Vocabularies.createIRI(NAMESPACE, &quot;pageSortCollation&quot;);</b>
+<b class="nc">&nbsp;		PAGE_SORT_CRITERIA = Vocabularies.createIRI(NAMESPACE, &quot;pageSortCriteria&quot;);</b>
+<b class="nc">&nbsp;		PAGE_SORT_ORDER = Vocabularies.createIRI(NAMESPACE, &quot;pageSortOrder&quot;);</b>
+<b class="nc">&nbsp;		PAGE_SORT_PREDICATE = Vocabularies.createIRI(NAMESPACE, &quot;pageSortPredicate&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		ASCENDING = Vocabularies.createIRI(NAMESPACE, &quot;Ascending&quot;);</b>
+<b class="nc">&nbsp;		DESCENDING = Vocabularies.createIRI(NAMESPACE, &quot;Descending&quot;);</b>
+<b class="nc">&nbsp;		MEMBER_SUBJECT = Vocabularies.createIRI(NAMESPACE, &quot;MemberSubject&quot;);</b>
+<b class="nc">&nbsp;		PREFER_CONTAINMENT = Vocabularies.createIRI(NAMESPACE, &quot;PreferContainment&quot;);</b>
+<b class="nc">&nbsp;		PREFER_EMPTY_CONTAINER = Vocabularies.createIRI(NAMESPACE, &quot;PreferEmptyContainer&quot;);</b>
+<b class="nc">&nbsp;		PREFER_MEMBERSHIP = Vocabularies.createIRI(NAMESPACE, &quot;PreferMembership&quot;);</b>
+<b class="nc">&nbsp;		PREFER_MINIMAL_CONTAINER = Vocabularies.createIRI(NAMESPACE, &quot;PreferMinimalContainer&quot;);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

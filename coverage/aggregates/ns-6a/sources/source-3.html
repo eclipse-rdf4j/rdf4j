@@ -1,0 +1,213 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EncodeForUri</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.string</a>
+</div>
+
+<h1>Coverage Summary for Class: EncodeForUri (org.eclipse.rdf4j.query.algebra.evaluation.function.string)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EncodeForUri</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    76.5%
+  </span>
+  <span class="absValue">
+    (26/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    85.2%
+  </span>
+  <span class="absValue">
+    (23/27)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.string;
+&nbsp;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FN;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+&nbsp;
+&nbsp;/**
+&nbsp; * The SPARQL built-in {@link Function} ENCODE_FOR_URI, as defined in
+&nbsp; * &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#func-encode&quot;&gt;SPARQL Query Language for RDF&lt;/a&gt;
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="fc">&nbsp;public class EncodeForUri implements Function {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getURI() {
+<b class="fc">&nbsp;		return FN.ENCODE_FOR_URI.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+<b class="pc">&nbsp;		if (args.length != 1) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;ENCODE_FOR_URI requires exactly 1 argument, got &quot; + args.length);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (args[0] instanceof Literal) {</b>
+<b class="fc">&nbsp;			Literal literal = (Literal) args[0];</b>
+&nbsp;
+<b class="pc">&nbsp;			if (QueryEvaluationUtility.isStringLiteral(literal)) {</b>
+<b class="fc">&nbsp;				String lexValue = literal.getLabel();</b>
+&nbsp;
+<b class="fc">&nbsp;				return valueFactory.createLiteral(encodeUri(lexValue));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ValueExprEvaluationException(&quot;Invalid argument for ENCODE_FOR_URI: &quot; + literal);</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid argument for ENCODE_FOR_URI: &quot; + args[0]);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private String encodeUri(String uri) {
+&nbsp;
+<b class="fc">&nbsp;		StringBuilder buf = new StringBuilder(uri.length() * 2);</b>
+&nbsp;
+<b class="fc">&nbsp;		int uriLen = uri.length();</b>
+<b class="fc">&nbsp;		for (int i = 0; i &lt; uriLen; i++) {</b>
+<b class="fc">&nbsp;			char c = uri.charAt(i);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (isUnreserved(c)) {</b>
+<b class="fc">&nbsp;				buf.append(c);</b>
+&nbsp;			} else {
+&nbsp;				// use UTF-8 hex encoding for character.
+<b class="fc">&nbsp;				byte[] utf8 = Character.toString(c).getBytes(StandardCharsets.UTF_8);</b>
+&nbsp;
+<b class="fc">&nbsp;				for (byte b : utf8) {</b>
+&nbsp;					// Escape character
+<b class="fc">&nbsp;					buf.append(&#39;%&#39;);</b>
+&nbsp;
+<b class="fc">&nbsp;					char cb = (char) (b &amp; 0xFF);</b>
+&nbsp;
+<b class="fc">&nbsp;					String hexVal = Integer.toHexString(cb).toUpperCase();</b>
+&nbsp;
+&nbsp;					// Ensure use of two characters
+<b class="pc">&nbsp;					if (hexVal.length() == 1) {</b>
+<b class="nc">&nbsp;						buf.append(&#39;0&#39;);</b>
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					buf.append(hexVal);</b>
+&nbsp;				}
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return buf.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isUnreserved(char c) {
+<b class="pc">&nbsp;		return c &gt;= &#39;a&#39; &amp;&amp; c &lt;= &#39;z&#39; || c &gt;= &#39;A&#39; &amp;&amp; c &lt;= &#39;Z&#39; || c &gt;= &#39;0&#39; &amp;&amp; c &lt;= &#39;9&#39; || c == &#39;-&#39; || c == &#39;.&#39; || c == &#39;_&#39;</b>
+&nbsp;				|| c == &#39;~&#39;;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

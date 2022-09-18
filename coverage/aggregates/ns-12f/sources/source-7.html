@@ -1,0 +1,411 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > WorkbenchGateway</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.proxy</a>
+</div>
+
+<h1>Coverage Summary for Class: WorkbenchGateway (org.eclipse.rdf4j.workbench.proxy)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">WorkbenchGateway</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/104)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.proxy;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.workbench.proxy.WorkbenchServlet.SERVER_PARAM;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;import javax.servlet.ServletException;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
+&nbsp;import org.eclipse.rdf4j.workbench.base.AbstractServlet;
+&nbsp;import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+&nbsp;import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
+&nbsp;import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
+&nbsp;
+&nbsp;/**
+&nbsp; * All requests are serviced by this Servlet, though it usually delegates to other Servlets.
+&nbsp; */
+<b class="nc">&nbsp;public class WorkbenchGateway extends AbstractServlet {</b>
+&nbsp;
+&nbsp;	private static final String DEFAULT_SERVER = &quot;default-server&quot;;
+&nbsp;
+&nbsp;	private static final String CHANGE_SERVER = &quot;change-server-path&quot;;
+&nbsp;
+&nbsp;	private static final String SERVER_COOKIE = &quot;workbench-server&quot;;
+&nbsp;
+&nbsp;	protected static final String TRANSFORMATIONS = &quot;transformations&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Thread-safe map of server paths to their WorkbenchServlet instances.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final Map&lt;String, WorkbenchServlet&gt; servlets = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private CookieHandler cookies;
+&nbsp;
+&nbsp;	private ServerValidator serverValidator;
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init(final ServletConfig config) throws ServletException {
+<b class="nc">&nbsp;		super.init(config);</b>
+<b class="nc">&nbsp;		if (getDefaultServerPath() == null) {</b>
+<b class="nc">&nbsp;			throw new MissingInitParameterException(DEFAULT_SERVER);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (config.getInitParameter(TRANSFORMATIONS) == null) {</b>
+<b class="nc">&nbsp;			throw new MissingInitParameterException(TRANSFORMATIONS);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		this.cookies = new CookieHandler(config);</b>
+<b class="nc">&nbsp;		this.serverValidator = new ServerValidator(config);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void destroy() {
+<b class="nc">&nbsp;		for (WorkbenchServlet servlet : servlets.values()) {</b>
+<b class="nc">&nbsp;			servlet.destroy();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getChangeServerPath() {
+<b class="nc">&nbsp;		return config.getInitParameter(CHANGE_SERVER);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the value of the default-server configuration variable. Often, this is simply a relative path on the same
+&nbsp;	 * HTTP server.
+&nbsp;	 *
+&nbsp;	 * @return the path to the default Sesame server instance
+&nbsp;	 */
+&nbsp;	public String getDefaultServerPath() {
+<b class="nc">&nbsp;		return config.getInitParameter(DEFAULT_SERVER);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Whether the server path is fixed, which is when the change-server-path configuration value is not set.
+&nbsp;	 *
+&nbsp;	 * @return true, if the change-server-path configuration variable is not set, meaning that changing the server is
+&nbsp;	 *         blocked
+&nbsp;	 */
+&nbsp;	public boolean isServerFixed() {
+<b class="nc">&nbsp;		return getChangeServerPath() == null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void service(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws ServletException, IOException {
+<b class="nc">&nbsp;		final String change = getChangeServerPath();</b>
+<b class="nc">&nbsp;		if (change != null &amp;&amp; change.equals(req.getPathInfo())) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				changeServer(req, resp);</b>
+<b class="nc">&nbsp;			} catch (QueryResultHandlerException e) {</b>
+<b class="nc">&nbsp;				throw new IOException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			final WorkbenchServlet servlet = findWorkbenchServlet(req, resp);</b>
+<b class="nc">&nbsp;			if (servlet == null) {</b>
+&nbsp;				// Redirect to change-server-path
+<b class="nc">&nbsp;				final StringBuilder uri = new StringBuilder(req.getRequestURI());</b>
+<b class="nc">&nbsp;				if (req.getPathInfo() != null) {</b>
+<b class="nc">&nbsp;					uri.setLength(uri.length() - req.getPathInfo().length());</b>
+&nbsp;				}
+<b class="nc">&nbsp;				resp.sendRedirect(uri.append(getChangeServerPath()).toString());</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				servlet.service(req, resp);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void resetCache() {
+<b class="nc">&nbsp;		for (WorkbenchServlet servlet : servlets.values()) {</b>
+&nbsp;			// inform browser that server changed and cache is invalid
+<b class="nc">&nbsp;			servlet.resetCache();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Handles requests to the &quot;change server&quot; page.
+&nbsp;	 *
+&nbsp;	 * @param req  the servlet request object
+&nbsp;	 * @param resp the servlet response object
+&nbsp;	 * @throws IOException                 if an issue occurs writing to the response
+&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 */
+&nbsp;	private void changeServer(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws IOException, QueryResultHandlerException {
+<b class="nc">&nbsp;		String server = req.getParameter(SERVER_COOKIE);</b>
+<b class="nc">&nbsp;		if (server == null) {</b>
+&nbsp;			// Server parameter was not present, so present entry form.
+<b class="nc">&nbsp;			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;			builder.transform(getTransformationUrl(req), &quot;server.xsl&quot;);</b>
+<b class="nc">&nbsp;			builder.start(&quot;server&quot;);</b>
+&nbsp;
+&nbsp;			// see if server url was still present in cookie, if so use that
+&nbsp;			// value as prefilled value in the form
+<b class="nc">&nbsp;			String currentServer = this.cookies.getCookie(req, resp, SERVER_COOKIE);</b>
+<b class="nc">&nbsp;			if (currentServer == null) {</b>
+&nbsp;				// otherwise use the default
+<b class="nc">&nbsp;				currentServer = getDefaultServer(req);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			builder.result(currentServer);</b>
+<b class="nc">&nbsp;			builder.end();</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		server = server.trim();</b>
+<b class="nc">&nbsp;		if (!this.serverValidator.isValidServer(server)) {</b>
+&nbsp;			// Invalid server was submitted by form. Present entry form again
+&nbsp;			// with error message.
+<b class="nc">&nbsp;			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());</b>
+<b class="nc">&nbsp;			builder.transform(getTransformationUrl(req), &quot;server.xsl&quot;);</b>
+<b class="nc">&nbsp;			builder.start(&quot;error-message&quot;, &quot;server&quot;);</b>
+<b class="nc">&nbsp;			builder.result(&quot;Invalid Server URL&quot;, server);</b>
+<b class="nc">&nbsp;			builder.end();</b>
+&nbsp;			return;
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		// Valid server was submitted by form. Set cookie and redirect to
+&nbsp;		// repository selection page.
+<b class="nc">&nbsp;		this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);</b>
+<b class="nc">&nbsp;		final String user_password = getOptionalParameter(req, SERVER_USER_PASSWORD);</b>
+<b class="nc">&nbsp;		this.cookies.addNewCookie(req, resp, SERVER_USER_PASSWORD, user_password);</b>
+<b class="nc">&nbsp;		final StringBuilder uri = new StringBuilder(req.getRequestURI());</b>
+<b class="nc">&nbsp;		uri.setLength(uri.length() - req.getPathInfo().length());</b>
+<b class="nc">&nbsp;		resetCache();</b>
+<b class="nc">&nbsp;		resp.sendRedirect(uri.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param req  the servlet request
+&nbsp;	 * @param name the name of the optional parameter
+&nbsp;	 * @return the value of the parameter, or an empty String if it is not present.
+&nbsp;	 */
+&nbsp;	private String getOptionalParameter(final HttpServletRequest req, final String name) {
+<b class="nc">&nbsp;		String value = req.getParameter(name);</b>
+<b class="nc">&nbsp;		if (value == null) {</b>
+<b class="nc">&nbsp;			value = &quot;&quot;;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return value;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the user requested server, if valid, or the default server.
+&nbsp;	 *
+&nbsp;	 * @param req  the request
+&nbsp;	 * @param resp the response
+&nbsp;	 * @return the user&#39;s requested server, if valid, or the default server
+&nbsp;	 */
+&nbsp;	private String findServer(final HttpServletRequest req, final HttpServletResponse resp) {
+<b class="nc">&nbsp;		final StringBuilder value = new StringBuilder();</b>
+<b class="nc">&nbsp;		if (isServerFixed()) {</b>
+<b class="nc">&nbsp;			value.append(getDefaultServer(req));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			value.append(cookies.getCookie(req, resp, SERVER_COOKIE));</b>
+<b class="nc">&nbsp;			if (0 == value.length()) {</b>
+<b class="nc">&nbsp;				value.append(getDefaultServer(req));</b>
+<b class="nc">&nbsp;			} else if (!this.serverValidator.isValidServer(value.toString())) {</b>
+<b class="nc">&nbsp;				value.replace(0, value.length(), getDefaultServer(req));</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return value.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a WorkbenchServlet instance allocated for the requested server.
+&nbsp;	 *
+&nbsp;	 * @param req  the current request
+&nbsp;	 * @param resp the current response
+&nbsp;	 * @return a WorkbenchServlet instance allocated for the requested server
+&nbsp;	 * @throws ServletException if a problem occurs initializing a new servlet
+&nbsp;	 */
+&nbsp;	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req, final HttpServletResponse resp)
+&nbsp;			throws ServletException {
+<b class="nc">&nbsp;		WorkbenchServlet servlet = null;</b>
+<b class="nc">&nbsp;		final String server = findServer(req, resp);</b>
+<b class="nc">&nbsp;		if (servlets.containsKey(server)) {</b>
+<b class="nc">&nbsp;			servlet = servlets.get(server);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (isServerFixed() || this.serverValidator.isValidServer(server)) {</b>
+<b class="nc">&nbsp;				synchronized (servlets) {</b>
+&nbsp;					// Even though the map is thread-safe, we only wish one
+&nbsp;					// thread to be in this block at a time, to avoid abandoning
+&nbsp;					// a WorkbenchServlet instance to the garbage collector.
+<b class="nc">&nbsp;					if (servlets.containsKey(server)) {</b>
+<b class="nc">&nbsp;						servlet = servlets.get(server);</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						final Map&lt;String, String&gt; params = new HashMap&lt;&gt;(3);</b>
+<b class="nc">&nbsp;						params.put(SERVER_PARAM, server);</b>
+<b class="nc">&nbsp;						params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());</b>
+<b class="nc">&nbsp;						params.put(TRANSFORMATIONS, this.config.getInitParameter(TRANSFORMATIONS));</b>
+<b class="nc">&nbsp;						final ServletConfig cfg = new BasicServletConfig(server, config, params);</b>
+<b class="nc">&nbsp;						servlet = new WorkbenchServlet();</b>
+<b class="nc">&nbsp;						servlet.init(cfg);</b>
+<b class="nc">&nbsp;						servlets.put(server, servlet);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return servlet;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the full URL to the default server on the same server as the given request.
+&nbsp;	 *
+&nbsp;	 * @param req the request to find the default server relative to
+&nbsp;	 * @return the full URL to the default server on the same server as the given request
+&nbsp;	 */
+&nbsp;	private String getDefaultServer(final HttpServletRequest req) {
+<b class="nc">&nbsp;		String server = getDefaultServerPath();</b>
+<b class="nc">&nbsp;		if (&#39;/&#39; == server.charAt(0)) {</b>
+<b class="nc">&nbsp;			final StringBuffer url = req.getRequestURL();</b>
+<b class="nc">&nbsp;			final StringBuilder path = getServerPath(req);</b>
+<b class="nc">&nbsp;			url.setLength(url.indexOf(path.toString()));</b>
+<b class="nc">&nbsp;			server = url.append(server).toString();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return server;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the full path for the given request.
+&nbsp;	 *
+&nbsp;	 * @param req the request for which the path is sought
+&nbsp;	 * @return the full path for the given request
+&nbsp;	 */
+&nbsp;	private StringBuilder getServerPath(final HttpServletRequest req) {
+<b class="nc">&nbsp;		final StringBuilder path = new StringBuilder();</b>
+<b class="nc">&nbsp;		if (req.getContextPath() != null) {</b>
+<b class="nc">&nbsp;			path.append(req.getContextPath());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (req.getServletPath() != null) {</b>
+<b class="nc">&nbsp;			path.append(req.getServletPath());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (req.getPathInfo() != null) {</b>
+<b class="nc">&nbsp;			path.append(req.getPathInfo());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return path;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String getTransformationUrl(final HttpServletRequest req) {
+<b class="nc">&nbsp;		final String contextPath = req.getContextPath();</b>
+<b class="nc">&nbsp;		return contextPath + config.getInitParameter(TRANSFORMATIONS);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,424 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFLoader</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.util</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFLoader (org.eclipse.rdf4j.repository.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFLoader</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (6/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    30.8%
+  </span>
+  <span class="absValue">
+    (16/52)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    41.1%
+  </span>
+  <span class="absValue">
+    (37/90)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.util;
+&nbsp;
+&nbsp;import java.io.BufferedInputStream;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.net.HttpURLConnection;
+&nbsp;import java.net.ProtocolException;
+&nbsp;import java.net.URL;
+&nbsp;import java.net.URLConnection;
+&nbsp;import java.security.PrivilegedAction;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.zip.GZIPInputStream;
+&nbsp;import java.util.zip.ZipEntry;
+&nbsp;import java.util.zip.ZipInputStream;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.StringUtils;
+&nbsp;import org.eclipse.rdf4j.common.io.GZipUtil;
+&nbsp;import org.eclipse.rdf4j.common.io.UncloseableInputStream;
+&nbsp;import org.eclipse.rdf4j.common.io.ZipUtil;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParserRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.ParseErrorLogger;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles common I/O to retrieve and parse RDF.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;public class RDFLoader {
+&nbsp;
+&nbsp;	private final ParserConfig config;
+&nbsp;
+&nbsp;	private final ValueFactory vf;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param config
+&nbsp;	 * @param vf
+&nbsp;	 */
+<b class="fc">&nbsp;	public RDFLoader(ParserConfig config, ValueFactory vf) {</b>
+<b class="fc">&nbsp;		this.config = config;</b>
+<b class="fc">&nbsp;		this.vf = vf;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses RDF data from the specified file to the given RDFHandler.
+&nbsp;	 *
+&nbsp;	 * @param file       A file containing RDF data.
+&nbsp;	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
+&nbsp;	 *                   value of {@link java.io.File#toURI() file.toURI()} if the value is set to &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param rdfHandler Receives RDF parser events.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the file.
+&nbsp;	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 * @throws RDFHandlerException          If thrown by the RDFHandler
+&nbsp;	 */
+&nbsp;	public void load(File file, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+&nbsp;			// default baseURI to file
+<b class="nc">&nbsp;			baseURI = file.toURI().toString();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (dataFormat == null) {</b>
+<b class="nc">&nbsp;			dataFormat = Rio.getParserFormatForFileName(file.getName())</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new UnsupportedRDFormatException(</b>
+<b class="nc">&nbsp;							&quot;Could not find RDF format for file: &quot; + file.getName()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (InputStream in = new FileInputStream(file)) {</b>
+<b class="nc">&nbsp;			load(in, baseURI, dataFormat, rdfHandler);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the RDF data that can be found at the specified URL to the RDFHandler. This method uses the class
+&nbsp;	 * {@link URL} to resolve the provided &lt;var&gt;url&lt;/var&gt;. This method honors
+&nbsp;	 * {@link HttpURLConnection#getFollowRedirects()} to determine if redirects are followed and if set to
+&nbsp;	 * &lt;var&gt;true&lt;/var&gt; will also follow redirects from HTTP to HTTPS. The maximum number of redirects can be controlled
+&nbsp;	 * using system property &lt;var&gt;http.maxRedirects&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 *
+&nbsp;	 * @param url        The URL of the RDF data.
+&nbsp;	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
+&nbsp;	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
+&nbsp;	 *                   &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param dataFormat The serialization format of the data. If set to &lt;var&gt;null&lt;/var&gt;, the format will be
+&nbsp;	 *                   automatically determined by examining the content type in the HTTP response header, and failing
+&nbsp;	 *                   that, the file name extension of the supplied URL.
+&nbsp;	 * @param rdfHandler Receives RDF parser events.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the URL.
+&nbsp;	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format, or the RDF format
+&nbsp;	 *                                      could not be automatically determined.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 * @throws RDFHandlerException          If thrown by the RDFHandler
+&nbsp;	 */
+&nbsp;	public void load(URL url, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		if (baseURI == null) {</b>
+<b class="fc">&nbsp;			baseURI = url.toExternalForm();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		boolean followRedirects = HttpURLConnection.getFollowRedirects();</b>
+<b class="fc">&nbsp;		int maxRedirects = java.security.AccessController.doPrivileged(</b>
+<b class="fc">&nbsp;				(PrivilegedAction&lt;Integer&gt;) () -&gt; Integer.valueOf(System.getProperty(&quot;http.maxRedirects&quot;, &quot;20&quot;)));</b>
+&nbsp;
+<b class="fc">&nbsp;		int redirects = 0;</b>
+&nbsp;		boolean redirected;
+&nbsp;
+<b class="fc">&nbsp;		URL requestURL = url;</b>
+&nbsp;		do {
+<b class="fc">&nbsp;			redirected = false;</b>
+&nbsp;
+<b class="fc">&nbsp;			URLConnection con = requestURL.openConnection();</b>
+&nbsp;
+&nbsp;			// Set appropriate Accept headers
+<b class="pc">&nbsp;			if (dataFormat != null) {</b>
+<b class="fc">&nbsp;				for (String mimeType : dataFormat.getMIMETypes()) {</b>
+<b class="fc">&nbsp;					con.addRequestProperty(&quot;Accept&quot;, mimeType);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				Set&lt;RDFFormat&gt; rdfFormats = RDFParserRegistry.getInstance().getKeys();</b>
+<b class="nc">&nbsp;				List&lt;String&gt; acceptParams = RDFFormat.getAcceptParams(rdfFormats, true, null);</b>
+<b class="nc">&nbsp;				for (String acceptParam : acceptParams) {</b>
+<b class="nc">&nbsp;					con.addRequestProperty(&quot;Accept&quot;, acceptParam);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			/* Nullable */ HttpURLConnection httpCon = null;</b>
+<b class="pc">&nbsp;			if (con instanceof HttpURLConnection) {</b>
+<b class="nc">&nbsp;				if (followRedirects) {</b>
+<b class="nc">&nbsp;					httpCon = (HttpURLConnection) con;</b>
+&nbsp;					// Because of #2828, follow redirects manually
+<b class="nc">&nbsp;					httpCon.setInstanceFollowRedirects(false);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			try (InputStream in = con.getInputStream()) {</b>
+&nbsp;				// httpCon is non-null only if this is an HTTP connection and followRedirects is true
+<b class="pc">&nbsp;				if (httpCon != null &amp;&amp; isRedirection(httpCon.getResponseCode())) {</b>
+<b class="nc">&nbsp;					/* Nullable */ String redirectionLocation = httpCon.getHeaderField(&quot;Location&quot;);</b>
+<b class="nc">&nbsp;					if (StringUtils.isAllBlank(redirectionLocation)) {</b>
+<b class="nc">&nbsp;						throw new IOException(&quot;Could not find redirection location for URL: &quot; + url);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					requestURL = new URL(requestURL, redirectionLocation);</b>
+&nbsp;
+<b class="nc">&nbsp;					redirected = true;</b>
+<b class="nc">&nbsp;					if (++redirects &gt;= maxRedirects) {</b>
+<b class="nc">&nbsp;						throw new ProtocolException(&quot;Server redirected too many times (&quot; + redirects + &quot;)&quot;);</b>
+&nbsp;					}
+&nbsp;					continue; // request the URL associated with the redirection
+&nbsp;				}
+&nbsp;
+<b class="pc">&nbsp;				if (dataFormat == null) {</b>
+&nbsp;					// Try to determine the data&#39;s MIME type
+<b class="nc">&nbsp;					String mimeType = con.getContentType();</b>
+<b class="nc">&nbsp;					int semiColonIdx = mimeType.indexOf(&#39;;&#39;);</b>
+<b class="nc">&nbsp;					if (semiColonIdx &gt;= 0) {</b>
+<b class="nc">&nbsp;						mimeType = mimeType.substring(0, semiColonIdx);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					dataFormat = Rio.getParserFormatForMIMEType(mimeType)</b>
+<b class="nc">&nbsp;							.orElseGet(() -&gt; Rio.getParserFormatForFileName(url.getPath())</b>
+<b class="nc">&nbsp;									.orElseThrow(() -&gt; new UnsupportedRDFormatException(</b>
+<b class="nc">&nbsp;											&quot;Could not find RDF format for URL: &quot; + url.getPath())));</b>
+&nbsp;
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				load(in, baseURI, dataFormat, rdfHandler);</b>
+<b class="pc">&nbsp;			}</b>
+<b class="pc">&nbsp;		} while (redirected);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns whether a given HTTP status code represents a redirection (i.e. 3xx)
+&nbsp;	 *
+&nbsp;	 * @param statusCode
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private boolean isRedirection(int statusCode) {
+<b class="nc">&nbsp;		return statusCode / 100 == 3;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses RDF data from an InputStream to the RDFHandler.
+&nbsp;	 *
+&nbsp;	 * @param in         An InputStream from which RDF data can be read.
+&nbsp;	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param rdfHandler Receives RDF parser events.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
+&nbsp;	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 * @throws RDFHandlerException          If thrown by the RDFHandler
+&nbsp;	 */
+&nbsp;	public void load(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="pc">&nbsp;		if (!in.markSupported()) {</b>
+<b class="nc">&nbsp;			in = new BufferedInputStream(in, 1024);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (ZipUtil.isZipStream(in)) {</b>
+<b class="nc">&nbsp;			loadZip(in, baseURI, dataFormat, rdfHandler);</b>
+<b class="pc">&nbsp;		} else if (GZipUtil.isGZipStream(in)) {</b>
+<b class="nc">&nbsp;			load(new GZIPInputStream(in), baseURI, dataFormat, rdfHandler);</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			loadInputStreamOrReader(in, baseURI, dataFormat, rdfHandler);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses RDF data from a Reader to the RDFHandler. &lt;b&gt;Note: using a Reader to upload byte-based data means that you
+&nbsp;	 * have to be careful not to destroy the data&#39;s character encoding by enforcing a default character encoding upon
+&nbsp;	 * the bytes. If possible, adding such data using an InputStream is to be preferred.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @param reader     A Reader from which RDF data can be read.
+&nbsp;	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against.
+&nbsp;	 * @param dataFormat The serialization format of the data.
+&nbsp;	 * @param rdfHandler Receives RDF parser events.
+&nbsp;	 * @throws IOException                  If an I/O error occurred while reading from the reader.
+&nbsp;	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
+&nbsp;	 * @throws RDFParseException            If an error was found while parsing the RDF data.
+&nbsp;	 * @throws RDFHandlerException          If thrown by the RDFHandler
+&nbsp;	 */
+&nbsp;	public void load(Reader reader, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		loadInputStreamOrReader(reader, baseURI, dataFormat, rdfHandler);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void loadZip(InputStream in, String baseURI, RDFFormat dataFormat, RDFHandler rdfHandler)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+&nbsp;
+<b class="nc">&nbsp;		try (ZipInputStream zipIn = new ZipInputStream(in)) {</b>
+<b class="nc">&nbsp;			for (ZipEntry entry = zipIn.getNextEntry(); entry != null; entry = zipIn.getNextEntry()) {</b>
+<b class="nc">&nbsp;				if (entry.isDirectory()) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				try {
+<b class="nc">&nbsp;					RDFFormat format = Rio.getParserFormatForFileName(entry.getName()).orElse(dataFormat);</b>
+&nbsp;
+&nbsp;					// Prevent parser (Xerces) from closing the input stream
+<b class="nc">&nbsp;					UncloseableInputStream wrapper = new UncloseableInputStream(zipIn);</b>
+<b class="nc">&nbsp;					load(wrapper, baseURI, format, rdfHandler);</b>
+&nbsp;
+<b class="nc">&nbsp;				} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;					String msg = e.getMessage() + &quot; in &quot; + entry.getName();</b>
+<b class="nc">&nbsp;					RDFParseException pe = new RDFParseException(msg, e.getLineNumber(), e.getColumnNumber());</b>
+<b class="nc">&nbsp;					pe.initCause(e);</b>
+<b class="nc">&nbsp;					throw pe;</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					zipIn.closeEntry();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} // end for
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds the data that can be read from the supplied InputStream or Reader to this repository.
+&nbsp;	 *
+&nbsp;	 * @param inputStreamOrReader An {@link InputStream} or {@link Reader} containing RDF data that must be added to the
+&nbsp;	 *                            repository.
+&nbsp;	 * @param baseURI             The base URI for the data.
+&nbsp;	 * @param dataFormat          The file format of the data.
+&nbsp;	 * @param rdfHandler          handles all data from all documents
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws UnsupportedRDFormatException
+&nbsp;	 * @throws RDFParseException
+&nbsp;	 * @throws RDFHandlerException
+&nbsp;	 */
+&nbsp;	private void loadInputStreamOrReader(Object inputStreamOrReader, String baseURI, RDFFormat dataFormat,
+&nbsp;			RDFHandler rdfHandler) throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		RDFParser rdfParser = Rio.createParser(dataFormat, vf);</b>
+<b class="fc">&nbsp;		rdfParser.setParserConfig(config);</b>
+<b class="fc">&nbsp;		rdfParser.setParseErrorListener(new ParseErrorLogger());</b>
+&nbsp;
+<b class="fc">&nbsp;		rdfParser.setRDFHandler(rdfHandler);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (inputStreamOrReader instanceof InputStream) {</b>
+<b class="fc">&nbsp;			rdfParser.parse((InputStream) inputStreamOrReader, baseURI);</b>
+<b class="pc">&nbsp;		} else if (inputStreamOrReader instanceof Reader) {</b>
+<b class="fc">&nbsp;			rdfParser.parse((Reader) inputStreamOrReader, baseURI);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+<b class="nc">&nbsp;					&quot;Must be an InputStream or a Reader, is a: &quot; + inputStreamOrReader.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

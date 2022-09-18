@@ -1,0 +1,459 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SameTermFilterOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.optimizer</a>
+</div>
+
+<h1>Coverage Summary for Class: SameTermFilterOptimizer (org.eclipse.rdf4j.query.algebra.evaluation.optimizer)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SameTermFilterOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SameTermFilterOptimizer$BindingSetAssignmentCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (4/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SameTermFilterOptimizer$SameTermFilterVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (6/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    58.3%
+  </span>
+  <span class="absValue">
+    (35/60)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    91.8%
+  </span>
+  <span class="absValue">
+    (45/49)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SameTermFilterOptimizer$VarBinder</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SameTermFilterOptimizer$VarRenamer</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (2/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (2/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    71.4%
+  </span>
+  <span class="absValue">
+    (5/7)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    93.8%
+  </span>
+  <span class="absValue">
+    (15/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    59.1%
+  </span>
+  <span class="absValue">
+    (39/66)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    91%
+  </span>
+  <span class="absValue">
+    (61/67)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * A query optimizer that embeds {@link Filter}s with {@link SameTerm} operators in statement patterns as much as
+&nbsp; * possible. Operators like sameTerm(X, Y) are processed by renaming X to Y (or vice versa). Operators like sameTerm(X,
+&nbsp; * &lt;someURI&gt;) are processed by assigning the URI to all occurring variables with name X.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="fc">&nbsp;public class SameTermFilterOptimizer implements QueryOptimizer {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="fc">&nbsp;		tupleExpr.visit(new SameTermFilterVisitor());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class SameTermFilterVisitor extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+&nbsp;		protected SameTermFilterVisitor() {
+<b class="fc">&nbsp;			super(false);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter filter) {
+<b class="fc">&nbsp;			super.meet(filter);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (filter.getCondition() instanceof SameTerm) {</b>
+&nbsp;				// SameTerm applies to the filter&#39;s argument
+<b class="fc">&nbsp;				SameTerm sameTerm = (SameTerm) filter.getCondition();</b>
+<b class="fc">&nbsp;				TupleExpr filterArg = filter.getArg();</b>
+&nbsp;
+<b class="fc">&nbsp;				ValueExpr leftArg = sameTerm.getLeftArg();</b>
+<b class="fc">&nbsp;				ValueExpr rightArg = sameTerm.getRightArg();</b>
+&nbsp;
+&nbsp;				// Verify that vars are (potentially) bound by filterArg
+<b class="fc">&nbsp;				Set&lt;String&gt; bindingNames = filterArg.getBindingNames();</b>
+<b class="pc">&nbsp;				if (isUnboundVar(leftArg, bindingNames) || isUnboundVar(rightArg, bindingNames)) {</b>
+&nbsp;					// One or both var(s) are unbound, this expression will never
+&nbsp;					// return any results
+<b class="nc">&nbsp;					filter.replaceWith(new EmptySet());</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				Set&lt;String&gt; assuredBindingNames = filterArg.getAssuredBindingNames();</b>
+<b class="pc">&nbsp;				if (isUnboundVar(leftArg, assuredBindingNames) || isUnboundVar(rightArg, assuredBindingNames)) {</b>
+&nbsp;					// One or both var(s) are potentially unbound, inlining could
+&nbsp;					// invalidate the result e.g. in case of left joins
+&nbsp;					return;
+&nbsp;				}
+&nbsp;
+<b class="pc">&nbsp;				if (leftArg instanceof Var || rightArg instanceof Var) {</b>
+<b class="pc">&nbsp;					if (filterArg instanceof ArbitraryLengthPath &amp;&amp; leftArg instanceof Var &amp;&amp; rightArg instanceof Var) {</b>
+<b class="fc">&nbsp;						final ArbitraryLengthPath alp = (ArbitraryLengthPath) filterArg;</b>
+<b class="fc">&nbsp;						final List&lt;Var&gt; sameTermArgs = Arrays.asList((Var) leftArg, (Var) rightArg);</b>
+&nbsp;
+<b class="pc">&nbsp;						if (sameTermArgs.contains(alp.getSubjectVar()) &amp;&amp; sameTermArgs.contains(alp.getObjectVar())) {</b>
+&nbsp;							// SameTerm provides a deferred mapping to allow arbitrary-length property path to produce
+&nbsp;							// cyclic paths. See SES-1685.
+&nbsp;							// we can not inline.
+&nbsp;							return;
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					BindingSetAssignmentCollector collector = new BindingSetAssignmentCollector();</b>
+<b class="fc">&nbsp;					filterArg.visit(collector);</b>
+&nbsp;
+<b class="fc">&nbsp;					for (BindingSetAssignment bsa : collector.getBindingSetAssignments()) {</b>
+&nbsp;						// check if the VALUES clause / bindingsetassignment contains
+&nbsp;						// one of the arguments of the sameTerm.
+&nbsp;						// if so, we can not inline.
+<b class="fc">&nbsp;						Set&lt;String&gt; names = bsa.getAssuredBindingNames();</b>
+<b class="pc">&nbsp;						if (leftArg instanceof Var) {</b>
+<b class="pc">&nbsp;							if (names.contains(((Var) leftArg).getName())) {</b>
+&nbsp;								return;
+&nbsp;							}
+&nbsp;						}
+<b class="pc">&nbsp;						if (rightArg instanceof Var) {</b>
+<b class="pc">&nbsp;							if (names.contains(((Var) rightArg).getName())) {</b>
+&nbsp;								return;
+&nbsp;							}
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				Value leftValue = getValue(leftArg);</b>
+<b class="fc">&nbsp;				Value rightValue = getValue(rightArg);</b>
+&nbsp;
+<b class="pc">&nbsp;				if (leftValue != null &amp;&amp; rightValue != null) {</b>
+&nbsp;					// ConstantOptimizer should have taken care of this
+<b class="pc">&nbsp;				} else if (leftValue != null &amp;&amp; rightArg instanceof Var) {</b>
+<b class="nc">&nbsp;					bindVar((Var) rightArg, leftValue, filter);</b>
+<b class="pc">&nbsp;				} else if (rightValue != null &amp;&amp; leftArg instanceof Var) {</b>
+<b class="fc">&nbsp;					bindVar((Var) leftArg, rightValue, filter);</b>
+<b class="pc">&nbsp;				} else if (leftArg instanceof Var &amp;&amp; rightArg instanceof Var) {</b>
+&nbsp;					// Two unbound variables, rename rightArg to leftArg
+<b class="fc">&nbsp;					renameVar((Var) rightArg, (Var) leftArg, filter);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private boolean isUnboundVar(ValueExpr valueExpr, Set&lt;String&gt; bindingNames) {
+<b class="fc">&nbsp;			if (valueExpr instanceof Var) {</b>
+<b class="fc">&nbsp;				Var var = (Var) valueExpr;</b>
+<b class="pc">&nbsp;				return !var.hasValue() &amp;&amp; !bindingNames.contains(var.getName());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private Value getValue(ValueExpr valueExpr) {
+<b class="fc">&nbsp;			if (valueExpr instanceof ValueConstant) {</b>
+<b class="fc">&nbsp;				return ((ValueConstant) valueExpr).getValue();</b>
+<b class="pc">&nbsp;			} else if (valueExpr instanceof Var) {</b>
+<b class="fc">&nbsp;				return ((Var) valueExpr).getValue();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void renameVar(Var oldVar, Var newVar, Filter filter) {
+<b class="fc">&nbsp;			filter.getArg().visit(new VarRenamer(oldVar, newVar));</b>
+&nbsp;
+&nbsp;			// TODO: skip this step if old variable name is not used
+&nbsp;			// Replace SameTerm-filter with an Extension, the old variable name
+&nbsp;			// might still be relevant to nodes higher in the tree
+<b class="fc">&nbsp;			Extension extension = new Extension(filter.getArg());</b>
+<b class="fc">&nbsp;			extension.addElement(new ExtensionElem(new Var(newVar.getName()), oldVar.getName()));</b>
+<b class="fc">&nbsp;			filter.replaceWith(extension);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void bindVar(Var var, Value value, Filter filter) {
+&nbsp;			// Set the value on all occurences of the variable
+<b class="fc">&nbsp;			filter.getArg().visit(new VarBinder(var.getName(), value));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class VarRenamer extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+&nbsp;		private final Var oldVar;
+&nbsp;
+&nbsp;		private final Var newVar;
+&nbsp;
+&nbsp;		public VarRenamer(Var oldVar, Var newVar) {
+<b class="fc">&nbsp;			super(true);</b>
+<b class="fc">&nbsp;			this.oldVar = oldVar;</b>
+<b class="fc">&nbsp;			this.newVar = newVar;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="fc">&nbsp;			if (var.equals(oldVar)) {</b>
+<b class="fc">&nbsp;				var.replaceWith(newVar.clone());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(ProjectionElem projElem) throws RuntimeException {
+<b class="nc">&nbsp;			if (projElem.getName().equals(oldVar.getName())) {</b>
+<b class="nc">&nbsp;				projElem.setName(newVar.getName());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class BindingSetAssignmentCollector extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+<b class="fc">&nbsp;		private final List&lt;BindingSetAssignment&gt; assignments = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		protected BindingSetAssignmentCollector() {
+<b class="fc">&nbsp;			super(true);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(BindingSetAssignment bsa) {
+<b class="fc">&nbsp;			assignments.add(bsa);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public List&lt;BindingSetAssignment&gt; getBindingSetAssignments() {
+<b class="fc">&nbsp;			return assignments;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class VarBinder extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+&nbsp;		private final String varName;
+&nbsp;
+&nbsp;		private final Value value;
+&nbsp;
+&nbsp;		public VarBinder(String varName, Value value) {
+<b class="fc">&nbsp;			super(true);</b>
+<b class="fc">&nbsp;			this.varName = varName;</b>
+<b class="fc">&nbsp;			this.value = value;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="fc">&nbsp;			if (var.getName().equals(varName)) {</b>
+<b class="fc">&nbsp;				var.setValue(value);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

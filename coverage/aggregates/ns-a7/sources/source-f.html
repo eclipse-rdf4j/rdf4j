@@ -1,0 +1,230 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONLDSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONLDSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONLDSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;import com.github.jsonldjava.core.DocumentLoader;
+&nbsp;
+&nbsp;/**
+&nbsp; * Settings that can be passed to JSONLD Parsers and Writers.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#data-structures&quot;&gt;JSONLD Data Structures&lt;/a&gt;
+&nbsp; */
+&nbsp;public class JSONLDSettings {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If set to true, the JSON-LD processor replaces arrays with just one element with that element during compaction.
+&nbsp;	 * If set to false, all arrays will remain arrays even if they have just one element.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.compact_arrays}.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#data-structures&quot;&gt;JSONLD Data Structures&lt;/a&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; COMPACT_ARRAYS = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.jsonld.compact_arrays&quot;, &quot;Compact arrays&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If specified, it is used to retrieve remote documents and contexts; otherwise the processor&#39;s built-in loader is
+&nbsp;	 * used.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;DocumentLoader&gt; DOCUMENT_LOADER = new ClassRioSetting&lt;&gt;(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.jsonld.document_loader&quot;, &quot;Document loader&quot;, null);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If set to true, the JSON-LD processor is allowed to optimize the output of the
+&nbsp;	 * &lt;a href= &quot;http://json-ld.org/spec/latest/json-ld-api/#compaction-algorithm&quot; &gt;Compaction algorithm&lt;/a&gt; to produce
+&nbsp;	 * even compacter representations.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.optimize}.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#data-structures&quot;&gt;JSONLD Data Structures&lt;/a&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; OPTIMIZE = new BooleanRioSetting(&quot;org.eclipse.rdf4j.rio.jsonld.optimize&quot;,</b>
+&nbsp;			&quot;Optimize output&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If set to true, the JSON-LD processor may emit blank nodes for triple predicates, otherwise they will be omitted.
+&nbsp;	 *
+&nbsp;	 * Note: the use of blank node identifiers to label properties is obsolete, and may be removed in a future version
+&nbsp;	 * of JSON-LD,
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf}.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#data-structures&quot;&gt;JSONLD Data Structures&lt;/a&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; PRODUCE_GENERALIZED_RDF = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.jsonld.produce_generalized_rdf&quot;, &quot;Produce generalized RDF&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If set to true, the JSON-LD processor will try to convert typed values to JSON native types instead of using the
+&nbsp;	 * expanded object form when converting from RDF. xsd:boolean values will be converted to true or false. xsd:integer
+&nbsp;	 * and xsd:double values will be converted to JSON numbers.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false for RDF compatibility.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.use_native_types}.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#data-structures&quot;&gt;JSONLD Data Structures&lt;/a&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; USE_NATIVE_TYPES = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.jsonld.use_native_types&quot;, &quot;Use Native JSON Types&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If set to true, the JSON-LD processor will use the expanded rdf:type IRI as the property instead of @type when
+&nbsp;	 * converting from RDF.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to false.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.use_rdf_type}.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#data-structures&quot;&gt;JSONLD Data Structures&lt;/a&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; USE_RDF_TYPE = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.jsonld.use_rdf_type&quot;, &quot;Use RDF Type&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The {@link JSONLDMode} that the writer will use to reorganise the JSONLD document after it is created.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to {@link JSONLDMode#EXPAND} to provide maximum RDF compatibility.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://json-ld.org/spec/latest/json-ld-api/#features&quot;&gt;JSONLD Features&lt;/a&gt;
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;JSONLDMode&gt; JSONLD_MODE = new RioSettingImpl&lt;&gt;(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.jsonld_mode&quot;, &quot;JSONLD Mode&quot;, JSONLDMode.EXPAND);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If set to true, the JSON-LD processor will try to represent the JSON-LD object in a hierarchical view.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Default to false
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.jsonld.hierarchical_view}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; HIERARCHICAL_VIEW = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.jsonld.hierarchical_view&quot;, &quot;Hierarchical representation of the JSON&quot;, Boolean.FALSE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private default constructor.
+&nbsp;	 */
+&nbsp;	private JSONLDSettings() {
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

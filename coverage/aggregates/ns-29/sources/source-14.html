@@ -1,0 +1,403 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Verify</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: Verify (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Verify</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/112)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Writer;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.nio.file.Paths;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.exception.ValidationException;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.Util;
+&nbsp;import org.eclipse.rdf4j.console.VerificationListener;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+&nbsp;import org.eclipse.rdf4j.console.setting.WorkDir;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepository;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
+&nbsp;import org.eclipse.rdf4j.sail.memory.MemoryStore;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+&nbsp;
+&nbsp;/**
+&nbsp; * Verify command
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public class Verify extends ConsoleCommand {
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;verify&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Verifies the syntax of an RDF data file, takes a file path or URL as argument&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return PrintHelp.USAGE + &quot;verify &lt;location&gt; [&lt;shacl-location&gt; &lt;report.ttl&gt;]\n&quot;</b>
+&nbsp;				+ &quot;  &lt;location&gt;                               The file path or URL identifying the data file\n&quot;
+&nbsp;				+ &quot;  &lt;location&gt; &lt;shacl-location&gt; &lt;report.ttl&gt; Validate using shacl file and create a report\n&quot;
+&nbsp;				+ &quot;Verifies the validity of the specified data file\n&quot;;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String[] usesSettings() {
+<b class="nc">&nbsp;		return new String[] { WorkDir.NAME };</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param settings
+&nbsp;	 */
+&nbsp;	public Verify(ConsoleIO consoleIO, Map&lt;String, ConsoleSetting&gt; settings) {
+<b class="nc">&nbsp;		super(consoleIO, null, settings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(String... tokens) {
+<b class="nc">&nbsp;		if (tokens.length != 2 &amp;&amp; tokens.length != 4) {</b>
+<b class="nc">&nbsp;			writeln(getHelpLong());</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String dataPath = parseDataPath(tokens[1]);</b>
+<b class="nc">&nbsp;		verify(dataPath);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (tokens.length == 4) {</b>
+<b class="nc">&nbsp;			String shaclPath = parseDataPath(tokens[2]);</b>
+<b class="nc">&nbsp;			String reportFile = tokens[3];</b>
+&nbsp;
+<b class="nc">&nbsp;			shacl(dataPath, shaclPath, reportFile);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get working dir setting.
+&nbsp;	 *
+&nbsp;	 * @return path of working dir
+&nbsp;	 */
+&nbsp;	private Path getWorkDir() {
+<b class="nc">&nbsp;		return ((WorkDir) settings.get(WorkDir.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verify an RDF file, either a local file or URL.
+&nbsp;	 *
+&nbsp;	 * @param tokens parameters
+&nbsp;	 */
+&nbsp;	private void verify(String dataPath) {
+&nbsp;		try {
+<b class="nc">&nbsp;			URL dataURL = new URL(dataPath);</b>
+<b class="nc">&nbsp;			RDFFormat format = Rio.getParserFormatForFileName(dataPath).orElseThrow(Rio.unsupportedFormat(dataPath));</b>
+<b class="nc">&nbsp;			RDFParser parser = Rio.createParser(format);</b>
+&nbsp;
+<b class="nc">&nbsp;			writeln(&quot;RDF Format is &quot; + parser.getRDFFormat().getName());</b>
+&nbsp;
+<b class="nc">&nbsp;			VerificationListener listener = new VerificationListener(consoleIO);</b>
+&nbsp;
+<b class="nc">&nbsp;			parser.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);</b>
+<b class="nc">&nbsp;			parser.set(BasicParserSettings.FAIL_ON_UNKNOWN_DATATYPES, true);</b>
+&nbsp;
+<b class="nc">&nbsp;			parser.set(BasicParserSettings.VERIFY_LANGUAGE_TAGS, true);</b>
+<b class="nc">&nbsp;			parser.set(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES, true);</b>
+&nbsp;
+<b class="nc">&nbsp;			parser.set(BasicParserSettings.VERIFY_RELATIVE_URIS, true);</b>
+<b class="nc">&nbsp;			parser.set(BasicParserSettings.VERIFY_URI_SYNTAX, true);</b>
+&nbsp;
+<b class="nc">&nbsp;			parser.setParseErrorListener(listener);</b>
+<b class="nc">&nbsp;			parser.setRDFHandler(listener);</b>
+<b class="nc">&nbsp;			writeln(&quot;Verifying data...&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			try (InputStream dataStream = dataURL.openStream()) {</b>
+<b class="nc">&nbsp;				parser.parse(dataStream, &quot;urn://openrdf.org/RioVerifier/&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			int warnings = listener.getWarnings();</b>
+<b class="nc">&nbsp;			int errors = listener.getErrors();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (warnings + errors &gt; 0) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Found &quot; + warnings + &quot; warnings and &quot; + errors + &quot; errors&quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeln(&quot;Data verified, no errors were found&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (errors == 0) {</b>
+<b class="nc">&nbsp;				writeln(&quot;File contains &quot; + listener.getStatements() + &quot; statements&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Malformed URL: &quot; + dataPath);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to load data&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (UnsupportedRDFormatException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;No parser available for this RDF format&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Unexpected RDFParseException&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Unable to verify&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Validate an RDF data source using a SHACL file or URL, writing the report to a file.
+&nbsp;	 *
+&nbsp;	 * @param dataPath   file or URL of the data to be validated
+&nbsp;	 * @param shaclPath  file or URL of the SHACL
+&nbsp;	 * @param reportFile file to write validation report to
+&nbsp;	 */
+&nbsp;	private void shacl(String dataPath, String shaclPath, String reportFile) {
+<b class="nc">&nbsp;		SailRepository repo = new SailRepository(new ShaclSail(new MemoryStore()));</b>
+<b class="nc">&nbsp;		repo.init();</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;
+&nbsp;			// load shapes first from a file or URL, defaults to turtle, so one can use .shacl as file extension
+<b class="nc">&nbsp;			boolean loaded = false;</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				writeln(&quot;Loading shapes from &quot; + shaclPath);</b>
+&nbsp;
+<b class="nc">&nbsp;				URL shaclURL = new URL(shaclPath);</b>
+<b class="nc">&nbsp;				RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);</b>
+&nbsp;
+<b class="nc">&nbsp;				try (SailRepositoryConnection conn = repo.getConnection()) {</b>
+<b class="nc">&nbsp;					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);</b>
+<b class="nc">&nbsp;					conn.add(shaclURL, &quot;&quot;, format, RDF4J.SHACL_SHAPE_GRAPH);</b>
+<b class="nc">&nbsp;					conn.commit();</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				loaded = true;</b>
+<b class="nc">&nbsp;			} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Malformed URL: &quot; + shaclPath, e);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Failed to load shacl shapes&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!loaded) {</b>
+<b class="nc">&nbsp;				writeError(&quot;No shapes found&quot;);</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				URL dataURL = new URL(dataPath);</b>
+<b class="nc">&nbsp;				RDFFormat format = Rio.getParserFormatForFileName(dataPath)</b>
+<b class="nc">&nbsp;						.orElseThrow(Rio.unsupportedFormat(dataPath));</b>
+&nbsp;
+<b class="nc">&nbsp;				try (SailRepositoryConnection conn = repo.getConnection()) {</b>
+<b class="nc">&nbsp;					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);</b>
+<b class="nc">&nbsp;					conn.add(dataURL, &quot;&quot;, format);</b>
+<b class="nc">&nbsp;					conn.commit();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;			} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Malformed URL: &quot; + dataPath);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				writeError(&quot;Failed to load data&quot;, e);</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				Throwable cause = e.getCause();</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			try {
+&nbsp;
+<b class="nc">&nbsp;				try (SailRepositoryConnection conn = repo.getConnection()) {</b>
+&nbsp;					// Bulk validation forces a full revalidation!
+<b class="nc">&nbsp;					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);</b>
+<b class="nc">&nbsp;					conn.commit();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				writeln(&quot;SHACL validation OK&quot;);</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				Throwable cause = e.getCause();</b>
+<b class="nc">&nbsp;				if (cause instanceof ValidationException) {</b>
+<b class="nc">&nbsp;					writeError(&quot;SHACL validation failed, writing report to &quot; + reportFile);</b>
+<b class="nc">&nbsp;					ValidationException sv = (ValidationException) cause;</b>
+<b class="nc">&nbsp;					writeReport(sv.validationReportAsModel(), reportFile);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			repo.shutDown();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse URL or path to local file. Files will be prefixed with &quot;file:&quot; scheme
+&nbsp;	 *
+&nbsp;	 * @param str
+&nbsp;	 * @return URL path as string
+&nbsp;	 */
+&nbsp;	private String parseDataPath(String str) {
+<b class="nc">&nbsp;		String path = str;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			new URL(str);</b>
+&nbsp;			// dataPath is a URI
+<b class="nc">&nbsp;		} catch (MalformedURLException e) {</b>
+&nbsp;			// File path specified, convert to URL
+<b class="nc">&nbsp;			path = &quot;file:&quot; + Util.getNormalizedPath(getWorkDir(), str);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return path;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write SHACL validation report to a file. File extension is used to select the serialization format, TTL is used
+&nbsp;	 * as default.
+&nbsp;	 *
+&nbsp;	 * @param model      report
+&nbsp;	 * @param reportFile file name
+&nbsp;	 */
+&nbsp;	private void writeReport(Model model, String reportFile) {
+<b class="nc">&nbsp;		WriterConfig cfg = new WriterConfig();</b>
+<b class="nc">&nbsp;		cfg.set(BasicWriterSettings.PRETTY_PRINT, true);</b>
+<b class="nc">&nbsp;		cfg.set(BasicWriterSettings.INLINE_BLANK_NODES, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFFormat format = Rio.getParserFormatForFileName(reportFile).orElse(RDFFormat.TURTLE);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (Writer w = Files.newBufferedWriter(Paths.get(reportFile))) {</b>
+<b class="nc">&nbsp;			Rio.write(model, w, format, cfg);</b>
+<b class="nc">&nbsp;		} catch (IOException ex) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Could not write report to &quot; + reportFile, ex);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

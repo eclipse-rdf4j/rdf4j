@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > VariableScopeChange</title>
+  <title>Coverage Report > GraphPatternGroupable</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query.algebra</a>
 </div>
 
-<h1>Coverage Summary for Class: VariableScopeChange (org.eclipse.rdf4j.query.algebra)</h1>
+<h1>Coverage Summary for Class: GraphPatternGroupable (org.eclipse.rdf4j.query.algebra)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">VariableScopeChange</td>
+  <td class="name">GraphPatternGroupable</td>
 </tr>
 
 </table>
@@ -51,24 +51,28 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;package org.eclipse.rdf4j.query.algebra;
 &nbsp;
 &nbsp;/**
-&nbsp; * {@link QueryModelNode}s that can constitute a variable scope change (such as group graph patterns, subselects, etc).
 &nbsp; *
-&nbsp; * @author Jeen Broekstra
+&nbsp; * @author jeen
+&nbsp; *
+&nbsp; * @deprecated since 3.2. Use {@link VariableScopeChange} instead.
 &nbsp; */
-&nbsp;public interface VariableScopeChange {
+&nbsp;@Deprecated
+&nbsp;public interface GraphPatternGroupable {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * indicates if the node represents a variable scope change.
+&nbsp;	 * indicates if the node represents the root of a graph pattern group.
 &nbsp;	 *
-&nbsp;	 * @return true iff the node represents a variable scope change.
+&nbsp;	 * @return true iff the node represents the node of a graph pattern group.
 &nbsp;	 *
 &nbsp;	 */
-&nbsp;	boolean isVariableScopeChange();
+&nbsp;	@Deprecated
+&nbsp;	boolean isGraphPatternGroup();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Set the value of {@link #isVariableScopeChange()} to true or false.
+&nbsp;	 * Set the value of {@link #isGraphPatternGroup()} to true or false.
 &nbsp;	 */
-&nbsp;	void setVariableScopeChange(boolean isVariableScopeChange);
+&nbsp;	@Deprecated
+&nbsp;	void setGraphPatternGroup(boolean isGraphPatternGroup);
 &nbsp;
 &nbsp;}
 </code>
@@ -94,7 +98,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

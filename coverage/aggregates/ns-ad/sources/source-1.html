@@ -1,0 +1,609 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NTriplesParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.ntriples</a>
+</div>
+
+<h1>Coverage Summary for Class: NTriplesParser (org.eclipse.rdf4j.rio.ntriples)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NTriplesParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (16/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    23.5%
+  </span>
+  <span class="absValue">
+    (32/136)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    41.9%
+  </span>
+  <span class="absValue">
+    (78/186)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.ntriples;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.rio.helpers.NTriplesUtil.unescapeString;
+&nbsp;
+&nbsp;import java.io.BufferedReader;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.Reader;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;
+&nbsp;import org.apache.commons.io.input.BOMInputStream;
+&nbsp;import org.eclipse.rdf4j.common.text.ASCIIUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+&nbsp;
+&nbsp;/**
+&nbsp; * RDF parser for N-Triples files. A specification of NTriples can be found in
+&nbsp; * &lt;a href=&quot;http://www.w3.org/TR/rdf-testcases/#ntriples&quot;&gt;this section&lt;/a&gt; of the RDF Test Cases document. This parser
+&nbsp; * is not thread-safe, therefore its public methods are synchronized.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class NTriplesParser extends AbstractRDFParser {
+&nbsp;
+&nbsp;	protected BufferedReader reader;
+&nbsp;	protected char[] lineChars;
+&nbsp;	protected int currentIndex;
+&nbsp;	protected long lineNo;
+&nbsp;	protected Resource subject;
+&nbsp;	protected IRI predicate;
+&nbsp;	protected Value object;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new NTriplesParser that will use a {@link SimpleValueFactory} to create object for resources, bNodes
+&nbsp;	 * and literals.
+&nbsp;	 */
+&nbsp;	public NTriplesParser() {
+<b class="fc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new NTriplesParser that will use the supplied &lt;var&gt;ValueFactory&lt;/var&gt; to create RDF model objects.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory A ValueFactory.
+&nbsp;	 */
+&nbsp;	public NTriplesParser(ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.NTRIPLES;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void parse(InputStream in, String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="pc">&nbsp;		if (in == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Input stream can not be &#39;null&#39;&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="fc">&nbsp;			parse(new BufferedReader(new InputStreamReader(new BOMInputStream(in, false), StandardCharsets.UTF_8)),</b>
+&nbsp;					baseURI);
+<b class="nc">&nbsp;		} catch (UnsupportedEncodingException e) {</b>
+&nbsp;			// Every platform should support the UTF-8 encoding...
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public synchronized void parse(Reader reader, String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		clear();</b>
+&nbsp;
+&nbsp;		try {
+<b class="pc">&nbsp;			if (reader == null) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Reader can not be &#39;null&#39;&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (rdfHandler != null) {</b>
+<b class="fc">&nbsp;				rdfHandler.startRDF();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (reader instanceof BufferedReader) {</b>
+<b class="fc">&nbsp;				this.reader = (BufferedReader) reader;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				this.reader = new BufferedReader(reader);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			lineNo = 0;</b>
+&nbsp;
+<b class="fc">&nbsp;			reportLocation(lineNo, 1);</b>
+&nbsp;
+<b class="fc">&nbsp;			while (readLine()) {</b>
+<b class="fc">&nbsp;				parseStatement();</b>
+&nbsp;			}
+&nbsp;		} finally {
+<b class="fc">&nbsp;			clear();</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="pc">&nbsp;		if (rdfHandler != null) {</b>
+<b class="fc">&nbsp;			rdfHandler.endRDF();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseStatement() throws RDFParseException, RDFHandlerException {
+<b class="fc">&nbsp;		boolean ignoredAnError = false;</b>
+&nbsp;		try {
+<b class="fc">&nbsp;			skipWhitespace(false);</b>
+<b class="pc">&nbsp;			if (!shouldParseLine()) {</b>
+&nbsp;				return;
+&nbsp;			}
+<b class="fc">&nbsp;			parseSubject();</b>
+&nbsp;
+<b class="fc">&nbsp;			skipWhitespace(true);</b>
+&nbsp;
+<b class="fc">&nbsp;			parsePredicate();</b>
+&nbsp;
+<b class="fc">&nbsp;			skipWhitespace(true);</b>
+&nbsp;
+<b class="fc">&nbsp;			parseObject();</b>
+&nbsp;
+<b class="fc">&nbsp;			skipWhitespace(true);</b>
+&nbsp;
+<b class="fc">&nbsp;			assertLineTerminates();</b>
+<b class="nc">&nbsp;		} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;			if (!getParserConfig().get(NTriplesParserSettings.FAIL_ON_INVALID_LINES)</b>
+<b class="nc">&nbsp;					|| getParserConfig().isNonFatalError(NTriplesParserSettings.FAIL_ON_INVALID_LINES)) {</b>
+<b class="nc">&nbsp;				reportError(e, NTriplesParserSettings.FAIL_ON_INVALID_LINES);</b>
+<b class="nc">&nbsp;				ignoredAnError = true;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw e;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		handleStatement(ignoredAnError);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void skipWhitespace(boolean throwEOF) {
+<b class="pc">&nbsp;		while (currentIndex &lt; lineChars.length &amp;&amp; (lineChars[currentIndex] == &#39; &#39; || lineChars[currentIndex] == &#39;\t&#39;)) {</b>
+<b class="fc">&nbsp;			currentIndex++;</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (currentIndex &gt;= lineChars.length &amp;&amp; throwEOF) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean shouldParseLine() {
+<b class="pc">&nbsp;		if (currentIndex &lt; lineChars.length - 1) {</b>
+<b class="pc">&nbsp;			if (lineChars[currentIndex] != &#39;#&#39;) {</b>
+<b class="fc">&nbsp;				return true;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				if (rdfHandler != null) {</b>
+<b class="nc">&nbsp;					rdfHandler.handleComment(</b>
+&nbsp;							new String(lineChars, currentIndex + 1, lineChars.length - currentIndex - 1));
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseSubject() {
+<b class="pc">&nbsp;		if (lineChars[currentIndex] == &#39;&lt;&#39;) {</b>
+<b class="fc">&nbsp;			subject = parseIRI();</b>
+<b class="nc">&nbsp;		} else if (lineChars[currentIndex] == &#39;_&#39;) {</b>
+<b class="nc">&nbsp;			subject = parseNode();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RDFParseException(</b>
+<b class="nc">&nbsp;					&quot;Expected &#39;&lt;&#39; or &#39;_&#39;, found: &quot; + new String(Character.toChars(lineChars[currentIndex])), lineNo,</b>
+&nbsp;					lineChars[currentIndex]);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parsePredicate() {
+<b class="pc">&nbsp;		if (lineChars[currentIndex] == &#39;&lt;&#39;) {</b>
+<b class="fc">&nbsp;			predicate = parseIRI();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RDFParseException(</b>
+<b class="nc">&nbsp;					&quot;Expected &#39;&lt;&#39;, found: &quot; + new String(Character.toChars(lineChars[currentIndex])), lineNo,</b>
+&nbsp;					lineChars[currentIndex]);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void parseObject() {
+<b class="pc">&nbsp;		if (lineChars[currentIndex] == &#39;&lt;&#39;) {</b>
+<b class="fc">&nbsp;			object = parseIRI();</b>
+<b class="nc">&nbsp;		} else if (lineChars[currentIndex] == &#39;_&#39;) {</b>
+<b class="nc">&nbsp;			object = parseNode();</b>
+<b class="nc">&nbsp;		} else if (lineChars[currentIndex] == &#39;&quot;&#39;) {</b>
+<b class="nc">&nbsp;			parseLiteral();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RDFParseException(</b>
+<b class="nc">&nbsp;					&quot;Expected &#39;&lt;&#39; or &#39;_&#39;, found: &quot; + new String(Character.toChars(lineChars[currentIndex])), lineNo,</b>
+&nbsp;					lineChars[currentIndex]);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that there is only whitespace or comments until the end of the line.
+&nbsp;	 */
+&nbsp;	protected void assertLineTerminates() throws RDFParseException {
+<b class="pc">&nbsp;		if (!NTriplesUtil.isDot(lineChars[currentIndex])) {</b>
+<b class="nc">&nbsp;			if (lineChars[currentIndex] != &#39;#&#39;) {</b>
+<b class="nc">&nbsp;				reportFatalError(&quot;Content after &#39;.&#39; is not allowed&quot;);</b>
+&nbsp;			} else {
+&nbsp;				return;
+&nbsp;			}
+&nbsp;		}
+<b class="pc">&nbsp;		if (lineChars.length - 1 &gt; currentIndex) {</b>
+<b class="nc">&nbsp;			currentIndex++;</b>
+<b class="nc">&nbsp;			skipWhitespace(false);</b>
+<b class="nc">&nbsp;			if (currentIndex &gt;= lineChars.length) {</b>
+&nbsp;				return;
+&nbsp;			}
+<b class="nc">&nbsp;			if (lineChars[currentIndex] != &#39; &#39; &amp;&amp; lineChars[currentIndex] != &#39;\t&#39; &amp;&amp; lineChars[currentIndex] != &#39;#&#39;) {</b>
+<b class="nc">&nbsp;				throw new RDFParseException(&quot;line must end with &#39;.&#39;&quot;, lineNo, currentIndex);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void handleStatement(boolean ignoredAnError) {
+<b class="pc">&nbsp;		if (rdfHandler != null &amp;&amp; !ignoredAnError) {</b>
+<b class="fc">&nbsp;			rdfHandler.handleStatement(valueFactory.createStatement(subject, predicate, object));</b>
+&nbsp;		}
+<b class="fc">&nbsp;		subject = null;</b>
+<b class="fc">&nbsp;		predicate = null;</b>
+<b class="fc">&nbsp;		object = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected IRI parseIRI() {
+<b class="pc">&nbsp;		if (lineChars[currentIndex] != &#39;&lt;&#39;) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Supplied char should be a &#39;&lt;&#39;, is: &quot; + new String(Character.toChars(lineChars[currentIndex])),</b>
+&nbsp;					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+&nbsp;		}
+<b class="fc">&nbsp;		int startIndex = currentIndex + 1;</b>
+<b class="fc">&nbsp;		moveToIRIEndIndex();</b>
+<b class="fc">&nbsp;		IRI iri = createURI(new String(lineChars, startIndex, currentIndex - startIndex));</b>
+<b class="fc">&nbsp;		currentIndex++;</b>
+<b class="fc">&nbsp;		return iri;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Resource parseNode() {
+<b class="nc">&nbsp;		if (lineChars[currentIndex] != &#39;_&#39;) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Supplied char should be a &#39;_&#39;, is: &quot; + new String(Character.toChars(lineChars[currentIndex])),</b>
+&nbsp;					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+&nbsp;		}
+<b class="nc">&nbsp;		int startIndex = currentIndex + 2;</b>
+<b class="nc">&nbsp;		moveToBNodeEndIndex();</b>
+<b class="nc">&nbsp;		return createNode(new String(lineChars, startIndex, currentIndex - startIndex));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void parseLiteral() {
+<b class="nc">&nbsp;		String label = parseLabel();</b>
+<b class="nc">&nbsp;		incrementIndexOrThrowEOF();</b>
+<b class="nc">&nbsp;		if (currentIndex &lt; lineChars.length - 1 &amp;&amp; lineChars[currentIndex] == &#39;^&#39;) {</b>
+<b class="nc">&nbsp;			parseLiteralWithDatatype(label);</b>
+<b class="nc">&nbsp;		} else if (lineChars[currentIndex] == &#39;@&#39;) {</b>
+<b class="nc">&nbsp;			parseLangLiteral(label);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			object = createLiteral(label, null, null, lineNo, lineChars[currentIndex]);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private String parseLabel() {
+<b class="nc">&nbsp;		int startIndex = currentIndex;</b>
+<b class="nc">&nbsp;		incrementIndexOrThrowEOF();</b>
+<b class="nc">&nbsp;		while (lineChars[currentIndex] != &#39;\&quot;&#39;) {</b>
+<b class="nc">&nbsp;			if (lineChars[currentIndex] == &#39;\\&#39;) {</b>
+<b class="nc">&nbsp;				currentIndex++;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			incrementIndexOrThrowEOF();</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			return unescapeString(new String(lineChars, startIndex + 1, currentIndex - startIndex - 1));</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			throw new RDFParseException(&quot;Illegal unicode escape sequence&quot;, lineNo, -1);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void parseLiteralWithDatatype(String label) {
+<b class="nc">&nbsp;		if (lineChars[currentIndex + 1] != &#39;^&#39;) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Expected &#39;^&#39;, found: &quot; + new String(Character.toChars(lineChars[currentIndex + 1])),</b>
+&nbsp;					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+&nbsp;		}
+<b class="nc">&nbsp;		currentIndex += 2;</b>
+<b class="nc">&nbsp;		if (currentIndex &gt;= lineChars.length || lineChars[currentIndex] != &#39;&lt;&#39;) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Expected &#39;&lt;&#39;, found: &quot; + new String(Character.toChars(lineChars[currentIndex])),</b>
+&nbsp;					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+&nbsp;		}
+<b class="nc">&nbsp;		object = createLiteral(label, null, parseIRI(), lineNo, lineChars[currentIndex]);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void parseLangLiteral(String label) {
+<b class="nc">&nbsp;		incrementIndexOrThrowEOF();</b>
+<b class="nc">&nbsp;		if (!ASCIIUtil.isLetter(lineChars[currentIndex])) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Expected a letter, found: &quot; + new String(Character.toChars(lineChars[currentIndex])),</b>
+&nbsp;					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+&nbsp;		}
+<b class="nc">&nbsp;		int startIndex = currentIndex;</b>
+<b class="nc">&nbsp;		while (currentIndex &lt; lineChars.length &amp;&amp; (!NTriplesUtil.isDot(lineChars[currentIndex])</b>
+&nbsp;				&amp;&amp; lineChars[currentIndex] != &#39;^&#39;
+&nbsp;				&amp;&amp; lineChars[currentIndex] != &#39; &#39;
+&nbsp;				&amp;&amp; lineChars[currentIndex] != &#39;\t&#39;)) {
+<b class="nc">&nbsp;			currentIndex++;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (currentIndex &gt;= lineChars.length) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		object = createLiteral(label, new String(lineChars, startIndex, currentIndex - startIndex), null,</b>
+&nbsp;				lineNo, lineChars[currentIndex]);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Moves the current line index position to the end of the IRI.
+&nbsp;	 */
+&nbsp;	private void moveToIRIEndIndex() throws RDFParseException {
+<b class="fc">&nbsp;		currentIndex++;</b>
+<b class="pc">&nbsp;		while (currentIndex &lt; lineChars.length &amp;&amp; lineChars[currentIndex] != &#39;&gt;&#39;) {</b>
+<b class="pc">&nbsp;			if (lineChars[currentIndex] == &#39; &#39;) {</b>
+<b class="nc">&nbsp;				reportError(</b>
+<b class="nc">&nbsp;						&quot;IRI included an unencoded space: &quot; + new String(Character.toChars(lineChars[currentIndex])),</b>
+&nbsp;						BasicParserSettings.VERIFY_URI_SYNTAX);
+&nbsp;			}
+<b class="pc">&nbsp;			if (lineChars[currentIndex] == &#39;\\&#39;) {</b>
+&nbsp;				// This escapes the next character, which might be a &#39;&gt;&#39;
+<b class="nc">&nbsp;				incrementIndexOrThrowEOF();</b>
+<b class="nc">&nbsp;				if (lineChars[currentIndex] != &#39;u&#39; &amp;&amp; lineChars[currentIndex] != &#39;U&#39;) {</b>
+<b class="nc">&nbsp;					reportError(&quot;IRI includes string escapes: &#39;\\&quot; + lineChars[currentIndex] + &quot;&#39;&quot;,</b>
+&nbsp;							BasicParserSettings.VERIFY_URI_SYNTAX);
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;			currentIndex++;</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (currentIndex &gt;= lineChars.length) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Moves the current line index position to the end of the BNode ID.
+&nbsp;	 */
+&nbsp;	private void moveToBNodeEndIndex() throws RDFParseException {
+<b class="nc">&nbsp;		incrementIndexOrThrowEOF();</b>
+<b class="nc">&nbsp;		if (lineChars[currentIndex] != &#39;:&#39;) {</b>
+<b class="nc">&nbsp;			reportError(&quot;Expected &#39;:&#39;, found: &quot; + new String(Character.toChars(lineChars[currentIndex])),</b>
+&nbsp;					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+&nbsp;		}
+<b class="nc">&nbsp;		currentIndex++;</b>
+<b class="nc">&nbsp;		if (!ASCIIUtil.isLetterOrNumber(lineChars[currentIndex]) &amp;&amp; !NTriplesUtil.isUnderscore(</b>
+&nbsp;				lineChars[currentIndex])) {
+<b class="nc">&nbsp;			reportError(&quot;Expected a letter or number or underscore, found: &quot; + new String(</b>
+<b class="nc">&nbsp;					Character.toChars(lineChars[currentIndex])),</b>
+&nbsp;					NTriplesParserSettings.FAIL_ON_INVALID_LINES);
+&nbsp;		}
+<b class="nc">&nbsp;		while (currentIndex &lt; lineChars.length &amp;&amp; NTriplesUtil.isValidCharacterForBNodeLabel(lineChars[currentIndex])) {</b>
+<b class="nc">&nbsp;			if (NTriplesUtil.isDot(lineChars[currentIndex])) {</b>
+<b class="nc">&nbsp;				if (currentIndex + 1 &gt;= lineChars.length || !NTriplesUtil.isValidCharacterForBNodeLabel(</b>
+&nbsp;						lineChars[currentIndex + 1])) {
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			currentIndex++;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (currentIndex == lineChars.length) {</b>
+<b class="nc">&nbsp;			if (NTriplesUtil.isDot(lineChars[currentIndex - 1])) {</b>
+<b class="nc">&nbsp;				currentIndex--;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throwEOFException();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Increments the current line index position and asserts EOF is not reached.
+&nbsp;	 */
+&nbsp;	private void incrementIndexOrThrowEOF() {
+<b class="nc">&nbsp;		currentIndex++;</b>
+<b class="nc">&nbsp;		if (currentIndex &gt;= lineChars.length) {</b>
+<b class="nc">&nbsp;			throwEOFException();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Attempts to read the next line from the buffered reader.
+&nbsp;	 */
+&nbsp;	private boolean readLine() throws IOException {
+<b class="fc">&nbsp;		String line = reader.readLine();</b>
+<b class="fc">&nbsp;		if (line != null) {</b>
+<b class="fc">&nbsp;			lineChars = line.toCharArray();</b>
+<b class="fc">&nbsp;			lineNo++;</b>
+<b class="fc">&nbsp;			currentIndex = 0;</b>
+<b class="fc">&nbsp;			reportLocation(lineNo, 1);</b>
+<b class="fc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		lineChars = null;</b>
+<b class="fc">&nbsp;		currentIndex = -1;</b>
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected IRI createURI(String uri) throws RDFParseException {
+&nbsp;		try {
+<b class="fc">&nbsp;			uri = unescapeString(uri);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;			reportError(e.getMessage(), NTriplesParserSettings.FAIL_ON_INVALID_LINES);</b>
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		return super.createURI(uri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportWarning(String)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportWarning(String msg) {
+<b class="nc">&nbsp;		reportWarning(msg, lineNo, -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportError(String, RioSetting)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportError(String msg, RioSetting&lt;Boolean&gt; setting) throws RDFParseException {
+<b class="nc">&nbsp;		reportError(msg, lineNo, -1, setting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void reportError(Exception e, RioSetting&lt;Boolean&gt; setting) throws RDFParseException {
+<b class="nc">&nbsp;		reportError(e, lineNo, -1, setting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportFatalError(String)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportFatalError(String msg) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(msg, lineNo, -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Overrides {@link AbstractRDFParser#reportFatalError(Exception)}, adding line number information to the error.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void reportFatalError(Exception e) throws RDFParseException {
+<b class="nc">&nbsp;		reportFatalError(e, lineNo, -1);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void throwEOFException() throws RDFParseException {
+<b class="nc">&nbsp;		throw new RDFParseException(&quot;Unexpected end of file&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void clear() {
+<b class="fc">&nbsp;		currentIndex = -1;</b>
+<b class="fc">&nbsp;		lineChars = null;</b>
+<b class="fc">&nbsp;		super.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * N-Triples parser supports these settings.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Collection&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(NTriplesParserSettings.FAIL_ON_INVALID_LINES);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

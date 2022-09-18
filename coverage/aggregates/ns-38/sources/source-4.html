@@ -1,0 +1,297 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > HashJoin</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.join</a>
+</div>
+
+<h1>Coverage Summary for Class: HashJoin (org.eclipse.rdf4j.federated.evaluation.join)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">HashJoin</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/64)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.join;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.LazyMutableClosableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.Binding;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+&nbsp;import org.eclipse.rdf4j.query.impl.MapBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
+&nbsp;
+&nbsp;/**
+&nbsp; * Operator for a hash join of tuple expressions.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; * @since 6.0
+&nbsp; */
+&nbsp;public class HashJoin extends JoinExecutorBase&lt;BindingSet&gt; {
+&nbsp;
+&nbsp;	private final QueryEvaluationStep rightPrepared;
+&nbsp;
+&nbsp;	public HashJoin(FederationEvalStrategy strategy,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; leftIter,
+&nbsp;			TupleExpr rightArg, QueryEvaluationStep rightPrepared, Set&lt;String&gt; joinVars, BindingSet bindings,
+&nbsp;			QueryInfo queryInfo)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		super(strategy, leftIter, rightArg, bindings, queryInfo);</b>
+<b class="nc">&nbsp;		setJoinVars(joinVars);</b>
+<b class="nc">&nbsp;		this.rightPrepared = rightPrepared;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleBindings() throws Exception {
+&nbsp;
+&nbsp;		// the total number of bindings
+<b class="nc">&nbsp;		int totalBindingsLeft = 0;</b>
+<b class="nc">&nbsp;		int totalBindingsRight = 0;</b>
+<b class="nc">&nbsp;		Collection&lt;String&gt; rightFreeVars = QueryAlgebraUtil.getFreeVars(rightArg);</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; joinVars = getJoinVars();</b>
+&nbsp;
+&nbsp;		// evaluate the right join argument
+&nbsp;		// Note: wrapped in lazy mutable iteration for repetitive reading
+<b class="nc">&nbsp;		try (LazyMutableClosableIteration rightArgIter = new LazyMutableClosableIteration(</b>
+<b class="nc">&nbsp;				rightPrepared.evaluate(bindings))) {</b>
+&nbsp;
+<b class="nc">&nbsp;			while (!isClosed() &amp;&amp; leftIter.hasNext()) {</b>
+&nbsp;
+<b class="nc">&nbsp;				int blockSizeL = 10;</b>
+<b class="nc">&nbsp;				if (totalBindingsLeft &gt; 20) {</b>
+<b class="nc">&nbsp;					blockSizeL = 100;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				List&lt;BindingSet&gt; leftBlock = new ArrayList&lt;&gt;(blockSizeL);</b>
+<b class="nc">&nbsp;				for (int i = 0; i &lt; blockSizeL &amp;&amp; leftIter.hasNext(); i++) {</b>
+<b class="nc">&nbsp;					leftBlock.add(leftIter.next());</b>
+<b class="nc">&nbsp;					totalBindingsLeft++;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				int blockSizeR = 10;</b>
+<b class="nc">&nbsp;				while (!isClosed() &amp;&amp; rightArgIter.hasNext()) {</b>
+<b class="nc">&nbsp;					if (totalBindingsRight &gt; 20) {</b>
+<b class="nc">&nbsp;						blockSizeR = 100;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					Collection&lt;BindingSet&gt; rightBlock = new ArrayList&lt;&gt;(blockSizeR);</b>
+<b class="nc">&nbsp;					for (int i = 0; i &lt; blockSizeR &amp;&amp; rightArgIter.hasNext(); i++) {</b>
+<b class="nc">&nbsp;						rightBlock.add(rightArgIter.next());</b>
+<b class="nc">&nbsp;						totalBindingsRight++;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					performJoin(leftBlock, rightBlock, joinVars, rightFreeVars);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				rightArgIter.resetCursor();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;JoinStats: left iter of &quot; + getDisplayId() + &quot; had &quot; + totalBindingsLeft + &quot; results.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Perform the join and add the result to this cursor.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * See {@link #join(Collection, Collection, Set, Collection)} and {@link #addResult(CloseableIteration)}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param leftBlock
+&nbsp;	 * @param rightBlock
+&nbsp;	 * @param joinVariables
+&nbsp;	 * @param freeVariablesRight
+&nbsp;	 */
+&nbsp;	protected void performJoin(Collection&lt;BindingSet&gt; leftBlock, Collection&lt;BindingSet&gt; rightBlock,
+&nbsp;			Set&lt;String&gt; joinVariables, Collection&lt;String&gt; freeVariablesRight) {
+<b class="nc">&nbsp;		addResult(join(leftBlock, rightBlock, joinVariables, freeVariablesRight));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Perform a hash join of bindings from the left block with those of the right block.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method keeps the merged bindings in the results, if the join variables match and if all previously resolved
+&nbsp;	 * bindings hold.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param leftBlock
+&nbsp;	 * @param rightBlock
+&nbsp;	 * @param joinVariables
+&nbsp;	 * @param freeVariablesRight
+&nbsp;	 * @return the merged binding result
+&nbsp;	 */
+&nbsp;	static CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; join(Collection&lt;BindingSet&gt; leftBlock,
+&nbsp;			Collection&lt;BindingSet&gt; rightBlock, Set&lt;String&gt; joinVariables, Collection&lt;String&gt; freeVariablesRight) {
+<b class="nc">&nbsp;		List&lt;BindingSet&gt; res = new LinkedList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (BindingSet left : leftBlock) {</b>
+&nbsp;
+<b class="nc">&nbsp;			for (BindingSet right : rightBlock) {</b>
+&nbsp;
+<b class="nc">&nbsp;				boolean match = false;</b>
+&nbsp;				// check join variables: must be equal in both operands
+<b class="nc">&nbsp;				for (String joinVariable : joinVariables) {</b>
+<b class="nc">&nbsp;					Value leftValue = left.getValue(joinVariable);</b>
+<b class="nc">&nbsp;					Value rightValue = right.getValue(joinVariable);</b>
+&nbsp;
+&nbsp;					// join match
+<b class="nc">&nbsp;					if (leftValue != null &amp;&amp; leftValue.equals(rightValue)) {</b>
+<b class="nc">&nbsp;						match = true;</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+&nbsp;				// check other free variables of right expression
+&nbsp;				// =&gt; must be available in bindings
+<b class="nc">&nbsp;				for (String freeVariable : freeVariablesRight) {</b>
+<b class="nc">&nbsp;					if (joinVariables.contains(freeVariable)) {</b>
+<b class="nc">&nbsp;						continue; // skip</b>
+&nbsp;					}
+<b class="nc">&nbsp;					Value leftValue = left.getValue(freeVariable);</b>
+<b class="nc">&nbsp;					Value rightValue = right.getValue(freeVariable);</b>
+<b class="nc">&nbsp;					if (leftValue != null &amp;&amp; leftValue.equals(rightValue)) {</b>
+<b class="nc">&nbsp;						match = true;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				if (match) {</b>
+&nbsp;					// emit a merged binding set
+<b class="nc">&nbsp;					MapBindingSet mergedBindings = new MapBindingSet();</b>
+<b class="nc">&nbsp;					for (Binding b : left) {</b>
+<b class="nc">&nbsp;						mergedBindings.setBinding(b);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					for (Binding b : right) {</b>
+<b class="nc">&nbsp;						mergedBindings.setBinding(b);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					res.add(mergedBindings);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return new CollectionIteration&lt;&gt;(res);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

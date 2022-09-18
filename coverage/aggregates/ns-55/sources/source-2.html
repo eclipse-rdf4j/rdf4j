@@ -1,0 +1,569 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementsController</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.statements</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementsController (org.eclipse.rdf4j.http.server.repository.statements)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementsController</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/98)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/202)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.statements;
+&nbsp;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.BASEURI_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.INCLUDE_INFERRED_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.INSERT_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.OBJECT_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.PREDICATE_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_LANGUAGE_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.REMOVE_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.SUBJECT_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.USING_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.USING_NAMED_GRAPH_PARAM_NAME;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.apache.commons.io.IOUtils;
+&nbsp;import org.eclipse.rdf4j.common.webapp.util.HttpServerUtil;
+&nbsp;import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorType;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.TransactionReader;
+&nbsp;import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
+&nbsp;import org.eclipse.rdf4j.http.server.ClientHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.HTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.ServerHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.context.ApplicationContextException;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.mvc.AbstractController;
+&nbsp;import org.xml.sax.SAXException;
+&nbsp;import org.xml.sax.SAXParseException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles requests for manipulating the statements in a repository.
+&nbsp; *
+&nbsp; * @author Herko ter Horst
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class StatementsController extends AbstractController {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+<b class="nc">&nbsp;	public StatementsController() throws ApplicationContextException {</b>
+<b class="nc">&nbsp;		setSupportedMethods(new String[] { METHOD_GET, METHOD_POST, METHOD_HEAD, &quot;PUT&quot;, &quot;DELETE&quot; });</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws Exception {
+&nbsp;		ModelAndView result;
+&nbsp;
+<b class="nc">&nbsp;		Repository repository = RepositoryInterceptor.getRepository(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		String reqMethod = request.getMethod();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (METHOD_GET.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;GET statements&quot;);</b>
+<b class="nc">&nbsp;			result = getExportStatementsResult(repository, request, response);</b>
+<b class="nc">&nbsp;		} else if (METHOD_HEAD.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;HEAD statements&quot;);</b>
+<b class="nc">&nbsp;			result = getExportStatementsResult(repository, request, response);</b>
+<b class="nc">&nbsp;		} else if (METHOD_POST.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			String mimeType = HttpServerUtil.getMIMEType(request.getContentType());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (Protocol.TXN_MIME_TYPE.equals(mimeType)) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;POST transaction to repository&quot;);</b>
+<b class="nc">&nbsp;				result = getTransactionResultResult(repository, request, response);</b>
+<b class="nc">&nbsp;			} else if (Protocol.SPARQL_UPDATE_MIME_TYPE.equals(mimeType)</b>
+<b class="nc">&nbsp;					|| request.getParameterMap().containsKey(Protocol.UPDATE_PARAM_NAME)) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;POST SPARQL update request to repository&quot;);</b>
+<b class="nc">&nbsp;				result = getSparqlUpdateResult(repository, request, response);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				logger.info(&quot;POST data to repository&quot;);</b>
+<b class="nc">&nbsp;				result = getAddDataResult(repository, request, response, false);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (&quot;PUT&quot;.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;PUT data in repository&quot;);</b>
+<b class="nc">&nbsp;			result = getAddDataResult(repository, request, response, true);</b>
+<b class="nc">&nbsp;		} else if (&quot;DELETE&quot;.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;DELETE data from repository&quot;);</b>
+<b class="nc">&nbsp;			result = getDeleteDataResult(repository, request, response);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,</b>
+&nbsp;					&quot;Method not allowed: &quot; + reqMethod);
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView getSparqlUpdateResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());</b>
+&nbsp;
+&nbsp;		String sparqlUpdateString;
+<b class="nc">&nbsp;		if (Protocol.SPARQL_UPDATE_MIME_TYPE.equals(mimeType)) {</b>
+&nbsp;			// The query should be the entire body
+&nbsp;			try {
+<b class="nc">&nbsp;				sparqlUpdateString = IOUtils.toString(request.getReader());</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Error reading request message body&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			sparqlUpdateString = request.getParameterValues(Protocol.UPDATE_PARAM_NAME)[0];</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (sparqlUpdateString.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(&quot;Updates must be non-empty&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// default query language is SPARQL
+<b class="nc">&nbsp;		QueryLanguage queryLn = QueryLanguage.SPARQL;</b>
+&nbsp;
+<b class="nc">&nbsp;		String queryLnStr = request.getParameter(QUERY_LANGUAGE_PARAM_NAME);</b>
+<b class="nc">&nbsp;		logger.debug(&quot;query language param = {}&quot;, queryLnStr);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (queryLnStr != null) {</b>
+<b class="nc">&nbsp;			queryLn = QueryLanguage.valueOf(queryLnStr);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (queryLn == null) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Unknown query language: &quot; + queryLnStr);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String baseURI = request.getParameter(Protocol.BASEURI_PARAM_NAME);</b>
+&nbsp;
+&nbsp;		// determine if inferred triples should be included in query evaluation
+<b class="nc">&nbsp;		boolean includeInferred = ProtocolUtil.parseBooleanParam(request, INCLUDE_INFERRED_PARAM_NAME, true);</b>
+&nbsp;
+&nbsp;		// build a dataset, if specified
+<b class="nc">&nbsp;		String[] defaultRemoveGraphURIs = request.getParameterValues(REMOVE_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] defaultInsertGraphURIs = request.getParameterValues(INSERT_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] defaultGraphURIs = request.getParameterValues(USING_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] namedGraphURIs = request.getParameterValues(USING_NAMED_GRAPH_PARAM_NAME);</b>
+&nbsp;
+<b class="nc">&nbsp;		SimpleDataset dataset = null;</b>
+<b class="nc">&nbsp;		if (defaultRemoveGraphURIs != null || defaultInsertGraphURIs != null || defaultGraphURIs != null</b>
+&nbsp;				|| namedGraphURIs != null) {
+<b class="nc">&nbsp;			dataset = new SimpleDataset();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (defaultRemoveGraphURIs != null) {</b>
+<b class="nc">&nbsp;			for (String graphURI : defaultRemoveGraphURIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI uri = createURIOrNull(repository, graphURI);</b>
+<b class="nc">&nbsp;					dataset.addDefaultRemoveGraph(uri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for default remove graph: &quot; + graphURI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (defaultInsertGraphURIs != null &amp;&amp; defaultInsertGraphURIs.length &gt; 0) {</b>
+<b class="nc">&nbsp;			String graphURI = defaultInsertGraphURIs[0];</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				IRI uri = createURIOrNull(repository, graphURI);</b>
+<b class="nc">&nbsp;				dataset.setDefaultInsertGraph(uri);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for default insert graph: &quot; + graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (defaultGraphURIs != null) {</b>
+<b class="nc">&nbsp;			for (String defaultGraphURI : defaultGraphURIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI uri = createURIOrNull(repository, defaultGraphURI);</b>
+<b class="nc">&nbsp;					dataset.addDefaultGraph(uri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for default graph: &quot; + defaultGraphURI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (namedGraphURIs != null) {</b>
+<b class="nc">&nbsp;			for (String namedGraphURI : namedGraphURIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI uri = createURIOrNull(repository, namedGraphURI);</b>
+<b class="nc">&nbsp;					dataset.addNamedGraph(uri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for named graph: &quot; + namedGraphURI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final int maxQueryTime = ProtocolUtil.parseTimeoutParam(request);</b>
+<b class="nc">&nbsp;		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+<b class="nc">&nbsp;			Update update = repositoryCon.prepareUpdate(queryLn, sparqlUpdateString, baseURI);</b>
+&nbsp;
+<b class="nc">&nbsp;			update.setIncludeInferred(includeInferred);</b>
+<b class="nc">&nbsp;			update.setMaxExecutionTime(maxQueryTime);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (dataset != null) {</b>
+<b class="nc">&nbsp;				update.setDataset(dataset);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// determine if any variable bindings have been set on this
+&nbsp;			// update.
+&nbsp;			@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;			Enumeration&lt;String&gt; parameterNames = request.getParameterNames();</b>
+&nbsp;
+<b class="nc">&nbsp;			while (parameterNames.hasMoreElements()) {</b>
+<b class="nc">&nbsp;				String parameterName = parameterNames.nextElement();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (parameterName.startsWith(BINDING_PREFIX) &amp;&amp; parameterName.length() &gt; BINDING_PREFIX.length()) {</b>
+<b class="nc">&nbsp;					String bindingName = parameterName.substring(BINDING_PREFIX.length());</b>
+<b class="nc">&nbsp;					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,</b>
+<b class="nc">&nbsp;							repository.getValueFactory());</b>
+<b class="nc">&nbsp;					update.setBinding(bindingName, bindingValue);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			update.execute();</b>
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		} catch (QueryInterruptedException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, &quot;update execution took too long&quot;);</b>
+<b class="nc">&nbsp;		} catch (UpdateExecutionException | RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof HTTPException) {</b>
+&nbsp;				// custom signal from the backend, throw as HTTPException
+&nbsp;				// directly
+&nbsp;				// (see SES-1016).
+<b class="nc">&nbsp;				throw (HTTPException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Repository update error: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;		// custom signal from the backend, throw as HTTPException
+&nbsp;		// directly
+&nbsp;		// (see SES-1016).
+<b class="nc">&nbsp;		catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private IRI createURIOrNull(Repository repository, String graphURI) {
+<b class="nc">&nbsp;		if (&quot;null&quot;.equals(graphURI)) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return repository.getValueFactory().createIRI(graphURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get all statements and export them as RDF.
+&nbsp;	 *
+&nbsp;	 * @return a model and view for exporting the statements.
+&nbsp;	 */
+&nbsp;	private ModelAndView getExportStatementsResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws ClientHTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = repository.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource subj = ProtocolUtil.parseResourceParam(request, SUBJECT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		IRI pred = ProtocolUtil.parseURIParam(request, PREDICATE_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		Value obj = ProtocolUtil.parseValueParam(request, OBJECT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		boolean useInferencing = ProtocolUtil.parseBooleanParam(request, INCLUDE_INFERRED_PARAM_NAME, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,</b>
+<b class="nc">&nbsp;				RDFWriterRegistry.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.SUBJECT_KEY, subj);</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.PREDICATE_KEY, pred);</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.OBJECT_KEY, obj);</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.CONTEXTS_KEY, contexts);</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.USE_INFERENCING_KEY, Boolean.valueOf(useInferencing));</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.FACTORY_KEY, rdfWriterFactory);</b>
+<b class="nc">&nbsp;		model.put(ExportStatementsView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));</b>
+<b class="nc">&nbsp;		return new ModelAndView(ExportStatementsView.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Process several actions as a transaction.
+&nbsp;	 */
+&nbsp;	private ModelAndView getTransactionResultResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws IOException, ClientHTTPException, ServerHTTPException, HTTPException {
+<b class="nc">&nbsp;		InputStream in = request.getInputStream();</b>
+<b class="nc">&nbsp;		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Processing transaction...&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			TransactionReader reader = new TransactionReader();</b>
+<b class="nc">&nbsp;			Iterable&lt;? extends TransactionOperation&gt; txn = reader.parse(in);</b>
+&nbsp;
+<b class="nc">&nbsp;			repositoryCon.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;			for (TransactionOperation op : txn) {</b>
+<b class="nc">&nbsp;				op.execute(repositoryCon);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			repositoryCon.commit();</b>
+<b class="nc">&nbsp;			logger.debug(&quot;Transaction processed &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		} catch (SAXParseException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_DATA, e.getMessage());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+<b class="nc">&nbsp;		} catch (SAXException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Failed to parse transaction data: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Failed to read data: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof HTTPException) {</b>
+&nbsp;				// custom signal from the backend, throw as HTTPException
+&nbsp;				// directly
+&nbsp;				// (see SES-1016).
+<b class="nc">&nbsp;				throw (HTTPException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Repository update error: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Upload data to the repository.
+&nbsp;	 */
+&nbsp;	private ModelAndView getAddDataResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response, boolean replaceCurrent)
+&nbsp;			throws IOException, ServerHTTPException, ClientHTTPException, HTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		String mimeType = HttpServerUtil.getMIMEType(request.getContentType());</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFFormat rdfFormat = Rio.getParserFormatForMIMEType(mimeType)</b>
+<b class="nc">&nbsp;				.orElseThrow(</b>
+<b class="nc">&nbsp;						() -&gt; new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE, &quot;Unsupported MIME type: &quot; + mimeType));</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = repository.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		IRI baseURI = ProtocolUtil.parseURIParam(request, BASEURI_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request, Protocol.PRESERVE_BNODE_ID_PARAM_NAME,</b>
+&nbsp;				false);
+&nbsp;
+<b class="nc">&nbsp;		String baseURIString = null;</b>
+<b class="nc">&nbsp;		if (baseURI != null) {</b>
+<b class="nc">&nbsp;			baseURIString = baseURI.toString();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		InputStream in = request.getInputStream();</b>
+<b class="nc">&nbsp;		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+<b class="nc">&nbsp;			repositoryCon.begin();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (preserveNodeIds) {</b>
+<b class="nc">&nbsp;				repositoryCon.getParserConfig().set(BasicParserSettings.PRESERVE_BNODE_IDS, true);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (replaceCurrent) {</b>
+<b class="nc">&nbsp;				repositoryCon.clear(contexts);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			repositoryCon.add(in, baseURIString, rdfFormat, contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;			repositoryCon.commit();</b>
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		} catch (UnsupportedRDFormatException e) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_UNSUPPORTED_MEDIA_TYPE,</b>
+<b class="nc">&nbsp;					&quot;No RDF parser available for format &quot; + rdfFormat.getName());</b>
+<b class="nc">&nbsp;		} catch (RDFParseException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_DATA, e.getMessage());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new ServerHTTPException(&quot;Failed to read data: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof HTTPException) {</b>
+&nbsp;				// custom signal from the backend, throw as HTTPException
+&nbsp;				// directly
+&nbsp;				// (see SES-1016).
+<b class="nc">&nbsp;				throw (HTTPException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Repository update error: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Delete data from the repository.
+&nbsp;	 */
+&nbsp;	private ModelAndView getDeleteDataResult(Repository repository, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = repository.getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource subj = ProtocolUtil.parseResourceParam(request, SUBJECT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		IRI pred = ProtocolUtil.parseURIParam(request, PREDICATE_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		Value obj = ProtocolUtil.parseValueParam(request, OBJECT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME, vf);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {</b>
+<b class="nc">&nbsp;			repositoryCon.remove(subj, pred, obj, contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof HTTPException) {</b>
+&nbsp;				// custom signal from the backend, throw as HTTPException
+&nbsp;				// directly
+&nbsp;				// (see SES-1016).
+<b class="nc">&nbsp;				throw (HTTPException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Repository update error: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

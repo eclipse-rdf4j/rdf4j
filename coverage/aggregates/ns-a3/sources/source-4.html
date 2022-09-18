@@ -1,0 +1,722 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFFormat</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFFormat (org.eclipse.rdf4j.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFFormat</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    26.7%
+  </span>
+  <span class="absValue">
+    (4/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    61.5%
+  </span>
+  <span class="absValue">
+    (48/78)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio;
+&nbsp;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Represents the concept of an RDF data serialization format. RDF formats are identified by a {@link #getName() name}
+&nbsp; * and can have one or more associated MIME types, zero or more associated file extensions and can specify a (default)
+&nbsp; * character encoding. Some formats are able to encode context information while other are not; this is indicated by the
+&nbsp; * value of {@link #supportsContexts}.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class RDFFormat extends FileFormat {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that calls to {@link RDFHandler#handleNamespace(String, String)} may be serialised when serializing to
+&nbsp;	 * this format.
+&nbsp;	 */
+&nbsp;	public static final boolean SUPPORTS_NAMESPACES = true;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that all calls to {@link RDFHandler#handleNamespace(String, String)} will be ignored when serializing
+&nbsp;	 * to this format.
+&nbsp;	 */
+&nbsp;	public static final boolean NO_NAMESPACES = false;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that the {@link Statement#getContext()} URI may be serialized for this format.
+&nbsp;	 */
+&nbsp;	public static final boolean SUPPORTS_CONTEXTS = true;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that the {@link Statement#getContext()} URI will NOT be serialized for this format.
+&nbsp;	 */
+&nbsp;	public static final boolean NO_CONTEXTS = false;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that RDF-star triples can be serialized natively for this format.
+&nbsp;	 */
+&nbsp;	public static final boolean SUPPORTS_RDF_STAR = true;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Indicates that RDF-star triples will NOT be serialized natively for this format.
+&nbsp;	 */
+&nbsp;	public static final boolean NO_RDF_STAR = false;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/rdf-syntax-grammar/&quot;&gt;RDF/XML&lt;/a&gt; file format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Several file extensions are accepted for RDF/XML documents, including &lt;code&gt;.rdf&lt;/code&gt;, &lt;code&gt;.rdfs&lt;/code&gt; (for
+&nbsp;	 * RDF Schema files), &lt;code&gt;.owl&lt;/code&gt; (for OWL ontologies), and &lt;code&gt;.xml&lt;/code&gt;. The media type is
+&nbsp;	 * &lt;code&gt;application/rdf+xml&lt;/code&gt;, but &lt;code&gt;application/xml&lt;/code&gt; and &lt;code&gt;text/xml&lt;/code&gt; are also accepted.
+&nbsp;	 * The character encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/rdf-syntax-grammar/&quot;&gt;RDF/XML Syntax Specification (Revised)&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat RDFXML = new RDFFormat(&quot;RDF/XML&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/rdf+xml&quot;, &quot;application/xml&quot;, &quot;text/xml&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;rdf&quot;, &quot;rdfs&quot;, &quot;owl&quot;, &quot;xml&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/RDF_XML&quot;), SUPPORTS_NAMESPACES,</b>
+&nbsp;			NO_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/n-triples/&quot;&gt;N-Triples&lt;/a&gt; file format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.nt&lt;/code&gt; is recommend for N-Triples documents. The media type is
+&nbsp;	 * &lt;code&gt;application/n-triples&lt;/code&gt; and encoding is in UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/n-triples/&quot;&gt;N-Triples&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat NTRIPLES = new RDFFormat(&quot;N-Triples&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/n-triples&quot;, &quot;text/plain&quot;), StandardCharsets.UTF_8, List.of(&quot;nt&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/N-Triples&quot;), NO_NAMESPACES,</b>
+&nbsp;			NO_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/turtle/&quot;&gt;Turtle&lt;/a&gt; file format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.ttl&lt;/code&gt; is recommend for Turtle documents. The media type is
+&nbsp;	 * &lt;code&gt;text/turtle&lt;/code&gt;, but &lt;code&gt;application/x-turtle&lt;/code&gt; is also accepted. Character encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/turtle/&quot;&gt;Turtle - Terse RDF Triple Language&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat TURTLE = new RDFFormat(&quot;Turtle&quot;, Arrays.asList(&quot;text/turtle&quot;, &quot;application/x-turtle&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, List.of(&quot;ttl&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/Turtle&quot;), SUPPORTS_NAMESPACES,</b>
+&nbsp;			NO_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The Turtle-star file format, a Turtle-based RDF serialization format that supports RDF-star triples.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.ttls&lt;/code&gt; is recommended for Turtle-star documents. The media type is
+&nbsp;	 * &lt;code&gt;application/x-turtlestar&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://arxiv.org/pdf/1406.3399.pdf&quot;&gt;Foundations of an Alternative Approach to Reification in
+&nbsp;	 *      RDF&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;https://w3c.github.io/rdf-star/cg-spec/&quot;&gt;RDF-star and SPARQL-star Draft Community Group Report&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat TURTLESTAR = new RDFFormat(&quot;Turtle-star&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;text/x-turtlestar&quot;, &quot;application/x-turtlestar&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			List.of(&quot;ttls&quot;), SUPPORTS_NAMESPACES, NO_CONTEXTS, SUPPORTS_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TeamSubmission/n3/&quot;&gt;N3/Notation3&lt;/a&gt; file format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.n3&lt;/code&gt; is recommended for N3 documents. The media type is &lt;code&gt;text/n3&lt;/code&gt;, but
+&nbsp;	 * &lt;code&gt;text/rdf+n3&lt;/code&gt; is also accepted. Character encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TeamSubmission/n3/&quot;&gt;Notation3 (N3): A readable RDF syntax&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat N3 = new RDFFormat(&quot;N3&quot;, Arrays.asList(&quot;text/n3&quot;, &quot;text/rdf+n3&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, List.of(&quot;n3&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/N3&quot;), SUPPORTS_NAMESPACES,</b>
+&nbsp;			NO_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://swdev.nokia.com/trix/&quot;&gt;TriX&lt;/a&gt; file format, an XML-based RDF serialization format that
+&nbsp;	 * supports recording of named graphs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.xml&lt;/code&gt; is recommended for TriX documents, &lt;code&gt;.trix&lt;/code&gt; is also accepted. The
+&nbsp;	 * media type is &lt;code&gt;application/trix&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://swdev.nokia.com/trix/&quot;&gt;TriX: RDF Triples in XML&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat TRIX = new RDFFormat(&quot;TriX&quot;, List.of(&quot;application/trix&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, Arrays.asList(&quot;xml&quot;, &quot;trix&quot;), null, SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS,</b>
+&nbsp;			NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/trig/&quot;&gt;TriG&lt;/a&gt; file format, a Turtle-based RDF serialization format that
+&nbsp;	 * supports recording of named graphs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.trig&lt;/code&gt; is recommend for TriG documents. The media type is
+&nbsp;	 * &lt;code&gt;application/trig&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/trig/&quot;&gt;The TriG Syntax&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat TRIG = new RDFFormat(&quot;TriG&quot;, Arrays.asList(&quot;application/trig&quot;, &quot;application/x-trig&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, List.of(&quot;trig&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/TriG&quot;), SUPPORTS_NAMESPACES,</b>
+&nbsp;			SUPPORTS_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The TriG-star file format, a TriG-based RDF serialization format that supports RDF-star triples. This builds upon
+&nbsp;	 * the idea for the Turtle-star format but adds support for named graphs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.trigs&lt;/code&gt; is recommended for TriG-star documents. The media type is
+&nbsp;	 * &lt;code&gt;application/x-trigstar&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://arxiv.org/pdf/1406.3399.pdf&quot;&gt;Foundations of an Alternative Approach to Reification in
+&nbsp;	 *      RDF&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;https://w3c.github.io/rdf-star/cg-spec/&quot;&gt;RDF-star and SPARQL-star Draft Community Group Report&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat TRIGSTAR = new RDFFormat(&quot;TriG-star&quot;, &quot;application/x-trigstar&quot;,</b>
+&nbsp;			StandardCharsets.UTF_8, &quot;trigs&quot;, SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS, SUPPORTS_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A binary RDF format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.brf&lt;/code&gt; is recommend for binary RDF documents. The media type is
+&nbsp;	 * &lt;code&gt;application/x-binary-rdf&lt;/code&gt;.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://rivuli-development.com/2011/11/binary-rdf-in-sesame/&quot;&gt;Binary RDF in Sesame&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat BINARY = new RDFFormat(&quot;BinaryRDF&quot;, List.of(&quot;application/x-binary-rdf&quot;), null,</b>
+<b class="fc">&nbsp;			List.of(&quot;brf&quot;), null, SUPPORTS_NAMESPACES, SUPPORTS_CONTEXTS, SUPPORTS_RDF_STAR);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/n-quads/&quot;&gt;N-Quads&lt;/a&gt; file format, an RDF serialization format that supports
+&nbsp;	 * recording of named graphs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.nq&lt;/code&gt; is recommended for N-Quads documents. The media type is
+&nbsp;	 * &lt;code&gt;application/n-quads&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/n-quads/&quot;&gt;N-Quads: Extending N-Triples with Context&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat NQUADS = new RDFFormat(&quot;N-Quads&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/n-quads&quot;, &quot;text/x-nquads&quot;, &quot;text/nquads&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			List.of(&quot;nq&quot;), SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/N-Quads&quot;),</b>
+&nbsp;			NO_NAMESPACES, SUPPORTS_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/json-ld/&quot;&gt;JSON-LD&lt;/a&gt; file format, an RDF serialization format that supports
+&nbsp;	 * recording of named graphs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.jsonld&lt;/code&gt; is recommended for JSON-LD documents. The media type is
+&nbsp;	 * &lt;code&gt;application/ld+json&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/json-ld/&quot;&gt;JSON-LD 1.0&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat JSONLD = new RDFFormat(&quot;JSON-LD&quot;, List.of(&quot;application/ld+json&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, List.of(&quot;jsonld&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/JSON-LD&quot;), SUPPORTS_NAMESPACES,</b>
+&nbsp;			SUPPORTS_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The NDJSON-LD is a Newline Delimited JSON-LD format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.ndjsonld&lt;/code&gt; is recommended for NDJSON-LD documents. The media type is
+&nbsp;	 * &lt;code&gt;application/x-ld+ndjson&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat NDJSONLD = new RDFFormat(&quot;NDJSON-LD&quot;, List.of(&quot;application/x-ld+ndjson&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, Arrays.asList(&quot;ndjsonld&quot;, &quot;jsonl&quot;, &quot;ndjson&quot;), null, SUPPORTS_NAMESPACES,</b>
+&nbsp;			SUPPORTS_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/rdf-json/&quot; &gt;RDF/JSON&lt;/a&gt; file format, an RDF serialization format that supports
+&nbsp;	 * recording of named graphs.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.rj&lt;/code&gt; is recommended for RDF/JSON documents. The media type is
+&nbsp;	 * &lt;code&gt;application/rdf+json&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/rdf-json/&quot;&gt;RDF 1.1 JSON Alternate Serialization (RDF/JSON)&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat RDFJSON = new RDFFormat(&quot;RDF/JSON&quot;, List.of(&quot;application/rdf+json&quot;),</b>
+<b class="fc">&nbsp;			StandardCharsets.UTF_8, List.of(&quot;rj&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/RDF_JSON&quot;), NO_NAMESPACES,</b>
+&nbsp;			SUPPORTS_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.w3.org/TR/rdfa-syntax/&quot;&gt;RDFa&lt;/a&gt; file format, an RDF serialization format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.xhtml&lt;/code&gt; is recommended for RDFa documents. The preferred media type is
+&nbsp;	 * &lt;code&gt;application/xhtml+xml&lt;/code&gt; and the encoding is UTF-8.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/rdfa-syntax/&quot;&gt;XHTML+RDFa 1.1&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat RDFA = new RDFFormat(&quot;RDFa&quot;,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;application/xhtml+xml&quot;, &quot;application/html&quot;, &quot;text/html&quot;), StandardCharsets.UTF_8,</b>
+<b class="fc">&nbsp;			Arrays.asList(&quot;xhtml&quot;, &quot;html&quot;),</b>
+<b class="fc">&nbsp;			SimpleValueFactory.getInstance().createIRI(&quot;http://www.w3.org/ns/formats/RDFa&quot;), SUPPORTS_NAMESPACES,</b>
+&nbsp;			NO_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The &lt;a href=&quot;http://www.rdfhdt.org/hdt-binary-format/&quot;&gt;HDT&lt;/a&gt; file format, an RDF serialization format.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The file extension &lt;code&gt;.hdt&lt;/code&gt; is recommended for HDT documents.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.rdfhdt.org/hdt-binary-format/&quot;&gt;HDT v1.0&lt;/a&gt;
+&nbsp;	 */
+<b class="fc">&nbsp;	public static final RDFFormat HDT = new RDFFormat(&quot;HDT&quot;,</b>
+<b class="fc">&nbsp;			List.of(&quot;application/vnd.hdt&quot;), null, List.of(&quot;hdt&quot;), null,</b>
+&nbsp;			SUPPORTS_NAMESPACES, NO_CONTEXTS, NO_RDF_STAR);
+&nbsp;
+&nbsp;	/*----------------*
+&nbsp;	 * Static methods *
+&nbsp;	 *----------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Processes the supplied collection of {@link RDFFormat}s and assigns quality values to each based on whether
+&nbsp;	 * context must be supported and whether the format is preferred.
+&nbsp;	 *
+&nbsp;	 * @param rdfFormats      The {@link RDFFormat}s to process.
+&nbsp;	 * @param requireContext  True to decrease the quality value for formats where {@link RDFFormat#supportsContexts()}
+&nbsp;	 *                        returns false.
+&nbsp;	 * @param preferredFormat The preferred RDFFormat. If it is not in the list then the quality of all formats will be
+&nbsp;	 *                        processed as if they are not preferred.
+&nbsp;	 * @return A list of strings containing the content types and an attached q-value specifying the quality for the
+&nbsp;	 *         format for each type.
+&nbsp;	 */
+&nbsp;	public static List&lt;String&gt; getAcceptParams(Iterable&lt;RDFFormat&gt; rdfFormats, boolean requireContext,
+&nbsp;			RDFFormat preferredFormat) {
+<b class="nc">&nbsp;		List&lt;String&gt; acceptParams = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (RDFFormat format : rdfFormats) {</b>
+&nbsp;			// Determine a q-value that reflects the necessity of context
+&nbsp;			// support and the user specified preference
+<b class="nc">&nbsp;			int qValue = 10;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (requireContext &amp;&amp; !format.supportsContexts()) {</b>
+&nbsp;				// Prefer context-supporting formats over pure triple-formats
+<b class="nc">&nbsp;				qValue -= 5;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (preferredFormat != null &amp;&amp; !preferredFormat.equals(format)) {</b>
+&nbsp;				// Prefer specified format over other formats
+<b class="nc">&nbsp;				qValue -= 2;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (!format.supportsNamespaces()) {</b>
+&nbsp;				// We like reusing namespace prefixes
+<b class="nc">&nbsp;				qValue -= 1;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (RDFXML.equals(format)) {</b>
+&nbsp;				// We explicitly dislike RDF/XML as it has limitations in what it can serialize. See #299.
+<b class="nc">&nbsp;				qValue -= 4;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// ensure q-value does not go below 0.1.
+<b class="nc">&nbsp;			qValue = Math.max(1, qValue);</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String mimeType : format.getMIMETypes()) {</b>
+<b class="nc">&nbsp;				String acceptParam = mimeType;</b>
+&nbsp;
+<b class="nc">&nbsp;				if (qValue &lt; 10) {</b>
+<b class="nc">&nbsp;					acceptParam += &quot;;q=0.&quot; + qValue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				acceptParams.add(acceptParam);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return acceptParams;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the RDFFormat can encode namespace information.
+&nbsp;	 */
+&nbsp;	private final boolean supportsNamespaces;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the RDFFormat can encode context information.
+&nbsp;	 */
+&nbsp;	private final boolean supportsContexts;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether the RDFFormat can encode RDF-star triples natively.
+&nbsp;	 */
+&nbsp;	private final boolean supportsRDFStar;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A standard URI published by the W3C or another standards body to uniquely denote this format.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/ns/formats/&quot;&gt;Unique URIs for File Formats&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	private final IRI standardURI;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeType           The MIME type of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtension      The (default) file extension for the RDF file format, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML
+&nbsp;	 *                           files.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @deprecated since 3.2.0
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public RDFFormat(String name, String mimeType, Charset charset, String fileExtension, boolean supportsNamespaces,
+&nbsp;			boolean supportsContexts) {
+<b class="nc">&nbsp;		this(name, mimeType, charset, fileExtension, supportsNamespaces, supportsContexts, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeType           The MIME type of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtension      The (default) file extension for the RDF file format, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML
+&nbsp;	 *                           files.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsRDFStar    &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of RDF-star triples natively and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public RDFFormat(String name, String mimeType, Charset charset, String fileExtension, boolean supportsNamespaces,
+&nbsp;			boolean supportsContexts, boolean supportsRDFStar) {
+<b class="fc">&nbsp;		this(name, List.of(mimeType), charset, List.of(fileExtension), supportsNamespaces,</b>
+&nbsp;				supportsContexts, supportsRDFStar);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeType           The MIME type of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtensions     The RDF format&#39;s file extensions, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML files. The first item
+&nbsp;	 *                           in the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @deprecated since 3.2.0
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public RDFFormat(String name, String mimeType, Charset charset, Collection&lt;String&gt; fileExtensions,
+&nbsp;			boolean supportsNamespaces, boolean supportsContexts) {
+<b class="nc">&nbsp;		this(name, mimeType, charset, fileExtensions, supportsNamespaces, supportsContexts, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeType           The MIME type of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtensions     The RDF format&#39;s file extensions, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML files. The first item
+&nbsp;	 *                           in the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsRDFStar    &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of RDF-star triples natively and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public RDFFormat(String name, String mimeType, Charset charset, Collection&lt;String&gt; fileExtensions,
+&nbsp;			boolean supportsNamespaces, boolean supportsContexts, boolean supportsRDFStar) {
+<b class="nc">&nbsp;		this(name, List.of(mimeType), charset, fileExtensions, supportsNamespaces, supportsContexts,</b>
+&nbsp;				supportsRDFStar);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeTypes          The MIME types of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
+&nbsp;	 *                           for the format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtensions     The RDF format&#39;s file extensions, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML files. The first item
+&nbsp;	 *                           in the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @deprecated since 3.2.0
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public RDFFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset, Collection&lt;String&gt; fileExtensions,
+&nbsp;			boolean supportsNamespaces, boolean supportsContexts) {
+<b class="nc">&nbsp;		this(name, mimeTypes, charset, fileExtensions, null, supportsNamespaces, supportsContexts, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeTypes          The MIME types of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
+&nbsp;	 *                           for the format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtensions     The RDF format&#39;s file extensions, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML files. The first item
+&nbsp;	 *                           in the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsRDFStar    &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of RDF-star triples natively and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public RDFFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset, Collection&lt;String&gt; fileExtensions,
+&nbsp;			boolean supportsNamespaces, boolean supportsContexts, boolean supportsRDFStar) {
+<b class="fc">&nbsp;		this(name, mimeTypes, charset, fileExtensions, null, supportsNamespaces, supportsContexts,</b>
+&nbsp;				supportsRDFStar);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeTypes          The MIME types of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
+&nbsp;	 *                           for the format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtensions     The RDF format&#39;s file extensions, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML files. The first item
+&nbsp;	 *                           in the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param standardURI        The standard URI that has been assigned to this format by a standards organisation or
+&nbsp;	 *                           null if it does not currently have a standard URI.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @deprecated since 3.2.0
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public RDFFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset, Collection&lt;String&gt; fileExtensions,
+&nbsp;			IRI standardURI, boolean supportsNamespaces, boolean supportsContexts) {
+<b class="nc">&nbsp;		this(name, mimeTypes, charset, fileExtensions, standardURI, supportsNamespaces, supportsContexts, NO_RDF_STAR);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new RDFFormat object.
+&nbsp;	 *
+&nbsp;	 * @param name               The name of the RDF file format, e.g. &quot;RDF/XML&quot;.
+&nbsp;	 * @param mimeTypes          The MIME types of the RDF file format, e.g. &lt;var&gt;application/rdf+xml&lt;/var&gt; for the
+&nbsp;	 *                           RDF/XML file format. The first item in the list is interpreted as the default MIME type
+&nbsp;	 *                           for the format.
+&nbsp;	 * @param charset            The default character encoding of the RDF file format. Specify &lt;var&gt;null&lt;/var&gt; if not
+&nbsp;	 *                           applicable.
+&nbsp;	 * @param fileExtensions     The RDF format&#39;s file extensions, e.g. &lt;var&gt;rdf&lt;/var&gt; for RDF/XML files. The first item
+&nbsp;	 *                           in the list is interpreted as the default file extension for the format.
+&nbsp;	 * @param standardURI        The standard URI that has been assigned to this format by a standards organisation or
+&nbsp;	 *                           null if it does not currently have a standard URI.
+&nbsp;	 * @param supportsNamespaces &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information
+&nbsp;	 *                           and &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsContexts   &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param supportsRDFStar    &lt;var&gt;True&lt;/var&gt; if the RDFFormat supports the encoding of RDF-star triples natively and
+&nbsp;	 *                           &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public RDFFormat(String name, Collection&lt;String&gt; mimeTypes, Charset charset, Collection&lt;String&gt; fileExtensions,
+&nbsp;			IRI standardURI, boolean supportsNamespaces, boolean supportsContexts, boolean supportsRDFStar) {
+<b class="fc">&nbsp;		super(name, mimeTypes, charset, fileExtensions);</b>
+&nbsp;
+<b class="fc">&nbsp;		this.standardURI = standardURI;</b>
+<b class="fc">&nbsp;		this.supportsNamespaces = supportsNamespaces;</b>
+<b class="fc">&nbsp;		this.supportsContexts = supportsContexts;</b>
+<b class="fc">&nbsp;		this.supportsRDFStar = supportsRDFStar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return &lt;var&gt;true&lt;/var&gt; if the RDFFormat supports the encoding of namespace/prefix information.
+&nbsp;	 */
+&nbsp;	public boolean supportsNamespaces() {
+<b class="nc">&nbsp;		return supportsNamespaces;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return &lt;var&gt;true&lt;/var&gt; if the RDFFormat supports the encoding of contexts/named graphs.
+&nbsp;	 */
+&nbsp;	public boolean supportsContexts() {
+<b class="nc">&nbsp;		return supportsContexts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return &lt;var&gt;true&lt;/var&gt; if the RDFFormat supports the encoding of RDF-star triples natively.
+&nbsp;	 */
+&nbsp;	public boolean supportsRDFStar() {
+<b class="nc">&nbsp;		return supportsRDFStar;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return True if a standard URI has been assigned to this format by a standards organisation.
+&nbsp;	 */
+&nbsp;	public boolean hasStandardURI() {
+<b class="nc">&nbsp;		return standardURI != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return The standard URI that has been assigned to this format by a standards organisation or null if it does not
+&nbsp;	 *         currently have a standard URI.
+&nbsp;	 */
+&nbsp;	public IRI getStandardURI() {
+<b class="nc">&nbsp;		return standardURI;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

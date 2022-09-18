@@ -1,0 +1,330 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DistanceQuerySpecBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: DistanceQuerySpecBuilder (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DistanceQuerySpecBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">DistanceQuerySpecBuilder$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/61)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/85)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEOF;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;public class DistanceQuerySpecBuilder implements SearchQueryInterpreter {
+&nbsp;
+&nbsp;	private final SearchIndex index;
+&nbsp;
+<b class="nc">&nbsp;	public DistanceQuerySpecBuilder(SearchIndex index) {</b>
+<b class="nc">&nbsp;		this.index = index;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void process(TupleExpr tupleExpr, BindingSet bindings, final Collection&lt;SearchQueryEvaluator&gt; results)
+&nbsp;			throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		tupleExpr.visit(new AbstractQueryModelVisitor&lt;SailException&gt;() {</b>
+&nbsp;
+<b class="nc">&nbsp;			final Map&lt;String, DistanceQuerySpec&gt; specs = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void meet(FunctionCall f) throws SailException {
+<b class="nc">&nbsp;				if (GEOF.DISTANCE.stringValue().equals(f.getURI())) {</b>
+<b class="nc">&nbsp;					List&lt;ValueExpr&gt; args = f.getArgs();</b>
+<b class="nc">&nbsp;					if (args.size() != 3) {</b>
+&nbsp;						return;
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					Filter filter = null;</b>
+<b class="nc">&nbsp;					ValueExpr dist = null;</b>
+<b class="nc">&nbsp;					String distanceVar = null;</b>
+<b class="nc">&nbsp;					QueryModelNode parent = f.getParentNode();</b>
+<b class="nc">&nbsp;					if (parent instanceof ExtensionElem) {</b>
+<b class="nc">&nbsp;						distanceVar = ((ExtensionElem) parent).getName();</b>
+<b class="nc">&nbsp;						QueryModelNode extension = parent.getParentNode();</b>
+<b class="nc">&nbsp;						Object[] rv = getFilterAndDistance(extension.getParentNode(), distanceVar);</b>
+<b class="nc">&nbsp;						if (rv == null) {</b>
+&nbsp;							return;
+&nbsp;						}
+<b class="nc">&nbsp;						filter = (Filter) rv[0];</b>
+<b class="nc">&nbsp;						dist = (ValueExpr) rv[1];</b>
+<b class="nc">&nbsp;					} else if (parent instanceof Compare) {</b>
+<b class="nc">&nbsp;						filter = (Filter) parent.getParentNode();</b>
+<b class="nc">&nbsp;						Compare compare = (Compare) parent;</b>
+<b class="nc">&nbsp;						CompareOp op = compare.getOperator();</b>
+<b class="nc">&nbsp;						if (op == CompareOp.LT &amp;&amp; compare.getLeftArg() == f) {</b>
+<b class="nc">&nbsp;							dist = compare.getRightArg();</b>
+<b class="nc">&nbsp;						} else if (op == CompareOp.GT &amp;&amp; compare.getRightArg() == f) {</b>
+<b class="nc">&nbsp;							dist = compare.getLeftArg();</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					DistanceQuerySpec spec = new DistanceQuerySpec(f, dist, distanceVar, filter);</b>
+<b class="nc">&nbsp;					specs.put(spec.getGeoVar(), spec);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void meet(StatementPattern sp) {
+<b class="nc">&nbsp;				IRI propertyName = (IRI) sp.getPredicateVar().getValue();</b>
+<b class="nc">&nbsp;				if (propertyName != null &amp;&amp; index.isGeoField(SearchFields.getPropertyField(propertyName))</b>
+<b class="nc">&nbsp;						&amp;&amp; !sp.getObjectVar().hasValue()) {</b>
+<b class="nc">&nbsp;					String objectVarName = sp.getObjectVar().getName();</b>
+<b class="nc">&nbsp;					DistanceQuerySpec spec = specs.remove(objectVarName);</b>
+<b class="nc">&nbsp;					if (spec != null &amp;&amp; isChildOf(sp, spec.getFilter())) {</b>
+<b class="nc">&nbsp;						spec.setGeometryPattern(sp);</b>
+<b class="nc">&nbsp;						if (spec.isEvaluable()) {</b>
+&nbsp;							// constant optimizer
+<b class="nc">&nbsp;							results.add(spec);</b>
+<b class="nc">&nbsp;						} else if (spec.getDistanceFunctionCall() != null &amp;&amp; spec.getDistanceExpr() != null</b>
+<b class="nc">&nbsp;								&amp;&amp; spec.getGeoProperty() != null) {</b>
+&nbsp;							// evaluate later
+<b class="nc">&nbsp;							TupleFunctionCall funcCall = new TupleFunctionCall();</b>
+<b class="nc">&nbsp;							funcCall.setURI(LuceneSailSchema.WITHIN_DISTANCE.toString());</b>
+<b class="nc">&nbsp;							FunctionCall df = spec.getDistanceFunctionCall();</b>
+<b class="nc">&nbsp;							List&lt;ValueExpr&gt; dfArgs = df.getArgs();</b>
+<b class="nc">&nbsp;							funcCall.addArg(dfArgs.get(0));</b>
+<b class="nc">&nbsp;							funcCall.addArg(spec.getDistanceExpr());</b>
+<b class="nc">&nbsp;							funcCall.addArg(dfArgs.get(2));</b>
+<b class="nc">&nbsp;							funcCall.addArg(new ValueConstant(spec.getGeoProperty()));</b>
+<b class="nc">&nbsp;							funcCall.addResultVar(sp.getSubjectVar());</b>
+<b class="nc">&nbsp;							funcCall.addResultVar(sp.getObjectVar());</b>
+<b class="nc">&nbsp;							if (spec.getDistanceVar() != null) {</b>
+<b class="nc">&nbsp;								funcCall.addArg(new ValueConstant(LuceneSailSchema.DISTANCE));</b>
+<b class="nc">&nbsp;								funcCall.addResultVar(new Var(spec.getDistanceVar()));</b>
+&nbsp;							}
+<b class="nc">&nbsp;							if (spec.getContextVar() != null) {</b>
+<b class="nc">&nbsp;								Resource context = (Resource) spec.getContextVar().getValue();</b>
+<b class="nc">&nbsp;								if (context != null) {</b>
+<b class="nc">&nbsp;									funcCall.addArg(new ValueConstant(context));</b>
+&nbsp;								} else {
+<b class="nc">&nbsp;									funcCall.addArg(new ValueConstant(LuceneSailSchema.CONTEXT));</b>
+<b class="nc">&nbsp;									funcCall.addResultVar(spec.getContextVar());</b>
+&nbsp;								}
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							Join join = new Join();</b>
+<b class="nc">&nbsp;							sp.replaceWith(join);</b>
+<b class="nc">&nbsp;							join.setLeftArg(sp);</b>
+<b class="nc">&nbsp;							join.setRightArg(funcCall);</b>
+&nbsp;
+<b class="nc">&nbsp;							spec.removeQueryPatterns();</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isChildOf(QueryModelNode child, QueryModelNode parent) {
+<b class="nc">&nbsp;		if (child.getParentNode() == parent) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return isChildOf(child.getParentNode(), parent);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Object[] getFilterAndDistance(QueryModelNode node, String compareArgVarName) {
+<b class="nc">&nbsp;		Object[] rv = null;</b>
+<b class="nc">&nbsp;		if (node instanceof Filter) {</b>
+<b class="nc">&nbsp;			Filter f = (Filter) node;</b>
+<b class="nc">&nbsp;			ValueExpr condition = f.getCondition();</b>
+<b class="nc">&nbsp;			if (condition instanceof Compare) {</b>
+<b class="nc">&nbsp;				Compare compare = (Compare) condition;</b>
+<b class="nc">&nbsp;				CompareOp op = compare.getOperator();</b>
+<b class="nc">&nbsp;				ValueExpr dist = null;</b>
+<b class="nc">&nbsp;				if (op == CompareOp.LT</b>
+<b class="nc">&nbsp;						&amp;&amp; compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getLeftArg()))) {</b>
+<b class="nc">&nbsp;					dist = compare.getRightArg();</b>
+<b class="nc">&nbsp;				} else if (op == CompareOp.GT</b>
+<b class="nc">&nbsp;						&amp;&amp; compareArgVarName.equals(DistanceQuerySpec.getVarName(compare.getRightArg()))) {</b>
+<b class="nc">&nbsp;					dist = compare.getLeftArg();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				rv = new Object[] { f, dist };</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else if (node != null) {</b>
+<b class="nc">&nbsp;			rv = getFilterAndDistance(node.getParentNode(), compareArgVarName);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return rv;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,140 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ReadWriteLockManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks</a>
+</div>
+
+<h1>Coverage Summary for Class: ReadWriteLockManager (org.eclipse.rdf4j.common.concurrent.locks)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">ReadWriteLockManager</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks;
+&nbsp;
+&nbsp;/**
+&nbsp; * A lock manager that manages a multi-read, single-write lock. This lock manager allows multiple read locks to be
+&nbsp; * active at the same time. The write lock is exclusive, meaning that no other read- or write locks may be active at the
+&nbsp; * same time.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public interface ReadWriteLockManager {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a read lock, if available. This method will return &lt;var&gt;null&lt;/var&gt; if the read lock is not immediately
+&nbsp;	 * available.
+&nbsp;	 */
+&nbsp;	Lock tryReadLock();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets a read lock. This method blocks until the read lock is available.
+&nbsp;	 *
+&nbsp;	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
+&nbsp;	 */
+&nbsp;	Lock getReadLock() throws InterruptedException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets an exclusive write lock, if available. This method will return &lt;var&gt;null&lt;/var&gt; if the write lock is not
+&nbsp;	 * immediately available.
+&nbsp;	 */
+&nbsp;	Lock tryWriteLock();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets an exclusive write lock. This method blocks until the write lock is available.
+&nbsp;	 *
+&nbsp;	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
+&nbsp;	 */
+&nbsp;	Lock getWriteLock() throws InterruptedException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns {@code false} if there are no active write locks, otherwise returns {@code true}.
+&nbsp;	 */
+&nbsp;	boolean isWriterActive();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns {@code false} if there are no active read locks, otherwise returns {@code true}.
+&nbsp;	 */
+&nbsp;	boolean isReaderActive();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Blocks until all write locks have been released.
+&nbsp;	 *
+&nbsp;	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
+&nbsp;	 */
+&nbsp;	void waitForActiveWriter() throws InterruptedException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Blocks until all read locks have been released.
+&nbsp;	 *
+&nbsp;	 * @throws InterruptedException In case the thread requesting the lock was {@link Thread#interrupt() interrupted}.
+&nbsp;	 */
+&nbsp;	void waitForActiveReaders() throws InterruptedException;
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

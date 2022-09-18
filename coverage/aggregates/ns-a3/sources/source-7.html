@@ -1,0 +1,264 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDFParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: RDFParser (org.eclipse.rdf4j.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDFParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.util.Collection;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An interface for RDF parsers. All implementing classes should define a public zero-argument constructor to allow them
+&nbsp; * to be created through reflection.
+&nbsp; */
+&nbsp;public interface RDFParser {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the RDF format that this parser can parse.
+&nbsp;	 */
+&nbsp;	RDFFormat getRDFFormat();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the ValueFactory that the parser will use to create Value objects for the parsed RDF data.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory The value factory that the parser should use.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	RDFParser setValueFactory(ValueFactory valueFactory);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the RDFHandler that will handle the parsed RDF data.
+&nbsp;	 *
+&nbsp;	 * @param handler The RDFHandler to handle the parsed data.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	RDFParser setRDFHandler(RDFHandler handler);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the ParseErrorListener that will be notified of any errors that this parser finds during parsing.
+&nbsp;	 *
+&nbsp;	 * @param el The ParseErrorListener that will be notified of errors or warnings.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	RDFParser setParseErrorListener(ParseErrorListener el);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the ParseLocationListener that will be notified of the parser&#39;s progress during the parse process.
+&nbsp;	 *
+&nbsp;	 * @param ll The ParseLocationListener that will be notified of the parser&#39;s progress.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	RDFParser setParseLocationListener(ParseLocationListener ll);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets all supplied parser configuration options.
+&nbsp;	 *
+&nbsp;	 * @param config a parser configuration object.
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	RDFParser setParserConfig(ParserConfig config);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieves the current parser configuration as a single object.
+&nbsp;	 *
+&nbsp;	 * @return a parser configuration object representing the current configuration of the parser.
+&nbsp;	 */
+&nbsp;	ParserConfig getParserConfig();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return A collection of {@link RioSetting}s that are supported by this RDFParser.
+&nbsp;	 */
+&nbsp;	Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set a setting on the parser, and return this parser object to allow chaining.
+&nbsp;	 *
+&nbsp;	 * @param setting The setting to change.
+&nbsp;	 * @param value   The value to change.
+&nbsp;	 *
+&nbsp;	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
+&nbsp;	 */
+&nbsp;	&lt;T&gt; RDFParser set(RioSetting&lt;T&gt; setting, T value);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set whether the parser should preserve bnode identifiers specified in the source (default is &lt;var&gt;false&lt;/var&gt;).
+&nbsp;	 */
+&nbsp;	void setPreserveBNodeIDs(boolean preserveBNodeIDs);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the data from the supplied InputStream.
+&nbsp;	 *
+&nbsp;	 * @param in The InputStream from which to read the data.
+&nbsp;	 *
+&nbsp;	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
+&nbsp;	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
+&nbsp;	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 */
+&nbsp;	default void parse(InputStream in) throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		parse(in, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the data from the supplied InputStream, using the supplied baseURI to resolve any relative URI references.
+&nbsp;	 *
+&nbsp;	 * @param in      The InputStream from which to read the data.
+&nbsp;	 * @param baseURI The URI associated with the data in the InputStream. May be &lt;code&gt;null&lt;/code&gt;. Parsers for syntax
+&nbsp;	 *                formats that do not support relative URIs will ignore this argument.
+&nbsp;	 *                &lt;p&gt;
+&nbsp;	 *                Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+&nbsp;	 *                value supplied here (see &lt;a href=&quot;https://www.ietf.org/rfc/rfc3986.txt&quot;&gt;RFC 3986&lt;/a&gt; section 5.1
+&nbsp;	 *                for details).
+&nbsp;	 *
+&nbsp;	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
+&nbsp;	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
+&nbsp;	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
+&nbsp;	 */
+&nbsp;	void parse(InputStream in, String baseURI) throws IOException, RDFParseException, RDFHandlerException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the data from the supplied Reader.
+&nbsp;	 *
+&nbsp;	 * @param reader The Reader from which to read the data.
+&nbsp;	 *
+&nbsp;	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
+&nbsp;	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
+&nbsp;	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
+&nbsp;	 *
+&nbsp;	 * @since 3.5.0
+&nbsp;	 */
+&nbsp;	default void parse(Reader reader) throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		parse(reader, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the data from the supplied Reader, using the supplied baseURI to resolve any relative URI references.
+&nbsp;	 *
+&nbsp;	 * @param reader  The Reader from which to read the data.
+&nbsp;	 * @param baseURI The URI associated with the data in the InputStream. May be &lt;code&gt;null&lt;/code&gt;. Parsers for syntax
+&nbsp;	 *                formats that do not support relative URIs will ignore this argument.
+&nbsp;	 *                &lt;p&gt;
+&nbsp;	 *                Note that if the data contains an embedded base URI, that embedded base URI will overrule the
+&nbsp;	 *                value supplied here (see &lt;a href=&quot;https://www.ietf.org/rfc/rfc3986.txt&quot;&gt;RFC 3986&lt;/a&gt; section 5.1
+&nbsp;	 *                for details).
+&nbsp;	 *
+&nbsp;	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
+&nbsp;	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
+&nbsp;	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
+&nbsp;	 */
+&nbsp;	void parse(Reader reader, String baseURI) throws IOException, RDFParseException, RDFHandlerException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

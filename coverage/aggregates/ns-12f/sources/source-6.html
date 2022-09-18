@@ -1,0 +1,236 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ServerValidator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.workbench.proxy</a>
+</div>
+
+<h1>Coverage Summary for Class: ServerValidator (org.eclipse.rdf4j.workbench.proxy)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ServerValidator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.workbench.proxy;
+&nbsp;
+&nbsp;import java.io.BufferedReader;
+&nbsp;import java.io.File;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStreamReader;
+&nbsp;import java.io.UnsupportedEncodingException;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.net.URLDecoder;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;
+&nbsp;import javax.servlet.ServletConfig;
+&nbsp;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Validates a server
+&nbsp; */
+&nbsp;class ServerValidator {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger LOGGER = LoggerFactory.getLogger(ServerValidator.class);</b>
+&nbsp;
+&nbsp;	private static final String ACCEPTED_SERVER = &quot;accepted-server-prefixes&quot;;
+&nbsp;
+&nbsp;	private final String prefixes;
+&nbsp;
+<b class="nc">&nbsp;	protected ServerValidator(final ServletConfig config) {</b>
+<b class="nc">&nbsp;		this.prefixes = config.getInitParameter(ACCEPTED_SERVER);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isDirectory(final String server) {
+<b class="nc">&nbsp;		boolean isDir = false;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			final URL url = new URL(server);</b>
+<b class="nc">&nbsp;			isDir = asLocalFile(url).isDirectory();</b>
+<b class="nc">&nbsp;		} catch (MalformedURLException e) {</b>
+<b class="nc">&nbsp;			LOGGER.warn(e.toString(), e);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			LOGGER.warn(e.toString(), e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return isDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns whether the given server can be connected to.
+&nbsp;	 *
+&nbsp;	 * @param server   the server path
+&nbsp;	 * @param password the optional password
+&nbsp;	 * @param user     the optional username
+&nbsp;	 * @return true, if the given server can be connected to
+&nbsp;	 */
+&nbsp;	protected boolean isValidServer(final String server) {
+<b class="nc">&nbsp;		boolean isValid = checkServerPrefixes(server);</b>
+<b class="nc">&nbsp;		if (isValid) {</b>
+<b class="nc">&nbsp;			if (server.startsWith(&quot;http&quot;)) {</b>
+<b class="nc">&nbsp;				isValid = canConnect(server);</b>
+<b class="nc">&nbsp;			} else if (server.startsWith(&quot;file:&quot;)) {</b>
+<b class="nc">&nbsp;				isValid = isDirectory(server);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return isValid;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns whether the server prefix is in the list of acceptable prefixes, as given by the space-separated
+&nbsp;	 * configuration parameter value for &#39;accepted-server-prefixes&#39;.
+&nbsp;	 *
+&nbsp;	 * @param server the server for which to check the prefix
+&nbsp;	 * @return whether the server prefix is in the list of acceptable prefixes
+&nbsp;	 */
+&nbsp;	private boolean checkServerPrefixes(final String server) {
+<b class="nc">&nbsp;		boolean accept = false;</b>
+<b class="nc">&nbsp;		if (prefixes == null) {</b>
+<b class="nc">&nbsp;			accept = true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			for (String prefix : prefixes.split(&quot; &quot;)) {</b>
+<b class="nc">&nbsp;				if (server.startsWith(prefix)) {</b>
+<b class="nc">&nbsp;					accept = true;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (!accept) {</b>
+<b class="nc">&nbsp;			LOGGER.warn(&quot;server URL {} does not have a prefix {}&quot;, server, prefixes);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return accept;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Assumption: server won&#39;t require credentials to access the protocol path.
+&nbsp;	 */
+&nbsp;	private boolean canConnect(final String server) {
+<b class="nc">&nbsp;		boolean success = false;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			final URL url = new URL(server + &quot;/protocol&quot;);</b>
+<b class="nc">&nbsp;			try (BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream()))) {</b>
+<b class="nc">&nbsp;				Integer.parseInt(reader.readLine());</b>
+<b class="nc">&nbsp;				success = true;</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (NumberFormatException | IOException e) {</b>
+<b class="nc">&nbsp;			LOGGER.warn(e.toString(), e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return success;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private File asLocalFile(final URL rdf) throws UnsupportedEncodingException {
+<b class="nc">&nbsp;		return new File(URLDecoder.decode(rdf.getFile(), StandardCharsets.UTF_8));</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

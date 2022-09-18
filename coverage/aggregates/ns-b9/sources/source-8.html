@@ -1,0 +1,108 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.config</a>
+</div>
+
+<h1>Coverage Summary for Class: SailFactory (org.eclipse.rdf4j.sail.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">SailFactory</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.config;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SailFactory takes care of creating and initializing a specific type of {@link Sail} based on RDF configuration
+&nbsp; * data. SailFactory&#39;s are used to create specific Sails and to initialize them based on the configuration data that is
+&nbsp; * supplied to it, for example in a server environment.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public interface SailFactory {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the type of the Sails that this factory creates. Sail types are used for identification and should
+&nbsp;	 * uniquely identify specific implementations of the Sail API. This type &lt;em&gt;can&lt;/em&gt; be equal to the fully
+&nbsp;	 * qualified class name of the Sail, but this is not required.
+&nbsp;	 */
+&nbsp;	String getSailType();
+&nbsp;
+&nbsp;	SailImplConfig getConfig();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a Sail instance that has been initialized using the supplied configuration data.
+&nbsp;	 *
+&nbsp;	 * @param config TODO
+&nbsp;	 * @return The created (but un-initialized) Sail.
+&nbsp;	 * @throws SailConfigException If no Sail could be created due to invalid or incomplete configuration data.
+&nbsp;	 */
+&nbsp;	Sail getSail(SailImplConfig config) throws SailConfigException;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

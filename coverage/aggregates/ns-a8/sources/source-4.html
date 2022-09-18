@@ -1,0 +1,322 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONLDParser</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.jsonld</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONLDParser (org.eclipse.rdf4j.rio.jsonld)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONLDParser</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/81)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.jsonld;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.Reader;
+&nbsp;import java.util.Collection;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.rio.ParserConfig;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParseException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.JSONLDSettings;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.JSONSettings;
+&nbsp;
+&nbsp;import com.fasterxml.jackson.core.JsonFactory;
+&nbsp;import com.fasterxml.jackson.core.JsonParser;
+&nbsp;import com.fasterxml.jackson.core.JsonProcessingException;
+&nbsp;import com.fasterxml.jackson.databind.ObjectMapper;
+&nbsp;import com.github.jsonldjava.core.DocumentLoader;
+&nbsp;import com.github.jsonldjava.core.JsonLdError;
+&nbsp;import com.github.jsonldjava.core.JsonLdOptions;
+&nbsp;import com.github.jsonldjava.core.JsonLdProcessor;
+&nbsp;import com.github.jsonldjava.utils.JsonUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link RDFParser} that links to {@link JSONLDInternalTripleCallback}.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class JSONLDParser extends AbstractRDFParser {
+&nbsp;
+<b class="nc">&nbsp;	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default constructor
+&nbsp;	 */
+&nbsp;	public JSONLDParser() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a Sesame JSONLD Parser using the given {@link ValueFactory} to create new {@link Value}s.
+&nbsp;	 *
+&nbsp;	 * @param valueFactory The ValueFactory to use
+&nbsp;	 */
+&nbsp;	public JSONLDParser(final ValueFactory valueFactory) {
+<b class="nc">&nbsp;		super(valueFactory);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.JSONLD;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Collection&lt;RioSetting&lt;?&gt;&gt; result = super.getSupportedSettings();</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_COMMENTS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_SINGLE_QUOTES);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_YAML_COMMENTS);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.ALLOW_TRAILING_COMMA);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.INCLUDE_SOURCE_IN_LOCATION);</b>
+<b class="nc">&nbsp;		result.add(JSONSettings.STRICT_DUPLICATE_DETECTION);</b>
+&nbsp;
+<b class="nc">&nbsp;		result.add(JSONLDSettings.DOCUMENT_LOADER);</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(final InputStream in, final String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		parse(in, null, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(final Reader reader, final String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		parse(null, reader, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parse
+&nbsp;	 *
+&nbsp;	 * @param nextParser
+&nbsp;	 * @param baseURI
+&nbsp;	 * @throws IOException
+&nbsp;	 * @throws RDFParseException
+&nbsp;	 * @throws RDFHandlerException
+&nbsp;	 */
+&nbsp;	private void parse(InputStream in, Reader reader, String baseURI)
+&nbsp;			throws IOException, RDFParseException, RDFHandlerException {
+<b class="nc">&nbsp;		clear();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			final JSONLDInternalTripleCallback callback = new JSONLDInternalTripleCallback(getRDFHandler(),</b>
+<b class="nc">&nbsp;					valueFactory, getParserConfig(), getParseErrorListener(), nodeID -&gt; createNode(nodeID),</b>
+<b class="nc">&nbsp;					() -&gt; createNode());</b>
+&nbsp;
+<b class="nc">&nbsp;			final JsonLdOptions options = baseURI != null ? new JsonLdOptions(baseURI) : new JsonLdOptions();</b>
+<b class="nc">&nbsp;			options.useNamespaces = true;</b>
+&nbsp;
+<b class="nc">&nbsp;			DocumentLoader loader = getParserConfig().get(JSONLDSettings.DOCUMENT_LOADER);</b>
+<b class="nc">&nbsp;			if (loader != null) {</b>
+<b class="nc">&nbsp;				options.setDocumentLoader(loader);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			JsonFactory factory = configureNewJsonFactory();</b>
+<b class="nc">&nbsp;			final Object parsedJson = getJSONObject(in, reader, factory);</b>
+&nbsp;
+<b class="nc">&nbsp;			JsonLdProcessor.toRDF(parsedJson, callback, options);</b>
+<b class="nc">&nbsp;		} catch (JsonLdError e) {</b>
+<b class="nc">&nbsp;			throw new RDFParseException(&quot;Could not parse JSONLD&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (JsonProcessingException e) {</b>
+<b class="nc">&nbsp;			throw new RDFParseException(&quot;Could not parse JSONLD&quot;, e, e.getLocation().getLineNr(),</b>
+<b class="nc">&nbsp;					e.getLocation().getColumnNr());</b>
+<b class="nc">&nbsp;		} catch (RuntimeException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof RDFParseException) {</b>
+<b class="nc">&nbsp;				throw (RDFParseException) e.getCause();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			throw e;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			clear();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Object getJSONObject(InputStream in, Reader reader, JsonFactory factory) throws IOException {
+<b class="nc">&nbsp;		JsonParser nextParser = (in != null) ? factory.createParser(in) : factory.createParser(reader);</b>
+<b class="nc">&nbsp;		return JsonUtils.fromJsonParser(nextParser);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get an instance of JsonFactory configured using the settings from {@link #getParserConfig()}.
+&nbsp;	 *
+&nbsp;	 * @return A newly configured JsonFactory based on the currently enabled settings
+&nbsp;	 */
+&nbsp;	private JsonFactory configureNewJsonFactory() {
+<b class="nc">&nbsp;		final JsonFactory nextJsonFactory = new JsonFactory(JSON_MAPPER);</b>
+<b class="nc">&nbsp;		ParserConfig parserConfig = getParserConfig();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_BACKSLASH_ESCAPING_ANY_CHARACTER));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_COMMENTS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_COMMENTS,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_COMMENTS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NON_NUMERIC_NUMBERS,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_NON_NUMERIC_NUMBERS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_NUMERIC_LEADING_ZEROS,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_NUMERIC_LEADING_ZEROS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_SINGLE_QUOTES)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_SINGLE_QUOTES,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_SINGLE_QUOTES));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_CONTROL_CHARS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_FIELD_NAMES,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_UNQUOTED_FIELD_NAMES));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_YAML_COMMENTS)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_YAML_COMMENTS,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_YAML_COMMENTS));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.ALLOW_TRAILING_COMMA)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.ALLOW_TRAILING_COMMA,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.ALLOW_TRAILING_COMMA));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.INCLUDE_SOURCE_IN_LOCATION,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (parserConfig.isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {</b>
+<b class="nc">&nbsp;			nextJsonFactory.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION,</b>
+<b class="nc">&nbsp;					parserConfig.get(JSONSettings.STRICT_DUPLICATE_DETECTION));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return nextJsonFactory;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

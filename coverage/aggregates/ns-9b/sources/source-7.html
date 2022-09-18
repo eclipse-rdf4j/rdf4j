@@ -1,0 +1,339 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailRepository</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.sail</a>
+</div>
+
+<h1>Coverage Summary for Class: SailRepository (org.eclipse.rdf4j.repository.sail)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailRepository</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    35.3%
+  </span>
+  <span class="absValue">
+    (6/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    13.6%
+  </span>
+  <span class="absValue">
+    (3/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    21.1%
+  </span>
+  <span class="absValue">
+    (12/57)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.sail;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientDependent;
+&nbsp;import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
+&nbsp;import org.eclipse.rdf4j.http.client.SessionManagerDependent;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryLockedException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolver;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolverClient;
+&nbsp;import org.eclipse.rdf4j.repository.base.AbstractRepository;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.SailLockedException;
+&nbsp;import org.eclipse.rdf4j.sail.StackableSail;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the {@link Repository} interface that operates on a (stack of) {@link Sail Sail} object(s). The
+&nbsp; * behaviour of the repository is determined by the Sail stack that it operates on; for example, the repository will
+&nbsp; * only support RDF Schema or OWL semantics if the Sail stack includes an inferencer for this.
+&nbsp; * &lt;p&gt;
+&nbsp; * Creating a repository object of this type is very easy. For example, the following code creates and initializes a
+&nbsp; * main-memory store with RDF Schema semantics:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * Repository repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
+&nbsp; * repository.initialize();
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * Or, alternatively:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; * Sail sailStack = new MemoryStore();
+&nbsp; * sailStack = new ForwardChainingRDFSInferencer(sailStack);
+&nbsp; *
+&nbsp; * Repository repository = new SailRepository(sailStack);
+&nbsp; * repository.initialize();
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class SailRepository extends AbstractRepository implements FederatedServiceResolverClient,
+&nbsp;		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final Sail sail;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new repository object that operates on the supplied Sail.
+&nbsp;	 *
+&nbsp;	 * @param sail A Sail object.
+&nbsp;	 */
+<b class="fc">&nbsp;	public SailRepository(Sail sail) {</b>
+<b class="fc">&nbsp;		this.sail = sail;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public File getDataDir() {
+<b class="nc">&nbsp;		return sail.getDataDir();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataDir(File dataDir) {
+<b class="fc">&nbsp;		sail.setDataDir(dataDir);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+<b class="nc">&nbsp;		FederatedServiceResolverClient stack = findSailOf(sail, FederatedServiceResolverClient.class);</b>
+<b class="nc">&nbsp;		if (stack != null) {</b>
+<b class="nc">&nbsp;			stack.setFederatedServiceResolver(resolver);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setRepositoryResolver(RepositoryResolver resolver) {
+<b class="nc">&nbsp;		RepositoryResolverClient stack = findSailOf(sail, RepositoryResolverClient.class);</b>
+<b class="nc">&nbsp;		if (stack != null) {</b>
+<b class="nc">&nbsp;			stack.setRepositoryResolver(resolver);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClientSessionManager getHttpClientSessionManager() {
+<b class="nc">&nbsp;		SessionManagerDependent stack = findSailOf(sail, SessionManagerDependent.class);</b>
+<b class="nc">&nbsp;		if (stack != null) {</b>
+<b class="nc">&nbsp;			return stack.getHttpClientSessionManager();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClientSessionManager(HttpClientSessionManager client) {
+<b class="nc">&nbsp;		SessionManagerDependent stack = findSailOf(sail, SessionManagerDependent.class);</b>
+<b class="nc">&nbsp;		if (stack != null) {</b>
+<b class="nc">&nbsp;			stack.setHttpClientSessionManager(client);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public HttpClient getHttpClient() {
+<b class="nc">&nbsp;		HttpClientDependent stack = findSailOf(sail, HttpClientDependent.class);</b>
+<b class="nc">&nbsp;		if (stack != null) {</b>
+<b class="nc">&nbsp;			return stack.getHttpClient();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient client) {
+<b class="nc">&nbsp;		HttpClientDependent stack = findSailOf(sail, HttpClientDependent.class);</b>
+<b class="nc">&nbsp;		if (stack != null) {</b>
+<b class="nc">&nbsp;			stack.setHttpClient(client);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void initializeInternal() throws RepositoryException {
+&nbsp;		try {
+<b class="fc">&nbsp;			sail.init();</b>
+<b class="nc">&nbsp;		} catch (SailLockedException e) {</b>
+<b class="nc">&nbsp;			String l = e.getLockedBy();</b>
+<b class="nc">&nbsp;			String r = e.getRequestedBy();</b>
+<b class="nc">&nbsp;			String m = e.getMessage();</b>
+<b class="nc">&nbsp;			throw new RepositoryLockedException(l, r, m, e);</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e.getMessage(), e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void shutDownInternal() throws RepositoryException {
+&nbsp;		try {
+<b class="fc">&nbsp;			sail.shutDown();</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;Unable to shutdown Sail&quot;, e);</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the Sail object that is on top of the Sail stack that this repository operates on.
+&nbsp;	 *
+&nbsp;	 * @return A Sail object.
+&nbsp;	 */
+&nbsp;	public Sail getSail() {
+<b class="nc">&nbsp;		return sail;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isWritable() throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (!isInitialized()) {</b>
+<b class="nc">&nbsp;				init();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return sail.isWritable();</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(&quot;Unable to determine writable status of Sail&quot;, e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="pc">&nbsp;		if (!isInitialized()) {</b>
+<b class="nc">&nbsp;			init();</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return sail.getValueFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailRepositoryConnection getConnection() throws RepositoryException {
+<b class="fc">&nbsp;		if (!isInitialized()) {</b>
+<b class="fc">&nbsp;			init();</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="fc">&nbsp;			return new SailRepositoryConnection(this, sail.getConnection());</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return sail.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private &lt;T&gt; T findSailOf(Sail sail, Class&lt;T&gt; type) {
+<b class="nc">&nbsp;		if (type.isInstance(sail)) {</b>
+<b class="nc">&nbsp;			return type.cast(sail);</b>
+<b class="nc">&nbsp;		} else if (sail instanceof StackableSail) {</b>
+<b class="nc">&nbsp;			return findSailOf(((StackableSail) sail).getBaseSail(), type);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

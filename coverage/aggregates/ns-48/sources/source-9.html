@@ -1,0 +1,198 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementOperation</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.protocol.transaction.operations</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementOperation (org.eclipse.rdf4j.http.protocol.transaction.operations)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementOperation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.protocol.transaction.operations;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.lang.ObjectUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;
+&nbsp;/**
+&nbsp; * A context operation with (optional) subject, predicate, object.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Leo Sauermann
+&nbsp; */
+&nbsp;public abstract class StatementOperation extends ContextOperation {
+&nbsp;
+&nbsp;	private Resource subject;
+&nbsp;
+&nbsp;	private IRI predicate;
+&nbsp;
+&nbsp;	private Value object;
+&nbsp;
+&nbsp;	protected StatementOperation(Resource... contexts) {
+<b class="nc">&nbsp;		super(contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Resource getSubject() {
+<b class="nc">&nbsp;		return subject;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setSubject(Resource subject) {
+<b class="nc">&nbsp;		this.subject = subject;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public IRI getPredicate() {
+<b class="nc">&nbsp;		return predicate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setPredicate(IRI predicate) {
+<b class="nc">&nbsp;		this.predicate = predicate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Value getObject() {
+<b class="nc">&nbsp;		return object;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setObject(Value object) {
+<b class="nc">&nbsp;		this.object = object;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="nc">&nbsp;		if (other instanceof StatementOperation) {</b>
+<b class="nc">&nbsp;			StatementOperation o = (StatementOperation) other;</b>
+&nbsp;
+<b class="nc">&nbsp;			return Objects.equals(getSubject(), o.getSubject())</b>
+<b class="nc">&nbsp;					&amp;&amp; Objects.equals(getPredicate(), o.getPredicate())</b>
+<b class="nc">&nbsp;					&amp;&amp; Objects.equals(getObject(), o.getObject()) &amp;&amp; super.equals(other);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		int hashCode = ObjectUtil.nullHashCode(getSubject());</b>
+<b class="nc">&nbsp;		hashCode = 31 * hashCode + ObjectUtil.nullHashCode(getPredicate());</b>
+<b class="nc">&nbsp;		hashCode = 31 * hashCode + ObjectUtil.nullHashCode(getObject());</b>
+<b class="nc">&nbsp;		hashCode = 31 * hashCode + super.hashCode();</b>
+<b class="nc">&nbsp;		return hashCode;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

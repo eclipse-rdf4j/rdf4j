@@ -1,0 +1,374 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NodeShape</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.ast</a>
+</div>
+
+<h1>Coverage Summary for Class: NodeShape (org.eclipse.rdf4j.sail.shacl.ast)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NodeShape</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/96)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.shacl.ast;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SHACL;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSail;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ConstraintComponent;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.EmptyNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNodeProvider;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ShiftToPropertyShape;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnionNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.Unique;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.ValidationReportNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.ConnectionsGroup;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.data.RdfsSubClassOfReasoner;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.wrapper.shape.ShapeSource;
+&nbsp;
+<b class="nc">&nbsp;public class NodeShape extends Shape {</b>
+&nbsp;
+<b class="nc">&nbsp;	public NodeShape() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public NodeShape(NodeShape nodeShape) {
+<b class="nc">&nbsp;		super(nodeShape);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static NodeShape getInstance(ShaclProperties properties,
+&nbsp;			ShapeSource shapeSource, Cache cache, ShaclSail shaclSail) {
+&nbsp;
+<b class="nc">&nbsp;		NodeShape shape = (NodeShape) cache.get(properties.getId());</b>
+<b class="nc">&nbsp;		if (shape == null) {</b>
+<b class="nc">&nbsp;			shape = new NodeShape();</b>
+<b class="nc">&nbsp;			cache.put(properties.getId(), shape);</b>
+<b class="nc">&nbsp;			shape.populate(properties, shapeSource, cache, shaclSail);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return shape;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void populate(ShaclProperties properties, ShapeSource connection,
+&nbsp;			Cache cache, ShaclSail shaclSail) {
+<b class="nc">&nbsp;		super.populate(properties, connection, cache, shaclSail);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (properties.getMinCount() != null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;NodeShapes do not support sh:MinCount in &quot; + getId());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (properties.getMaxCount() != null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;NodeShapes do not support sh:MaxCount in &quot; + getId());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (properties.isUniqueLang()) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;NodeShapes do not support sh:uniqueLang in &quot; + getId());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (properties.getQualifiedValueShape() != null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;NodeShapes do not support sh:qualifiedValueShape in &quot; + getId());</b>
+&nbsp;		}
+&nbsp;		/*
+&nbsp;		 * Also not supported here is: - sh:lessThan - sh:lessThanOrEquals - sh:qualifiedValueShape
+&nbsp;		 */
+&nbsp;
+<b class="nc">&nbsp;		constraintComponents = getConstraintComponents(properties, connection, cache, shaclSail);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected NodeShape shallowClone() {
+<b class="nc">&nbsp;		return new NodeShape(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void toModel(Resource subject, IRI predicate, Model model, Set&lt;Resource&gt; cycleDetection) {
+<b class="nc">&nbsp;		super.toModel(subject, predicate, model, cycleDetection);</b>
+<b class="nc">&nbsp;		model.add(getId(), RDF.TYPE, SHACL.NODE_SHAPE);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (subject != null) {</b>
+<b class="nc">&nbsp;			if (predicate == null) {</b>
+<b class="nc">&nbsp;				model.add(subject, SHACL.NODE, getId());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				model.add(subject, predicate, getId());</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (cycleDetection.contains(getId())) {</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		cycleDetection.add(getId());</b>
+&nbsp;
+<b class="nc">&nbsp;		constraintComponents.forEach(c -&gt; c.toModel(getId(), null, model, cycleDetection));</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationQuery generateSparqlValidationQuery(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, boolean negatePlan, boolean negateChildren, Scope scope) {
+&nbsp;
+<b class="nc">&nbsp;		if (deactivated) {</b>
+<b class="nc">&nbsp;			return ValidationQuery.Deactivated.getInstance();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ValidationQuery validationQuery = constraintComponents.stream()</b>
+<b class="nc">&nbsp;				.map(c -&gt; {</b>
+<b class="nc">&nbsp;					ValidationQuery validationQuery1 = c.generateSparqlValidationQuery(connectionsGroup,</b>
+&nbsp;							validationSettings, negatePlan,
+&nbsp;							negateChildren, Scope.nodeShape);
+<b class="nc">&nbsp;					if (!(c instanceof PropertyShape)) {</b>
+<b class="nc">&nbsp;						return validationQuery1.withConstraintComponent(c.getConstraintComponent());</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return validationQuery1;</b>
+&nbsp;				})
+<b class="nc">&nbsp;				.reduce((a, b) -&gt; ValidationQuery.union(a, b, false))</b>
+<b class="nc">&nbsp;				.orElseThrow(IllegalStateException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (produceValidationReports) {</b>
+<b class="nc">&nbsp;			assert constraintComponents.size() == 1;</b>
+<b class="nc">&nbsp;			assert !(constraintComponents.get(0) instanceof PropertyShape);</b>
+&nbsp;
+<b class="nc">&nbsp;			validationQuery = validationQuery.withShape(this);</b>
+<b class="nc">&nbsp;			validationQuery = validationQuery.withSeverity(severity);</b>
+<b class="nc">&nbsp;			validationQuery.makeCurrentStateValidationReport();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (scope == Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			validationQuery.shiftToPropertyShape();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return validationQuery;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode generateTransactionalValidationPlan(ConnectionsGroup connectionsGroup,
+&nbsp;			ValidationSettings validationSettings, PlanNodeProvider overrideTargetNode,
+&nbsp;			Scope scope) {
+&nbsp;
+<b class="nc">&nbsp;		if (isDeactivated()) {</b>
+<b class="nc">&nbsp;			return EmptyNode.getInstance();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		PlanNode union = EmptyNode.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (ConstraintComponent constraintComponent : constraintComponents) {</b>
+<b class="nc">&nbsp;			PlanNode validationPlanNode = constraintComponent</b>
+<b class="nc">&nbsp;					.generateTransactionalValidationPlan(connectionsGroup, validationSettings, overrideTargetNode,</b>
+&nbsp;							Scope.nodeShape);
+&nbsp;
+<b class="nc">&nbsp;			if (produceValidationReports) {</b>
+<b class="nc">&nbsp;				assert !(constraintComponent instanceof PropertyShape);</b>
+<b class="nc">&nbsp;				assert constraintComponents.size() == 1;</b>
+&nbsp;
+<b class="nc">&nbsp;				validationPlanNode = new ValidationReportNode(validationPlanNode, t -&gt; {</b>
+<b class="nc">&nbsp;					return new ValidationResult(t.getActiveTarget(), t.getActiveTarget(), this,</b>
+<b class="nc">&nbsp;							constraintComponent.getConstraintComponent(), getSeverity(), t.getScope(), t.getContexts(),</b>
+<b class="nc">&nbsp;							getContexts());</b>
+&nbsp;				});
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (scope == Scope.propertyShape) {</b>
+<b class="nc">&nbsp;				validationPlanNode = Unique.getInstance(new ShiftToPropertyShape(validationPlanNode), true);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			union = UnionNode.getInstance(union, validationPlanNode);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return union;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValidationApproach getPreferredValidationApproach(ConnectionsGroup connectionsGroup) {
+<b class="nc">&nbsp;		return constraintComponents.stream()</b>
+<b class="nc">&nbsp;				.map(constraintComponent -&gt; constraintComponent.getPreferredValidationApproach(connectionsGroup))</b>
+<b class="nc">&nbsp;				.reduce(ValidationApproach::reducePreferred)</b>
+<b class="nc">&nbsp;				.orElse(ValidationApproach.Transactional);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SourceConstraintComponent getConstraintComponent() {
+<b class="nc">&nbsp;		return SourceConstraintComponent.NodeConstraintComponent;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public PlanNode getAllTargetsPlan(ConnectionsGroup connectionsGroup, Resource[] dataGraph, Scope scope,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+&nbsp;
+<b class="nc">&nbsp;		PlanNode planNode = constraintComponents.stream()</b>
+<b class="nc">&nbsp;				.map(c -&gt; c.getAllTargetsPlan(connectionsGroup, dataGraph, Scope.nodeShape,</b>
+&nbsp;						new StatementMatcher.StableRandomVariableProvider()))
+<b class="nc">&nbsp;				.distinct()</b>
+<b class="nc">&nbsp;				.reduce(UnionNode::getInstanceDedupe)</b>
+<b class="nc">&nbsp;				.orElse(EmptyNode.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (connectionsGroup.getStats().hasRemoved()) {</b>
+<b class="nc">&nbsp;			PlanNode planNodeEffectiveTarget = getTargetChain()</b>
+<b class="nc">&nbsp;					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),</b>
+&nbsp;							stableRandomVariableProvider)
+<b class="nc">&nbsp;					.getPlanNode(connectionsGroup, dataGraph, Scope.nodeShape, true, null);</b>
+&nbsp;
+<b class="nc">&nbsp;			planNode = UnionNode.getInstanceDedupe(planNode, planNodeEffectiveTarget);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (scope == Scope.propertyShape) {</b>
+<b class="nc">&nbsp;			planNode = Unique.getInstance(new ShiftToPropertyShape(planNode), true);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		planNode = Unique.getInstance(planNode, false);</b>
+&nbsp;
+<b class="nc">&nbsp;		return planNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ConstraintComponent deepClone() {
+<b class="nc">&nbsp;		NodeShape nodeShape = new NodeShape(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		nodeShape.constraintComponents = constraintComponents.stream()</b>
+<b class="nc">&nbsp;				.map(ConstraintComponent::deepClone)</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;		return nodeShape;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SparqlFragment buildSparqlValidNodes_rsx_targetShape(StatementMatcher.Variable subject,
+&nbsp;			StatementMatcher.Variable object,
+&nbsp;			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, Scope scope,
+&nbsp;			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;SparqlFragment&gt; sparqlFragments = constraintComponents.stream()</b>
+<b class="nc">&nbsp;				.map(shape -&gt; shape.buildSparqlValidNodes_rsx_targetShape(subject, object, rdfsSubClassOfReasoner,</b>
+&nbsp;						Scope.nodeShape, stableRandomVariableProvider))
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (SparqlFragment.isFilterCondition(sparqlFragments)) {</b>
+<b class="nc">&nbsp;			return SparqlFragment.and(sparqlFragments);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return SparqlFragment.join(sparqlFragments);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

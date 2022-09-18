@@ -1,0 +1,563 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Console</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console</a>
+</div>
+
+<h1>Coverage Summary for Class: Console (org.eclipse.rdf4j.console)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Console</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/140)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">Console$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/46)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/143)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Locale;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.SortedMap;
+&nbsp;import java.util.TreeMap;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.RDF4J;
+&nbsp;import org.eclipse.rdf4j.common.app.AppConfiguration;
+&nbsp;import org.eclipse.rdf4j.common.app.AppVersion;
+&nbsp;import org.eclipse.rdf4j.console.command.Clear;
+&nbsp;import org.eclipse.rdf4j.console.command.Close;
+&nbsp;import org.eclipse.rdf4j.console.command.Connect;
+&nbsp;import org.eclipse.rdf4j.console.command.ConsoleCommand;
+&nbsp;import org.eclipse.rdf4j.console.command.Convert;
+&nbsp;import org.eclipse.rdf4j.console.command.Create;
+&nbsp;import org.eclipse.rdf4j.console.command.Disconnect;
+&nbsp;import org.eclipse.rdf4j.console.command.Drop;
+&nbsp;import org.eclipse.rdf4j.console.command.Export;
+&nbsp;import org.eclipse.rdf4j.console.command.Federate;
+&nbsp;import org.eclipse.rdf4j.console.command.Load;
+&nbsp;import org.eclipse.rdf4j.console.command.Open;
+&nbsp;import org.eclipse.rdf4j.console.command.PrintHelp;
+&nbsp;import org.eclipse.rdf4j.console.command.PrintInfo;
+&nbsp;import org.eclipse.rdf4j.console.command.QueryEvaluator;
+&nbsp;import org.eclipse.rdf4j.console.command.SetParameters;
+&nbsp;import org.eclipse.rdf4j.console.command.Show;
+&nbsp;import org.eclipse.rdf4j.console.command.Sparql;
+&nbsp;import org.eclipse.rdf4j.console.command.TupleAndGraphQueryEvaluator;
+&nbsp;import org.eclipse.rdf4j.console.command.Verify;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+&nbsp;import org.eclipse.rdf4j.console.setting.LogLevel;
+&nbsp;import org.eclipse.rdf4j.console.setting.Prefixes;
+&nbsp;import org.eclipse.rdf4j.console.setting.QueryPrefix;
+&nbsp;import org.eclipse.rdf4j.console.setting.SaveHistory;
+&nbsp;import org.eclipse.rdf4j.console.setting.ShowPrefix;
+&nbsp;import org.eclipse.rdf4j.console.setting.WorkDir;
+&nbsp;import org.jline.reader.EndOfFileException;
+&nbsp;import org.jline.reader.LineReader;
+&nbsp;import org.jline.reader.UserInterruptException;
+&nbsp;
+&nbsp;/**
+&nbsp; * The RDF4J Console is a command-line application for interacting with RDF4J. It reads commands from standard input and
+&nbsp; * prints feedback to standard output. Available options include loading and querying of data in repositories,
+&nbsp; * repository creation and verification of RDF files.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public class Console {
+<b class="nc">&nbsp;	private final static AppVersion VERSION = AppVersion.parse(RDF4J.getVersion());</b>
+&nbsp;	private final static String APP_NAME = &quot;Console&quot;;
+<b class="nc">&nbsp;	private final static AppConfiguration APP_CFG = new AppConfiguration(APP_NAME, VERSION);</b>
+<b class="nc">&nbsp;	private final static ConsoleState STATE = new DefaultConsoleState(APP_CFG);</b>
+&nbsp;
+&nbsp;	private final static String PROP_PREFIX = &quot;org.eclipse.rdf4j.console.setting.&quot;;
+&nbsp;
+&nbsp;	private static boolean exitOnError;
+&nbsp;
+&nbsp;	private final ConsoleIO consoleIO;
+&nbsp;
+<b class="nc">&nbsp;	private final SortedMap&lt;String, ConsoleCommand&gt; commandMap = new TreeMap&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final SortedMap&lt;String, ConsoleSetting&gt; settingMap = new TreeMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	// &quot;Core&quot; commands
+&nbsp;	private final Connect connect;
+&nbsp;	private final Disconnect disconnect;
+&nbsp;	private final Open open;
+&nbsp;	private final Close close;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console state
+&nbsp;	 *
+&nbsp;	 * @return basic console state
+&nbsp;	 */
+&nbsp;	public ConsoleState getState() {
+<b class="nc">&nbsp;		return STATE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console IO
+&nbsp;	 *
+&nbsp;	 * @return console
+&nbsp;	 */
+&nbsp;	public ConsoleIO getConsoleIO() {
+<b class="nc">&nbsp;		return this.consoleIO;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set exit on error mode
+&nbsp;	 *
+&nbsp;	 * @param mode true when error should exit
+&nbsp;	 */
+&nbsp;	protected void setExitOnError(boolean mode) {
+<b class="nc">&nbsp;		Console.exitOnError = mode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Main
+&nbsp;	 *
+&nbsp;	 * @param args command line arguments
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static void main(final String[] args) throws IOException {
+<b class="nc">&nbsp;		final Console console = new Console();</b>
+&nbsp;
+<b class="nc">&nbsp;		CmdLineParser parser = new CmdLineParser(console);</b>
+<b class="nc">&nbsp;		if (parser.parse(args) == null) {</b>
+<b class="nc">&nbsp;			System.exit(-1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!parser.handleInfoOptions()) {</b>
+<b class="nc">&nbsp;			System.exit(0);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		parser.handleEchoOptions();</b>
+<b class="nc">&nbsp;		parser.handleExitOption();</b>
+&nbsp;
+<b class="nc">&nbsp;		String location = parser.handleLocationGroup();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!parser.handleCautionGroup()) {</b>
+<b class="nc">&nbsp;			System.exit(3);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String otherArg = parser.handleOtherArg();</b>
+&nbsp;
+<b class="nc">&nbsp;		connectAndOpen(console, parser.getSelectedLocation(), location, otherArg);</b>
+<b class="nc">&nbsp;		console.start();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Connect to (and open) a repository, exit when connection fails
+&nbsp;	 *
+&nbsp;	 * @param console
+&nbsp;	 * @param selectedLocation s for server, d for local directory
+&nbsp;	 * @param location
+&nbsp;	 * @param otherArg         last argument, if any
+&nbsp;	 */
+&nbsp;	private static void connectAndOpen(Console console, String selectedLocation, String location, String otherArg) {
+&nbsp;		boolean connected;
+<b class="nc">&nbsp;		if (&quot;s&quot;.equals(selectedLocation)) {</b>
+<b class="nc">&nbsp;			connected = console.connect.connectRemote(location);</b>
+<b class="nc">&nbsp;		} else if (&quot;d&quot;.equals(selectedLocation)) {</b>
+<b class="nc">&nbsp;			connected = console.connect.connectLocal(location);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			connected = console.connect.connectDefault();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!connected) {</b>
+<b class="nc">&nbsp;			System.exit(2);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!otherArg.isEmpty()) {</b>
+<b class="nc">&nbsp;			console.open.openRepository(otherArg);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add command to register of known commands
+&nbsp;	 *
+&nbsp;	 * @param cmd command to be added
+&nbsp;	 */
+&nbsp;	public final void register(ConsoleCommand cmd) {
+<b class="nc">&nbsp;		commandMap.put(cmd.getName(), cmd);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add setting to register of known settings
+&nbsp;	 *
+&nbsp;	 * @param setting setting to be added
+&nbsp;	 */
+&nbsp;	public final void register(ConsoleSetting setting) {
+<b class="nc">&nbsp;		settingMap.put(setting.getName(), setting);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+<b class="nc">&nbsp;	public Console() throws IOException {</b>
+<b class="nc">&nbsp;		APP_CFG.init();</b>
+&nbsp;
+<b class="nc">&nbsp;		consoleIO = new ConsoleIO(STATE);</b>
+&nbsp;
+&nbsp;		// propagate console setting to JLine
+<b class="nc">&nbsp;		SaveHistory lineHistory = new SaveHistory() {</b>
+&nbsp;			@Override
+&nbsp;			public void set(Boolean val) {
+<b class="nc">&nbsp;				super.set(val);</b>
+<b class="nc">&nbsp;				consoleIO.getLineReader().setVariable(LineReader.DISABLE_HISTORY, !val);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;		// Basic console parameters
+<b class="nc">&nbsp;		register(new ConsoleWidth());</b>
+<b class="nc">&nbsp;		register(new LogLevel());</b>
+<b class="nc">&nbsp;		register(new Prefixes());</b>
+<b class="nc">&nbsp;		register(new QueryPrefix());</b>
+<b class="nc">&nbsp;		register(lineHistory);</b>
+<b class="nc">&nbsp;		register(new ShowPrefix());</b>
+<b class="nc">&nbsp;		register(new WorkDir());</b>
+&nbsp;
+<b class="nc">&nbsp;		this.close = new Close(consoleIO, STATE);</b>
+<b class="nc">&nbsp;		this.disconnect = new Disconnect(consoleIO, STATE, close);</b>
+<b class="nc">&nbsp;		this.connect = new Connect(consoleIO, STATE, disconnect);</b>
+<b class="nc">&nbsp;		this.open = new Open(consoleIO, STATE, close);</b>
+&nbsp;
+&nbsp;		// &quot;core&quot; commands for connnecting
+<b class="nc">&nbsp;		register(open);</b>
+<b class="nc">&nbsp;		register(close);</b>
+<b class="nc">&nbsp;		register(connect);</b>
+<b class="nc">&nbsp;		register(disconnect);</b>
+&nbsp;		// querying
+<b class="nc">&nbsp;		TupleAndGraphQueryEvaluator eval = new TupleAndGraphQueryEvaluator(consoleIO, STATE, settingMap);</b>
+<b class="nc">&nbsp;		register(new Federate(consoleIO, STATE));</b>
+<b class="nc">&nbsp;		register(new Sparql(eval));</b>
+&nbsp;		// information
+<b class="nc">&nbsp;		register(new PrintHelp(consoleIO, commandMap));</b>
+<b class="nc">&nbsp;		register(new PrintInfo(consoleIO, STATE));</b>
+<b class="nc">&nbsp;		register(new Show(consoleIO, STATE));</b>
+&nbsp;		// repository management
+<b class="nc">&nbsp;		register(new Create(consoleIO, STATE));</b>
+<b class="nc">&nbsp;		register(new Drop(consoleIO, STATE, close));</b>
+&nbsp;		// handling data
+<b class="nc">&nbsp;		register(new Verify(consoleIO, settingMap));</b>
+<b class="nc">&nbsp;		register(new Load(consoleIO, STATE, settingMap));</b>
+<b class="nc">&nbsp;		register(new Clear(consoleIO, STATE));</b>
+<b class="nc">&nbsp;		register(new Export(consoleIO, STATE, settingMap));</b>
+<b class="nc">&nbsp;		register(new Convert(consoleIO, STATE, settingMap));</b>
+&nbsp;		// parameters
+<b class="nc">&nbsp;		register(new SetParameters(consoleIO, STATE, settingMap));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load settings from properties file (application.properties)
+&nbsp;	 */
+&nbsp;	private void loadSettings() {
+<b class="nc">&nbsp;		Properties props = APP_CFG.getProperties();</b>
+&nbsp;
+<b class="nc">&nbsp;		settingMap.forEach((k, v) -&gt; {</b>
+<b class="nc">&nbsp;			String val = props.getProperty(PROP_PREFIX + k, &quot;&quot;);</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (!val.isEmpty()) {</b>
+<b class="nc">&nbsp;					v.setFromString(val);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (IllegalArgumentException iae) {</b>
+<b class="nc">&nbsp;				consoleIO.writeError(&quot;Illegal value for property &quot; + k);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Save settings to default properties file (application.properties)
+&nbsp;	 */
+&nbsp;	private void saveSettings() {
+<b class="nc">&nbsp;		Properties props = APP_CFG.getProperties();</b>
+&nbsp;
+<b class="nc">&nbsp;		settingMap.forEach((k, v) -&gt; {</b>
+<b class="nc">&nbsp;			String prop = PROP_PREFIX + k;</b>
+<b class="nc">&nbsp;			String oldval = props.getProperty(prop, &quot;&quot;);</b>
+<b class="nc">&nbsp;			String newval = v.getAsString();</b>
+<b class="nc">&nbsp;			String val = (newval != null) ? newval : oldval;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!val.isEmpty()) {</b>
+<b class="nc">&nbsp;				props.setProperty(prop, val);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				props.remove(prop);</b>
+&nbsp;			}
+&nbsp;		});
+&nbsp;		try {
+<b class="nc">&nbsp;			APP_CFG.save();</b>
+<b class="nc">&nbsp;		} catch (IOException ex) {</b>
+<b class="nc">&nbsp;			consoleIO.writeError(&quot;Could not save properties: &quot; + ex.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Load history from file
+&nbsp;	 */
+&nbsp;	private void loadHistory() {
+&nbsp;		try {
+<b class="nc">&nbsp;			consoleIO.getLineReader().getHistory().load();</b>
+<b class="nc">&nbsp;		} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;			consoleIO.writeError(&quot;Could not load history: &quot; + ioe.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Save JLine history to a file, unless the setting saveHistory is set to false
+&nbsp;	 */
+&nbsp;	private void saveHistory() {
+&nbsp;		try {
+<b class="nc">&nbsp;			consoleIO.getLineReader().getHistory().save();</b>
+<b class="nc">&nbsp;		} catch (IOException ioe) {</b>
+<b class="nc">&nbsp;			consoleIO.writeError(&quot;Could not save history: &quot; + ioe.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Start the interactive console, return error code on exit
+&nbsp;	 *
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public void start() throws IOException {
+<b class="nc">&nbsp;		loadSettings();</b>
+<b class="nc">&nbsp;		loadHistory();</b>
+&nbsp;
+<b class="nc">&nbsp;		consoleIO.writeln(APP_CFG.getFullName());</b>
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Working dir: &quot; + settingMap.get(WorkDir.NAME).getAsString());</b>
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Type &#39;help&#39; for help.&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		int exitCode = 0;</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			boolean exitFlag = false;</b>
+<b class="nc">&nbsp;			while (!exitFlag) {</b>
+<b class="nc">&nbsp;				final String command = consoleIO.readCommand();</b>
+<b class="nc">&nbsp;				if (command == null) {</b>
+&nbsp;					// EOF
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				exitFlag = executeCommand(command);</b>
+<b class="nc">&nbsp;				if (exitOnError &amp;&amp; consoleIO.wasErrorWritten()) {</b>
+<b class="nc">&nbsp;					exitCode = 2;</b>
+<b class="nc">&nbsp;					exitFlag = true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (UserInterruptException | EndOfFileException e) {</b>
+<b class="nc">&nbsp;			exitCode = 0;</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			disconnect.execute(false);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		saveSettings();</b>
+<b class="nc">&nbsp;		saveHistory();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (exitCode != 0) {</b>
+<b class="nc">&nbsp;			System.exit(exitCode);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		consoleIO.writeln(&quot;Bye&quot;);</b>
+<b class="nc">&nbsp;		consoleIO.getOutputStream().close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Execute a command
+&nbsp;	 *
+&nbsp;	 * @param command
+&nbsp;	 * @return true when exit/quit command is entered
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private boolean executeCommand(String command) throws IOException {
+<b class="nc">&nbsp;		boolean exit = false;</b>
+&nbsp;
+&nbsp;		// only try to parse the command if non-empty.
+<b class="nc">&nbsp;		if (0 &lt; command.length()) {</b>
+<b class="nc">&nbsp;			final String[] tokens = parse(command);</b>
+<b class="nc">&nbsp;			final String operation = tokens[0].toLowerCase(Locale.ENGLISH);</b>
+&nbsp;
+<b class="nc">&nbsp;			exit = &quot;quit&quot;.equals(operation) || &quot;exit&quot;.equals(operation);</b>
+<b class="nc">&nbsp;			if (!exit) {</b>
+<b class="nc">&nbsp;				ConsoleCommand cmd = commandMap.getOrDefault(operation, commandMap.get(&quot;sparql&quot;));</b>
+<b class="nc">&nbsp;				if (cmd instanceof QueryEvaluator) {</b>
+<b class="nc">&nbsp;					((QueryEvaluator) cmd).executeQuery(command, operation);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					cmd.execute(tokens);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return exit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Split a command into an array of tokens
+&nbsp;	 *
+&nbsp;	 * @param command command to parse
+&nbsp;	 * @return array of strings
+&nbsp;	 */
+&nbsp;	private String[] parse(String command) {
+<b class="nc">&nbsp;		final Pattern pattern = Pattern.compile(&quot;\&quot;([^\&quot;]*)\&quot;|(\\S+)&quot;);</b>
+<b class="nc">&nbsp;		final Matcher matcher = pattern.matcher(command);</b>
+<b class="nc">&nbsp;		final List&lt;String&gt; tokens = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (matcher.find()) {</b>
+<b class="nc">&nbsp;			if (matcher.group(1) == null) {</b>
+<b class="nc">&nbsp;				tokens.add(matcher.group());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				tokens.add(matcher.group(1));</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return tokens.toArray(new String[tokens.size()]);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

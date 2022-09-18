@@ -1,0 +1,343 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JtsSpatialAlgebra</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql</a>
+</div>
+
+<h1>Coverage Summary for Class: JtsSpatialAlgebra (org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JtsSpatialAlgebra</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
+&nbsp;
+&nbsp;import org.locationtech.jts.geom.Geometry;
+&nbsp;import org.locationtech.spatial4j.context.jts.JtsSpatialContext;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;import org.locationtech.spatial4j.shape.jts.JtsShapeFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * JTS-enabled implementation of spatial algebra, with full support for polygon-related geospatial functions
+&nbsp; */
+&nbsp;public class JtsSpatialAlgebra implements SpatialAlgebra {
+&nbsp;
+&nbsp;	private final JtsShapeFactory shapeFactory;
+&nbsp;
+<b class="nc">&nbsp;	public JtsSpatialAlgebra(JtsSpatialContext context) {</b>
+<b class="nc">&nbsp;		this.shapeFactory = context.getShapeFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape buffer(Shape s, double distance) {
+<b class="nc">&nbsp;		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).buffer(distance));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape convexHull(Shape s) {
+<b class="nc">&nbsp;		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).convexHull());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape boundary(Shape s) {
+<b class="nc">&nbsp;		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).getBoundary());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape envelope(Shape s) {
+<b class="nc">&nbsp;		return shapeFactory.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s).getEnvelope());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape union(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return shapeFactory</b>
+<b class="nc">&nbsp;				.makeShapeFromGeometry(shapeFactory.getGeometryFrom(s1).union(shapeFactory.getGeometryFrom(s2)));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape intersection(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		Geometry intersection = shapeFactory.getGeometryFrom(s1).intersection(shapeFactory.getGeometryFrom(s2));</b>
+<b class="nc">&nbsp;		if (intersection.isEmpty()) {</b>
+<b class="nc">&nbsp;			return shapeFactory.pointXY(Double.NaN, Double.NaN);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return shapeFactory.makeShapeFromGeometry(intersection);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape symDifference(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		Geometry symDiff = shapeFactory.getGeometryFrom(s1).symDifference(shapeFactory.getGeometryFrom(s2));</b>
+<b class="nc">&nbsp;		if (symDiff.isEmpty()) {</b>
+<b class="nc">&nbsp;			return shapeFactory.pointXY(Double.NaN, Double.NaN);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return shapeFactory.makeShapeFromGeometry(symDiff);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Shape difference(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		Geometry difference = shapeFactory.getGeometryFrom(s1).difference(shapeFactory.getGeometryFrom(s2));</b>
+<b class="nc">&nbsp;		if (difference.isEmpty()) {</b>
+<b class="nc">&nbsp;			return shapeFactory.pointXY(Double.NaN, Double.NaN);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return shapeFactory.makeShapeFromGeometry(difference);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean relate(Shape s1, Shape s2, String intersectionPattern) {
+<b class="nc">&nbsp;		return shapeFactory.getGeometryFrom(s1).relate(shapeFactory.getGeometryFrom(s2), intersectionPattern);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfEquals(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TFFFTFFFT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfDisjoint(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;FF*FF****&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfIntersects(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;T********&quot;) || relate(s1, s2, &quot;*T*******&quot;) || relate(s1, s2, &quot;***T*****&quot;)</b>
+<b class="nc">&nbsp;				|| relate(s1, s2, &quot;****T****&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfTouches(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;FT*******&quot;) || relate(s1, s2, &quot;F**T*****&quot;) || relate(s1, s2, &quot;F***T****&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfCrosses(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		Geometry g1 = shapeFactory.getGeometryFrom(s1);</b>
+<b class="nc">&nbsp;		Geometry g2 = shapeFactory.getGeometryFrom(s2);</b>
+<b class="nc">&nbsp;		int d1 = g1.getDimension();</b>
+<b class="nc">&nbsp;		int d2 = g2.getDimension();</b>
+<b class="nc">&nbsp;		if ((d1 == 0 &amp;&amp; d2 == 1) || (d1 == 0 &amp;&amp; d2 == 2) || (d1 == 1 &amp;&amp; d2 == 2)) {</b>
+<b class="nc">&nbsp;			return g1.relate(g2, &quot;T*T***T**&quot;);</b>
+<b class="nc">&nbsp;		} else if (d1 == 1 &amp;&amp; d2 == 1) {</b>
+<b class="nc">&nbsp;			return g1.relate(g2, &quot;0*T***T**&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfWithin(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;T*F**F***&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfContains(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;T*****FF*&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean sfOverlaps(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		Geometry g1 = shapeFactory.getGeometryFrom(s1);</b>
+<b class="nc">&nbsp;		Geometry g2 = shapeFactory.getGeometryFrom(s2);</b>
+<b class="nc">&nbsp;		int d1 = g1.getDimension();</b>
+<b class="nc">&nbsp;		int d2 = g2.getDimension();</b>
+<b class="nc">&nbsp;		if ((d1 == 2 &amp;&amp; d2 == 2) || (d1 == 0 &amp;&amp; d2 == 0)) {</b>
+<b class="nc">&nbsp;			return g1.relate(g2, &quot;T*T***T**&quot;);</b>
+<b class="nc">&nbsp;		} else if (d1 == 1 &amp;&amp; d2 == 1) {</b>
+<b class="nc">&nbsp;			return g1.relate(g2, &quot;1*T***T**&quot;);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehEquals(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return ehInside(s1, s2) &amp;&amp; ehContains(s1, s2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehDisjoint(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;FF*FF****&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehMeet(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;FT*******&quot;) || relate(s1, s2, &quot;F**T*****&quot;) || relate(s1, s2, &quot;F***T****&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehOverlap(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;T*T***T**&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehCovers(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;T*TFT*FF*&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehCoveredBy(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TFF*TFT**&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehInside(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TFF*FFT**&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean ehContains(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;T*TFF*FF*&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8dc(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;FFTFFTTTT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8ec(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;FFTFTTTTT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8po(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TTTTTTTTT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8tppi(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TTTFTTFFT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8tpp(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TFFTTFTTT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8ntpp(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TFFTFFTTT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8ntppi(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TTTFFTFFT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean rcc8eq(Shape s1, Shape s2) {
+<b class="nc">&nbsp;		return relate(s1, s2, &quot;TFFFTFFFT&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,1291 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TripleStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lmdb</a>
+</div>
+
+<h1>Coverage Summary for Class: TripleStore (org.eclipse.rdf4j.sail.lmdb)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TripleStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/230)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/406)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TripleStore$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">TripleStore$TripleIndex</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/66)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/83)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/304)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/500)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lmdb;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabase;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.transaction;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.Varint.readListUnsigned;
+&nbsp;import static org.eclipse.rdf4j.sail.lmdb.Varint.writeListUnsigned;
+&nbsp;import static org.lwjgl.system.MemoryStack.stackPush;
+&nbsp;import static org.lwjgl.system.MemoryUtil.NULL;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_NOMETASYNC;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_NOSYNC;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cmp;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_close;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_get;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+&nbsp;import static org.lwjgl.util.lmdb.LMDB.nmdb_env_set_maxreaders;
+&nbsp;
+&nbsp;import java.io.Closeable;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.FileOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.ByteBuffer;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.StringTokenizer;
+&nbsp;import java.util.concurrent.locks.StampedLock;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.Varint.GroupMatcher;
+&nbsp;import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+&nbsp;import org.lwjgl.PointerBuffer;
+&nbsp;import org.lwjgl.system.MemoryStack;
+&nbsp;import org.lwjgl.util.lmdb.MDBEnvInfo;
+&nbsp;import org.lwjgl.util.lmdb.MDBStat;
+&nbsp;import org.lwjgl.util.lmdb.MDBVal;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * LMDB-based indexed storage and retrieval of RDF statements. TripleStore stores statements in the form of four integer
+&nbsp; * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement&#39;s
+&nbsp; * subject, predicate, object and context. The ID &lt;tt&gt;0&lt;/tt&gt; is used to represent the &quot;null&quot; context and doesn&#39;t map to
+&nbsp; * an actual RDF value.
+&nbsp; *
+&nbsp; */
+&nbsp;@SuppressWarnings(&quot;deprecation&quot;)
+&nbsp;class TripleStore implements Closeable {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	// triples are represented by 4 varints for subject, predicate, object and context
+&nbsp;	static final int SUBJ_IDX = 0;
+&nbsp;	static final int PRED_IDX = 1;
+&nbsp;	static final int OBJ_IDX = 2;
+&nbsp;	static final int CONTEXT_IDX = 3;
+&nbsp;
+&nbsp;	static final int MAX_KEY_LENGTH = 4 * 9;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default triple indexes.
+&nbsp;	 */
+&nbsp;	private static final String DEFAULT_INDEXES = &quot;spoc,posc&quot;;
+&nbsp;	/**
+&nbsp;	 * The file name for the properties file.
+&nbsp;	 */
+&nbsp;	private static final String PROPERTIES_FILE = &quot;triples.prop&quot;;
+&nbsp;	/**
+&nbsp;	 * The key used to store the triple store version in the properties file.
+&nbsp;	 */
+&nbsp;	private static final String VERSION_KEY = &quot;version&quot;;
+&nbsp;	/**
+&nbsp;	 * The key used to store the triple indexes specification that specifies which triple indexes exist.
+&nbsp;	 */
+&nbsp;	private static final String INDEXES_KEY = &quot;triple-indexes&quot;;
+&nbsp;	/**
+&nbsp;	 * The version number for the current triple store.
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;version 1: The first version with configurable triple indexes, a context field and a properties file.
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 */
+&nbsp;	private static final int SCHEME_VERSION = 1;
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The directory that is used to store the index files.
+&nbsp;	 */
+&nbsp;	private final File dir;
+&nbsp;	/**
+&nbsp;	 * Object containing meta-data for the triple store.
+&nbsp;	 */
+&nbsp;	private final Properties properties;
+&nbsp;	/**
+&nbsp;	 * The list of triple indexes that are used to store and retrieve triples.
+&nbsp;	 */
+<b class="nc">&nbsp;	private final List&lt;TripleIndex&gt; indexes = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private long env;
+&nbsp;	private int pageSize;
+&nbsp;	private final boolean forceSync;
+&nbsp;	private final boolean autoGrow;
+&nbsp;	private long mapSize;
+&nbsp;	private long writeTxn;
+&nbsp;	private final TxnManager txnManager;
+<b class="nc">&nbsp;	private final Pool pool = new Pool();</b>
+&nbsp;
+<b class="nc">&nbsp;	private TxnRecordCache recordCache = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	static final Comparator&lt;ByteBuffer&gt; COMPARATOR = new Comparator&lt;ByteBuffer&gt;() {</b>
+&nbsp;		@Override
+&nbsp;		public int compare(ByteBuffer b1, ByteBuffer b2) {
+<b class="nc">&nbsp;			int b1Len = b1.remaining();</b>
+<b class="nc">&nbsp;			int b2Len = b2.remaining();</b>
+<b class="nc">&nbsp;			int diff = compareRegion(b1, b1.position(), b2, b2.position(), Math.min(b1Len, b2Len));</b>
+<b class="nc">&nbsp;			if (diff != 0) {</b>
+<b class="nc">&nbsp;				return diff;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return b1Len &gt; b2Len ? 1 : -1;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public int compareRegion(ByteBuffer array1, int startIdx1, ByteBuffer array2, int startIdx2, int length) {
+<b class="nc">&nbsp;			int result = 0;</b>
+<b class="nc">&nbsp;			for (int i = 0; result == 0 &amp;&amp; i &lt; length; i++) {</b>
+<b class="nc">&nbsp;				result = (array1.get(startIdx1 + i) &amp; 0xff) - (array2.get(startIdx2 + i) &amp; 0xff);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return result;</b>
+&nbsp;		}
+&nbsp;	};
+&nbsp;
+<b class="nc">&nbsp;	TripleStore(File dir, LmdbStoreConfig config) throws IOException, SailException {</b>
+<b class="nc">&nbsp;		this.dir = dir;</b>
+<b class="nc">&nbsp;		this.forceSync = config.getForceSync();</b>
+<b class="nc">&nbsp;		this.autoGrow = config.getAutoGrow();</b>
+&nbsp;
+&nbsp;		// create directory if it not exists
+<b class="nc">&nbsp;		this.dir.mkdirs();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (MemoryStack stack = stackPush()) {</b>
+<b class="nc">&nbsp;			PointerBuffer pp = stack.mallocPointer(1);</b>
+<b class="nc">&nbsp;			E(mdb_env_create(pp));</b>
+<b class="nc">&nbsp;			env = pp.get(0);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		mdb_env_set_maxdbs(env, 12);</b>
+<b class="nc">&nbsp;		nmdb_env_set_maxreaders(env, 256);</b>
+&nbsp;
+&nbsp;		// Open environment
+<b class="nc">&nbsp;		int flags = MDB_NOTLS;</b>
+<b class="nc">&nbsp;		if (!forceSync) {</b>
+<b class="nc">&nbsp;			flags |= MDB_NOSYNC | MDB_NOMETASYNC;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));</b>
+&nbsp;
+<b class="nc">&nbsp;		txnManager = new TxnManager(env, Mode.RESET);</b>
+&nbsp;
+<b class="nc">&nbsp;		File propFile = new File(this.dir, PROPERTIES_FILE);</b>
+<b class="nc">&nbsp;		String indexSpecStr = config.getTripleIndexes();</b>
+<b class="nc">&nbsp;		if (!propFile.exists()) {</b>
+&nbsp;			// newly created lmdb store
+<b class="nc">&nbsp;			properties = new Properties();</b>
+&nbsp;
+<b class="nc">&nbsp;			Set&lt;String&gt; indexSpecs = parseIndexSpecList(indexSpecStr);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (indexSpecs.isEmpty()) {</b>
+<b class="nc">&nbsp;				logger.debug(&quot;No indexes specified, using default indexes: {}&quot;, DEFAULT_INDEXES);</b>
+<b class="nc">&nbsp;				indexSpecStr = DEFAULT_INDEXES;</b>
+<b class="nc">&nbsp;				indexSpecs = parseIndexSpecList(indexSpecStr);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			initIndexes(indexSpecs, config.getTripleDBSize());</b>
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// Read triple properties file and check format version number
+<b class="nc">&nbsp;			properties = loadProperties(propFile);</b>
+<b class="nc">&nbsp;			checkVersion();</b>
+&nbsp;
+&nbsp;			// Initialize existing indexes
+<b class="nc">&nbsp;			Set&lt;String&gt; indexSpecs = getIndexSpecs();</b>
+<b class="nc">&nbsp;			initIndexes(indexSpecs, config.getTripleDBSize());</b>
+&nbsp;
+&nbsp;			// Compare the existing indexes with the requested indexes
+<b class="nc">&nbsp;			Set&lt;String&gt; reqIndexSpecs = parseIndexSpecList(indexSpecStr);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (reqIndexSpecs.isEmpty()) {</b>
+&nbsp;				// No indexes specified, use the existing ones
+<b class="nc">&nbsp;				indexSpecStr = properties.getProperty(INDEXES_KEY);</b>
+<b class="nc">&nbsp;			} else if (!reqIndexSpecs.equals(indexSpecs)) {</b>
+&nbsp;				// Set of indexes needs to be changed
+<b class="nc">&nbsp;				reindex(indexSpecs, reqIndexSpecs);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!String.valueOf(SCHEME_VERSION).equals(properties.getProperty(VERSION_KEY))</b>
+<b class="nc">&nbsp;				|| !indexSpecStr.equals(properties.getProperty(INDEXES_KEY))) {</b>
+&nbsp;			// Store up-to-date properties
+<b class="nc">&nbsp;			properties.setProperty(VERSION_KEY, String.valueOf(SCHEME_VERSION));</b>
+<b class="nc">&nbsp;			properties.setProperty(INDEXES_KEY, indexSpecStr);</b>
+<b class="nc">&nbsp;			storeProperties(propFile);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void checkVersion() throws SailException {
+&nbsp;		// Check version number
+<b class="nc">&nbsp;		String versionStr = properties.getProperty(VERSION_KEY);</b>
+<b class="nc">&nbsp;		if (versionStr == null) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;{} missing in TripleStore&#39;s properties file&quot;, VERSION_KEY);</b>
+&nbsp;		} else {
+&nbsp;			try {
+<b class="nc">&nbsp;				int version = Integer.parseInt(versionStr);</b>
+<b class="nc">&nbsp;				if (version &gt; SCHEME_VERSION) {</b>
+<b class="nc">&nbsp;					throw new SailException(&quot;Directory contains data that uses a newer data format&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;Malformed version number in TripleStore&#39;s properties file&quot;);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private Set&lt;String&gt; getIndexSpecs() throws SailException {
+<b class="nc">&nbsp;		String indexesStr = properties.getProperty(INDEXES_KEY);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (indexesStr == null) {</b>
+<b class="nc">&nbsp;			throw new SailException(INDEXES_KEY + &quot; missing in TripleStore&#39;s properties file&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; indexSpecs = parseIndexSpecList(indexesStr);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (indexSpecs.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;No &quot; + INDEXES_KEY + &quot; found in TripleStore&#39;s properties file&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return indexSpecs;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	TxnManager getTxnManager() {
+<b class="nc">&nbsp;		return txnManager;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses a comma/whitespace-separated list of index specifications. Index specifications are required to consists
+&nbsp;	 * of 4 characters: &#39;s&#39;, &#39;p&#39;, &#39;o&#39; and &#39;c&#39;.
+&nbsp;	 *
+&nbsp;	 * @param indexSpecStr A string like &quot;spoc, pocs, cosp&quot;.
+&nbsp;	 * @return A Set containing the parsed index specifications.
+&nbsp;	 */
+&nbsp;	private Set&lt;String&gt; parseIndexSpecList(String indexSpecStr) throws SailException {
+<b class="nc">&nbsp;		Set&lt;String&gt; indexes = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (indexSpecStr != null) {</b>
+<b class="nc">&nbsp;			StringTokenizer tok = new StringTokenizer(indexSpecStr, &quot;, \t&quot;);</b>
+<b class="nc">&nbsp;			while (tok.hasMoreTokens()) {</b>
+<b class="nc">&nbsp;				String index = tok.nextToken().toLowerCase();</b>
+&nbsp;
+&nbsp;				// sanity checks
+<b class="nc">&nbsp;				if (index.length() != 4 || index.indexOf(&#39;s&#39;) == -1 || index.indexOf(&#39;p&#39;) == -1</b>
+<b class="nc">&nbsp;						|| index.indexOf(&#39;o&#39;) == -1 || index.indexOf(&#39;c&#39;) == -1) {</b>
+<b class="nc">&nbsp;					throw new SailException(&quot;invalid value &#39;&quot; + index + &quot;&#39; in index specification: &quot; + indexSpecStr);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				indexes.add(index);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return indexes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void initIndexes(Set&lt;String&gt; indexSpecs, long tripleDbSize) throws IOException {
+<b class="nc">&nbsp;		for (String fieldSeq : indexSpecs) {</b>
+<b class="nc">&nbsp;			logger.trace(&quot;Initializing index &#39;{}&#39;...&quot;, fieldSeq);</b>
+<b class="nc">&nbsp;			indexes.add(new TripleIndex(fieldSeq));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// initialize page size and set map size for env
+<b class="nc">&nbsp;		readTransaction(env, (stack, txn) -&gt; {</b>
+<b class="nc">&nbsp;			MDBStat stat = MDBStat.malloc(stack);</b>
+<b class="nc">&nbsp;			TripleIndex mainIndex = indexes.get(0);</b>
+<b class="nc">&nbsp;			mdb_stat(txn, mainIndex.getDB(true), stat);</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean isEmpty = stat.ms_entries() == 0;</b>
+<b class="nc">&nbsp;			pageSize = stat.ms_psize();</b>
+&nbsp;			// align map size with page size
+<b class="nc">&nbsp;			long configMapSize = (tripleDbSize / pageSize) * pageSize;</b>
+<b class="nc">&nbsp;			if (isEmpty) {</b>
+&nbsp;				// this is an empty db, use configured map size
+<b class="nc">&nbsp;				mdb_env_set_mapsize(env, configMapSize);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			MDBEnvInfo info = MDBEnvInfo.malloc(stack);</b>
+<b class="nc">&nbsp;			mdb_env_info(env, info);</b>
+<b class="nc">&nbsp;			mapSize = info.me_mapsize();</b>
+<b class="nc">&nbsp;			if (mapSize &lt; configMapSize) {</b>
+&nbsp;				// configured map size is larger than map size stored in env, increase map size
+<b class="nc">&nbsp;				mdb_env_set_mapsize(env, configMapSize);</b>
+<b class="nc">&nbsp;				mapSize = configMapSize;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	private void reindex(Set&lt;String&gt; currentIndexSpecs, Set&lt;String&gt; newIndexSpecs) throws IOException, SailException {
+<b class="nc">&nbsp;		Map&lt;String, TripleIndex&gt; currentIndexes = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			currentIndexes.put(new String(index.getFieldSeq()), index);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// Determine the set of newly added indexes and initialize these using an
+&nbsp;		// existing index as source
+<b class="nc">&nbsp;		Set&lt;String&gt; addedIndexSpecs = new HashSet&lt;&gt;(newIndexSpecs);</b>
+<b class="nc">&nbsp;		addedIndexSpecs.removeAll(currentIndexSpecs);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!addedIndexSpecs.isEmpty()) {</b>
+<b class="nc">&nbsp;			TripleIndex sourceIndex = indexes.get(0);</b>
+<b class="nc">&nbsp;			for (boolean explicit : new boolean[] { true, false }) {</b>
+<b class="nc">&nbsp;				transaction(env, (stack, txn) -&gt; {</b>
+<b class="nc">&nbsp;					MDBVal keyValue = MDBVal.callocStack(stack);</b>
+<b class="nc">&nbsp;					ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);</b>
+<b class="nc">&nbsp;					keyValue.mv_data(keyBuf);</b>
+<b class="nc">&nbsp;					MDBVal dataValue = MDBVal.callocStack(stack);</b>
+<b class="nc">&nbsp;					for (String fieldSeq : addedIndexSpecs) {</b>
+<b class="nc">&nbsp;						logger.debug(&quot;Initializing new index &#39;{}&#39;...&quot;, fieldSeq);</b>
+&nbsp;
+<b class="nc">&nbsp;						TripleIndex addedIndex = new TripleIndex(fieldSeq);</b>
+<b class="nc">&nbsp;						RecordIterator[] sourceIter = { null };</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							sourceIter[0] = new LmdbRecordIterator(pool, sourceIndex, false, -1, -1, -1, -1,</b>
+<b class="nc">&nbsp;									explicit, txnManager.createTxn(txn));</b>
+&nbsp;
+<b class="nc">&nbsp;							RecordIterator it = sourceIter[0];</b>
+&nbsp;							long[] quad;
+<b class="nc">&nbsp;							while ((quad = it.next()) != null) {</b>
+<b class="nc">&nbsp;								keyBuf.clear();</b>
+<b class="nc">&nbsp;								addedIndex.toKey(keyBuf, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX],</b>
+&nbsp;										quad[CONTEXT_IDX]);
+<b class="nc">&nbsp;								keyBuf.flip();</b>
+&nbsp;
+<b class="nc">&nbsp;								E(mdb_put(txn, addedIndex.getDB(explicit), keyValue, dataValue, 0));</b>
+&nbsp;							}
+&nbsp;						} finally {
+<b class="nc">&nbsp;							if (sourceIter[0] != null) {</b>
+<b class="nc">&nbsp;								sourceIter[0].close();</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+&nbsp;
+<b class="nc">&nbsp;						currentIndexes.put(fieldSeq, addedIndex);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;					return null;</b>
+&nbsp;				});
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;New index(es) initialized&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Determine the set of removed indexes
+<b class="nc">&nbsp;		Set&lt;String&gt; removedIndexSpecs = new HashSet&lt;&gt;(currentIndexSpecs);</b>
+<b class="nc">&nbsp;		removedIndexSpecs.removeAll(newIndexSpecs);</b>
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Throwable&gt; removedIndexExceptions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		transaction(env, (stack, txn) -&gt; {</b>
+&nbsp;			// Delete files for removed indexes
+<b class="nc">&nbsp;			for (String fieldSeq : removedIndexSpecs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					TripleIndex removedIndex = currentIndexes.remove(fieldSeq);</b>
+<b class="nc">&nbsp;					removedIndex.destroy(txn);</b>
+<b class="nc">&nbsp;					logger.debug(&quot;Deleted file(s) for removed {} index&quot;, fieldSeq);</b>
+<b class="nc">&nbsp;				} catch (Throwable e) {</b>
+<b class="nc">&nbsp;					removedIndexExceptions.add(e);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		});
+&nbsp;
+<b class="nc">&nbsp;		if (!removedIndexExceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IOException(removedIndexExceptions.get(0));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Update the indexes variable, using the specified index order
+<b class="nc">&nbsp;		indexes.clear();</b>
+<b class="nc">&nbsp;		for (String fieldSeq : newIndexSpecs) {</b>
+<b class="nc">&nbsp;			indexes.add(currentIndexes.remove(fieldSeq));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws IOException {
+<b class="nc">&nbsp;		if (env != 0) {</b>
+<b class="nc">&nbsp;			endTransaction(false);</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;Throwable&gt; caughtExceptions = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;			for (TripleIndex index : indexes) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					index.close();</b>
+<b class="nc">&nbsp;				} catch (Throwable e) {</b>
+<b class="nc">&nbsp;					logger.warn(&quot;Failed to close file for {} index&quot;, new String(index.getFieldSeq()));</b>
+<b class="nc">&nbsp;					caughtExceptions.add(e);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			mdb_env_close(env);</b>
+<b class="nc">&nbsp;			env = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!caughtExceptions.isEmpty()) {</b>
+<b class="nc">&nbsp;				throw new IOException(caughtExceptions.get(0));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If an index exists by context - use it, otherwise return null.
+&nbsp;	 *
+&nbsp;	 * @return All triples sorted by context or null if no context index exists
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public RecordIterator getAllTriplesSortedByContext(Txn txn) throws IOException {
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			if (index.getFieldSeq()[0] == &#39;c&#39;) {</b>
+&nbsp;				// found a context-first index
+<b class="nc">&nbsp;				return getTriplesUsingIndex(txn, -1, -1, -1, -1, true, index, false);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
+&nbsp;			throws IOException {
+<b class="nc">&nbsp;		TripleIndex index = getBestIndex(subj, pred, obj, context);</b>
+&nbsp;		// System.out.println(&quot;get triples: &quot; + Arrays.asList(subj, pred, obj,context));
+<b class="nc">&nbsp;		boolean doRangeSearch = index.getPatternScore(subj, pred, obj, context) &gt; 0;</b>
+<b class="nc">&nbsp;		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, doRangeSearch);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
+&nbsp;			boolean explicit, TripleIndex index, boolean rangeSearch) throws IOException {
+<b class="nc">&nbsp;		return new LmdbRecordIterator(pool, index, rangeSearch, subj, pred, obj, context, explicit, txn);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes start key for a bucket by linear interpolation between a lower and an upper bound.
+&nbsp;	 *
+&nbsp;	 * @param fraction    Value between 0 and 1
+&nbsp;	 * @param lowerValues The lower bound
+&nbsp;	 * @param upperValues The upper Bound
+&nbsp;	 * @param startValues The interpolated values
+&nbsp;	 */
+&nbsp;	protected void bucketStart(double fraction, long[] lowerValues, long[] upperValues, long[] startValues) {
+<b class="nc">&nbsp;		long diff = 0;</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; lowerValues.length; i++) {</b>
+<b class="nc">&nbsp;			if (diff == 0) {</b>
+&nbsp;				// only interpolate the first value that is different
+<b class="nc">&nbsp;				diff = upperValues[i] - lowerValues[i];</b>
+<b class="nc">&nbsp;				startValues[i] = diff == 0 ? lowerValues[i] : (long) (lowerValues[i] + diff * fraction);</b>
+&nbsp;			} else {
+&nbsp;				// set rest of the values to 0
+<b class="nc">&nbsp;				startValues[i] = 0;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
+<b class="nc">&nbsp;		TripleIndex index = getBestIndex(subj, pred, obj, context);</b>
+&nbsp;
+<b class="nc">&nbsp;		int relevantParts = index.getPatternScore(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;		if (relevantParts == 0) {</b>
+&nbsp;			// it&#39;s worthless to use the index, just retrieve all entries in the db
+<b class="nc">&nbsp;			return txnManager.doWith((stack, txn) -&gt; {</b>
+<b class="nc">&nbsp;				double cardinality = 0;</b>
+<b class="nc">&nbsp;				for (boolean explicit : new boolean[] { true, false }) {</b>
+<b class="nc">&nbsp;					int dbi = index.getDB(explicit);</b>
+<b class="nc">&nbsp;					MDBStat stat = MDBStat.mallocStack(stack);</b>
+<b class="nc">&nbsp;					mdb_stat(txn, dbi, stat);</b>
+<b class="nc">&nbsp;					cardinality += (double) stat.ms_entries();</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return cardinality;</b>
+&nbsp;			});
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return txnManager.doWith((stack, txn) -&gt; {</b>
+<b class="nc">&nbsp;			final Statistics s = pool.getStatistics();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				MDBVal maxKey = MDBVal.malloc(stack);</b>
+<b class="nc">&nbsp;				ByteBuffer maxKeyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);</b>
+<b class="nc">&nbsp;				index.getMaxKey(maxKeyBuf, subj, pred, obj, context);</b>
+<b class="nc">&nbsp;				maxKeyBuf.flip();</b>
+<b class="nc">&nbsp;				maxKey.mv_data(maxKeyBuf);</b>
+&nbsp;
+<b class="nc">&nbsp;				PointerBuffer pp = stack.mallocPointer(1);</b>
+&nbsp;
+<b class="nc">&nbsp;				MDBVal keyData = MDBVal.mallocStack(stack);</b>
+<b class="nc">&nbsp;				ByteBuffer keyBuf = stack.malloc(TripleStore.MAX_KEY_LENGTH);</b>
+<b class="nc">&nbsp;				MDBVal valueData = MDBVal.mallocStack(stack);</b>
+&nbsp;
+<b class="nc">&nbsp;				double cardinality = 0;</b>
+<b class="nc">&nbsp;				for (boolean explicit : new boolean[] { true, false }) {</b>
+<b class="nc">&nbsp;					Arrays.fill(s.avgRowsPerValue, 1.0);</b>
+<b class="nc">&nbsp;					Arrays.fill(s.avgRowsPerValueCounts, 0);</b>
+&nbsp;
+<b class="nc">&nbsp;					keyBuf.clear();</b>
+<b class="nc">&nbsp;					index.getMinKey(keyBuf, subj, pred, obj, context);</b>
+<b class="nc">&nbsp;					keyBuf.flip();</b>
+&nbsp;
+<b class="nc">&nbsp;					int dbi = index.getDB(explicit);</b>
+&nbsp;
+<b class="nc">&nbsp;					int pos = 0;</b>
+<b class="nc">&nbsp;					long cursor = 0;</b>
+&nbsp;
+&nbsp;					try {
+<b class="nc">&nbsp;						E(mdb_cursor_open(txn, dbi, pp));</b>
+<b class="nc">&nbsp;						cursor = pp.get(0);</b>
+&nbsp;
+&nbsp;						// set cursor to min key
+<b class="nc">&nbsp;						keyData.mv_data(keyBuf);</b>
+<b class="nc">&nbsp;						int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);</b>
+<b class="nc">&nbsp;						if (rc != 0 || mdb_cmp(txn, dbi, keyData, maxKey) &gt;= 0) {</b>
+&nbsp;							break;
+&nbsp;						} else {
+<b class="nc">&nbsp;							Varint.readListUnsigned(keyData.mv_data(), s.minValues);</b>
+&nbsp;						}
+&nbsp;
+&nbsp;						// set cursor to max key
+<b class="nc">&nbsp;						keyData.mv_data(maxKeyBuf);</b>
+<b class="nc">&nbsp;						rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);</b>
+<b class="nc">&nbsp;						if (rc != 0) {</b>
+&nbsp;							// directly go to last value
+<b class="nc">&nbsp;							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);</b>
+&nbsp;						} else {
+&nbsp;							// go to previous value of selected key
+<b class="nc">&nbsp;							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (rc == 0) {</b>
+<b class="nc">&nbsp;							Varint.readListUnsigned(keyData.mv_data(), s.maxValues);</b>
+&nbsp;							// this is required to correctly estimate the range size at a later point
+<b class="nc">&nbsp;							s.startValues[s.MAX_BUCKETS] = s.maxValues;</b>
+&nbsp;						} else {
+&nbsp;							break;
+&nbsp;						}
+&nbsp;
+<b class="nc">&nbsp;						long allSamplesCount = 0;</b>
+<b class="nc">&nbsp;						int bucket = 0;</b>
+<b class="nc">&nbsp;						boolean endOfRange = false;</b>
+<b class="nc">&nbsp;						for (; bucket &lt; s.MAX_BUCKETS &amp;&amp; !endOfRange; bucket++) {</b>
+<b class="nc">&nbsp;							if (bucket != 0) {</b>
+<b class="nc">&nbsp;								bucketStart((double) bucket / s.MAX_BUCKETS, s.minValues, s.maxValues, s.values);</b>
+<b class="nc">&nbsp;								keyBuf.clear();</b>
+<b class="nc">&nbsp;								Varint.writeListUnsigned(keyBuf, s.values);</b>
+<b class="nc">&nbsp;								keyBuf.flip();</b>
+&nbsp;							}
+&nbsp;							// this is the min key for the first iteration
+<b class="nc">&nbsp;							keyData.mv_data(keyBuf);</b>
+&nbsp;
+<b class="nc">&nbsp;							int currentSamplesCount = 0;</b>
+<b class="nc">&nbsp;							rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);</b>
+<b class="nc">&nbsp;							while (rc == 0 &amp;&amp; currentSamplesCount &lt; s.MAX_SAMPLES_PER_BUCKET) {</b>
+<b class="nc">&nbsp;								if (mdb_cmp(txn, dbi, keyData, maxKey) &gt;= 0) {</b>
+<b class="nc">&nbsp;									endOfRange = true;</b>
+<b class="nc">&nbsp;									break;</b>
+&nbsp;								} else {
+<b class="nc">&nbsp;									allSamplesCount++;</b>
+<b class="nc">&nbsp;									currentSamplesCount++;</b>
+&nbsp;
+<b class="nc">&nbsp;									System.arraycopy(s.values, 0, s.lastValues[bucket], 0, s.values.length);</b>
+<b class="nc">&nbsp;									Varint.readListUnsigned(keyData.mv_data(), s.values);</b>
+&nbsp;
+<b class="nc">&nbsp;									if (currentSamplesCount == 1) {</b>
+<b class="nc">&nbsp;										Arrays.fill(s.counts, 1);</b>
+<b class="nc">&nbsp;										System.arraycopy(s.values, 0, s.startValues[bucket], 0, s.values.length);</b>
+&nbsp;									} else {
+<b class="nc">&nbsp;										for (int i = 0; i &lt; s.values.length; i++) {</b>
+<b class="nc">&nbsp;											if (s.values[i] == s.lastValues[bucket][i]) {</b>
+<b class="nc">&nbsp;												s.counts[i]++;</b>
+&nbsp;											} else {
+<b class="nc">&nbsp;												long diff = s.values[i] - s.lastValues[bucket][i];</b>
+<b class="nc">&nbsp;												s.avgRowsPerValueCounts[i]++;</b>
+<b class="nc">&nbsp;												s.avgRowsPerValue[i] = (s.avgRowsPerValue[i]</b>
+&nbsp;														* (s.avgRowsPerValueCounts[i] - 1) +
+&nbsp;														(double) s.counts[i] / diff) / s.avgRowsPerValueCounts[i];
+<b class="nc">&nbsp;												s.counts[i] = 0;</b>
+&nbsp;											}
+&nbsp;										}
+&nbsp;									}
+<b class="nc">&nbsp;									rc = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);</b>
+<b class="nc">&nbsp;									if (rc != 0) {</b>
+&nbsp;										// no more elements are available
+<b class="nc">&nbsp;										endOfRange = true;</b>
+&nbsp;									}
+&nbsp;								}
+&nbsp;							}
+&nbsp;						}
+&nbsp;
+&nbsp;						// at least the seen samples must be counted
+<b class="nc">&nbsp;						cardinality += allSamplesCount;</b>
+&nbsp;
+&nbsp;						// the actual number of buckets (bucket - 1 &quot;real&quot; buckets and one for the last element within
+&nbsp;						// the range)
+<b class="nc">&nbsp;						int buckets = bucket;</b>
+<b class="nc">&nbsp;						for (bucket = 1; bucket &lt; buckets; bucket++) {</b>
+&nbsp;							// find first element that has been changed
+<b class="nc">&nbsp;							pos = 0;</b>
+<b class="nc">&nbsp;							while (pos &lt; s.lastValues[bucket].length</b>
+&nbsp;									&amp;&amp; s.startValues[bucket][pos] == s.lastValues[bucket - 1][pos]) {
+<b class="nc">&nbsp;								pos++;</b>
+&nbsp;							}
+<b class="nc">&nbsp;							if (pos &lt; s.lastValues[bucket].length) {</b>
+&nbsp;								// this may be &lt; 0 if two groups are overlapping
+<b class="nc">&nbsp;								long diffBetweenGroups = Math</b>
+<b class="nc">&nbsp;										.max(s.startValues[bucket][pos] - s.lastValues[bucket - 1][pos], 0);</b>
+&nbsp;								// estimate number of elements between last element of previous bucket and first element
+&nbsp;								// of current bucket
+<b class="nc">&nbsp;								cardinality += s.avgRowsPerValue[pos] * diffBetweenGroups;</b>
+&nbsp;							}
+&nbsp;						}
+&nbsp;					} finally {
+<b class="nc">&nbsp;						if (cursor != 0) {</b>
+<b class="nc">&nbsp;							mdb_cursor_close(cursor);</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+<b class="nc">&nbsp;				return cardinality;</b>
+&nbsp;			} finally {
+<b class="nc">&nbsp;				pool.free(s);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	protected TripleIndex getBestIndex(long subj, long pred, long obj, long context) {
+<b class="nc">&nbsp;		int bestScore = -1;</b>
+<b class="nc">&nbsp;		TripleIndex bestIndex = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;			int score = index.getPatternScore(subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			if (score &gt; bestScore) {</b>
+<b class="nc">&nbsp;				bestScore = score;</b>
+<b class="nc">&nbsp;				bestIndex = index;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return bestIndex;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean requiresResize() {
+<b class="nc">&nbsp;		if (autoGrow) {</b>
+<b class="nc">&nbsp;			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+<b class="nc">&nbsp;		TripleIndex mainIndex = indexes.get(0);</b>
+<b class="nc">&nbsp;		try (MemoryStack stack = MemoryStack.stackPush()) {</b>
+<b class="nc">&nbsp;			MDBVal keyVal = MDBVal.malloc(stack);</b>
+&nbsp;			// use calloc to get an empty data value
+<b class="nc">&nbsp;			MDBVal dataVal = MDBVal.calloc(stack);</b>
+<b class="nc">&nbsp;			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);</b>
+<b class="nc">&nbsp;			mainIndex.toKey(keyBuf, subj, pred, obj, context);</b>
+<b class="nc">&nbsp;			keyBuf.flip();</b>
+<b class="nc">&nbsp;			keyVal.mv_data(keyBuf);</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean foundExplicit = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == 0;</b>
+<b class="nc">&nbsp;			boolean foundImplicit = !foundExplicit &amp;&amp; mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean stAdded = !(foundExplicit || foundImplicit);</b>
+<b class="nc">&nbsp;			if (stAdded || explicit &amp;&amp; foundImplicit) {</b>
+<b class="nc">&nbsp;				if (recordCache == null) {</b>
+<b class="nc">&nbsp;					if (requiresResize()) {</b>
+&nbsp;						// map is full, resize required
+<b class="nc">&nbsp;						recordCache = new TxnRecordCache(dir);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				if (recordCache != null) {</b>
+<b class="nc">&nbsp;					long quad[] = new long[] { subj, pred, obj, context };</b>
+<b class="nc">&nbsp;					if (explicit &amp;&amp; foundImplicit) {</b>
+&nbsp;						// remove implicit statement
+<b class="nc">&nbsp;						recordCache.removeRecord(quad, false);</b>
+&nbsp;					}
+&nbsp;					// put record in cache and return immediately
+<b class="nc">&nbsp;					return recordCache.storeRecord(quad, explicit);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (explicit &amp;&amp; foundImplicit) {</b>
+<b class="nc">&nbsp;					E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));</b>
+&nbsp;				}
+<b class="nc">&nbsp;				E(mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, 0));</b>
+&nbsp;
+<b class="nc">&nbsp;				for (int i = 1; i &lt; indexes.size(); i++) {</b>
+<b class="nc">&nbsp;					TripleIndex index = indexes.get(i);</b>
+<b class="nc">&nbsp;					keyBuf.clear();</b>
+<b class="nc">&nbsp;					index.toKey(keyBuf, subj, pred, obj, context);</b>
+<b class="nc">&nbsp;					keyBuf.flip();</b>
+&nbsp;
+&nbsp;					// update buffer positions in MDBVal
+<b class="nc">&nbsp;					keyVal.mv_data(keyBuf);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (explicit &amp;&amp; foundImplicit) {</b>
+<b class="nc">&nbsp;						E(mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));</b>
+&nbsp;					}
+<b class="nc">&nbsp;					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return stAdded;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param subj     The subject for the pattern, or &lt;tt&gt;-1&lt;/tt&gt; for a wildcard.
+&nbsp;	 * @param pred     The predicate for the pattern, or &lt;tt&gt;-1&lt;/tt&gt; for a wildcard.
+&nbsp;	 * @param obj      The object for the pattern, or &lt;tt&gt;-1&lt;/tt&gt; for a wildcard.
+&nbsp;	 * @param context  The context for the pattern, or &lt;tt&gt;-1&lt;/tt&gt; for a wildcard.
+&nbsp;	 * @param explicit Flag indicating whether explicit or inferred statements should be removed; &lt;tt&gt;true&lt;/tt&gt; removes
+&nbsp;	 *                 explicit statements that match the pattern, &lt;tt&gt;false&lt;/tt&gt; removes inferred statements that match
+&nbsp;	 *                 the pattern.
+&nbsp;	 * @return A mapping of each modified context to the number of statements removed in that context.
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public Map&lt;Long, Long&gt; removeTriplesByContext(long subj, long pred, long obj, long context,
+&nbsp;			boolean explicit) throws IOException {
+<b class="nc">&nbsp;		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);</b>
+<b class="nc">&nbsp;		return removeTriples(records, explicit);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Map&lt;Long, Long&gt; removeTriples(RecordIterator iter, boolean explicit) throws IOException {
+<b class="nc">&nbsp;		final Map&lt;Long, Long&gt; perContextCounts = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (iter; MemoryStack stack = MemoryStack.stackPush()) {</b>
+<b class="nc">&nbsp;			MDBVal keyValue = MDBVal.callocStack(stack);</b>
+<b class="nc">&nbsp;			ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);</b>
+&nbsp;
+&nbsp;			long[] quad;
+<b class="nc">&nbsp;			while ((quad = iter.next()) != null) {</b>
+<b class="nc">&nbsp;				if (recordCache == null) {</b>
+<b class="nc">&nbsp;					if (requiresResize()) {</b>
+&nbsp;						// map is full, resize required
+<b class="nc">&nbsp;						recordCache = new TxnRecordCache(dir);</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				if (recordCache != null) {</b>
+<b class="nc">&nbsp;					recordCache.removeRecord(quad, explicit);</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				for (TripleIndex index : indexes) {</b>
+<b class="nc">&nbsp;					keyBuf.clear();</b>
+<b class="nc">&nbsp;					index.toKey(keyBuf, quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], quad[CONTEXT_IDX]);</b>
+<b class="nc">&nbsp;					keyBuf.flip();</b>
+&nbsp;					// update buffer positions in MDBVal
+<b class="nc">&nbsp;					keyValue.mv_data(keyBuf);</b>
+&nbsp;
+<b class="nc">&nbsp;					E(mdb_del(writeTxn, index.getDB(explicit), keyValue, null));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				perContextCounts.merge(quad[CONTEXT_IDX], 1L, Long::sum);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return perContextCounts;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void updateFromCache() throws IOException {
+<b class="nc">&nbsp;		recordCache.commit();</b>
+<b class="nc">&nbsp;		for (boolean explicit : new boolean[] { true, false }) {</b>
+<b class="nc">&nbsp;			RecordCacheIterator it = recordCache.getRecords(explicit);</b>
+<b class="nc">&nbsp;			try (MemoryStack stack = MemoryStack.stackPush()) {</b>
+<b class="nc">&nbsp;				PointerBuffer pp = stack.mallocPointer(1);</b>
+<b class="nc">&nbsp;				MDBVal keyVal = MDBVal.mallocStack(stack);</b>
+&nbsp;				// use calloc to get an empty data value
+<b class="nc">&nbsp;				MDBVal dataVal = MDBVal.callocStack(stack);</b>
+<b class="nc">&nbsp;				ByteBuffer keyBuf = stack.malloc(MAX_KEY_LENGTH);</b>
+&nbsp;
+&nbsp;				Record r;
+<b class="nc">&nbsp;				while ((r = it.next()) != null) {</b>
+<b class="nc">&nbsp;					if (requiresResize()) {</b>
+&nbsp;						// resize map if required
+<b class="nc">&nbsp;						E(mdb_txn_commit(writeTxn));</b>
+<b class="nc">&nbsp;						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);</b>
+<b class="nc">&nbsp;						E(mdb_env_set_mapsize(env, mapSize));</b>
+<b class="nc">&nbsp;						E(mdb_txn_begin(env, NULL, 0, pp));</b>
+<b class="nc">&nbsp;						writeTxn = pp.get(0);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					for (int i = 0; i &lt; indexes.size(); i++) {</b>
+<b class="nc">&nbsp;						TripleIndex index = indexes.get(i);</b>
+<b class="nc">&nbsp;						keyBuf.clear();</b>
+<b class="nc">&nbsp;						index.toKey(keyBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);</b>
+<b class="nc">&nbsp;						keyBuf.flip();</b>
+&nbsp;						// update buffer positions in MDBVal
+<b class="nc">&nbsp;						keyVal.mv_data(keyBuf);</b>
+&nbsp;
+<b class="nc">&nbsp;						if (r.add) {</b>
+<b class="nc">&nbsp;							E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+<b class="nc">&nbsp;		recordCache.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void startTransaction() throws IOException {
+<b class="nc">&nbsp;		try (MemoryStack stack = stackPush()) {</b>
+<b class="nc">&nbsp;			PointerBuffer pp = stack.mallocPointer(1);</b>
+&nbsp;
+<b class="nc">&nbsp;			E(mdb_txn_begin(env, NULL, 0, pp));</b>
+<b class="nc">&nbsp;			writeTxn = pp.get(0);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
+&nbsp;	 */
+&nbsp;	void endTransaction(boolean commit) throws IOException {
+<b class="nc">&nbsp;		if (writeTxn != 0) {</b>
+<b class="nc">&nbsp;			if (commit) {</b>
+<b class="nc">&nbsp;				E(mdb_txn_commit(writeTxn));</b>
+<b class="nc">&nbsp;				if (recordCache != null) {</b>
+<b class="nc">&nbsp;					StampedLock lock = txnManager.lock();</b>
+<b class="nc">&nbsp;					long stamp = lock.writeLock();</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						txnManager.deactivate();</b>
+<b class="nc">&nbsp;						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);</b>
+<b class="nc">&nbsp;						E(mdb_env_set_mapsize(env, mapSize));</b>
+&nbsp;						// restart write transaction
+<b class="nc">&nbsp;						try (MemoryStack stack = stackPush()) {</b>
+<b class="nc">&nbsp;							PointerBuffer pp = stack.mallocPointer(1);</b>
+<b class="nc">&nbsp;							mdb_txn_begin(env, NULL, 0, pp);</b>
+<b class="nc">&nbsp;							writeTxn = pp.get(0);</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;						updateFromCache();</b>
+&nbsp;						// finally, commit write transaction
+<b class="nc">&nbsp;						E(mdb_txn_commit(writeTxn));</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						recordCache = null;</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							txnManager.activate();</b>
+&nbsp;						} finally {
+<b class="nc">&nbsp;							lock.unlockWrite(stamp);</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				} else {</b>
+&nbsp;					// invalidate open read transaction so that they are not re-used
+&nbsp;					// otherwise iterators won&#39;t see the updated data
+<b class="nc">&nbsp;					txnManager.reset();</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				mdb_txn_abort(writeTxn);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writeTxn = 0;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public void commit() throws IOException {
+<b class="nc">&nbsp;		endTransaction(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void rollback() throws IOException {
+<b class="nc">&nbsp;		endTransaction(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Properties loadProperties(File propFile) throws IOException {
+<b class="nc">&nbsp;		try (InputStream in = new FileInputStream(propFile)) {</b>
+<b class="nc">&nbsp;			Properties properties = new Properties();</b>
+<b class="nc">&nbsp;			properties.load(in);</b>
+<b class="nc">&nbsp;			return properties;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void storeProperties(File propFile) throws IOException {
+<b class="nc">&nbsp;		try (OutputStream out = new FileOutputStream(propFile)) {</b>
+<b class="nc">&nbsp;			properties.store(out, &quot;triple indexes meta-data, DO NOT EDIT!&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	class TripleIndex {
+&nbsp;
+&nbsp;		private final char[] fieldSeq;
+&nbsp;		private final int dbiExplicit, dbiInferred;
+&nbsp;		private final int[] indexMap;
+&nbsp;
+<b class="nc">&nbsp;		public TripleIndex(String fieldSeq) throws IOException {</b>
+<b class="nc">&nbsp;			this.fieldSeq = fieldSeq.toCharArray();</b>
+<b class="nc">&nbsp;			this.indexMap = getIndexes(this.fieldSeq);</b>
+&nbsp;			// open database and use native sort order without comparator
+<b class="nc">&nbsp;			dbiExplicit = openDatabase(env, fieldSeq, MDB_CREATE, null);</b>
+<b class="nc">&nbsp;			dbiInferred = openDatabase(env, fieldSeq + &quot;-inf&quot;, MDB_CREATE, null);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public char[] getFieldSeq() {
+<b class="nc">&nbsp;			return fieldSeq;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public int getDB(boolean explicit) {
+<b class="nc">&nbsp;			return explicit ? dbiExplicit : dbiInferred;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected int[] getIndexes(char[] fieldSeq) {
+<b class="nc">&nbsp;			int[] indexes = new int[fieldSeq.length];</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; fieldSeq.length; i++) {</b>
+<b class="nc">&nbsp;				char field = fieldSeq[i];</b>
+&nbsp;				int fieldIdx;
+<b class="nc">&nbsp;				switch (field) {</b>
+&nbsp;				case &#39;s&#39;:
+<b class="nc">&nbsp;					fieldIdx = SUBJ_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;p&#39;:
+<b class="nc">&nbsp;					fieldIdx = PRED_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;o&#39;:
+<b class="nc">&nbsp;					fieldIdx = OBJ_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;c&#39;:
+<b class="nc">&nbsp;					fieldIdx = CONTEXT_IDX;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new IllegalArgumentException(</b>
+&nbsp;							&quot;invalid character &#39;&quot; + field + &quot;&#39; in field sequence: &quot; + new String(fieldSeq));
+&nbsp;				}
+<b class="nc">&nbsp;				indexes[i] = fieldIdx;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return indexes;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Determines the &#39;score&#39; of this index on the supplied pattern of subject, predicate, object and context IDs.
+&nbsp;		 * The higher the score, the better the index is suited for matching the pattern. Lowest score is 0, which means
+&nbsp;		 * that the index will perform a sequential scan.
+&nbsp;		 */
+&nbsp;		public int getPatternScore(long subj, long pred, long obj, long context) {
+<b class="nc">&nbsp;			int score = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (char field : fieldSeq) {</b>
+<b class="nc">&nbsp;				switch (field) {</b>
+&nbsp;				case &#39;s&#39;:
+<b class="nc">&nbsp;					if (subj &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				case &#39;p&#39;:
+<b class="nc">&nbsp;					if (pred &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				case &#39;o&#39;:
+<b class="nc">&nbsp;					if (obj &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				case &#39;c&#39;:
+<b class="nc">&nbsp;					if (context &gt;= 0) {</b>
+<b class="nc">&nbsp;						score++;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						return score;</b>
+&nbsp;					}
+&nbsp;					break;
+&nbsp;				default:
+<b class="nc">&nbsp;					throw new RuntimeException(&quot;invalid character &#39;&quot; + field + &quot;&#39; in field sequence: &quot;</b>
+&nbsp;							+ new String(fieldSeq));
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return score;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void getMinKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+<b class="nc">&nbsp;			subj = subj &lt;= 0 ? 0 : subj;</b>
+<b class="nc">&nbsp;			pred = pred &lt;= 0 ? 0 : pred;</b>
+<b class="nc">&nbsp;			obj = obj &lt;= 0 ? 0 : obj;</b>
+<b class="nc">&nbsp;			context = context &lt;= 0 ? 0 : context;</b>
+<b class="nc">&nbsp;			toKey(bb, subj, pred, obj, context);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void getMaxKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+<b class="nc">&nbsp;			subj = subj &lt;= 0 ? Long.MAX_VALUE : subj;</b>
+<b class="nc">&nbsp;			pred = pred &lt;= 0 ? Long.MAX_VALUE : pred;</b>
+<b class="nc">&nbsp;			obj = obj &lt;= 0 ? Long.MAX_VALUE : obj;</b>
+<b class="nc">&nbsp;			context = context &lt; 0 ? Long.MAX_VALUE : context;</b>
+<b class="nc">&nbsp;			toKey(bb, subj, pred, obj, context);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		GroupMatcher createMatcher(long subj, long pred, long obj, long context) {
+<b class="nc">&nbsp;			ByteBuffer bb = ByteBuffer.allocate(TripleStore.MAX_KEY_LENGTH);</b>
+<b class="nc">&nbsp;			toKey(bb, subj == -1 ? 0 : subj, pred == -1 ? 0 : pred, obj == -1 ? 0 : obj, context == -1 ? 0 : context);</b>
+<b class="nc">&nbsp;			bb.flip();</b>
+&nbsp;
+<b class="nc">&nbsp;			boolean[] shouldMatch = new boolean[4];</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; fieldSeq.length; i++) {</b>
+<b class="nc">&nbsp;				switch (fieldSeq[i]) {</b>
+&nbsp;				case &#39;s&#39;:
+<b class="nc">&nbsp;					shouldMatch[i] = subj &gt; 0;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;p&#39;:
+<b class="nc">&nbsp;					shouldMatch[i] = pred &gt; 0;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;o&#39;:
+<b class="nc">&nbsp;					shouldMatch[i] = obj &gt; 0;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;c&#39;:
+<b class="nc">&nbsp;					shouldMatch[i] = context &gt;= 0;</b>
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			return new GroupMatcher(bb, shouldMatch);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void toKey(ByteBuffer bb, long subj, long pred, long obj, long context) {
+<b class="nc">&nbsp;			long[] values = new long[4];</b>
+<b class="nc">&nbsp;			for (int i = 0; i &lt; fieldSeq.length; i++) {</b>
+<b class="nc">&nbsp;				switch (fieldSeq[i]) {</b>
+&nbsp;				case &#39;s&#39;:
+<b class="nc">&nbsp;					values[i] = subj;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;p&#39;:
+<b class="nc">&nbsp;					values[i] = pred;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;o&#39;:
+<b class="nc">&nbsp;					values[i] = obj;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				case &#39;c&#39;:
+<b class="nc">&nbsp;					values[i] = context;</b>
+&nbsp;					break;
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			writeListUnsigned(bb, values);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void keyToQuad(ByteBuffer key, long[] quad) {
+&nbsp;			// directly use index map to read values in to correct positions
+<b class="nc">&nbsp;			readListUnsigned(key, indexMap, quad);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return new String(getFieldSeq());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void close() {
+<b class="nc">&nbsp;			mdb_dbi_close(env, dbiExplicit);</b>
+<b class="nc">&nbsp;			mdb_dbi_close(env, dbiInferred);</b>
+<b class="nc">&nbsp;			pool.close();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void clear(long txn) throws IOException {
+<b class="nc">&nbsp;			mdb_drop(txn, dbiExplicit, false);</b>
+<b class="nc">&nbsp;			mdb_drop(txn, dbiInferred, false);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		void destroy(long txn) throws IOException {
+<b class="nc">&nbsp;			mdb_drop(txn, dbiExplicit, true);</b>
+<b class="nc">&nbsp;			mdb_drop(txn, dbiInferred, true);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

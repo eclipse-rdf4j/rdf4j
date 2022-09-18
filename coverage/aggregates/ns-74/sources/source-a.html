@@ -1,0 +1,429 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TupleExprs</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: TupleExprs (org.eclipse.rdf4j.query.algebra.helpers)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TupleExprs</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (6/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.8%
+  </span>
+  <span class="absValue">
+    (37/58)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.5%
+  </span>
+  <span class="absValue">
+    (47/74)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TupleExprs$TupleExprChildrenVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (7/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    88.9%
+  </span>
+  <span class="absValue">
+    (8/9)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    69.2%
+  </span>
+  <span class="absValue">
+    (9/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.7%
+  </span>
+  <span class="absValue">
+    (44/66)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.3%
+  </span>
+  <span class="absValue">
+    (55/83)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.helpers;
+&nbsp;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Deque;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GraphPatternGroupable;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for {@link TupleExpr} objects.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class TupleExprs {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true
+&nbsp;	 * (default). If the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join&#39;s
+&nbsp;	 * arguments will not be taken into account.
+&nbsp;	 *
+&nbsp;	 * @param t a tuple expression.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the TupleExpr contains a subquery projection (outside of a Join), &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean containsSubquery(TupleExpr t) {
+&nbsp;
+<b class="fc">&nbsp;		TupleExpr n = t;</b>
+<b class="fc">&nbsp;		Deque&lt;TupleExpr&gt; queue = null;</b>
+&nbsp;
+&nbsp;		do {
+<b class="fc">&nbsp;			if (n instanceof Projection &amp;&amp; ((Projection) n).isSubquery()) {</b>
+<b class="fc">&nbsp;				return true;</b>
+<b class="fc">&nbsp;			} else if (n instanceof Join) {</b>
+&nbsp;				// projections already inside a Join need not be
+&nbsp;				// taken into account
+<b class="fc">&nbsp;				return false;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				List&lt;TupleExpr&gt; children = getChildren(n);</b>
+<b class="fc">&nbsp;				if (!children.isEmpty()) {</b>
+<b class="fc">&nbsp;					if (queue == null) {</b>
+<b class="fc">&nbsp;						queue = new ArrayDeque&lt;&gt;();</b>
+&nbsp;					}
+<b class="fc">&nbsp;					queue.addAll(children);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			n = queue != null ? queue.poll() : null;</b>
+&nbsp;
+<b class="fc">&nbsp;		} while (n != null);</b>
+&nbsp;
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied {@link TupleExpr} contains a {@link Extension}. If the supplied TupleExpr is a
+&nbsp;	 * {@link Join} or contains a {@link Join}, a {@link Service} clause or a subquery element, extensions inside that
+&nbsp;	 * element&#39;s argument will not be taken into account.
+&nbsp;	 *
+&nbsp;	 * @param t a tuple expression.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the TupleExpr contains an Extension (outside of a Join, Service clause, or
+&nbsp;	 *         subquery), &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean containsExtension(TupleExpr t) {
+<b class="fc">&nbsp;		TupleExpr n = t;</b>
+<b class="fc">&nbsp;		Deque&lt;TupleExpr&gt; queue = null;</b>
+&nbsp;
+&nbsp;		do {
+<b class="fc">&nbsp;			if (n instanceof Extension) {</b>
+<b class="fc">&nbsp;				return true;</b>
+<b class="pc">&nbsp;			} else if (n instanceof Join</b>
+<b class="pc">&nbsp;					|| (n instanceof Projection &amp;&amp; ((Projection) n).isSubquery())</b>
+&nbsp;					|| (n instanceof Service)) {
+<b class="fc">&nbsp;				return false;</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				List&lt;TupleExpr&gt; children = getChildren(n);</b>
+<b class="fc">&nbsp;				if (!children.isEmpty()) {</b>
+<b class="fc">&nbsp;					if (queue == null) {</b>
+<b class="fc">&nbsp;						queue = new ArrayDeque&lt;&gt;();</b>
+&nbsp;					}
+<b class="fc">&nbsp;					queue.addAll(children);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			n = queue != null ? queue.poll() : null;</b>
+&nbsp;
+<b class="fc">&nbsp;		} while (n != null);</b>
+&nbsp;
+<b class="fc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied {@link TupleExpr} represents a variable scope change.
+&nbsp;	 *
+&nbsp;	 * @param expr a {@link TupleExpr}
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the {@link TupleExpr} implements {@link VariableScopeChange} and has its scope
+&nbsp;	 *         change flag set to &lt;code&gt;true&lt;/code&gt;, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isVariableScopeChange(TupleExpr expr) {
+<b class="pc">&nbsp;		if (expr instanceof VariableScopeChange) {</b>
+<b class="fc">&nbsp;			return ((VariableScopeChange) expr).isVariableScopeChange();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied {@link TupleExpr} represents a group graph pattern.
+&nbsp;	 *
+&nbsp;	 * @param expr a {@link TupleExpr}
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the {@link TupleExpr} is {@link GraphPatternGroupable} and has its graph pattern
+&nbsp;	 *         group flag set to &lt;code&gt;true&lt;/code&gt;, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 *
+&nbsp;	 * @deprecated since 3.2. Use {@link #isVariableScopeChange(TupleExpr)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static boolean isGraphPatternGroup(TupleExpr expr) {
+<b class="nc">&nbsp;		if (expr instanceof GraphPatternGroupable) {</b>
+<b class="nc">&nbsp;			return ((GraphPatternGroupable) expr).isGraphPatternGroup();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection}. If the supplied TupleExpr is a
+&nbsp;	 * {@link Join} or contains a {@link Join}, projections inside that Join&#39;s arguments will not be taken into account.
+&nbsp;	 *
+&nbsp;	 * @param t a tuple expression.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if the TupleExpr contains a projection (outside of a Join), &lt;code&gt;false&lt;/code&gt;
+&nbsp;	 *         otherwise.
+&nbsp;	 * @deprecated since 2.0. Use {@link #containsSubquery(TupleExpr)} instead.
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static boolean containsProjection(TupleExpr t) {
+<b class="nc">&nbsp;		Deque&lt;TupleExpr&gt; queue = new ArrayDeque&lt;&gt;();</b>
+<b class="nc">&nbsp;		queue.add(t);</b>
+<b class="nc">&nbsp;		while (!queue.isEmpty()) {</b>
+<b class="nc">&nbsp;			TupleExpr n = queue.removeFirst();</b>
+<b class="nc">&nbsp;			if (n instanceof Projection) {</b>
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} else if (n instanceof Join) {</b>
+&nbsp;				// projections already inside a Join need not be
+&nbsp;				// taken into account
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				queue.addAll(getChildren(n));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns {@link TupleExpr} children of the given node.
+&nbsp;	 *
+&nbsp;	 * @param t a tuple expression.
+&nbsp;	 * @return a list of TupleExpr children.
+&nbsp;	 */
+&nbsp;	public static List&lt;TupleExpr&gt; getChildren(TupleExpr t) {
+<b class="fc">&nbsp;		var visitor = new TupleExprChildrenVisitor&lt;RuntimeException&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		t.visitChildren(visitor);</b>
+&nbsp;
+<b class="fc">&nbsp;		return visitor.getChildren();</b>
+&nbsp;	}
+&nbsp;
+<b class="fc">&nbsp;	private static class TupleExprChildrenVisitor&lt;X extends Exception&gt; extends AbstractQueryModelVisitor&lt;X&gt; {</b>
+&nbsp;
+&nbsp;		private List&lt;TupleExpr&gt; children;
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meetNode(QueryModelNode node) {
+<b class="fc">&nbsp;			if (node instanceof TupleExpr) {</b>
+<b class="fc">&nbsp;				if (children == null) {</b>
+<b class="fc">&nbsp;					children = Collections.singletonList(((TupleExpr) node));</b>
+<b class="pc">&nbsp;				} else if (children.size() == 1) {</b>
+<b class="fc">&nbsp;					children = new ArrayList&lt;&gt;(children);</b>
+<b class="fc">&nbsp;					children.add((TupleExpr) node);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					children.add((TupleExpr) node);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public List&lt;TupleExpr&gt; getChildren() {
+<b class="fc">&nbsp;			return children == null ? Collections.emptyList() : children;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates an (anonymous) Var representing a constant value. The variable name will be derived from the actual value
+&nbsp;	 * to guarantee uniqueness.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 * @return an (anonymous) Var representing a constant value.
+&nbsp;	 */
+&nbsp;	public static Var createConstVar(Value value) {
+<b class="fc">&nbsp;		String varName = getConstVarName(value);</b>
+<b class="fc">&nbsp;		return new Var(varName, value, true, true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String getConstVarName(Value value) {
+<b class="pc">&nbsp;		if (value == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;value can not be null&quot;);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// We use toHexString to get a more compact stringrep.
+<b class="fc">&nbsp;		String uniqueStringForValue = Integer.toHexString(value.stringValue().hashCode());</b>
+&nbsp;
+<b class="fc">&nbsp;		if (value instanceof Literal) {</b>
+<b class="fc">&nbsp;			uniqueStringForValue += &quot;_lit&quot;;</b>
+&nbsp;
+&nbsp;			// we need to append datatype and/or language tag to ensure a unique
+&nbsp;			// var name (see SES-1927)
+<b class="fc">&nbsp;			Literal lit = (Literal) value;</b>
+<b class="pc">&nbsp;			if (lit.getDatatype() != null) {</b>
+<b class="fc">&nbsp;				uniqueStringForValue += &quot;_&quot; + Integer.toHexString(lit.getDatatype().hashCode());</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (lit.getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;				uniqueStringForValue += &quot;_&quot; + Integer.toHexString(lit.getLanguage().hashCode());</b>
+&nbsp;			}
+<b class="pc">&nbsp;		} else if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			uniqueStringForValue += &quot;_node&quot;;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			uniqueStringForValue += &quot;_uri&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return &quot;_const_&quot; + uniqueStringForValue;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies if the supplied expression is a FILTER (NOT) EXISTS operation
+&nbsp;	 *
+&nbsp;	 * @param expr a tuple expression
+&nbsp;	 * @return true if the supplied expression is a FILTER (NOT) EXISTS operation, false otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isFilterExistsFunction(TupleExpr expr) {
+<b class="nc">&nbsp;		if (expr instanceof Filter) {</b>
+<b class="nc">&nbsp;			Filter filter = (Filter) expr;</b>
+<b class="nc">&nbsp;			if (filter.getCondition() instanceof Exists) {</b>
+<b class="nc">&nbsp;				return true;</b>
+<b class="nc">&nbsp;			} else if (filter.getCondition() instanceof Not) {</b>
+<b class="nc">&nbsp;				Not n = (Not) filter.getCondition();</b>
+<b class="nc">&nbsp;				return (n.getArg() instanceof Exists);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

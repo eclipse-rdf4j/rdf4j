@@ -1,0 +1,304 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConnectionsGroup</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.shacl.wrapper.data</a>
+</div>
+
+<h1>Coverage Summary for Class: ConnectionsGroup (org.eclipse.rdf4j.sail.shacl.wrapper.data)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConnectionsGroup</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/47)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ConnectionsGroup$RdfsSubClassOfReasonerProvider</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/15)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/47)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sail.shacl.wrapper.data;
+&nbsp;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.sail.Sail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ShaclSailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.Stats;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.BufferedSplitter;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.PlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnBufferedPlanNode;
+&nbsp;import org.eclipse.rdf4j.sail.shacl.ast.planNodes.UnorderedSelect;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; *
+&nbsp; * @apiNote since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+&nbsp; *          warning from one release to the next.
+&nbsp; *
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public class ConnectionsGroup implements AutoCloseable {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(ConnectionsGroup.class);</b>
+&nbsp;
+&nbsp;	private final SailConnection baseConnection;
+&nbsp;	private final SailConnection previousStateConnection;
+&nbsp;
+&nbsp;	private final SailConnection addedStatements;
+&nbsp;	private final SailConnection removedStatements;
+&nbsp;
+&nbsp;	private final ShaclSailConnection.Settings transactionSettings;
+&nbsp;
+&nbsp;	private final Stats stats;
+&nbsp;
+&nbsp;	private final RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider;
+&nbsp;	private final boolean sparqlValidation;
+&nbsp;
+&nbsp;	// used to cache Select plan nodes so that we don&#39;t query a store for the same data during the same validation step.
+<b class="nc">&nbsp;	private final Map&lt;PlanNode, BufferedSplitter&gt; nodeCache = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	public ConnectionsGroup(SailConnection baseConnection,
+&nbsp;			SailConnection previousStateConnection, Sail addedStatements, Sail removedStatements,
+&nbsp;			Stats stats, RdfsSubClassOfReasonerProvider rdfsSubClassOfReasonerProvider,
+<b class="nc">&nbsp;			ShaclSailConnection.Settings transactionSettings, boolean sparqlValidation) {</b>
+<b class="nc">&nbsp;		this.baseConnection = baseConnection;</b>
+<b class="nc">&nbsp;		this.previousStateConnection = previousStateConnection;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.stats = stats;</b>
+<b class="nc">&nbsp;		this.rdfsSubClassOfReasonerProvider = rdfsSubClassOfReasonerProvider;</b>
+<b class="nc">&nbsp;		this.transactionSettings = transactionSettings;</b>
+<b class="nc">&nbsp;		this.sparqlValidation = sparqlValidation;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (addedStatements != null) {</b>
+<b class="nc">&nbsp;			this.addedStatements = addedStatements.getConnection();</b>
+<b class="nc">&nbsp;			this.addedStatements.begin(IsolationLevels.NONE);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.addedStatements = null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (removedStatements != null) {</b>
+<b class="nc">&nbsp;			this.removedStatements = removedStatements.getConnection();</b>
+<b class="nc">&nbsp;			this.removedStatements.begin(IsolationLevels.NONE);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.removedStatements = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public SailConnection getPreviousStateConnection() {
+<b class="nc">&nbsp;		return previousStateConnection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasPreviousStateConnection() {
+<b class="nc">&nbsp;		return previousStateConnection != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SailConnection getAddedStatements() {
+<b class="nc">&nbsp;		return addedStatements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SailConnection getRemovedStatements() {
+<b class="nc">&nbsp;		return removedStatements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() {
+<b class="nc">&nbsp;		if (addedStatements != null) {</b>
+<b class="nc">&nbsp;			addedStatements.commit();</b>
+<b class="nc">&nbsp;			addedStatements.close();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (removedStatements != null) {</b>
+<b class="nc">&nbsp;			removedStatements.commit();</b>
+<b class="nc">&nbsp;			removedStatements.close();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		nodeCache.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SailConnection getBaseConnection() {
+<b class="nc">&nbsp;		return baseConnection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public PlanNode getCachedNodeFor(PlanNode planNode) {
+&nbsp;
+<b class="nc">&nbsp;		if (!transactionSettings.isCacheSelectNodes()) {</b>
+<b class="nc">&nbsp;			return planNode;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (planNode instanceof UnorderedSelect || planNode instanceof UnBufferedPlanNode</b>
+&nbsp;				|| (planNode instanceof BufferedSplitter.BufferedSplitterPlaneNode
+&nbsp;						&amp;&amp; ((BufferedSplitter.BufferedSplitterPlaneNode) planNode).cached)) {
+<b class="nc">&nbsp;			return planNode;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			boolean[] matchedCache = { true };</b>
+&nbsp;
+<b class="nc">&nbsp;			BufferedSplitter bufferedSplitter = nodeCache.computeIfAbsent(planNode, parent -&gt; {</b>
+<b class="nc">&nbsp;				matchedCache[0] = false;</b>
+<b class="nc">&nbsp;				return new BufferedSplitter(parent, true, true);</b>
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			logger.debug(&quot;Found in cache: {} {}  -  {} : {}&quot;, matchedCache[0] ? &quot; TRUE&quot; : &quot;FALSE&quot;,</b>
+<b class="nc">&nbsp;					bufferedSplitter.getId(), planNode.getClass().getSimpleName(), planNode.getId());</b>
+&nbsp;
+<b class="nc">&nbsp;			return bufferedSplitter.getPlanNode();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return nodeCache.computeIfAbsent(planNode, BufferedSplitter::new).getPlanNode();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public RdfsSubClassOfReasoner getRdfsSubClassOfReasoner() {
+<b class="nc">&nbsp;		return rdfsSubClassOfReasonerProvider.getRdfsSubClassOfReasoner();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Stats getStats() {
+<b class="nc">&nbsp;		return stats;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ShaclSailConnection.Settings getTransactionSettings() {
+<b class="nc">&nbsp;		return transactionSettings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isSparqlValidation() {
+<b class="nc">&nbsp;		return sparqlValidation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean hasAddedStatements() {
+<b class="nc">&nbsp;		return addedStatements != null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public interface RdfsSubClassOfReasonerProvider {
+&nbsp;		RdfsSubClassOfReasoner getRdfsSubClassOfReasoner();
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

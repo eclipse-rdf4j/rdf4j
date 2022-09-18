@@ -1,0 +1,184 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LockingIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks</a>
+</div>
+
+<h1>Coverage Summary for Class: LockingIteration (org.eclipse.rdf4j.common.concurrent.locks)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LockingIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+&nbsp;
+&nbsp;/**
+&nbsp; * An Iteration that holds on to a lock until the Iteration is closed. Upon closing, the underlying Iteration is closed
+&nbsp; * before the lock is released. This iterator closes itself as soon as all elements have been read.
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public class LockingIteration&lt;E, X extends Exception&gt; extends IterationWrapper&lt;E, X&gt; {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The lock to release when the Iteration is closed.
+&nbsp;	 */
+&nbsp;	private final Lock lock;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new LockingIteration.
+&nbsp;	 *
+&nbsp;	 * @param lock The lock to release when the itererator is closed, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @param iter The underlying Iteration, must not be &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.1.0&quot;, forRemoval = true)
+&nbsp;	public LockingIteration(Lock lock, Iteration&lt;? extends E, X&gt; iter) {
+<b class="nc">&nbsp;		super(iter);</b>
+<b class="nc">&nbsp;		if (iter instanceof EmptyIteration) {</b>
+<b class="nc">&nbsp;			lock.release();</b>
+<b class="nc">&nbsp;			this.lock = null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			this.lock = Objects.requireNonNull(lock);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static &lt;T, R extends Exception&gt; CloseableIteration&lt;T, R&gt; getInstance(Lock lock,
+&nbsp;			CloseableIteration&lt;T, R&gt; iter) {
+<b class="nc">&nbsp;		if (iter instanceof EmptyIteration) {</b>
+<b class="nc">&nbsp;			lock.release();</b>
+<b class="nc">&nbsp;			return iter;</b>
+&nbsp;		} else
+<b class="nc">&nbsp;			return new LockingIteration&lt;&gt;(lock, iter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws X {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (lock != null) {</b>
+<b class="nc">&nbsp;				lock.release();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

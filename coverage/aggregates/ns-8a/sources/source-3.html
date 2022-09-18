@@ -1,0 +1,960 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ParsedQueryPreprocessor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql.experimental</a>
+</div>
+
+<h1>Coverage Summary for Class: ParsedQueryPreprocessor (org.eclipse.rdf4j.queryrender.sparql.experimental)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ParsedQueryPreprocessor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/85)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/86)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/271)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql.experimental;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Stack;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Add;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Avg;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Clear;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Coalesce;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAll;
+&nbsp;import org.eclipse.rdf4j.query.algebra.CompareAny;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Copy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Count;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Create;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.DeleteData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Exists;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Group;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupConcat;
+&nbsp;import org.eclipse.rdf4j.query.algebra.GroupElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.In;
+&nbsp;import org.eclipse.rdf4j.query.algebra.InsertData;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsResource;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Label;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LangMatches;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Load;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LocalName;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MathExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Max;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Min;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Modify;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Move;
+&nbsp;import org.eclipse.rdf4j.query.algebra.MultiProjection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Namespace;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Not;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.OrderElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Projection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sample;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Slice;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Sum;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UpdateExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.queryrender.sparql.experimental.SerializableParsedTupleQuery.QueryModifier;
+&nbsp;
+&nbsp;import com.google.common.collect.Lists;
+&nbsp;
+&nbsp;/**
+&nbsp; * A query visitor that parses the incoming query or TupleExpr and collects meta-level information that is later used by
+&nbsp; * the {@link SparqlQueryRenderer} (e.g., information about the included subquery, all group, order, and slice
+&nbsp; * operations etc.).
+&nbsp; *
+&nbsp; * @author Andriy Nikolov
+&nbsp; * @author Jeen Broekstra
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;class ParsedQueryPreprocessor extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+<b class="nc">&nbsp;	public Map&lt;Projection, SerializableParsedTupleQuery&gt; queriesByProjection = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	public Stack&lt;SerializableParsedTupleQuery&gt; queryProfilesStack = new Stack&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	public SerializableParsedTupleQuery currentQueryProfile = new SerializableParsedTupleQuery();</b>
+&nbsp;
+<b class="nc">&nbsp;	public Slice currentSlice = null;</b>
+<b class="nc">&nbsp;	public SerializableParsedTupleQuery.QueryModifier currentModifier = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	public MultiProjection graphQueryProjection = null;</b>
+&nbsp;
+<b class="nc">&nbsp;	public ParsedQueryPreprocessor() {</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Processes the incoming parsed query collecting the information required for rendering.
+&nbsp;	 *
+&nbsp;	 * @param query standard {@link ParsedTupleQuery}
+&nbsp;	 * @return {@link SerializableParsedTupleQuery} containing the original query and the required additional
+&nbsp;	 *         information.
+&nbsp;	 */
+&nbsp;	public SerializableParsedTupleQuery transformToSerialize(ParsedTupleQuery query) {
+<b class="nc">&nbsp;		query.getTupleExpr().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (SerializableParsedTupleQuery tmp : this.queriesByProjection.values()) {</b>
+<b class="nc">&nbsp;			cleanBindingSetAssignments(tmp);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		currentQueryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+<b class="nc">&nbsp;		if (query.getDataset() != null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.dataset = query.getDataset();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return currentQueryProfile;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public SerializableParsedConstructQuery transformToSerialize(ParsedGraphQuery query) {
+<b class="nc">&nbsp;		TupleExpr tupleExpr = query.getTupleExpr();</b>
+<b class="nc">&nbsp;		if (tupleExpr instanceof QueryRoot) {</b>
+<b class="nc">&nbsp;			tupleExpr = ((QueryRoot) tupleExpr).getArg();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		tupleExpr.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (SerializableParsedTupleQuery tmp : this.queriesByProjection.values()) {</b>
+<b class="nc">&nbsp;			cleanBindingSetAssignments(tmp);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		currentQueryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+&nbsp;
+<b class="nc">&nbsp;		SerializableParsedConstructQuery queryProfile = new SerializableParsedConstructQuery();</b>
+<b class="nc">&nbsp;		queryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+<b class="nc">&nbsp;		queryProfile.whereClause = currentQueryProfile.whereClause;</b>
+<b class="nc">&nbsp;		if (queryProfile.whereClause instanceof Extension) {</b>
+<b class="nc">&nbsp;			queryProfile.whereClause = ((Extension) queryProfile.whereClause).getArg();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (queryProfile.whereClause instanceof Slice) {</b>
+<b class="nc">&nbsp;			queryProfile.whereClause = ((Slice) queryProfile.whereClause).getArg();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (queryProfile.whereClause instanceof Order) {</b>
+<b class="nc">&nbsp;			queryProfile.whereClause = ((Order) queryProfile.whereClause).getArg();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		queryProfile.bindings = currentQueryProfile.bindings;</b>
+<b class="nc">&nbsp;		queryProfile.limit = currentQueryProfile.limit;</b>
+<b class="nc">&nbsp;		queryProfile.dataset = query.getDataset();</b>
+<b class="nc">&nbsp;		queryProfile.orderBy = currentQueryProfile.orderBy;</b>
+&nbsp;		// There was no multi projection, it means that there is
+&nbsp;		// only one triple pattern in the CONSTRUCT block
+&nbsp;		// and it is represented as {@link Projection}.
+&nbsp;		// We transform it into MultiProjection to unify the serialization.
+<b class="nc">&nbsp;		if (this.graphQueryProjection == null) {</b>
+<b class="nc">&nbsp;			this.graphQueryProjection = new MultiProjection();</b>
+<b class="nc">&nbsp;			this.graphQueryProjection.setProjections(</b>
+<b class="nc">&nbsp;					Lists.newArrayList(currentQueryProfile.projection.getProjectionElemList()));</b>
+<b class="nc">&nbsp;			this.graphQueryProjection.setArg(currentQueryProfile.projection.getArg());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		queryProfile.projection = this.graphQueryProjection;</b>
+<b class="nc">&nbsp;		queryProfile.extensionElements = currentQueryProfile.extensionElements;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (query instanceof ParsedDescribeQuery) {</b>
+<b class="nc">&nbsp;			queryProfile.describe = true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return queryProfile;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public SerializableParsedUpdate transformToSerialize(UpdateExpr update, Dataset dataset) {
+<b class="nc">&nbsp;		update.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (SerializableParsedTupleQuery tmp : this.queriesByProjection.values()) {</b>
+<b class="nc">&nbsp;			cleanBindingSetAssignments(tmp);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		currentQueryProfile.dataset = dataset;</b>
+<b class="nc">&nbsp;		currentQueryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+<b class="nc">&nbsp;		SerializableParsedUpdate queryProfile = new SerializableParsedUpdate();</b>
+<b class="nc">&nbsp;		queryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause instanceof Extension) {</b>
+<b class="nc">&nbsp;			queryProfile.whereClause = ((Extension) currentQueryProfile.whereClause).getArg();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			queryProfile.whereClause = currentQueryProfile.whereClause;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		queryProfile.bindings = currentQueryProfile.bindings;</b>
+<b class="nc">&nbsp;		queryProfile.limit = currentQueryProfile.limit;</b>
+<b class="nc">&nbsp;		queryProfile.updateExpr = update;</b>
+<b class="nc">&nbsp;		return queryProfile;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Processes the incoming parsed ASK query collecting the information required for rendering.
+&nbsp;	 *
+&nbsp;	 * @param query standard {@link ParsedBooleanQuery}
+&nbsp;	 * @return {@link SerializableParsedBooleanQuery} containing the original query and the required additional
+&nbsp;	 *         information.
+&nbsp;	 */
+&nbsp;	public SerializableParsedBooleanQuery transformToSerialize(ParsedBooleanQuery query) {
+<b class="nc">&nbsp;		TupleExpr tupleExpr = query.getTupleExpr();</b>
+<b class="nc">&nbsp;		if (tupleExpr instanceof QueryRoot)</b>
+<b class="nc">&nbsp;			tupleExpr = ((QueryRoot) tupleExpr).getArg();</b>
+<b class="nc">&nbsp;		if (!(tupleExpr instanceof Slice)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(</b>
+&nbsp;					&quot;Unexpected boolean query: Slice expected as a root element, was &quot;
+<b class="nc">&nbsp;							+ tupleExpr.getSignature());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Slice queryRoot = (Slice) tupleExpr.clone();</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr whereClause = queryRoot.getArg();</b>
+&nbsp;
+<b class="nc">&nbsp;		Projection fakeProjection = new Projection(whereClause);</b>
+<b class="nc">&nbsp;		whereClause.setParentNode(fakeProjection);</b>
+<b class="nc">&nbsp;		queryRoot.setArg(fakeProjection);</b>
+<b class="nc">&nbsp;		fakeProjection.setParentNode(queryRoot);</b>
+&nbsp;
+<b class="nc">&nbsp;		queryRoot.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (SerializableParsedTupleQuery tmp : this.queriesByProjection.values()) {</b>
+<b class="nc">&nbsp;			cleanBindingSetAssignments(tmp);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		currentQueryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+<b class="nc">&nbsp;		SerializableParsedBooleanQuery queryProfile = new SerializableParsedBooleanQuery();</b>
+<b class="nc">&nbsp;		queryProfile.projection = currentQueryProfile.projection;</b>
+<b class="nc">&nbsp;		queryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+<b class="nc">&nbsp;		queryProfile.whereClause = currentQueryProfile.whereClause;</b>
+<b class="nc">&nbsp;		queryProfile.bindings = currentQueryProfile.bindings;</b>
+<b class="nc">&nbsp;		queryProfile.extensionElements = currentQueryProfile.extensionElements;</b>
+<b class="nc">&nbsp;		queryProfile.dataset = query.getDataset();</b>
+<b class="nc">&nbsp;		return queryProfile;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Processes the incoming parsed {@link TupleExpr} collecting the information required for rendering.
+&nbsp;	 *
+&nbsp;	 * @param tupleExpr standard {@link TupleExpr}
+&nbsp;	 * @return {@link SerializableParsedTupleQuery} containing the original query and the required additional
+&nbsp;	 *         information.
+&nbsp;	 */
+&nbsp;	public SerializableParsedTupleQuery transformToSerialize(TupleExpr tupleExpr) {
+&nbsp;
+<b class="nc">&nbsp;		tupleExpr.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (SerializableParsedTupleQuery query : this.queriesByProjection.values()) {</b>
+<b class="nc">&nbsp;			cleanBindingSetAssignments(query);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		cleanBindingSetAssignments(currentQueryProfile);</b>
+&nbsp;
+<b class="nc">&nbsp;		currentQueryProfile.subQueriesByProjection.putAll(queriesByProjection);</b>
+<b class="nc">&nbsp;		return currentQueryProfile;</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * If we have a VALUES clause inside the WHERE clause, we should not render it twice.
+&nbsp;	 */
+&nbsp;	protected void cleanBindingSetAssignments(SerializableParsedTupleQuery query) {
+<b class="nc">&nbsp;		if (query.bindings != null &amp;&amp; query.whereClause != null</b>
+<b class="nc">&nbsp;				&amp;&amp; isAncestor(query.whereClause, query.bindings)) {</b>
+<b class="nc">&nbsp;			query.bindings = null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean isAncestor(QueryModelNode node1, QueryModelNode node2) {
+<b class="nc">&nbsp;		if (node2.getParentNode() == null) {</b>
+<b class="nc">&nbsp;			return false;</b>
+<b class="nc">&nbsp;		} else if (node2.getParentNode().equals(node1)) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return isAncestor(node1, node2.getParentNode());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(QueryRoot node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Add add) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		super.meet(add);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(And node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getLeftArg());</b>
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getRightArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ArbitraryLengthPath node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Avg node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(BindingSetAssignment node) throws RuntimeException {
+<b class="nc">&nbsp;		currentQueryProfile.bindings = node;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(BNodeGenerator node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Bound node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Clear clear) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(clear);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Coalesce node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getArguments().stream().forEach(arg -&gt; ensureNonAnonymousVar(arg));</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Compare node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getLeftArg());</b>
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getRightArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAll node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(CompareAny node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Copy copy) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(copy);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Count node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Create create) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(create);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Datatype node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(DeleteData deleteData) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(deleteData);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Difference node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			this.currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Distinct node) throws RuntimeException {
+<b class="nc">&nbsp;		currentModifier = SerializableParsedTupleQuery.QueryModifier.DISTINCT;</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(EmptySet node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Exists node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Extension node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ExtensionElem node) throws RuntimeException {
+<b class="nc">&nbsp;		currentQueryProfile.extensionElements.put(node.getName(), node);</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Filter node) throws RuntimeException {
+<b class="nc">&nbsp;		boolean maybeHaving = false;</b>
+<b class="nc">&nbsp;		if (currentQueryProfile.groupBy == null) {</b>
+<b class="nc">&nbsp;			maybeHaving = true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (maybeHaving &amp;&amp; currentQueryProfile.groupBy != null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.having = node;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(FunctionCall node) throws RuntimeException {
+<b class="nc">&nbsp;		node.getArgs().stream().forEach(arg -&gt; ensureNonAnonymousVar(arg));</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Group node) throws RuntimeException {
+<b class="nc">&nbsp;		if (this.currentQueryProfile.whereClause != null) {</b>
+<b class="nc">&nbsp;			this.currentQueryProfile.whereClause = null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (this.currentQueryProfile.groupBy == null) {</b>
+<b class="nc">&nbsp;			this.currentQueryProfile.groupBy = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(GroupConcat node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(GroupElem node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(If node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getCondition());</b>
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getResult());</b>
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getAlternative());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(In node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(InsertData insertData) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(insertData);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Intersection node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			this.currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IRIFunction node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsBNode node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsLiteral node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsNumeric node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsResource node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsURI node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Join node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Label node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Lang node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LangMatches node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getLeftArg());</b>
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getRightArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LeftJoin node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Load load) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(load);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LocalName node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(MathExpr node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Max node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Min node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Modify modify) throws RuntimeException {
+<b class="nc">&nbsp;		currentQueryProfile.modifier = currentModifier;</b>
+<b class="nc">&nbsp;		currentModifier = null;</b>
+<b class="nc">&nbsp;		super.meet(modify);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Move move) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(move);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(MultiProjection node) throws RuntimeException {
+<b class="nc">&nbsp;		this.graphQueryProjection = node;</b>
+<b class="nc">&nbsp;		currentQueryProfile.modifier = currentModifier;</b>
+<b class="nc">&nbsp;		currentModifier = null;</b>
+<b class="nc">&nbsp;		Projection fakeProjection = new Projection();</b>
+&nbsp;
+<b class="nc">&nbsp;		node.getProjections()</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.forEach(</b>
+<b class="nc">&nbsp;						projList -&gt; projList.getElements()</b>
+<b class="nc">&nbsp;								.stream()</b>
+<b class="nc">&nbsp;								.forEach(</b>
+<b class="nc">&nbsp;										elem -&gt; fakeProjection.getProjectionElemList().addElement(elem)));</b>
+<b class="nc">&nbsp;		fakeProjection.setArg(node.getArg().clone());</b>
+<b class="nc">&nbsp;		currentQueryProfile.projection = fakeProjection;</b>
+<b class="nc">&nbsp;		queriesByProjection.put(fakeProjection, currentQueryProfile);</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Namespace node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Not node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Or node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Order node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		if (currentQueryProfile.orderBy == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.orderBy = node;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(OrderElem node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Projection node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		boolean isSubquery = false;</b>
+<b class="nc">&nbsp;		if ((currentQueryProfile.whereClause != null) || (currentQueryProfile.projection != null)) {</b>
+&nbsp;			// we have a subquery
+<b class="nc">&nbsp;			isSubquery = true;</b>
+<b class="nc">&nbsp;			if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;				currentQueryProfile.whereClause = node;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			queryProfilesStack.push(currentQueryProfile);</b>
+<b class="nc">&nbsp;			currentQueryProfile = new SerializableParsedTupleQuery();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		currentQueryProfile.modifier = currentModifier;</b>
+<b class="nc">&nbsp;		currentModifier = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		currentQueryProfile.projection = node;</b>
+<b class="nc">&nbsp;		queriesByProjection.put(node, currentQueryProfile);</b>
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isSubquery) {</b>
+<b class="nc">&nbsp;			currentQueryProfile = queryProfilesStack.pop();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ProjectionElem node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ProjectionElemList node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Reduced node) throws RuntimeException {
+<b class="nc">&nbsp;		currentModifier = QueryModifier.REDUCED;</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Regex node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getLeftArg());</b>
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getRightArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(SameTerm node) throws RuntimeException {
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getLeftArg());</b>
+<b class="nc">&nbsp;		ensureNonAnonymousVar(node.getRightArg());</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Sample node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Service node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(SingletonSet node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Slice node) throws RuntimeException {
+<b class="nc">&nbsp;		currentSlice = node;</b>
+&nbsp;
+<b class="nc">&nbsp;		currentQueryProfile.limit = node;</b>
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(StatementPattern node) throws RuntimeException {
+&nbsp;
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			this.currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Str node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Sum node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Union node) throws RuntimeException {
+<b class="nc">&nbsp;		if (currentQueryProfile.whereClause == null) {</b>
+<b class="nc">&nbsp;			currentQueryProfile.whereClause = node;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ValueConstant node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Var node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ZeroLengthPath node) throws RuntimeException {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void ensureNonAnonymousVar(ValueExpr valueExpr) {
+<b class="nc">&nbsp;		if (valueExpr instanceof Var) {</b>
+<b class="nc">&nbsp;			Var var = (Var) valueExpr;</b>
+<b class="nc">&nbsp;			if (var.isAnonymous() &amp;&amp; !var.isConstant()) {</b>
+<b class="nc">&nbsp;				currentQueryProfile.nonAnonymousVars.put(var.getName(), var);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

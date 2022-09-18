@@ -1,0 +1,620 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailDatasetImpl</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.base</a>
+</div>
+
+<h1>Coverage Summary for Class: SailDatasetImpl (org.eclipse.rdf4j.sail.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailDatasetImpl</td>
+<td class="coverageStat">
+  <span class="percent">
+    53.8%
+  </span>
+  <span class="absValue">
+    (7/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    23.9%
+  </span>
+  <span class="absValue">
+    (22/92)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    31.4%
+  </span>
+  <span class="absValue">
+    (33/105)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailDatasetImpl$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailDatasetImpl$2</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/27)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailDatasetImpl$3</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (2/2)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">SailDatasetImpl$4</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (9/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    16.2%
+  </span>
+  <span class="absValue">
+    (24/148)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    21.3%
+  </span>
+  <span class="absValue">
+    (35/164)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.base;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Map.Entry;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.function.Function;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.FilterIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.UnionIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;
+&nbsp;/**
+&nbsp; * A view of an {@link SailSource} that is derived from a backing {@link SailDataset}.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;class SailDatasetImpl implements SailDataset {
+&nbsp;
+<b class="fc">&nbsp;	private static final EmptyIteration&lt;Triple, SailException&gt; TRIPLE_EMPTY_ITERATION = new EmptyIteration&lt;&gt;();</b>
+<b class="fc">&nbsp;	private static final EmptyIteration&lt;Namespace, SailException&gt; NAMESPACES_EMPTY_ITERATION = new EmptyIteration&lt;&gt;();</b>
+<b class="fc">&nbsp;	private static final EmptyIteration&lt;Statement, SailException&gt; STATEMENT_EMPTY_ITERATION = new EmptyIteration&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@link SailDataset} of the backing {@link SailSource}.
+&nbsp;	 */
+&nbsp;	private final SailDataset derivedFrom;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Changes that have not yet been {@link SailSource#flush()}ed to the backing {@link SailDataset}.
+&nbsp;	 */
+&nbsp;	private final Changeset changes;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Create a derivative dataset that applies the given changeset. The life cycle of this and the given
+&nbsp;	 * {@link SailDataset} are bound.
+&nbsp;	 *
+&nbsp;	 * @param derivedFrom will be released when this object is released
+&nbsp;	 * @param changes     changeset to be observed with the given dataset
+&nbsp;	 */
+<b class="fc">&nbsp;	public SailDatasetImpl(SailDataset derivedFrom, Changeset changes) {</b>
+<b class="fc">&nbsp;		this.derivedFrom = derivedFrom;</b>
+<b class="fc">&nbsp;		this.changes = changes;</b>
+<b class="fc">&nbsp;		changes.addRefback(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return changes + &quot;\n&quot; + derivedFrom;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws SailException {
+<b class="fc">&nbsp;		changes.removeRefback(this);</b>
+<b class="fc">&nbsp;		derivedFrom.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getNamespace(String prefix) throws SailException {
+<b class="fc">&nbsp;		Map&lt;String, String&gt; addedNamespaces = changes.getAddedNamespaces();</b>
+<b class="pc">&nbsp;		if (addedNamespaces != null &amp;&amp; addedNamespaces.containsKey(prefix)) {</b>
+<b class="nc">&nbsp;			return addedNamespaces.get(prefix);</b>
+&nbsp;		}
+<b class="fc">&nbsp;		Set&lt;String&gt; removedPrefixes = changes.getRemovedPrefixes();</b>
+<b class="pc">&nbsp;		if (removedPrefixes != null &amp;&amp; removedPrefixes.contains(prefix) || changes.isNamespaceCleared()) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return derivedFrom.getNamespace(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Namespace, SailException&gt; getNamespaces() throws SailException {
+&nbsp;		final CloseableIteration&lt;? extends Namespace, SailException&gt; namespaces;
+<b class="nc">&nbsp;		if (changes.isNamespaceCleared()) {</b>
+<b class="nc">&nbsp;			namespaces = NAMESPACES_EMPTY_ITERATION;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			namespaces = derivedFrom.getNamespaces();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Iterator&lt;Map.Entry&lt;String, String&gt;&gt; added = null;</b>
+&nbsp;		Set&lt;String&gt; removed;
+<b class="nc">&nbsp;		synchronized (this) {</b>
+<b class="nc">&nbsp;			Map&lt;String, String&gt; addedNamespaces = changes.getAddedNamespaces();</b>
+<b class="nc">&nbsp;			if (addedNamespaces != null) {</b>
+<b class="nc">&nbsp;				added = addedNamespaces.entrySet().iterator();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			removed = changes.getRemovedPrefixes();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (added == null &amp;&amp; removed == null) {</b>
+<b class="nc">&nbsp;			return namespaces;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final Iterator&lt;Map.Entry&lt;String, String&gt;&gt; addedIter = added;</b>
+<b class="nc">&nbsp;		final Set&lt;String&gt; removedSet = removed;</b>
+<b class="nc">&nbsp;		return new AbstractCloseableIteration&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			volatile Namespace next;
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean hasNext() throws SailException {
+<b class="nc">&nbsp;				if (isClosed()) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (addedIter != null &amp;&amp; addedIter.hasNext()) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				Namespace toCheckNext = next;</b>
+<b class="nc">&nbsp;				while (toCheckNext == null &amp;&amp; namespaces.hasNext()) {</b>
+<b class="nc">&nbsp;					toCheckNext = next = namespaces.next();</b>
+<b class="nc">&nbsp;					if (removedSet != null &amp;&amp; removedSet.contains(toCheckNext.getPrefix())) {</b>
+<b class="nc">&nbsp;						toCheckNext = next = null;</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				return toCheckNext != null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Namespace next() throws SailException {
+<b class="nc">&nbsp;				if (isClosed()) {</b>
+<b class="nc">&nbsp;					throw new NoSuchElementException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (addedIter != null &amp;&amp; addedIter.hasNext()) {</b>
+<b class="nc">&nbsp;					Entry&lt;String, String&gt; e = addedIter.next();</b>
+<b class="nc">&nbsp;					return new SimpleNamespace(e.getKey(), e.getValue());</b>
+&nbsp;				}
+&nbsp;				try {
+<b class="nc">&nbsp;					if (hasNext()) {</b>
+<b class="nc">&nbsp;						Namespace toCheckNext = next;</b>
+<b class="nc">&nbsp;						if (toCheckNext != null) {</b>
+<b class="nc">&nbsp;							return toCheckNext;</b>
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;					close();</b>
+<b class="nc">&nbsp;					throw new NoSuchElementException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					next = null;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void remove() {
+<b class="nc">&nbsp;				throw new UnsupportedOperationException();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void handleClose() throws SailException {
+&nbsp;				try {
+<b class="nc">&nbsp;					super.handleClose();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					namespaces.close();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Resource, SailException&gt; getContextIDs() throws SailException {
+&nbsp;		final CloseableIteration&lt;? extends Resource, SailException&gt; contextIDs;
+<b class="nc">&nbsp;		contextIDs = derivedFrom.getContextIDs();</b>
+<b class="nc">&nbsp;		Iterator&lt;Resource&gt; added = null;</b>
+<b class="nc">&nbsp;		Set&lt;Resource&gt; removed = null;</b>
+<b class="nc">&nbsp;		synchronized (this) {</b>
+<b class="nc">&nbsp;			Set&lt;Resource&gt; approvedContexts = changes.getApprovedContexts();</b>
+<b class="nc">&nbsp;			if (approvedContexts != null) {</b>
+<b class="nc">&nbsp;				added = approvedContexts.iterator();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			Set&lt;Resource&gt; deprecatedContexts = changes.getDeprecatedContexts();</b>
+<b class="nc">&nbsp;			if (deprecatedContexts != null) {</b>
+<b class="nc">&nbsp;				removed = deprecatedContexts;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		if (added == null &amp;&amp; removed == null) {</b>
+<b class="nc">&nbsp;			return contextIDs;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final Iterator&lt;Resource&gt; addedIter = added;</b>
+<b class="nc">&nbsp;		final Set&lt;Resource&gt; removedSet = removed;</b>
+&nbsp;
+<b class="nc">&nbsp;		return new AbstractCloseableIteration&lt;&gt;() {</b>
+&nbsp;
+&nbsp;			volatile Resource next;
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public boolean hasNext() throws SailException {
+<b class="nc">&nbsp;				if (isClosed()) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (addedIter != null &amp;&amp; addedIter.hasNext()) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				Resource toCheckNext = next;</b>
+<b class="nc">&nbsp;				while (toCheckNext == null &amp;&amp; contextIDs.hasNext()) {</b>
+<b class="nc">&nbsp;					toCheckNext = next = contextIDs.next();</b>
+<b class="nc">&nbsp;					if (removedSet != null &amp;&amp; removedSet.contains(toCheckNext)) {</b>
+<b class="nc">&nbsp;						toCheckNext = next = null;</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;				return toCheckNext != null;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public Resource next() throws SailException {
+<b class="nc">&nbsp;				if (isClosed()) {</b>
+<b class="nc">&nbsp;					throw new NoSuchElementException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				if (addedIter != null &amp;&amp; addedIter.hasNext()) {</b>
+<b class="nc">&nbsp;					return addedIter.next();</b>
+&nbsp;				}
+&nbsp;				try {
+<b class="nc">&nbsp;					if (hasNext()) {</b>
+<b class="nc">&nbsp;						Resource toCheckNext = next;</b>
+<b class="nc">&nbsp;						if (toCheckNext != null) {</b>
+<b class="nc">&nbsp;							return toCheckNext;</b>
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;					close();</b>
+<b class="nc">&nbsp;					throw new NoSuchElementException(&quot;The iteration has been closed.&quot;);</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					next = null;</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void remove() throws SailException {
+<b class="nc">&nbsp;				throw new UnsupportedOperationException();</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			@Override
+&nbsp;			public void handleClose() throws SailException {
+&nbsp;				try {
+<b class="nc">&nbsp;					super.handleClose();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					contextIDs.close();</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Statement, SailException&gt; getStatements(Resource subj, IRI pred, Value obj,
+&nbsp;			Resource... contexts) throws SailException {
+<b class="fc">&nbsp;		Set&lt;Resource&gt; deprecatedContexts = changes.getDeprecatedContexts();</b>
+&nbsp;		CloseableIteration&lt;? extends Statement, SailException&gt; iter;
+<b class="pc">&nbsp;		if (changes.isStatementCleared()</b>
+<b class="nc">&nbsp;				|| contexts == null &amp;&amp; deprecatedContexts != null &amp;&amp; deprecatedContexts.contains(null)</b>
+&nbsp;				|| contexts != null &amp;&amp; contexts.length &gt; 0 &amp;&amp; deprecatedContexts != null
+<b class="pc">&nbsp;						&amp;&amp; deprecatedContexts.containsAll(Arrays.asList(contexts))) {</b>
+<b class="nc">&nbsp;			iter = null;</b>
+<b class="pc">&nbsp;		} else if (contexts != null &amp;&amp; contexts.length &gt; 0 &amp;&amp; deprecatedContexts != null) {</b>
+<b class="fc">&nbsp;			List&lt;Resource&gt; remaining = new ArrayList&lt;&gt;(Arrays.asList(contexts));</b>
+<b class="fc">&nbsp;			remaining.removeAll(deprecatedContexts);</b>
+<b class="fc">&nbsp;			iter = derivedFrom.getStatements(subj, pred, obj, remaining.toArray(new Resource[0]));</b>
+<b class="fc">&nbsp;		} else {</b>
+<b class="fc">&nbsp;			iter = derivedFrom.getStatements(subj, pred, obj, contexts);</b>
+&nbsp;		}
+<b class="pc">&nbsp;		if (changes.hasDeprecated() &amp;&amp; iter != null) {</b>
+<b class="fc">&nbsp;			iter = difference(iter, changes::hasDeprecated);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (changes.hasApproved() &amp;&amp; iter != null) {</b>
+&nbsp;
+<b class="fc">&nbsp;			return new DistinctModelReducingUnionIteration(</b>
+&nbsp;					iter,
+<b class="fc">&nbsp;					changes::removeApproved,</b>
+<b class="fc">&nbsp;					() -&gt; changes.getApprovedStatements(subj, pred, obj, contexts));</b>
+&nbsp;
+<b class="pc">&nbsp;		} else if (changes.hasApproved()) {</b>
+<b class="nc">&nbsp;			Iterator&lt;Statement&gt; i = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();</b>
+<b class="nc">&nbsp;			return new CloseableIteratorIteration&lt;&gt;(i);</b>
+<b class="pc">&nbsp;		} else if (iter != null) {</b>
+<b class="fc">&nbsp;			return iter;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return STATEMENT_EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Triple, SailException&gt; getTriples(Resource subj, IRI pred, Value obj)
+&nbsp;			throws SailException {
+&nbsp;
+&nbsp;		CloseableIteration&lt;? extends Triple, SailException&gt; iter;
+<b class="nc">&nbsp;		if (changes.isStatementCleared()) {</b>
+&nbsp;			// nothing in the backing source is relevant, but we may still need to return approved data
+&nbsp;			// from the changeset
+<b class="nc">&nbsp;			iter = null;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			iter = derivedFrom.getTriples(subj, pred, obj);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (changes.hasDeprecated() &amp;&amp; iter != null) {</b>
+<b class="nc">&nbsp;			iter = triplesDifference(iter, triple -&gt; isDeprecated(triple, changes.getDeprecatedStatements()));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (changes.hasApproved()) {</b>
+<b class="nc">&nbsp;			if (iter != null) {</b>
+<b class="nc">&nbsp;				CloseableIteratorIteration&lt;? extends Triple, SailException&gt; tripleExceptionCloseableIteratorIteration = new CloseableIteratorIteration&lt;&gt;(</b>
+<b class="nc">&nbsp;						changes.getApprovedTriples(subj, pred, obj).iterator());</b>
+&nbsp;
+&nbsp;				// merge newly approved triples in the changeset with data from the backing source
+<b class="nc">&nbsp;				return new DistinctIteration&lt;&gt;(</b>
+<b class="nc">&nbsp;						DualUnionIteration.getWildcardInstance(iter, tripleExceptionCloseableIteratorIteration));</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// nothing relevant in the backing source, just return all matching approved triples from the changeset
+<b class="nc">&nbsp;			return new CloseableIteratorIteration&lt;&gt;(changes.getApprovedTriples(subj, pred, obj).iterator());</b>
+<b class="nc">&nbsp;		} else if (iter != null) {</b>
+<b class="nc">&nbsp;			return iter;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return TRIPLE_EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private CloseableIteration&lt;? extends Statement, SailException&gt; difference(
+&nbsp;			CloseableIteration&lt;? extends Statement, SailException&gt; result, Function&lt;Statement, Boolean&gt; excluded) {
+<b class="fc">&nbsp;		return new FilterIteration&lt;Statement, SailException&gt;(result) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected boolean accept(Statement stmt) {
+<b class="fc">&nbsp;				return !excluded.apply(stmt);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	private CloseableIteration&lt;? extends Triple, SailException&gt; triplesDifference(
+&nbsp;			CloseableIteration&lt;? extends Triple, SailException&gt; result, Function&lt;Triple, Boolean&gt; excluded) {
+<b class="nc">&nbsp;		return new FilterIteration&lt;Triple, SailException&gt;(result) {</b>
+&nbsp;
+&nbsp;			@Override
+&nbsp;			protected boolean accept(Triple stmt) {
+<b class="nc">&nbsp;				return !excluded.apply(stmt);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isDeprecated(Triple triple, List&lt;Statement&gt; deprecatedStatements) {
+&nbsp;		// the triple is deprecated if the changeset deprecates all existing statements in the backing dataset that
+&nbsp;		// involve this triple.
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; subjectStatements = derivedFrom</b>
+<b class="nc">&nbsp;				.getStatements(triple, null, null)) {</b>
+<b class="nc">&nbsp;			while (subjectStatements.hasNext()) {</b>
+<b class="nc">&nbsp;				Statement st = subjectStatements.next();</b>
+<b class="nc">&nbsp;				if (!deprecatedStatements.contains(st)) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		try (CloseableIteration&lt;? extends Statement, SailException&gt; objectStatements = derivedFrom</b>
+<b class="nc">&nbsp;				.getStatements(null, null, triple)) {</b>
+<b class="nc">&nbsp;			while (objectStatements.hasNext()) {</b>
+<b class="nc">&nbsp;				Statement st = objectStatements.next();</b>
+<b class="nc">&nbsp;				if (!deprecatedStatements.contains(st)) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

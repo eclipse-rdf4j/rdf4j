@@ -1,0 +1,279 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EndpointManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: EndpointManager (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EndpointManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/36)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.List;
+&nbsp;import java.util.NoSuchElementException;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * EndpointManager is the singleton instance that manages available {@link Endpoint}s. Particular endpoints can be
+&nbsp; * looked up by their id and connection and all relevant information can be used.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class EndpointManager {
+&nbsp;
+<b class="nc">&nbsp;	protected static final Logger log = LoggerFactory.getLogger(EndpointManager.class);</b>
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * TODO we probably need to make this class thread safe! =&gt; synchronized access
+&nbsp;	 */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize the singleton endpoint manager with the provided endpoints
+&nbsp;	 *
+&nbsp;	 * @param endpoints
+&nbsp;	 */
+&nbsp;	public static synchronized EndpointManager initialize(List&lt;Endpoint&gt; endpoints) {
+<b class="nc">&nbsp;		return new EndpointManager(endpoints);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// map enpoint ids and connections to the corresponding endpoint
+<b class="nc">&nbsp;	protected HashMap&lt;String, Endpoint&gt; endpoints = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	protected boolean inRepair = false;</b>
+<b class="nc">&nbsp;	protected Long lastRepaired = -1L;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct an EndpointManager without any endpoints
+&nbsp;	 */
+&nbsp;	private EndpointManager() {
+<b class="nc">&nbsp;		this(null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct an EndpointManager with the provided endpoints
+&nbsp;	 *
+&nbsp;	 * @param endpoints
+&nbsp;	 */
+<b class="nc">&nbsp;	private EndpointManager(List&lt;Endpoint&gt; endpoints) {</b>
+<b class="nc">&nbsp;		init(endpoints);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize the endpoint mapping with the provided endpoints
+&nbsp;	 *
+&nbsp;	 * @param _endpoints a list of (initialized) endpoints or null
+&nbsp;	 */
+&nbsp;	private void init(List&lt;Endpoint&gt; _endpoints) {
+<b class="nc">&nbsp;		if (_endpoints != null) {</b>
+<b class="nc">&nbsp;			for (Endpoint e : _endpoints) {</b>
+<b class="nc">&nbsp;				addEndpoint(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add the (initialized) endpoint to this endpoint manager to be used by the {@link FederationManager}.
+&nbsp;	 *
+&nbsp;	 * @param e the endpoint
+&nbsp;	 */
+&nbsp;	public void addEndpoint(Endpoint e) {
+<b class="nc">&nbsp;		endpoints.put(e.getId(), e);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove the provided endpoint from this endpoint manager to be used by the {@link FederationManager}. In addition,
+&nbsp;	 * this method unregisters the {@link FederatedService} from Sesame
+&nbsp;	 *
+&nbsp;	 * @param e the endpoint
+&nbsp;	 *
+&nbsp;	 * @throws NoSuchElementException if there is no mapping for some endpoint id
+&nbsp;	 */
+&nbsp;	protected void removeEndpoint(Endpoint e) throws NoSuchElementException {
+<b class="nc">&nbsp;		if (!endpoints.containsKey(e.getId())) {</b>
+<b class="nc">&nbsp;			throw new NoSuchElementException(&quot;No endpoint avalaible for id &quot; + e.getId());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		endpoints.remove(e.getId());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return a collection of available endpoints in this endpoint manager
+&nbsp;	 */
+&nbsp;	public Collection&lt;Endpoint&gt; getAvailableEndpoints() {
+<b class="nc">&nbsp;		return endpoints.values();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param endpointID
+&nbsp;	 * @return the endpoint corresponding to the provided id or null
+&nbsp;	 */
+&nbsp;	public Endpoint getEndpoint(String endpointID) {
+<b class="nc">&nbsp;		return endpoints.get(endpointID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the Endpoint for the provided endpoint url, if it exists. Otherwise return null.
+&nbsp;	 *
+&nbsp;	 * @param endpointUrl
+&nbsp;	 * @return the endpoint by its URL
+&nbsp;	 */
+&nbsp;	public Endpoint getEndpointByUrl(String endpointUrl) {
+<b class="nc">&nbsp;		for (Endpoint e : endpoints.values()) {</b>
+<b class="nc">&nbsp;			if (e.getEndpoint().equals(endpointUrl)) {</b>
+<b class="nc">&nbsp;				return e;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Endpoint getEndpointByName(String endpointName) {
+<b class="nc">&nbsp;		for (Endpoint e : endpoints.values()) {</b>
+<b class="nc">&nbsp;			if (e.getName().equals(endpointName)) {</b>
+<b class="nc">&nbsp;				return e;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param endpointIDs
+&nbsp;	 * @return a list of endpoints corresponding to the provided ids
+&nbsp;	 *
+&nbsp;	 * @throws NoSuchElementException if there is no mapping for some endpoint id
+&nbsp;	 */
+&nbsp;	public List&lt;Endpoint&gt; getEndpoints(Set&lt;String&gt; endpointIDs) throws NoSuchElementException {
+<b class="nc">&nbsp;		List&lt;Endpoint&gt; res = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (String endpointID : endpointIDs) {</b>
+<b class="nc">&nbsp;			Endpoint e = endpoints.get(endpointID);</b>
+<b class="nc">&nbsp;			if (e == null) {</b>
+<b class="nc">&nbsp;				throw new NoSuchElementException(&quot;No endpoint found for &quot; + endpointID + &quot;.&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			res.add(e);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

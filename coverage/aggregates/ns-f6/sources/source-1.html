@@ -1,0 +1,404 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RDF4JCRUDDao</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.dao</a>
+</div>
+
+<h1>Coverage Summary for Class: RDF4JCRUDDao (org.eclipse.rdf4j.spring.dao)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RDF4JCRUDDao</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/57)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.dao;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.spring.dao.exception.IncorrectResultSetSizeException;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.BindingsBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.MutableBindings;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.key.CompositeKey;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.TupleQueryEvaluationBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.opbuilder.UpdateExecutionBuilder;
+&nbsp;import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
+&nbsp;import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for DAOs providing CRUD functionality. The class allows for entities to be represented with different
+&nbsp; * classes for read (ENTITY type) vs write (INPUT type) operations. DAOs that do not require this distinction must use
+&nbsp; * the same class for both parameters.
+&nbsp; *
+&nbsp; * @param &lt;ENTITY&gt;
+&nbsp; * @param &lt;INPUT&gt;
+&nbsp; * @param &lt;ID&gt;
+&nbsp; *
+&nbsp; *
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public abstract class RDF4JCRUDDao&lt;ENTITY, INPUT, ID&gt; extends RDF4JDao {
+&nbsp;	private static final String KEY_READ_QUERY = &quot;readQuery&quot;;
+&nbsp;	public static final String KEY_PREFIX_INSERT = &quot;insert&quot;;
+&nbsp;	public static final String KEY_PREFIX_UPDATE = &quot;update&quot;;
+&nbsp;	private final Class&lt;ID&gt; idClass;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor that provides the type of the ID to the base implementation. This constructor has to be used if the
+&nbsp;	 * ID is anything but IRI.
+&nbsp;	 */
+&nbsp;	public RDF4JCRUDDao(RDF4JTemplate rdf4JTemplate, Class&lt;ID&gt; idClass) {
+<b class="nc">&nbsp;		super(rdf4JTemplate);</b>
+<b class="nc">&nbsp;		this.idClass = idClass;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor to be used by implementations that use IRI for the ID type.
+&nbsp;	 */
+&nbsp;	public RDF4JCRUDDao(RDF4JTemplate rdf4JTemplate) {
+<b class="nc">&nbsp;		this(rdf4JTemplate, (Class&lt;ID&gt;) IRI.class);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Saves the entity, loads it again and returns it. If the modified entity is not required, clients should prefer
+&nbsp;	 * {@link #saveAndReturnId(Object, Object)} or {@link #saveAndReturnId(Object)}
+&nbsp;	 */
+&nbsp;	public final ENTITY save(INPUT input) {
+<b class="nc">&nbsp;		ID id = getInputId(input);</b>
+<b class="nc">&nbsp;		final ID finalId = saveAndReturnId(input, id);</b>
+<b class="nc">&nbsp;		return getById(finalId);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public ID saveAndReturnId(INPUT input) {
+<b class="nc">&nbsp;		return saveAndReturnId(input, getInputId(input));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Saves the entity and returns its (possibly newly generated) ID.
+&nbsp;	 *
+&nbsp;	 * @param input the entity
+&nbsp;	 * @param id    the id or null for a new entity.
+&nbsp;	 * @return the id (a newly generated one if the specified &lt;code&gt;id&lt;/code&gt; is null, otherwise just &lt;code&gt;id&lt;/code&gt;.
+&nbsp;	 */
+&nbsp;	public ID saveAndReturnId(INPUT input, ID id) {
+<b class="nc">&nbsp;		if (id != null) {</b>
+&nbsp;			// delete triples for the modify case
+<b class="nc">&nbsp;			deleteForUpdate(id);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final ID finalId = getOrGenerateId(id);</b>
+<b class="nc">&nbsp;		getInsertQueryOrUseCached(input)</b>
+<b class="nc">&nbsp;				.withBindings(bindingsBuilder -&gt; populateIdBindings(bindingsBuilder, finalId))</b>
+<b class="nc">&nbsp;				.withBindings(bindingsBuilder -&gt; populateBindingsForUpdate(bindingsBuilder, input))</b>
+<b class="nc">&nbsp;				.execute(bindings -&gt; postProcessUpdate(input, bindings));</b>
+<b class="nc">&nbsp;		return finalId;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * When updating an entity via {@link #save(Object)}, its triples are removed first using this method. The default
+&nbsp;	 * implementation used {@link RDF4JTemplate#deleteTriplesWithSubject(IRI)}. If more complex deletion behaviour (e.g.
+&nbsp;	 * cascading) is needed, this method should be overriden.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	protected void deleteForUpdate(ID id) {
+<b class="nc">&nbsp;		IRI iri = convertIdToIri(id);</b>
+<b class="nc">&nbsp;		getRdf4JTemplate().deleteTriplesWithSubject(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ID getOrGenerateId(ID id) {
+&nbsp;		boolean idPresent;
+<b class="nc">&nbsp;		if (id instanceof CompositeKey) {</b>
+<b class="nc">&nbsp;			idPresent = ((CompositeKey) id).isPresent();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			idPresent = id != null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!idPresent) {</b>
+<b class="nc">&nbsp;			id = generateNewId(id);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return id;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts the provided id to an IRI. The default implementation only works for DAOs that use IRI ids.
+&nbsp;	 *
+&nbsp;	 * @param id
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	protected IRI convertIdToIri(ID id) {
+<b class="nc">&nbsp;		if (id == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (idClass.equals(IRI.class)) {</b>
+<b class="nc">&nbsp;			return (IRI) id;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot generically convert IDs to IRIs. The subclass must implement convertToIri(ID)&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Generates a new id for an entity. The default implementation only works for IRI ids.
+&nbsp;	 *
+&nbsp;	 * @param providedId
+&nbsp;	 * @return a new id.
+&nbsp;	 */
+&nbsp;	protected ID generateNewId(ID providedId) {
+<b class="nc">&nbsp;		if (idClass.equals(IRI.class)) {</b>
+<b class="nc">&nbsp;			return (ID) getRdf4JTemplate().getNewUUID();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot generically generate any other IDs than IRIs. The subclass must implement generateNewId(ID)&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	private UpdateExecutionBuilder getInsertQueryOrUseCached(INPUT input) {
+<b class="nc">&nbsp;		final NamedSparqlSupplier cs = getInsertSparql(input);</b>
+<b class="nc">&nbsp;		String key = KEY_PREFIX_INSERT + cs.getName();</b>
+<b class="nc">&nbsp;		return getRdf4JTemplate().update(this.getClass(), key, cs.getSparqlSupplier());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public final List&lt;ENTITY&gt; list() {
+<b class="nc">&nbsp;		return getReadQueryOrUseCached()</b>
+<b class="nc">&nbsp;				.evaluateAndConvert()</b>
+<b class="nc">&nbsp;				.toList(this::mapSolution, this::postProcessMappedSolution);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private TupleQueryEvaluationBuilder getReadQueryOrUseCached() {
+<b class="nc">&nbsp;		return getRdf4JTemplate().tupleQuery(getClass(), KEY_READ_QUERY, this::getReadQuery);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains the entity with the specified id, throwing an exception if none is found.
+&nbsp;	 *
+&nbsp;	 * @param id the id
+&nbsp;	 * @throws IncorrectResultSetSizeException if no entity is found with the specified id
+&nbsp;	 * @return the entity
+&nbsp;	 */
+&nbsp;	public final ENTITY getById(ID id) {
+<b class="nc">&nbsp;		return getByIdOptional(id)</b>
+<b class="nc">&nbsp;				.orElseThrow(</b>
+<b class="nc">&nbsp;						() -&gt; new IncorrectResultSetSizeException(</b>
+&nbsp;								&quot;Expected to find exactly one entity but found 0&quot;, 1, 0));
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains an optional entity with the specified id.
+&nbsp;	 *
+&nbsp;	 * @param id the id
+&nbsp;	 * @return an Optional maybe containing the entity
+&nbsp;	 */
+&nbsp;	public final Optional&lt;ENTITY&gt; getByIdOptional(ID id) {
+<b class="nc">&nbsp;		return getReadQueryOrUseCached()</b>
+<b class="nc">&nbsp;				.withBindings(bindingsBuilder -&gt; populateIdBindings(bindingsBuilder, id))</b>
+<b class="nc">&nbsp;				.evaluateAndConvert()</b>
+<b class="nc">&nbsp;				.toSingletonOptional(this::mapSolution, this::postProcessMappedSolution);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Naive implementation using {@link RDF4JTemplate#delete(IRI)}. DAOs that need more complex deletion behaviour
+&nbsp;	 * (e.g. cascading) should override this method.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public void delete(ID id) {
+<b class="nc">&nbsp;		if (idClass.equals(IRI.class)) {</b>
+<b class="nc">&nbsp;			getRdf4JTemplate().delete((IRI) id);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(</b>
+&nbsp;					&quot;Cannot generically delete instances that do not use IRI ids. The subclass must implement delete(ID)&quot;);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the SPARQL string used to read an instance of T from the database. The base implementation will cache the
+&nbsp;	 * query string, so implementations should not try to cache the query.
+&nbsp;	 */
+&nbsp;	protected String getReadQuery() {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot perform generic read operation: subclass does not override getReadQuery()&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Map one solution of the readQuery to the type of this DAO.
+&nbsp;	 */
+&nbsp;	protected ENTITY mapSolution(BindingSet querySolution) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot perform generic read operation: subclass does not override mapSolution()&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Callback invoked after mapping a solution to an entity, allowing subclasses to modify the entity before returning
+&nbsp;	 * it to the client.
+&nbsp;	 */
+&nbsp;	protected ENTITY postProcessMappedSolution(ENTITY entity) {
+<b class="nc">&nbsp;		return entity;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Callback invoked after a successful insert/update.
+&nbsp;	 */
+&nbsp;	protected void postProcessUpdate(INPUT input, Map&lt;String, Value&gt; bindings) {
+&nbsp;		// empty default implementation
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the SPARQL string used to write an instance of T to the database. The instance to be inserted is passed
+&nbsp;	 * to the function so implementations can decide which query to use based on the instance.
+&nbsp;	 */
+&nbsp;	protected NamedSparqlSupplier getInsertSparql(INPUT input) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot perform generic write operation: subclass does not override getInsertQuery()&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the SPARQL string used to update an instance of T in the database. The instance to be updated is passed
+&nbsp;	 * to the function so implementations can decide which query to use based on the instance.
+&nbsp;	 */
+&nbsp;	protected NamedSparqlSupplier getUpdateSparql(INPUT input) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot perform generic write operation: subclass does not override getUpdateQuery()&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Binds the instance id to query variable(s).
+&nbsp;	 */
+&nbsp;	protected abstract void populateIdBindings(MutableBindings bindingsBuilder, ID id);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the non-id bindings on for the write query such that the instance of type I is written to the database. ID
+&nbsp;	 * bindings are set through populateIdBindings()
+&nbsp;	 */
+&nbsp;	protected void populateBindingsForUpdate(MutableBindings bindingsBuilder, INPUT input) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot perform generic write operation: subclass does not override populateBindingsForUpdate()&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Obtains the id of the input instance or null if it is new (or a partially populated composite key).
+&nbsp;	 */
+&nbsp;	protected ID getInputId(INPUT input) {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Cannot perform generic write operation: subclass does not override getInputId()&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a new BindingsBuilder for your convenience.
+&nbsp;	 */
+&nbsp;	protected static BindingsBuilder newBindingsBuilder() {
+<b class="nc">&nbsp;		return new BindingsBuilder();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

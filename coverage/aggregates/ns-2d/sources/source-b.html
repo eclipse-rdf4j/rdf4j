@@ -1,0 +1,171 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Example11SinglePropertyValue</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.examples.model</a>
+</div>
+
+<h1>Coverage Summary for Class: Example11SinglePropertyValue (org.eclipse.rdf4j.examples.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Example11SinglePropertyValue</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2016, 2017 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.examples.model;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.examples.model.vocabulary.EX;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.FOAF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;
+&nbsp;/**
+&nbsp; * RDF Tutorial example 11: Getting a single property value for a particular subject. In this example, we show how you
+&nbsp; * can get retrieve each artist&#39;s first name and print it.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class Example11SinglePropertyValue {</b>
+&nbsp;
+&nbsp;	public static void main(String[] args)
+&nbsp;			throws IOException {
+&nbsp;
+<b class="nc">&nbsp;		String filename = &quot;example-data-artists.ttl&quot;;</b>
+&nbsp;
+&nbsp;		// read the file &#39;example-data-artists.ttl&#39; as an InputStream.
+<b class="nc">&nbsp;		InputStream input = Example11SinglePropertyValue.class.getResourceAsStream(&quot;/&quot; + filename);</b>
+<b class="nc">&nbsp;		Model model = Rio.parse(input, &quot;&quot;, RDFFormat.TURTLE);</b>
+&nbsp;
+&nbsp;		// iterate over all resources that are of type &#39;ex:Artist&#39;
+<b class="nc">&nbsp;		for (Resource artist : model.filter(null, RDF.TYPE, EX.ARTIST).subjects()) {</b>
+&nbsp;			// get all RDF triples that denote values for the `foaf:firstName` property
+&nbsp;			// of the current artist
+<b class="nc">&nbsp;			Model firstNameTriples = model.filter(artist, FOAF.FIRST_NAME, null);</b>
+&nbsp;
+&nbsp;			// Get the actual first name by just selecting any property value. If no value can be found,
+&nbsp;			// set the first name to &#39;(unknown)&#39;.
+<b class="nc">&nbsp;			String firstName = Models.objectString(firstNameTriples).orElse(&quot;(unknown)&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			System.out.println(artist + &quot; has first name &#39;&quot; + firstName + &quot;&#39;&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

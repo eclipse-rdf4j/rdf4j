@@ -1,0 +1,267 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLMinusIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.iterator</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLMinusIteration (org.eclipse.rdf4j.query.algebra.evaluation.iterator)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLMinusIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (6/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    87.5%
+  </span>
+  <span class="absValue">
+    (14/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    81.2%
+  </span>
+  <span class="absValue">
+    (26/32)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.FilterIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;
+&nbsp;/**
+&nbsp; * An Iteration that returns the results of an Iteration (the left argument) MINUS any results that are compatible with
+&nbsp; * results of another Iteration (the right argument) or that have no shared variables. This iteration uses the formal
+&nbsp; * definition of the SPARQL 1.1 MINUS operator to determine which BindingSets to return.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;http://www.w3.org/TR/sparql11-query/#sparqlAlgebra&quot;&gt;SPARQL Algebra Documentation&lt;/a&gt;
+&nbsp; * @author Jeen
+&nbsp; */
+<b class="fc">&nbsp;@Deprecated(since = &quot;4.1.0&quot;)</b>
+&nbsp;public class SPARQLMinusIteration&lt;X extends Exception&gt; extends FilterIteration&lt;BindingSet, X&gt; {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private final Iteration&lt;BindingSet, X&gt; rightArg;
+&nbsp;
+&nbsp;	private boolean initialized;
+&nbsp;
+&nbsp;	private Set&lt;BindingSet&gt; excludeSet;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
+&nbsp;	 * argument. By default, duplicates are &lt;em&gt;not&lt;/em&gt; filtered from the results.
+&nbsp;	 *
+&nbsp;	 * @param leftArg  An Iteration containing the main set of elements.
+&nbsp;	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
+&nbsp;	 */
+&nbsp;	public SPARQLMinusIteration(Iteration&lt;BindingSet, X&gt; leftArg, Iteration&lt;BindingSet, X&gt; rightArg) {
+<b class="fc">&nbsp;		super(leftArg);</b>
+&nbsp;
+<b class="pc">&nbsp;		assert rightArg != null;</b>
+&nbsp;
+<b class="fc">&nbsp;		this.rightArg = rightArg;</b>
+<b class="fc">&nbsp;		this.initialized = false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new MinusIteration that returns the results of the left argument minus the results of the right
+&nbsp;	 * argument.
+&nbsp;	 *
+&nbsp;	 * @param leftArg  An Iteration containing the main set of elements.
+&nbsp;	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
+&nbsp;	 * @param distinct This argument is ignored
+&nbsp;	 */
+&nbsp;	@Deprecated(since = &quot;4.0.0&quot;, forRemoval = true)
+&nbsp;	public SPARQLMinusIteration(Iteration&lt;BindingSet, X&gt; leftArg, Iteration&lt;BindingSet, X&gt; rightArg, boolean distinct) {
+<b class="nc">&nbsp;		this(leftArg, rightArg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	// implements LookAheadIteration.getNextElement()
+&nbsp;	@Override
+&nbsp;	protected boolean accept(BindingSet bindingSet) throws X {
+<b class="fc">&nbsp;		if (!initialized) {</b>
+&nbsp;			// Build set of elements-to-exclude from right argument
+<b class="fc">&nbsp;			excludeSet = makeSet(getRightArg());</b>
+<b class="fc">&nbsp;			initialized = true;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		for (BindingSet excluded : excludeSet) {</b>
+<b class="fc">&nbsp;			Set&lt;String&gt; bindingNames = bindingSet.getBindingNames();</b>
+<b class="fc">&nbsp;			boolean hasSharedBindings = false;</b>
+&nbsp;
+<b class="fc">&nbsp;			for (String bindingName : excluded.getBindingNames()) {</b>
+<b class="fc">&nbsp;				if (bindingNames.contains(bindingName)) {</b>
+<b class="fc">&nbsp;					hasSharedBindings = true;</b>
+<b class="fc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+&nbsp;			// two bindingsets that share no variables are compatible by
+&nbsp;			// definition, however, the formal
+&nbsp;			// definition of SPARQL MINUS indicates that such disjoint sets should
+&nbsp;			// be filtered out.
+&nbsp;			// See http://www.w3.org/TR/sparql11-query/#sparqlAlgebra
+<b class="fc">&nbsp;			if (hasSharedBindings) {</b>
+<b class="fc">&nbsp;				if (QueryResults.bindingSetsCompatible(excluded, bindingSet)) {</b>
+&nbsp;					// at least one compatible bindingset has been found in the
+&nbsp;					// exclude set, therefore the object is compatible, therefore it
+&nbsp;					// should not be accepted.
+<b class="fc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+&nbsp;
+<b class="fc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Set&lt;BindingSet&gt; makeSet() throws X {
+<b class="nc">&nbsp;		return new LinkedHashSet&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Set&lt;String&gt; makeSet(Set&lt;String&gt; set) throws X {
+<b class="nc">&nbsp;		return new HashSet&lt;&gt;(set);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Set&lt;BindingSet&gt; makeSet(Iteration&lt;BindingSet, X&gt; rightArg) throws X {
+<b class="fc">&nbsp;		return Iterations.asSet(rightArg);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleClose() throws X {
+&nbsp;		try {
+<b class="fc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+<b class="fc">&nbsp;			Iterations.closeCloseable(getRightArg());</b>
+<b class="fc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return Returns the rightArg.
+&nbsp;	 */
+&nbsp;	protected Iteration&lt;BindingSet, X&gt; getRightArg() {
+<b class="fc">&nbsp;		return rightArg;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected long clearExcludeSet() {
+<b class="nc">&nbsp;		int size = excludeSet.size();</b>
+<b class="nc">&nbsp;		excludeSet.clear();</b>
+<b class="nc">&nbsp;		return size;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

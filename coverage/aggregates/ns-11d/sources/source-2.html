@@ -1,0 +1,430 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EquivalentTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.repository</a>
+</div>
+
+<h1>Coverage Summary for Class: EquivalentTest (org.eclipse.rdf4j.testsuite.repository)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EquivalentTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/107)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.repository;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;import static org.junit.Assert.assertTrue;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.LinkedList;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.junit.After;
+&nbsp;import org.junit.AfterClass;
+&nbsp;import org.junit.Before;
+&nbsp;import org.junit.BeforeClass;
+&nbsp;import org.junit.Test;
+&nbsp;import org.junit.runner.RunWith;
+&nbsp;import org.junit.runners.Parameterized;
+&nbsp;import org.junit.runners.Parameterized.Parameters;
+&nbsp;
+&nbsp;@RunWith(Parameterized.class)
+&nbsp;public abstract class EquivalentTest {
+&nbsp;
+&nbsp;	@BeforeClass
+&nbsp;	public static void setUpClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;true&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@AfterClass
+&nbsp;	public static void afterClass() throws Exception {
+<b class="nc">&nbsp;		System.setProperty(&quot;org.eclipse.rdf4j.repository.debug&quot;, &quot;false&quot;);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private static final ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal xyz_simple = vf.createLiteral(&quot;xyz&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal xyz_en = vf.createLiteral(&quot;xyz&quot;, &quot;en&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal xyz_EN = vf.createLiteral(&quot;xyz&quot;, &quot;EN&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal xyz_string = vf.createLiteral(&quot;xyz&quot;, CoreDatatype.XSD.STRING);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal xyz_integer = vf.createLiteral(&quot;xyz&quot;, XSD.INTEGER);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal xyz_unknown = vf.createLiteral(&quot;xyz&quot;, vf.createIRI(&quot;http://example/unknown&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final IRI xyz_uri = vf.createIRI(&quot;http://example/xyz&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal abc_simple = vf.createLiteral(&quot;abc&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal abc_en = vf.createLiteral(&quot;abc&quot;, &quot;en&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal abc_EN = vf.createLiteral(&quot;abc&quot;, &quot;EN&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal abc_string = vf.createLiteral(&quot;abc&quot;, XSD.STRING);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal abc_integer = vf.createLiteral(&quot;abc&quot;, CoreDatatype.XSD.INTEGER);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Literal abc_unknown = vf.createLiteral(&quot;abc&quot;, vf.createIRI(&quot;http://example/unknown&quot;));</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final IRI abc_uri = vf.createIRI(&quot;http://example/abc&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final IRI t1 = vf.createIRI(&quot;http://example/t1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final IRI t2 = vf.createIRI(&quot;http://example/t2&quot;);</b>
+&nbsp;
+&nbsp;	private static final String IND = &quot;?&quot;;
+&nbsp;
+&nbsp;	private static final String EQ = &quot;=&quot;;
+&nbsp;
+&nbsp;	private static final String NEQ = &quot;!=&quot;;
+&nbsp;
+&nbsp;	private static final String PREFIX = &quot;PREFIX xsd:&lt;http://www.w3.org/2001/XMLSchema#&gt;\n&quot;
+&nbsp;			+ &quot;PREFIX rdf:&lt;http://www.w3.org/1999/02/22-rdf-syntax-ns#&gt;&quot; + &quot;PREFIX ex:&lt;http://example/&gt;&quot;;
+&nbsp;
+&nbsp;	private static final String matrix = &quot;\&quot;xyz\&quot;	\&quot;xyz\&quot;	eq\n&quot; + &quot;\&quot;xyz\&quot;	\&quot;xyz\&quot;@en	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;	\&quot;xyz\&quot;@EN	neq\n&quot; + &quot;\&quot;xyz\&quot;	\&quot;xyz\&quot;^^xsd:string	eq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;	\&quot;xyz\&quot;^^xsd:integer	ind\n&quot; + &quot;\&quot;xyz\&quot;	\&quot;xyz\&quot;^^ex:unknown	ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;	_:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;	:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;xyz\&quot;	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@en	\&quot;xyz\&quot;@en	eq\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;xyz\&quot;@EN	eq\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;xyz\&quot;^^xsd:string	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@en	\&quot;xyz\&quot;^^xsd:integer	neq\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;xyz\&quot;^^ex:unknown	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@en	_:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;@en	:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;@EN	\&quot;xyz\&quot;	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@EN	\&quot;xyz\&quot;@en	eq\n&quot; + &quot;\&quot;xyz\&quot;@EN	\&quot;xyz\&quot;@EN	eq\n&quot; + &quot;\&quot;xyz\&quot;@EN	\&quot;xyz\&quot;^^xsd:string	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@EN	\&quot;xyz\&quot;^^xsd:integer	neq\n&quot; + &quot;\&quot;xyz\&quot;@EN	\&quot;xyz\&quot;^^ex:unknown	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@EN	_:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;@EN	:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;xyz\&quot;	eq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;xyz\&quot;@en	neq\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;xyz\&quot;@EN	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;xyz\&quot;^^xsd:string	eq\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;xyz\&quot;^^xsd:integer	ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;xyz\&quot;^^ex:unknown	ind\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:string	_:xyz	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;xyz\&quot;	ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;xyz\&quot;@en	neq\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;xyz\&quot;@EN	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;xyz\&quot;^^xsd:string	ind\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;xyz\&quot;^^xsd:integer	eq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;xyz\&quot;^^ex:unknown	ind\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:integer	_:xyz	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	:xyz	neq\n&quot; + &quot;\&quot;xyz\&quot;^^ex:unknown	\&quot;xyz\&quot;	ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^ex:unknown	\&quot;xyz\&quot;@en	neq\n&quot; + &quot;\&quot;xyz\&quot;^^ex:unknown	\&quot;xyz\&quot;@EN	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^ex:unknown	\&quot;xyz\&quot;^^xsd:string	ind\n&quot; + &quot;\&quot;xyz\&quot;^^ex:unknown	\&quot;xyz\&quot;^^xsd:integer	ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^ex:unknown	\&quot;xyz\&quot;^^ex:unknown	eq\n&quot; + &quot;\&quot;xyz\&quot;^^ex:unknown	_:xyz	neq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^ex:unknown	:xyz	neq\n&quot; + &quot;_:xyz	\&quot;xyz\&quot;	neq\n&quot; + &quot;_:xyz	\&quot;xyz\&quot;@en	neq\n&quot;
+&nbsp;			+ &quot;_:xyz	\&quot;xyz\&quot;@EN	neq\n&quot; + &quot;_:xyz	\&quot;xyz\&quot;^^xsd:string	neq\n&quot; + &quot;_:xyz	\&quot;xyz\&quot;^^xsd:integer	neq\n&quot;
+&nbsp;			+ &quot;_:xyz	\&quot;xyz\&quot;^^ex:unknown	neq\n&quot; + &quot;_:xyz	_:xyz	eq\n&quot; + &quot;_:xyz	:xyz	neq\n&quot;
+&nbsp;			+ &quot;:xyz	\&quot;xyz\&quot;	neq\n&quot; + &quot;:xyz	\&quot;xyz\&quot;@en	neq\n&quot; + &quot;:xyz	\&quot;xyz\&quot;@EN	neq\n&quot;
+&nbsp;			+ &quot;:xyz	\&quot;xyz\&quot;^^xsd:string	neq\n&quot; + &quot;:xyz	\&quot;xyz\&quot;^^xsd:integer	neq\n&quot;
+&nbsp;			+ &quot;:xyz	\&quot;xyz\&quot;^^ex:unknown	neq\n&quot; + &quot;:xyz	_:xyz	neq\n&quot; + &quot;:xyz	:xyz	eq\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;	\&quot;abc\&quot;		neq	\n&quot; + &quot;\&quot;xyz\&quot;	\&quot;abc\&quot;@en		neq	\n&quot; + &quot;\&quot;xyz\&quot;	\&quot;abc\&quot;@EN		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;	\&quot;abc\&quot;^^xsd:string		neq	\n&quot; + &quot;\&quot;xyz\&quot;	\&quot;abc\&quot;^^xsd:integer			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;	\&quot;abc\&quot;^^:unknown			ind\n&quot; + &quot;\&quot;xyz\&quot;	_:abc		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;	:abc		neq	\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;abc\&quot;		neq	\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;abc\&quot;@en		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@en	\&quot;abc\&quot;@EN		neq	\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;abc\&quot;^^xsd:string		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@en	\&quot;abc\&quot;^^xsd:integer		neq	\n&quot; + &quot;\&quot;xyz\&quot;@en	\&quot;abc\&quot;^^:unknown		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@en	_:abc		neq	\n&quot; + &quot;\&quot;xyz\&quot;@en	:abc		neq	\n&quot; + &quot;\&quot;xyz\&quot;@EN	\&quot;abc\&quot;		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@EN	\&quot;abc\&quot;@en		neq	\n&quot; + &quot;\&quot;xyz\&quot;@EN	\&quot;abc\&quot;@EN		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@EN	\&quot;abc\&quot;^^xsd:string		neq	\n&quot; + &quot;\&quot;xyz\&quot;@EN	\&quot;abc\&quot;^^xsd:integer		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@EN	\&quot;abc\&quot;^^:unknown		neq	\n&quot; + &quot;\&quot;xyz\&quot;@EN	_:abc		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;@EN	:abc		neq	\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;abc\&quot;		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;abc\&quot;@en		neq	\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;abc\&quot;@EN		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;abc\&quot;^^xsd:string		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;abc\&quot;^^xsd:integer			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	\&quot;abc\&quot;^^:unknown			ind\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:string	_:abc		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:string	:abc		neq	\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;abc\&quot;			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;abc\&quot;@en		neq	\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;abc\&quot;@EN		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;abc\&quot;^^xsd:string			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;abc\&quot;^^xsd:integer			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	\&quot;abc\&quot;^^:unknown			ind\n&quot; + &quot;\&quot;xyz\&quot;^^xsd:integer	_:abc		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^xsd:integer	:abc		neq	\n&quot; + &quot;\&quot;xyz\&quot;^^:unknown	\&quot;abc\&quot;			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^:unknown	\&quot;abc\&quot;@en		neq	\n&quot; + &quot;\&quot;xyz\&quot;^^:unknown	\&quot;abc\&quot;@EN		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^:unknown	\&quot;abc\&quot;^^xsd:string			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^:unknown	\&quot;abc\&quot;^^xsd:integer			ind\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^:unknown	\&quot;abc\&quot;^^:unknown			ind\n&quot; + &quot;\&quot;xyz\&quot;^^:unknown	_:abc		neq	\n&quot;
+&nbsp;			+ &quot;\&quot;xyz\&quot;^^:unknown	:abc		neq	\n&quot; + &quot;_:xyz	\&quot;abc\&quot;		neq	\n&quot;
+&nbsp;			+ &quot;_:xyz	\&quot;abc\&quot;@en		neq	\n&quot; + &quot;_:xyz	\&quot;abc\&quot;@EN		neq	\n&quot;
+&nbsp;			+ &quot;_:xyz	\&quot;abc\&quot;^^xsd:string		neq	\n&quot; + &quot;_:xyz	\&quot;abc\&quot;^^xsd:integer		neq	\n&quot;
+&nbsp;			+ &quot;_:xyz	\&quot;abc\&quot;^^:unknown		neq	\n&quot; + &quot;_:xyz	_:abc		neq	\n&quot; + &quot;_:xyz	:abc		neq	\n&quot;
+&nbsp;			+ &quot;:xyz	\&quot;abc\&quot;		neq	\n&quot; + &quot;:xyz	\&quot;abc\&quot;@en		neq	\n&quot; + &quot;:xyz	\&quot;abc\&quot;@EN		neq	\n&quot;
+&nbsp;			+ &quot;:xyz	\&quot;abc\&quot;^^xsd:string		neq	\n&quot; + &quot;:xyz	\&quot;abc\&quot;^^xsd:integer		neq	\n&quot;
+&nbsp;			+ &quot;:xyz	\&quot;abc\&quot;^^:unknown		neq	\n&quot; + &quot;:xyz	_:abc		neq	\n&quot; + &quot;:xyz	:abc		neq	&quot;;
+&nbsp;
+&nbsp;	@Parameters(name = &quot;{1} {0} {2}&quot;)
+&nbsp;	public static Collection&lt;Object[]&gt; params() {
+<b class="nc">&nbsp;		LinkedList&lt;Object[]&gt; params = new LinkedList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (String row : matrix.split(&quot;\n&quot;)) {</b>
+<b class="nc">&nbsp;			if (row.contains(&quot;_:&quot;)) {</b>
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String[] fields = row.split(&quot;\t&quot;, 3);</b>
+<b class="nc">&nbsp;			if (fields[2].contains(&quot;neq&quot;)) {</b>
+<b class="nc">&nbsp;				params.add(new Object[] { NEQ, fields[0], fields[1] });</b>
+<b class="nc">&nbsp;			} else if (fields[2].contains(&quot;eq&quot;)) {</b>
+<b class="nc">&nbsp;				params.add(new Object[] { EQ, fields[0], fields[1] });</b>
+<b class="nc">&nbsp;			} else if (fields[2].contains(&quot;ind&quot;)) {</b>
+<b class="nc">&nbsp;				params.add(new Object[] { IND, fields[0], fields[1] });</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new AssertionError(row);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return params;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private final Value term1;
+&nbsp;
+&nbsp;	private final Value term2;
+&nbsp;
+&nbsp;	private final String operator;
+&nbsp;
+&nbsp;	private Repository repository;
+&nbsp;
+<b class="nc">&nbsp;	public EquivalentTest(String operator, String term1, String term2) {</b>
+<b class="nc">&nbsp;		this.operator = operator;</b>
+<b class="nc">&nbsp;		this.term1 = getTerm(term1);</b>
+<b class="nc">&nbsp;		this.term2 = getTerm(term2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Before
+&nbsp;	public void setUp() throws Exception {
+<b class="nc">&nbsp;		repository = createRepository();</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			con.clear();</b>
+<b class="nc">&nbsp;			con.add(t1, RDF.VALUE, term1);</b>
+<b class="nc">&nbsp;			con.add(t2, RDF.VALUE, term2);</b>
+<b class="nc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@After
+&nbsp;	public void tearDown() throws Exception {
+<b class="nc">&nbsp;		repository.shutDown();</b>
+<b class="nc">&nbsp;		repository = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testOperator() throws Throwable {
+<b class="nc">&nbsp;		assertEquals(operator, compare(term1, term2));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Repository createRepository() throws Exception {
+<b class="nc">&nbsp;		Repository repository = newRepository();</b>
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			con.clear();</b>
+<b class="nc">&nbsp;			con.clearNamespaces();</b>
+<b class="nc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return repository;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract Repository newRepository() throws Exception;
+&nbsp;
+&nbsp;	private static Value getTerm(String label) {
+<b class="nc">&nbsp;		if (label.contains(&quot;xyz&quot;)) {</b>
+<b class="nc">&nbsp;			if (label.contains(&quot;integer&quot;)) {</b>
+<b class="nc">&nbsp;				return xyz_integer;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;string&quot;)) {</b>
+<b class="nc">&nbsp;				return xyz_string;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;unknown&quot;)) {</b>
+<b class="nc">&nbsp;				return xyz_unknown;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;en&quot;)) {</b>
+<b class="nc">&nbsp;				return xyz_en;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;EN&quot;)) {</b>
+<b class="nc">&nbsp;				return xyz_EN;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;:xyz&quot;)) {</b>
+<b class="nc">&nbsp;				return xyz_uri;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;\&quot;xyz\&quot;&quot;)) {</b>
+<b class="nc">&nbsp;				return xyz_simple;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		if (label.contains(&quot;abc&quot;)) {</b>
+<b class="nc">&nbsp;			if (label.contains(&quot;integer&quot;)) {</b>
+<b class="nc">&nbsp;				return abc_integer;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;string&quot;)) {</b>
+<b class="nc">&nbsp;				return abc_string;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;unknown&quot;)) {</b>
+<b class="nc">&nbsp;				return abc_unknown;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;en&quot;)) {</b>
+<b class="nc">&nbsp;				return abc_en;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;EN&quot;)) {</b>
+<b class="nc">&nbsp;				return abc_EN;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;:abc&quot;)) {</b>
+<b class="nc">&nbsp;				return abc_uri;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (label.contains(&quot;\&quot;abc\&quot;&quot;)) {</b>
+<b class="nc">&nbsp;				return abc_simple;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		throw new AssertionError(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String compare(Value term1, Value term2) throws Exception {
+<b class="nc">&nbsp;		boolean eq = evaluate(EQ);</b>
+<b class="nc">&nbsp;		boolean neq = evaluate(NEQ);</b>
+<b class="nc">&nbsp;		assertTrue(!eq || !neq);</b>
+<b class="nc">&nbsp;		if (eq &amp;&amp; !neq) {</b>
+<b class="nc">&nbsp;			return EQ;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!eq &amp;&amp; neq) {</b>
+<b class="nc">&nbsp;			return NEQ;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!eq &amp;&amp; !neq) {</b>
+<b class="nc">&nbsp;			return IND;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new AssertionError();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean evaluate(String op) throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		String qry = PREFIX + &quot;SELECT ?term1 ?term2 &quot; + &quot;WHERE {ex:t1 rdf:value ?term1 . ex:t2 rdf:value ?term2 &quot;</b>
+&nbsp;				+ &quot;FILTER (?term1 &quot; + op + &quot; ?term2)}&quot;;
+<b class="nc">&nbsp;		return evaluateSparql(qry);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean evaluateSparql(String qry)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		try (RepositoryConnection con = repository.getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			TupleQuery query = con.prepareTupleQuery(QueryLanguage.SPARQL, qry);</b>
+<b class="nc">&nbsp;			try (TupleQueryResult evaluate = query.evaluate()) {</b>
+<b class="nc">&nbsp;				return evaluate.hasNext();</b>
+<b class="nc">&nbsp;			} finally {</b>
+<b class="nc">&nbsp;				con.commit();</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

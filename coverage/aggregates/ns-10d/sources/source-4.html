@@ -1,0 +1,194 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DirectOperationInstantiator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.support</a>
+</div>
+
+<h1>Coverage Summary for Class: DirectOperationInstantiator (org.eclipse.rdf4j.spring.support)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DirectOperationInstantiator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.support;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+<b class="nc">&nbsp;public class DirectOperationInstantiator implements OperationInstantiator {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());</b>
+&nbsp;
+&nbsp;	public TupleQuery getTupleQuery(RepositoryConnection con, String queryString) {
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;new tupleQuery:\n\n{}\n&quot;, queryString);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return con.prepareTupleQuery(queryString);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Update getUpdate(RepositoryConnection con, String updateString) {
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;new update:\n\n{}\n&quot;, updateString);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return con.prepareUpdate(updateString);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public GraphQuery getGraphQuery(RepositoryConnection con, String graphQuery) {
+<b class="nc">&nbsp;		if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;new graphQuery:\n\n{}\n&quot;, graphQuery);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return con.prepareGraphQuery(graphQuery);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public TupleQuery getTupleQuery(
+&nbsp;			RepositoryConnection con,
+&nbsp;			Class&lt;?&gt; owner,
+&nbsp;			String operationName,
+&nbsp;			Supplier&lt;String&gt; tupleQueryStringSupplier) {
+<b class="nc">&nbsp;		return getTupleQuery(con, tupleQueryStringSupplier.get());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Update getUpdate(
+&nbsp;			RepositoryConnection con,
+&nbsp;			Class&lt;?&gt; owner,
+&nbsp;			String operationName,
+&nbsp;			Supplier&lt;String&gt; updateStringSupplier) {
+<b class="nc">&nbsp;		return getUpdate(con, updateStringSupplier.get());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public GraphQuery getGraphQuery(
+&nbsp;			RepositoryConnection con,
+&nbsp;			Class&lt;?&gt; owner,
+&nbsp;			String operationName,
+&nbsp;			Supplier&lt;String&gt; graphQueryStringSupplier) {
+<b class="nc">&nbsp;		return getGraphQuery(con, graphQueryStringSupplier.get());</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

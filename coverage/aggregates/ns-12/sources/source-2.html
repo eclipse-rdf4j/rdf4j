@@ -1,0 +1,161 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > CloseableIteration</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.iteration</a>
+</div>
+
+<h1>Coverage Summary for Class: CloseableIteration (org.eclipse.rdf4j.common.iteration)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">CloseableIteration</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.iteration;
+&nbsp;
+&nbsp;import java.util.stream.Stream;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link Iteration} that can be closed to free resources that it is holding. CloseableIterations automatically free
+&nbsp; * their resources when exhausted. If not read until exhaustion or if you want to make sure the iteration is properly
+&nbsp; * closed, any code using the iterator should be placed in a try-with-resources block, closing the iteration
+&nbsp; * automatically, e.g.:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; *
+&nbsp; * try (CloseableIteration&amp;lt;Object, Exception&amp;gt; iter = ...) {
+&nbsp; *    // read objects from the iterator
+&nbsp; * }
+&nbsp; * catch(Exception e) {
+&nbsp; *   // process the exception that can be thrown while processing.
+&nbsp; * }
+&nbsp; * &lt;/pre&gt;
+&nbsp; *
+&nbsp; * @deprecated In the future this interface will stop extending {@link Iteration} and instead declare the same interface
+&nbsp; *             methods directly. The interface will also stop requiring implementations to automatically close when
+&nbsp; *             exhausted, instead making this an optional feature and requiring the user to always call close. This
+&nbsp; *             interface may also be removed.
+&nbsp; *
+&nbsp; *
+&nbsp; */
+&nbsp;@Deprecated(since = &quot;4.1.0&quot;)
+&nbsp;public interface CloseableIteration&lt;E, X extends Exception&gt; extends Iteration&lt;E, X&gt;, AutoCloseable {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert the results to a Java 8 Stream.
+&nbsp;	 *
+&nbsp;	 * @return stream
+&nbsp;	 */
+&nbsp;	default Stream&lt;E&gt; stream() {
+<b class="fc">&nbsp;		return Iterations.stream(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes this iteration, freeing any resources that it is holding. If the iteration has already been closed then
+&nbsp;	 * invoking this method has no effect.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	void close() throws X;
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

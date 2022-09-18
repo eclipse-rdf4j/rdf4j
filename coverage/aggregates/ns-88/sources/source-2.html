@@ -1,0 +1,210 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RenderUtils</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender</a>
+</div>
+
+<h1>Coverage Summary for Class: RenderUtils (org.eclipse.rdf4j.queryrender)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RenderUtils</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender;
+&nbsp;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for rendering (parts of) SPARQL query strings.
+&nbsp; *
+&nbsp; * @author Michael Grove
+&nbsp; */
+&nbsp;public final class RenderUtils {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * No instances
+&nbsp;	 */
+&nbsp;	private RenderUtils() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value}
+&nbsp;	 *
+&nbsp;	 * @param theValue the value to render
+&nbsp;	 * @return the value rendered in its SPARQL query string representation
+&nbsp;	 */
+&nbsp;	public static String toSPARQL(Value theValue) {
+<b class="nc">&nbsp;		StringBuilder aBuffer = toSPARQL(theValue, new StringBuilder());</b>
+<b class="nc">&nbsp;		return aBuffer.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append the SPARQL query string rendering of the {@link org.eclipse.rdf4j.model.Value} to the supplied
+&nbsp;	 * {@link StringBuilder}.
+&nbsp;	 *
+&nbsp;	 * @param value   the value to render
+&nbsp;	 * @param builder the {@link StringBuilder} to append to
+&nbsp;	 * @return the original {@link StringBuilder} with the value appended.
+&nbsp;	 */
+&nbsp;	public static StringBuilder toSPARQL(Value value, StringBuilder builder) {
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			IRI aURI = (IRI) value;</b>
+<b class="nc">&nbsp;			builder.append(&quot;&lt;&quot;).append(aURI.toString()).append(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;		} else if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			builder.append(&quot;_:&quot;).append(((BNode) value).getID());</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			Literal aLit = (Literal) value;</b>
+&nbsp;
+<b class="nc">&nbsp;			builder.append(&quot;\&quot;\&quot;\&quot;&quot;).append(escape(aLit.getLabel())).append(&quot;\&quot;\&quot;\&quot;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (Literals.isLanguageLiteral(aLit)) {</b>
+<b class="nc">&nbsp;				aLit.getLanguage().ifPresent(lang -&gt; builder.append(&quot;@&quot;).append(lang));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				builder.append(&quot;^^&lt;&quot;).append(aLit.getDatatype().toString()).append(&quot;&gt;&quot;);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return builder;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Properly escape out any special characters in the query string. Replaces unescaped double quotes with \&quot; and
+&nbsp;	 * replaces slashes &#39;\&#39; which are not a valid escape sequence such as \t or \n with a double slash &#39;\\&#39; so they are
+&nbsp;	 * unescaped correctly by a SPARQL parser.
+&nbsp;	 *
+&nbsp;	 * @param theString the query string to escape chars in
+&nbsp;	 * @return the escaped query string
+&nbsp;	 */
+&nbsp;	public static String escape(String theString) {
+<b class="nc">&nbsp;		theString = theString.replaceAll(&quot;\&quot;&quot;, &quot;\\\\\&quot;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuffer aBuffer = new StringBuffer();</b>
+<b class="nc">&nbsp;		Matcher aMatcher = Pattern.compile(&quot;\\\\([^tnrbf\&quot;&#39;\\\\])&quot;).matcher(theString);</b>
+<b class="nc">&nbsp;		while (aMatcher.find()) {</b>
+<b class="nc">&nbsp;			aMatcher.appendReplacement(aBuffer, String.format(&quot;\\\\\\\\%s&quot;, aMatcher.group(1)));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		aMatcher.appendTail(aBuffer);</b>
+&nbsp;
+<b class="nc">&nbsp;		return aBuffer.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

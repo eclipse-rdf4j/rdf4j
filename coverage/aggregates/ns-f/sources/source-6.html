@@ -1,0 +1,213 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LockMonitoring</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks.diagnostics</a>
+</div>
+
+<h1>Coverage Summary for Class: LockMonitoring (org.eclipse.rdf4j.common.concurrent.locks.diagnostics)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LockMonitoring</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LockMonitoring$Wrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks.diagnostics;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.Lock;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface to support monitoring and cleaning of locks.
+&nbsp; *
+&nbsp; * @author Håvard M. Ottestad
+&nbsp; */
+&nbsp;@InternalUseOnly
+&nbsp;public interface LockMonitoring&lt;T extends Lock&gt; {
+&nbsp;	int INITIAL_WAIT_TO_COLLECT = 10000;
+&nbsp;
+&nbsp;	Lock getLock() throws InterruptedException;
+&nbsp;
+&nbsp;	Lock tryLock();
+&nbsp;
+&nbsp;	default Lock getLock(String alias) throws InterruptedException {
+<b class="nc">&nbsp;		return getLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	T unsafeInnerLock(Lock lock);
+&nbsp;
+&nbsp;	default void runCleanup() {
+&nbsp;		// no-op
+<b class="nc">&nbsp;	}</b>
+&nbsp;
+&nbsp;	default boolean requiresManualCleanup() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static &lt;T extends Lock&gt; LockMonitoring&lt;T&gt; wrap(Lock.ExtendedSupplier&lt;T&gt; supplier) {
+<b class="nc">&nbsp;		return new Wrapper&lt;&gt;(supplier);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	Lock register(T lock);
+&nbsp;
+&nbsp;	void unregister(Lock lock);
+&nbsp;
+&nbsp;	class Wrapper&lt;T extends Lock&gt; implements LockMonitoring&lt;T&gt; {
+&nbsp;		private final Lock.ExtendedSupplier&lt;T&gt; supplier;
+&nbsp;
+<b class="nc">&nbsp;		public Wrapper(Lock.ExtendedSupplier&lt;T&gt; supplier) {</b>
+<b class="nc">&nbsp;			this.supplier = supplier;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Lock getLock() throws InterruptedException {
+<b class="nc">&nbsp;			return supplier.getLock();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Lock tryLock() {
+<b class="nc">&nbsp;			return supplier.tryLock();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public T unsafeInnerLock(Lock lock) {
+<b class="nc">&nbsp;			return (T) lock;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void unregister(Lock lock) {
+&nbsp;			// no-op
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Lock register(Lock lock) {
+&nbsp;			// no-op;
+<b class="nc">&nbsp;			return lock;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

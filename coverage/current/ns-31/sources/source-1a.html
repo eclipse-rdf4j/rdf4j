@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > StatementTupleExpr</title>
+  <title>Coverage Report > FilterTuple</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.algebra</a>
 </div>
 
-<h1>Coverage Summary for Class: StatementTupleExpr (org.eclipse.rdf4j.federated.algebra)</h1>
+<h1>Coverage Summary for Class: FilterTuple (org.eclipse.rdf4j.federated.algebra)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">StatementTupleExpr</td>
+  <td class="name">FilterTuple</td>
 </tr>
 
 </table>
@@ -52,50 +52,67 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;
 &nbsp;import java.util.List;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.Value;
 &nbsp;import org.eclipse.rdf4j.query.BindingSet;
-&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 &nbsp;
 &nbsp;/**
-&nbsp; * Interface for any expression that can be evaluated
+&nbsp; * Expressions implementing this interface can apply some {@link FilterValueExpr} during evaluation.
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
 &nbsp; *
 &nbsp; * @see StatementSourcePattern
 &nbsp; * @see ExclusiveStatement
 &nbsp; * @see ExclusiveGroup
+&nbsp; *
 &nbsp; */
-&nbsp;public interface StatementTupleExpr extends FedXTupleExpr {
+&nbsp;public interface FilterTuple extends QueryModelNode {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * @return the id of this expr
+&nbsp;	 * @return true if this expression has a filter to apply
 &nbsp;	 */
-&nbsp;	String getId();
+&nbsp;	boolean hasFilter();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * @return a list of sources that are relevant for evaluation of this expression
-&nbsp;	 */
-&nbsp;	List&lt;StatementSource&gt; getStatementSources();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * returns true iff this statement has free variables in the presence of the specified binding set
+&nbsp;	 * register a new filter expression. If the expr has already a filter registered, the new expression is added to a
+&nbsp;	 * {@link ConjunctiveFilterExpr}.
 &nbsp;	 *
-&nbsp;	 * @param binding
-&nbsp;	 * @return whether the statement has free vars
+&nbsp;	 * @param expr
 &nbsp;	 */
-&nbsp;	boolean hasFreeVarsFor(BindingSet binding);
+&nbsp;	void addFilterExpr(FilterExpr expr);
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Evaluate this expression using the provided bindings
+&nbsp;	 * register a filter that can be directly expressed as a binding, e.g.
 &nbsp;	 *
-&nbsp;	 * @param bindings
-&nbsp;	 * @return the result iteration
+&nbsp;	 * SELECT * WHERE { ?s p o . FILTER (?s = X) }
 &nbsp;	 *
-&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * is equivalent to
+&nbsp;	 *
+&nbsp;	 * SELECT * WHERE { X p o . }
+&nbsp;	 *
+&nbsp;	 * @param varName
+&nbsp;	 * @param value
 &nbsp;	 */
-&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; evaluate(BindingSet bindings)
-&nbsp;			throws QueryEvaluationException;
+&nbsp;	void addBoundFilter(String varName, Value value);
 &nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the currently registered filter expressions, usually of type {@link FilterExpr} or
+&nbsp;	 *         {@link ConjunctiveFilterExpr}
+&nbsp;	 */
+&nbsp;	FilterValueExpr getFilterExpr();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @return the free variables of this expression
+&nbsp;	 */
+&nbsp;	List&lt;String&gt; getFreeVars();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns bound filter bindings, that need to be added as additional bindings to the final result
+&nbsp;	 *
+&nbsp;	 * @return the bound filters, or &lt;code&gt;null&lt;/code&gt;
+&nbsp;	 */
+&nbsp;	BindingSet getBoundFilters();
 &nbsp;}
 </code>
 </pre>
@@ -120,7 +137,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

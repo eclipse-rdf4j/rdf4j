@@ -1,0 +1,197 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SimpleResponseView</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.webapp.views</a>
+</div>
+
+<h1>Coverage Summary for Class: SimpleResponseView (org.eclipse.rdf4j.common.webapp.views)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SimpleResponseView</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.webapp.views;
+&nbsp;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.springframework.web.servlet.View;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Herko ter Horst
+&nbsp; */
+&nbsp;public class SimpleResponseView implements View {
+&nbsp;
+&nbsp;	public static final String SC_KEY = &quot;sc&quot;;
+&nbsp;
+&nbsp;	public static final String CONTENT_KEY = &quot;content&quot;;
+&nbsp;
+&nbsp;	private static final int DEFAULT_SC = HttpServletResponse.SC_OK;
+&nbsp;
+&nbsp;	private static final String CONTENT_TYPE = &quot;text/plain; charset=UTF-8&quot;;
+&nbsp;
+&nbsp;	public static final String CUSTOM_HEADERS_KEY = &quot;headers&quot;;
+&nbsp;
+<b class="nc">&nbsp;	private static final SimpleResponseView INSTANCE = new SimpleResponseView();</b>
+&nbsp;
+&nbsp;	public static SimpleResponseView getInstance() {
+<b class="nc">&nbsp;		return INSTANCE;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private SimpleResponseView() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getContentType() {
+<b class="nc">&nbsp;		return CONTENT_TYPE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;rawtypes&quot;)
+&nbsp;	@Override
+&nbsp;	public void render(Map model, HttpServletRequest request, HttpServletResponse response) throws Exception {
+<b class="nc">&nbsp;		Integer sc = (Integer) model.get(SC_KEY);</b>
+<b class="nc">&nbsp;		if (sc == null) {</b>
+<b class="nc">&nbsp;			sc = DEFAULT_SC;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		response.setStatus(sc.intValue());</b>
+&nbsp;
+<b class="nc">&nbsp;		response.setContentType(getContentType());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (model.containsKey(CUSTOM_HEADERS_KEY)) {</b>
+<b class="nc">&nbsp;			Map&lt;String, String&gt; customHeaders = (Map&lt;String, String&gt;) model.get(CUSTOM_HEADERS_KEY);</b>
+<b class="nc">&nbsp;			if (customHeaders != null) {</b>
+<b class="nc">&nbsp;				for (String headerName : customHeaders.keySet()) {</b>
+<b class="nc">&nbsp;					response.setHeader(headerName, customHeaders.get(headerName));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (OutputStream out = response.getOutputStream()) {</b>
+<b class="nc">&nbsp;			String content = (String) model.get(CONTENT_KEY);</b>
+<b class="nc">&nbsp;			if (content != null) {</b>
+<b class="nc">&nbsp;				byte[] contentBytes = content.getBytes(StandardCharsets.UTF_8);</b>
+<b class="nc">&nbsp;				response.setContentLength(contentBytes.length);</b>
+<b class="nc">&nbsp;				out.write(contentBytes);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				response.setContentLength(0);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

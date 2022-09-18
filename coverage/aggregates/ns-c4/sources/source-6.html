@@ -1,0 +1,439 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DirectTypeHierarchyInferencer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.inferencer.fc</a>
+</div>
+
+<h1>Coverage Summary for Class: DirectTypeHierarchyInferencer (org.eclipse.rdf4j.sail.inferencer.fc)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">DirectTypeHierarchyInferencer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">DirectTypeHierarchyInferencer$DirectTypeHierarchyInferencerConnection</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/58)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/80)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.inferencer.fc;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashSet;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDFS;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.SESAME;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.sail.NotifyingSail;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnectionListener;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+&nbsp;import org.eclipse.rdf4j.sail.inferencer.InferencerConnectionWrapper;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A forward-chaining inferencer that infers the direct-type hierarchy relations {@link SESAME#DIRECTSUBCLASSOF
+&nbsp; * sesame:directSubClassOf}, {@link SESAME#DIRECTSUBPROPERTYOF sesame:directSubPropertyOf} and {@link SESAME#DIRECTTYPE
+&nbsp; * sesame:directType}.
+&nbsp; * &lt;p&gt;
+&nbsp; * The semantics of this inferencer are defined as follows:
+&nbsp; *
+&nbsp; * &lt;pre&gt;
+&nbsp; *    Class A is a direct subclass of B iff:
+&nbsp; *       1. A is a subclass of B and;
+&nbsp; *       2. A and B are not equa and;
+&nbsp; *       3. there is no class C (unequal A and B) such that
+&nbsp; *          A is a subclass of C and C of B.
+&nbsp; *
+&nbsp; *    Property P is a direct subproperty of Q iff:
+&nbsp; *       1. P is a subproperty of Q and;
+&nbsp; *       2. P and Q are not equal and;
+&nbsp; *       3. there is no property R (unequal P and Q) such that
+&nbsp; *          P is a subproperty of R and R of Q.
+&nbsp; *
+&nbsp; *    Resource I is of direct type T iff:
+&nbsp; *       1. I is of type T and
+&nbsp; *       2. There is no class U (unequal T) such that:
+&nbsp; *           a. U is a subclass of T and;
+&nbsp; *           b. I is of type U.
+&nbsp; * &lt;/pre&gt;
+&nbsp; */
+&nbsp;public class DirectTypeHierarchyInferencer extends NotifyingSailWrapper {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(DirectTypeHierarchyInferencer.class);</b>
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Constants *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private static final ParsedGraphQuery DIRECT_SUBCLASSOF_MATCHER;
+&nbsp;
+&nbsp;	private static final ParsedGraphQuery DIRECT_SUBCLASSOF_QUERY;
+&nbsp;
+&nbsp;	private static final ParsedGraphQuery DIRECT_SUBPROPERTYOF_MATCHER;
+&nbsp;
+&nbsp;	private static final ParsedGraphQuery DIRECT_SUBPROPERTYOF_QUERY;
+&nbsp;
+&nbsp;	private static final ParsedGraphQuery DIRECT_TYPE_MATCHER;
+&nbsp;
+&nbsp;	private static final ParsedGraphQuery DIRECT_TYPE_QUERY;
+&nbsp;
+&nbsp;	static {
+&nbsp;		try {
+<b class="nc">&nbsp;			DIRECT_SUBCLASSOF_MATCHER = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,</b>
+&nbsp;					&quot;CONSTRUCT WHERE { ?X sesame:directSubClassOf ?Y } &quot;, null);
+&nbsp;
+<b class="nc">&nbsp;			DIRECT_SUBPROPERTYOF_MATCHER = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,</b>
+&nbsp;					&quot;CONSTRUCT WHERE { ?X sesame:directType ?Y }&quot;, null);
+&nbsp;
+<b class="nc">&nbsp;			DIRECT_TYPE_MATCHER = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,</b>
+&nbsp;					&quot;CONSTRUCT WHERE { ?X sesame:directSubPropertyOf ?Y}&quot;, null);
+&nbsp;
+<b class="nc">&nbsp;			DIRECT_SUBCLASSOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,</b>
+&nbsp;					&quot;CONSTRUCT { ?X sesame:directSubClassOf ?Y } &quot;
+&nbsp;							+ &quot;WHERE { ?X rdfs:subClassOf ?Y . &quot;
+&nbsp;							+ &quot;FILTER X != Y AND &quot;
+&nbsp;							+ &quot;NOT EXISTS { SELECT ?Z WHERE { ?X rdfs:subClassOf ?Z. ?Z rdfs:subClassOf ?Y . FILTER ?X != ?Z AND ?Z != ?Y }}}&quot;,
+&nbsp;					null);
+&nbsp;
+<b class="nc">&nbsp;			DIRECT_SUBPROPERTYOF_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,</b>
+&nbsp;					&quot;CONSTRUCT { ?X sesame:directSubPropertyOf ?Y } &quot;
+&nbsp;							+ &quot;WHERE { ?X rdfs:subPropertyOf ?Y . &quot;
+&nbsp;							+ &quot;FILTER X != Y AND &quot;
+&nbsp;							+ &quot;NOT EXISTS { SELECT ?Z WHERE { ?X rdfs:subPropertyOf ?Z. ?Z rdfs:subPropertyOf ?Y . FILTER ?X != ?Z AND ?Z != ?Y }}}&quot;,
+&nbsp;					null);
+&nbsp;
+<b class="nc">&nbsp;			DIRECT_TYPE_QUERY = QueryParserUtil.parseGraphQuery(QueryLanguage.SPARQL,</b>
+&nbsp;					&quot;CONSTRUCT { ?X sesame:directType ?Y } WHERE { ?X rdf:type ?Y . \n &quot;
+&nbsp;							+ &quot;FILTER NOT EXISTS { SELECT ?Z WHERE { ?X rdf:type ?Z. ?Z rdfs:subClassOf ?Y . FILTER ?Z != ?Y }}}&quot;,
+&nbsp;					null);
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+&nbsp;			// Can only occur due to a bug in this code
+<b class="nc">&nbsp;			throw new RuntimeException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public DirectTypeHierarchyInferencer() {
+<b class="nc">&nbsp;		super();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public DirectTypeHierarchyInferencer(NotifyingSail baseSail) {
+<b class="nc">&nbsp;		super(baseSail);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public InferencerConnection getConnection() throws SailException {
+&nbsp;		try {
+<b class="nc">&nbsp;			InferencerConnection con = (InferencerConnection) super.getConnection();</b>
+<b class="nc">&nbsp;			return new DirectTypeHierarchyInferencerConnection(con);</b>
+<b class="nc">&nbsp;		} catch (ClassCastException e) {</b>
+<b class="nc">&nbsp;			throw new SailException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws SailException {
+<b class="nc">&nbsp;		super.init();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (InferencerConnection con = getConnection()) {</b>
+<b class="nc">&nbsp;			con.begin();</b>
+<b class="nc">&nbsp;			con.flushUpdates();</b>
+<b class="nc">&nbsp;			con.commit();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------------------------------------------------*
+&nbsp;	 * Inner class DirectTypeHierarchyInferencerConnection *
+&nbsp;	 *-----------------------------------------------------*/
+&nbsp;
+&nbsp;	private class DirectTypeHierarchyInferencerConnection extends InferencerConnectionWrapper
+&nbsp;			implements SailConnectionListener {
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Flag indicating whether an update of the inferred statements is needed.
+&nbsp;		 */
+<b class="nc">&nbsp;		private boolean updateNeeded = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		public DirectTypeHierarchyInferencerConnection(InferencerConnection con) {</b>
+<b class="nc">&nbsp;			super(con);</b>
+<b class="nc">&nbsp;			con.addConnectionListener(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// called by base sail
+&nbsp;		@Override
+&nbsp;		public void statementAdded(Statement st) {
+<b class="nc">&nbsp;			checkUpdatedStatement(st);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// called by base sail
+&nbsp;		@Override
+&nbsp;		public void statementRemoved(Statement st) {
+<b class="nc">&nbsp;			checkUpdatedStatement(st);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void checkUpdatedStatement(Statement st) {
+<b class="nc">&nbsp;			IRI pred = st.getPredicate();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (pred.equals(RDF.TYPE) || pred.equals(RDFS.SUBCLASSOF) || pred.equals(RDFS.SUBPROPERTYOF)) {</b>
+<b class="nc">&nbsp;				updateNeeded = true;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void rollback() throws SailException {
+<b class="nc">&nbsp;			super.rollback();</b>
+<b class="nc">&nbsp;			updateNeeded = false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void flushUpdates() throws SailException {
+<b class="nc">&nbsp;			super.flushUpdates();</b>
+&nbsp;
+<b class="nc">&nbsp;			while (updateNeeded) {</b>
+&nbsp;				try {
+&nbsp;					// Determine which statements should be added and which should be
+&nbsp;					// removed
+<b class="nc">&nbsp;					Collection&lt;Statement&gt; oldStatements = new HashSet&lt;&gt;(256);</b>
+<b class="nc">&nbsp;					Collection&lt;Statement&gt; newStatements = new HashSet&lt;&gt;(256);</b>
+&nbsp;
+<b class="nc">&nbsp;					evaluateIntoStatements(DIRECT_SUBCLASSOF_MATCHER, oldStatements);</b>
+<b class="nc">&nbsp;					evaluateIntoStatements(DIRECT_SUBPROPERTYOF_MATCHER, oldStatements);</b>
+<b class="nc">&nbsp;					evaluateIntoStatements(DIRECT_TYPE_MATCHER, oldStatements);</b>
+&nbsp;
+<b class="nc">&nbsp;					evaluateIntoStatements(DIRECT_SUBCLASSOF_QUERY, newStatements);</b>
+<b class="nc">&nbsp;					evaluateIntoStatements(DIRECT_SUBPROPERTYOF_QUERY, newStatements);</b>
+<b class="nc">&nbsp;					evaluateIntoStatements(DIRECT_TYPE_QUERY, newStatements);</b>
+&nbsp;
+<b class="nc">&nbsp;					logger.debug(&quot;existing virtual properties: {}&quot;, oldStatements.size());</b>
+<b class="nc">&nbsp;					logger.debug(&quot;new virtual properties: {}&quot;, newStatements.size());</b>
+&nbsp;
+&nbsp;					// Remove the statements that should be retained from both sets
+<b class="nc">&nbsp;					Collection&lt;Statement&gt; unchangedStatements = new HashSet&lt;&gt;(oldStatements);</b>
+<b class="nc">&nbsp;					unchangedStatements.retainAll(newStatements);</b>
+&nbsp;
+<b class="nc">&nbsp;					oldStatements.removeAll(unchangedStatements);</b>
+<b class="nc">&nbsp;					newStatements.removeAll(unchangedStatements);</b>
+&nbsp;
+<b class="nc">&nbsp;					logger.debug(&quot;virtual properties to remove: {}&quot;, oldStatements.size());</b>
+<b class="nc">&nbsp;					logger.debug(&quot;virtual properties to add: {}&quot;, newStatements.size());</b>
+&nbsp;
+<b class="nc">&nbsp;					Resource[] contexts = new Resource[] { null };</b>
+&nbsp;
+<b class="nc">&nbsp;					for (Statement st : oldStatements) {</b>
+<b class="nc">&nbsp;						removeInferredStatement(st.getSubject(), st.getPredicate(), st.getObject(), contexts);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;					for (Statement st : newStatements) {</b>
+<b class="nc">&nbsp;						addInferredStatement(st.getSubject(), st.getPredicate(), st.getObject(), contexts);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;
+<b class="nc">&nbsp;					updateNeeded = false;</b>
+<b class="nc">&nbsp;				} catch (RDFHandlerException e) {</b>
+<b class="nc">&nbsp;					Throwable t = e.getCause();</b>
+<b class="nc">&nbsp;					if (t instanceof SailException) {</b>
+<b class="nc">&nbsp;						throw (SailException) t;</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						throw new SailException(t);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;					throw new SailException(e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				super.flushUpdates();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void evaluateIntoStatements(ParsedGraphQuery query, Collection&lt;Statement&gt; statements)
+&nbsp;				throws SailException, RDFHandlerException, QueryEvaluationException {
+<b class="nc">&nbsp;			try (CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; bindingsIter = getWrappedConnection()</b>
+<b class="nc">&nbsp;					.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), true)) {</b>
+<b class="nc">&nbsp;				ValueFactory vf = getValueFactory();</b>
+&nbsp;
+<b class="nc">&nbsp;				while (bindingsIter.hasNext()) {</b>
+<b class="nc">&nbsp;					BindingSet bindings = bindingsIter.next();</b>
+&nbsp;
+<b class="nc">&nbsp;					Value subj = bindings.getValue(&quot;subject&quot;);</b>
+<b class="nc">&nbsp;					Value pred = bindings.getValue(&quot;predicate&quot;);</b>
+<b class="nc">&nbsp;					Value obj = bindings.getValue(&quot;object&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;					if (subj instanceof Resource &amp;&amp; pred instanceof IRI &amp;&amp; obj != null) {</b>
+<b class="nc">&nbsp;						statements.add(vf.createStatement((Resource) subj, (IRI) pred, obj));</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	} // end inner class DirectTypeHierarchyInferencerConnection
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,1469 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemorySailStore</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory</a>
+</div>
+
+<h1>Coverage Summary for Class: MemorySailStore (org.eclipse.rdf4j.sail.memory)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemorySailStore</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.2%
+  </span>
+  <span class="absValue">
+    (12/19)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    45.8%
+  </span>
+  <span class="absValue">
+    (66/144)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    48.2%
+  </span>
+  <span class="absValue">
+    (96/199)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">MemorySailStore$MemorySailDataset</td>
+<td class="coverageStat">
+  <span class="percent">
+    63.6%
+  </span>
+  <span class="absValue">
+    (7/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.9%
+  </span>
+  <span class="absValue">
+    (12/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    58.3%
+  </span>
+  <span class="absValue">
+    (35/60)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">MemorySailStore$MemorySailSink</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (15/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    46.8%
+  </span>
+  <span class="absValue">
+    (59/126)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    57.5%
+  </span>
+  <span class="absValue">
+    (107/186)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">MemorySailStore$MemorySailSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (1/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    83.3%
+  </span>
+  <span class="absValue">
+    (5/6)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">MemorySailStore$SnapshotMonitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (3/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    18.8%
+  </span>
+  <span class="absValue">
+    (3/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.4%
+  </span>
+  <span class="absValue">
+    (12/27)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">MemorySailStore$SnapshotMonitor$ReservedSnapshot</td>
+<td class="coverageStat">
+  <span class="percent">
+    80%
+  </span>
+  <span class="absValue">
+    (4/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40.9%
+  </span>
+  <span class="absValue">
+    (9/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70.3%
+  </span>
+  <span class="absValue">
+    (26/37)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    69.8%
+  </span>
+  <span class="absValue">
+    (44/63)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.4%
+  </span>
+  <span class="absValue">
+    (150/338)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    54.6%
+  </span>
+  <span class="absValue">
+    (281/515)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory;
+&nbsp;
+&nbsp;import java.lang.invoke.MethodHandles;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;import java.lang.ref.Cleaner;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ConcurrentHashMap;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.AtomicInteger;
+&nbsp;import java.util.concurrent.atomic.LongAdder;
+&nbsp;import java.util.concurrent.locks.ReentrantLock;
+&nbsp;
+&nbsp;import org.apache.commons.lang3.time.StopWatch;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.LinkedHashModel;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.sail.SailConflictException;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.base.BackingSailSource;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailDataset;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailSink;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailSource;
+&nbsp;import org.eclipse.rdf4j.sail.base.SailStore;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemBNode;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemIRI;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemResource;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemStatement;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemStatementIterator;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemStatementIteratorCache;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemStatementList;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemTriple;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemTripleIterator;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemValue;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.MemValueFactory;
+&nbsp;import org.eclipse.rdf4j.sail.memory.model.WeakObjectRegistry;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of {@link SailStore} that keeps committed statements in a {@link MemStatementList}.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; */
+&nbsp;class MemorySailStore implements SailStore {
+&nbsp;
+<b class="fc">&nbsp;	private final static Logger logger = LoggerFactory.getLogger(MemorySailStore.class);</b>
+<b class="fc">&nbsp;	private static final Runtime RUNTIME = Runtime.getRuntime();</b>
+&nbsp;
+&nbsp;	// Maximum that can be allocated.
+<b class="fc">&nbsp;	private static final long MAX_MEMORY = RUNTIME.maxMemory();</b>
+&nbsp;
+&nbsp;	// Small heaps (small values for MAX_MEMORY) would trigger the cleanup priority too often. This is the threshold for
+&nbsp;	// running the code that checks for low memory and priorities cleanup.
+&nbsp;	private static final int CLEANUP_MAX_MEMORY_THRESHOLD = 256 * 1024 * 1024;
+&nbsp;
+&nbsp;	// A constant for the absolute lowest amount of free memory before we prioritise cleanup.
+&nbsp;	private static final int CLEANUP_MINIMUM_FREE_MEMORY = 64 * 1024 * 1024;
+&nbsp;
+&nbsp;	// A ratio of how much free memory there is before we prioritise cleanup. For a 1 GB heap a ratio of 1/8 means that
+&nbsp;	// we prioritise cleanup if there is less than 128 MB of free memory.
+&nbsp;	private static final double CLEANUP_MINIMUM_FREE_MEMORY_RATIO = 1.0 / 8;
+&nbsp;
+<b class="fc">&nbsp;	public static final EmptyIteration&lt;MemStatement, SailException&gt; EMPTY_ITERATION = new EmptyIteration&lt;&gt;();</b>
+<b class="fc">&nbsp;	public static final EmptyIteration&lt;MemTriple, SailException&gt; EMPTY_TRIPLE_ITERATION = new EmptyIteration&lt;&gt;();</b>
+<b class="fc">&nbsp;	public static final MemResource[] EMPTY_CONTEXT = {};</b>
+<b class="fc">&nbsp;	public static final MemResource[] NULL_CONTEXT = { null };</b>
+&nbsp;
+<b class="fc">&nbsp;	private final MemStatementIteratorCache iteratorCache = new MemStatementIteratorCache(10);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Factory/cache for MemValue objects.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final MemValueFactory valueFactory = new MemValueFactory();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * List containing all available statements.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final MemStatementList statements = new MemStatementList(256);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * This gets set to `true` when we add our first inferred statement. If the value is `false` we guarantee that there
+&nbsp;	 * are no inferred statements in the MemorySailStore. If it is `true` then an inferred statement was added at some
+&nbsp;	 * point, but we make no guarantees regarding if there still are inferred statements or if they are in the current
+&nbsp;	 * snapshot.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The purpose of this variable is to optimize read operations that only read inferred statements when there are no
+&nbsp;	 * inferred statements.
+&nbsp;	 */
+<b class="fc">&nbsp;	private volatile boolean mayHaveInferred = false;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifies the current snapshot.
+&nbsp;	 */
+&nbsp;	private volatile int currentSnapshot;
+&nbsp;
+&nbsp;	final SnapshotMonitor snapshotMonitor;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Store for namespace prefix info.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final MemNamespaceStore namespaceStore = new MemNamespaceStore();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Lock manager used to give the snapshot cleanup thread exclusive access to the statement list.
+&nbsp;	 */
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Lock manager used to prevent concurrent writes.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final ReentrantLock txnLockManager = new ReentrantLock();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Cleanup thread that removes deprecated statements when no other threads are accessing this list. Seee
+&nbsp;	 * {@link #scheduleSnapshotCleanup()}.
+&nbsp;	 */
+&nbsp;	private volatile Thread snapshotCleanupThread;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Lock object used to synchronize concurrent access to {@link #snapshotCleanupThread}.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final Object snapshotCleanupThreadLockObject = new Object();</b>
+&nbsp;
+<b class="fc">&nbsp;	public MemorySailStore(boolean debug) {</b>
+<b class="fc">&nbsp;		snapshotMonitor = new SnapshotMonitor(debug);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="fc">&nbsp;		return valueFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() {
+<b class="fc">&nbsp;		synchronized (snapshotCleanupThreadLockObject) {</b>
+<b class="pc">&nbsp;			if (snapshotCleanupThread != null) {</b>
+<b class="nc">&nbsp;				snapshotCleanupThread.interrupt();</b>
+<b class="nc">&nbsp;				snapshotCleanupThread = null;</b>
+&nbsp;			}
+<b class="fc">&nbsp;		}</b>
+<b class="fc">&nbsp;		valueFactory.clear();</b>
+<b class="fc">&nbsp;		statements.clear();</b>
+<b class="fc">&nbsp;		namespaceStore.clear();</b>
+<b class="fc">&nbsp;		invalidateCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void invalidateCache() {
+<b class="fc">&nbsp;		iteratorCache.invalidateCache();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public EvaluationStatistics getEvaluationStatistics() {
+<b class="fc">&nbsp;		return new MemEvaluationStatistics(valueFactory, statements);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailSource getExplicitSailSource() {
+<b class="fc">&nbsp;		return new MemorySailSource(true);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public SailSource getInferredSailSource() {
+<b class="fc">&nbsp;		return new MemorySailSource(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a StatementIterator that contains the statements matching the specified pattern of subject, predicate,
+&nbsp;	 * object, context. Inferred statements are excluded when &lt;var&gt;explicitOnly&lt;/var&gt; is set to &lt;var&gt;true&lt;/var&gt; .
+&nbsp;	 * Statements from the null context are excluded when &lt;var&gt;namedContextsOnly&lt;/var&gt; is set to &lt;var&gt;true&lt;/var&gt;. The
+&nbsp;	 * returned StatementIterator will assume the specified read mode.
+&nbsp;	 */
+&nbsp;	private CloseableIteration&lt;MemStatement, SailException&gt; createStatementIterator(Resource subj, IRI pred, Value obj,
+&nbsp;			Boolean explicit, int snapshot, Resource... contexts) throws InterruptedException {
+&nbsp;		// Perform look-ups for value-equivalents of the specified values
+&nbsp;
+<b class="pc">&nbsp;		if (explicit != null &amp;&amp; !explicit &amp;&amp; !mayHaveInferred &amp;&amp; snapshot &gt;= 0) {</b>
+<b class="fc">&nbsp;			return EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (statements.isEmpty()) {</b>
+<b class="fc">&nbsp;			return EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		MemResource memSubj = valueFactory.getMemResource(subj);</b>
+<b class="pc">&nbsp;		if (subj != null &amp;&amp; memSubj == null) {</b>
+&nbsp;			// non-existent subject
+<b class="nc">&nbsp;			return EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		MemIRI memPred = valueFactory.getMemURI(pred);</b>
+<b class="fc">&nbsp;		if (pred != null &amp;&amp; memPred == null) {</b>
+&nbsp;			// non-existent predicate
+<b class="fc">&nbsp;			return EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		MemValue memObj = valueFactory.getMemValue(obj);</b>
+<b class="fc">&nbsp;		if (obj != null &amp;&amp; memObj == null) {</b>
+&nbsp;			// non-existent object
+<b class="fc">&nbsp;			return EMPTY_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		MemResource[] memContexts;
+&nbsp;		MemStatementList smallestList;
+&nbsp;
+<b class="fc">&nbsp;		if (contexts.length == 0) {</b>
+<b class="fc">&nbsp;			memContexts = EMPTY_CONTEXT;</b>
+<b class="fc">&nbsp;			smallestList = statements;</b>
+<b class="fc">&nbsp;		} else if (contexts.length == 1 &amp;&amp; contexts[0] == null) {</b>
+<b class="fc">&nbsp;			memContexts = NULL_CONTEXT;</b>
+<b class="fc">&nbsp;			smallestList = statements;</b>
+<b class="fc">&nbsp;		} else if (contexts.length == 1) {</b>
+<b class="fc">&nbsp;			MemResource memContext = valueFactory.getMemResource(contexts[0]);</b>
+<b class="fc">&nbsp;			if (memContext == null) {</b>
+&nbsp;				// non-existent context
+<b class="fc">&nbsp;				return EMPTY_ITERATION;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			memContexts = new MemResource[] { memContext };</b>
+<b class="fc">&nbsp;			smallestList = memContext.getContextStatementList();</b>
+<b class="fc">&nbsp;			if (smallestList.isEmpty()) {</b>
+<b class="fc">&nbsp;				return EMPTY_ITERATION;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;		} else {</b>
+<b class="fc">&nbsp;			Set&lt;MemResource&gt; contextSet = new LinkedHashSet&lt;&gt;(2 * contexts.length);</b>
+&nbsp;
+<b class="fc">&nbsp;			for (Resource context : contexts) {</b>
+<b class="fc">&nbsp;				MemResource memContext = valueFactory.getMemResource(context);</b>
+<b class="pc">&nbsp;				if (context == null || memContext != null) {</b>
+<b class="fc">&nbsp;					contextSet.add(memContext);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="pc">&nbsp;			if (contextSet.isEmpty()) {</b>
+&nbsp;				// no known contexts specified
+<b class="nc">&nbsp;				return EMPTY_ITERATION;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			memContexts = contextSet.toArray(new MemResource[contextSet.size()]);</b>
+<b class="fc">&nbsp;			smallestList = statements;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return getMemStatementIterator(memSubj, memPred, memObj, explicit, snapshot, memContexts, smallestList);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private CloseableIteration&lt;MemStatement, SailException&gt; getMemStatementIterator(MemResource subj, MemIRI pred,
+&nbsp;			MemValue obj, Boolean explicit, int snapshot, MemResource[] memContexts, MemStatementList statementList)
+&nbsp;			throws InterruptedException {
+&nbsp;
+<b class="pc">&nbsp;		if (explicit != null &amp;&amp; !explicit) {</b>
+&nbsp;			// we are looking for inferred statements
+<b class="nc">&nbsp;			if (!mayHaveInferred &amp;&amp; snapshot &gt;= 0) {</b>
+<b class="nc">&nbsp;				return EMPTY_ITERATION;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		MemStatementList smallestList = getSmallestStatementList(subj, pred, obj);</b>
+&nbsp;
+<b class="fc">&nbsp;		if (smallestList == null) {</b>
+<b class="fc">&nbsp;			smallestList = statementList;</b>
+<b class="fc">&nbsp;		} else if (smallestList.isEmpty()) {</b>
+<b class="fc">&nbsp;			return EMPTY_ITERATION;</b>
+<b class="fc">&nbsp;		} else if (smallestList.size() &gt; statementList.size()) {</b>
+<b class="fc">&nbsp;			smallestList = statementList;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return MemStatementIterator.cacheAwareInstance(smallestList, subj, pred, obj, explicit, snapshot, memContexts,</b>
+&nbsp;				iteratorCache);
+&nbsp;	}
+&nbsp;
+&nbsp;	private MemStatementList getSmallestStatementList(MemResource subj, MemIRI pred, MemValue obj) {
+<b class="fc">&nbsp;		MemStatementList smallestList = null;</b>
+&nbsp;
+<b class="fc">&nbsp;		if (subj != null) {</b>
+<b class="fc">&nbsp;			smallestList = subj.getSubjectStatementList();</b>
+<b class="fc">&nbsp;			if (smallestList.isEmpty()) {</b>
+<b class="fc">&nbsp;				return smallestList;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (pred != null) {</b>
+<b class="fc">&nbsp;			MemStatementList l = pred.getPredicateStatementList();</b>
+<b class="fc">&nbsp;			if (smallestList == null) {</b>
+<b class="fc">&nbsp;				smallestList = l;</b>
+<b class="fc">&nbsp;				if (smallestList.isEmpty()) {</b>
+<b class="fc">&nbsp;					return smallestList;</b>
+&nbsp;				}
+<b class="fc">&nbsp;			} else if (l.size() &lt; smallestList.size()) {</b>
+<b class="fc">&nbsp;				smallestList = l;</b>
+<b class="fc">&nbsp;				if (smallestList.isEmpty()) {</b>
+<b class="fc">&nbsp;					return smallestList;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		if (obj != null) {</b>
+<b class="fc">&nbsp;			MemStatementList l = obj.getObjectStatementList();</b>
+<b class="fc">&nbsp;			if (smallestList == null) {</b>
+<b class="fc">&nbsp;				smallestList = l;</b>
+<b class="fc">&nbsp;			} else if (l.size() &lt; smallestList.size()) {</b>
+<b class="fc">&nbsp;				smallestList = l;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="fc">&nbsp;		return smallestList;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a TripleIterator that contains the triples matching the specified pattern of subject, predicate, object,
+&nbsp;	 * context.
+&nbsp;	 */
+&nbsp;	private CloseableIteration&lt;MemTriple, SailException&gt; createTripleIterator(Resource subj, IRI pred, Value obj,
+&nbsp;			int snapshot) throws InterruptedException {
+&nbsp;		// Perform look-ups for value-equivalents of the specified values
+&nbsp;
+<b class="nc">&nbsp;		MemResource memSubj = valueFactory.getMemResource(subj);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (subj != null &amp;&amp; memSubj == null) {</b>
+&nbsp;			// non-existent subject
+<b class="nc">&nbsp;			return EMPTY_TRIPLE_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		MemIRI memPred = valueFactory.getMemURI(pred);</b>
+<b class="nc">&nbsp;		if (pred != null &amp;&amp; memPred == null) {</b>
+&nbsp;			// non-existent predicate
+<b class="nc">&nbsp;			return EMPTY_TRIPLE_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		MemValue memObj = valueFactory.getMemValue(obj);</b>
+<b class="nc">&nbsp;		if (obj != null &amp;&amp; memObj == null) {</b>
+&nbsp;			// non-existent object
+<b class="nc">&nbsp;			return EMPTY_TRIPLE_ITERATION;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// TODO there is no separate index for Triples, so for now we iterate over all statements to find matches.
+<b class="nc">&nbsp;		return new MemTripleIterator&lt;&gt;(statements, memSubj, memPred, memObj, snapshot);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes statements from old snapshots from the main statement list and resets the snapshot to 1 for the rest of
+&nbsp;	 * the statements.
+&nbsp;	 *
+&nbsp;	 * @throws InterruptedException
+&nbsp;	 */
+&nbsp;	protected void cleanSnapshots() throws InterruptedException {
+<b class="nc">&nbsp;		int currentSnapshot = this.currentSnapshot;</b>
+<b class="nc">&nbsp;		int highestUnusedTillSnapshot = snapshotMonitor.getFirstUnusedOrElse(currentSnapshot - 1);</b>
+<b class="nc">&nbsp;		if (highestUnusedTillSnapshot &gt;= currentSnapshot) {</b>
+<b class="nc">&nbsp;			logger.debug(&quot;No old snapshot versions are currently unused, {} &gt;= {} (currentSnapshot).&quot;,</b>
+<b class="nc">&nbsp;					highestUnusedTillSnapshot, currentSnapshot);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			boolean prioritiseCleaning = false;</b>
+&nbsp;
+<b class="nc">&nbsp;			StopWatch stopWatch = null;</b>
+<b class="nc">&nbsp;			if (logger.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;				stopWatch = StopWatch.createStarted();</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Started cleaning snapshots.&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);</b>
+&nbsp;
+&nbsp;			// Sets used to keep track of which lists have already been processed
+<b class="nc">&nbsp;			HashSet&lt;MemValue&gt; processedSubjects = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			HashSet&lt;MemValue&gt; processedPredicates = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			HashSet&lt;MemValue&gt; processedObjects = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;			HashSet&lt;MemValue&gt; processedContexts = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;			MemStatement[] statements = this.statements.getStatements();</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * The order of the statement list won&#39;t change from lastStmtPos down while we don&#39;t have the write lock (it
+&nbsp;			 * might shrink or grow) as (1) new statements are always appended last, (2) we are the only process that
+&nbsp;			 * removes statements, (3) this list is cleared on close.
+&nbsp;			 */
+&nbsp;
+<b class="nc">&nbsp;			for (int i = statements.length - 1; i &gt;= 0; i--) {</b>
+<b class="nc">&nbsp;				if (Thread.currentThread().isInterrupted()) {</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				MemStatement st = statements[i];</b>
+<b class="nc">&nbsp;				if (st == null) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (st.getTillSnapshot() &lt;= highestUnusedTillSnapshot) {</b>
+<b class="nc">&nbsp;					MemResource subj = st.getSubject();</b>
+<b class="nc">&nbsp;					if (processedSubjects.add(subj)) {</b>
+<b class="nc">&nbsp;						subj.cleanSnapshotsFromSubjectStatements(highestUnusedTillSnapshot);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					MemIRI pred = st.getPredicate();</b>
+<b class="nc">&nbsp;					if (processedPredicates.add(pred)) {</b>
+<b class="nc">&nbsp;						pred.cleanSnapshotsFromPredicateStatements(highestUnusedTillSnapshot);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					MemValue obj = st.getObject();</b>
+<b class="nc">&nbsp;					if (processedObjects.add(obj)) {</b>
+<b class="nc">&nbsp;						obj.cleanSnapshotsFromObjectStatements(highestUnusedTillSnapshot);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					MemResource context = st.getContext();</b>
+<b class="nc">&nbsp;					if (context != null &amp;&amp; processedContexts.add(context)) {</b>
+<b class="nc">&nbsp;						context.cleanSnapshotsFromContextStatements(highestUnusedTillSnapshot);</b>
+&nbsp;					}
+&nbsp;
+&nbsp;					// stale statement
+<b class="nc">&nbsp;					this.statements.remove(st, i);</b>
+<b class="nc">&nbsp;					prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (i % 100_000 == 0) {</b>
+<b class="nc">&nbsp;					if (getFreeToAllocateMemory() &lt; CLEANUP_MINIMUM_FREE_MEMORY / 2) {</b>
+<b class="nc">&nbsp;						prioritiseCleaning = prioritiseSnapshotCleaningIfLowOnMemory(prioritiseCleaning);</b>
+<b class="nc">&nbsp;						processedSubjects = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;						processedPredicates = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;						processedObjects = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;						processedContexts = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;						System.gc();</b>
+&nbsp;					}
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			processedSubjects.clear();</b>
+<b class="nc">&nbsp;			processedPredicates.clear();</b>
+<b class="nc">&nbsp;			processedObjects.clear();</b>
+<b class="nc">&nbsp;			processedContexts.clear();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (logger.isDebugEnabled() &amp;&amp; stopWatch != null) {</b>
+<b class="nc">&nbsp;				stopWatch.stop();</b>
+<b class="nc">&nbsp;				logger.debug(&quot;Cleaning snapshots took {} seconds.&quot;, stopWatch.getTime(TimeUnit.SECONDS));</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		} finally {
+<b class="nc">&nbsp;			statements.setPrioritiseCleanup(false);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean prioritiseSnapshotCleaningIfLowOnMemory(boolean prioritiseCleaning) {
+<b class="nc">&nbsp;		if (!prioritiseCleaning &amp;&amp; MAX_MEMORY &gt;= CLEANUP_MAX_MEMORY_THRESHOLD) {</b>
+<b class="nc">&nbsp;			long freeToAllocateMemory = getFreeToAllocateMemory();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (memoryIsLow(freeToAllocateMemory)) {</b>
+<b class="nc">&nbsp;				logger.debug(</b>
+&nbsp;						&quot;Low free memory ({} MB)! Prioritising cleaning of removed statements from the MemoryStore.&quot;,
+<b class="nc">&nbsp;						freeToAllocateMemory / 1024 / 1024);</b>
+<b class="nc">&nbsp;				prioritiseCleaning = true;</b>
+<b class="nc">&nbsp;				this.statements.setPrioritiseCleanup(true);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return prioritiseCleaning;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean memoryIsLow(long freeToAllocateMemory) {
+<b class="nc">&nbsp;		return freeToAllocateMemory &lt; CLEANUP_MINIMUM_FREE_MEMORY</b>
+&nbsp;				|| (freeToAllocateMemory + 0.0) / MAX_MEMORY &lt; CLEANUP_MINIMUM_FREE_MEMORY_RATIO;
+&nbsp;	}
+&nbsp;
+&nbsp;	private long getFreeToAllocateMemory() {
+&nbsp;		// total currently allocated JVM memory
+<b class="nc">&nbsp;		long totalMemory = RUNTIME.totalMemory();</b>
+&nbsp;
+&nbsp;		// amount of memory free in the currently allocated JVM memory
+<b class="nc">&nbsp;		long freeMemory = RUNTIME.freeMemory();</b>
+&nbsp;
+&nbsp;		// estimated memory used
+<b class="nc">&nbsp;		long used = totalMemory - freeMemory;</b>
+&nbsp;
+&nbsp;		// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
+<b class="nc">&nbsp;		return MAX_MEMORY - used;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void scheduleSnapshotCleanup() {
+&nbsp;		// we don&#39;t schedule snapshot cleanup on small memory stores
+<b class="pc">&nbsp;		if (statements.size() &lt; 1000) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Thread toCheckSnapshotCleanupThread = snapshotCleanupThread;</b>
+<b class="nc">&nbsp;		if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {</b>
+<b class="nc">&nbsp;			synchronized (snapshotCleanupThreadLockObject) {</b>
+<b class="nc">&nbsp;				toCheckSnapshotCleanupThread = snapshotCleanupThread;</b>
+<b class="nc">&nbsp;				if (toCheckSnapshotCleanupThread == null || !toCheckSnapshotCleanupThread.isAlive()) {</b>
+<b class="nc">&nbsp;					Runnable runnable = () -&gt; {</b>
+&nbsp;						try {
+&nbsp;//							 sleep for up to 5 seconds unless we are low on memory
+<b class="nc">&nbsp;							for (int i = 0; i &lt; 100 * 5 &amp;&amp; !memoryIsLow(getFreeToAllocateMemory() * 2); i++) {</b>
+<b class="nc">&nbsp;								Thread.sleep(10);</b>
+&nbsp;							}
+&nbsp;
+<b class="nc">&nbsp;							cleanSnapshots();</b>
+<b class="nc">&nbsp;						} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;							Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;							logger.info(&quot;snapshot cleanup interrupted&quot;);</b>
+<b class="nc">&nbsp;						}</b>
+&nbsp;					};
+&nbsp;
+<b class="nc">&nbsp;					toCheckSnapshotCleanupThread = snapshotCleanupThread = new Thread(runnable,</b>
+&nbsp;							&quot;MemoryStore snapshot cleanup&quot;);
+<b class="nc">&nbsp;					toCheckSnapshotCleanupThread.setDaemon(true);</b>
+<b class="nc">&nbsp;					toCheckSnapshotCleanupThread.start();</b>
+<b class="nc">&nbsp;					Thread.yield();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private final class MemorySailSource extends BackingSailSource {
+&nbsp;
+&nbsp;		private final boolean explicit;
+&nbsp;
+<b class="fc">&nbsp;		public MemorySailSource(boolean explicit) {</b>
+<b class="fc">&nbsp;			this.explicit = explicit;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public SailSink sink(IsolationLevel level) throws SailException {
+<b class="fc">&nbsp;			return new MemorySailSink(explicit, level.isCompatibleWith(IsolationLevels.SERIALIZABLE));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public MemorySailDataset dataset(IsolationLevel level) throws SailException {
+<b class="pc">&nbsp;			if (level.isCompatibleWith(IsolationLevels.SNAPSHOT_READ)) {</b>
+<b class="fc">&nbsp;				return new MemorySailDataset(explicit, currentSnapshot);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return new MemorySailDataset(explicit);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private final class MemorySailSink implements SailSink {
+&nbsp;
+<b class="fc">&nbsp;		private volatile boolean closed = false;</b>
+&nbsp;
+&nbsp;		private final boolean explicit;
+&nbsp;
+&nbsp;		private final int serializable;
+&nbsp;		private final SnapshotMonitor.ReservedSnapshot reservedSnapshot;
+&nbsp;
+&nbsp;		private int nextSnapshot;
+&nbsp;
+&nbsp;		private Set&lt;StatementPattern&gt; observations;
+&nbsp;
+&nbsp;		private volatile boolean txnLock;
+&nbsp;
+&nbsp;		private boolean requireCleanup;
+&nbsp;
+<b class="fc">&nbsp;		public MemorySailSink(boolean explicit, boolean serializable) throws SailException {</b>
+<b class="fc">&nbsp;			this.explicit = explicit;</b>
+<b class="pc">&nbsp;			if (serializable) {</b>
+<b class="nc">&nbsp;				this.serializable = currentSnapshot;</b>
+<b class="nc">&nbsp;				reservedSnapshot = snapshotMonitor.reserve(this.serializable, this);</b>
+&nbsp;			} else {
+<b class="fc">&nbsp;				this.serializable = Integer.MAX_VALUE;</b>
+<b class="fc">&nbsp;				reservedSnapshot = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;			if (explicit) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;explicit &quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				sb.append(&quot;inferred &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (txnLock) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;snapshot &quot;).append(nextSnapshot);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				sb.append(super.toString());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return sb.toString();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void prepare() throws SailException {
+<b class="fc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="pc">&nbsp;			if (observations != null) {</b>
+<b class="nc">&nbsp;				for (StatementPattern p : observations) {</b>
+<b class="nc">&nbsp;					Resource subj = (Resource) p.getSubjectVar().getValue();</b>
+<b class="nc">&nbsp;					IRI pred = (IRI) p.getPredicateVar().getValue();</b>
+<b class="nc">&nbsp;					Value obj = p.getObjectVar().getValue();</b>
+<b class="nc">&nbsp;					Var ctxVar = p.getContextVar();</b>
+&nbsp;					Resource[] contexts;
+<b class="nc">&nbsp;					if (ctxVar == null) {</b>
+<b class="nc">&nbsp;						contexts = new Resource[0];</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						contexts = new Resource[] { (Resource) ctxVar.getValue() };</b>
+&nbsp;					}
+<b class="nc">&nbsp;					try (CloseableIteration&lt;MemStatement, SailException&gt; iter = createStatementIterator(subj, pred, obj,</b>
+&nbsp;							null, -1, contexts)) {
+<b class="nc">&nbsp;						while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;							MemStatement st = iter.next();</b>
+<b class="nc">&nbsp;							int since = st.getSinceSnapshot();</b>
+<b class="nc">&nbsp;							int till = st.getTillSnapshot();</b>
+<b class="nc">&nbsp;							if (serializable &lt; since &amp;&amp; since &lt; nextSnapshot</b>
+&nbsp;									|| serializable &lt; till &amp;&amp; till &lt; nextSnapshot) {
+<b class="nc">&nbsp;								throw new SailConflictException(&quot;Observed State has Changed&quot;);</b>
+&nbsp;							}
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;					} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;						throw convertToSailException(e);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void flush() throws SailException {
+<b class="pc">&nbsp;			if (txnLock) {</b>
+<b class="fc">&nbsp;				invalidateCache();</b>
+<b class="fc">&nbsp;				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);</b>
+<b class="fc">&nbsp;				if (requireCleanup) {</b>
+<b class="fc">&nbsp;					scheduleSnapshotCleanup();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() {
+<b class="pc">&nbsp;			if (!closed) {</b>
+<b class="fc">&nbsp;				closed = true;</b>
+&nbsp;				try {
+<b class="pc">&nbsp;					if (reservedSnapshot != null) {</b>
+<b class="nc">&nbsp;						reservedSnapshot.release();</b>
+&nbsp;					}
+&nbsp;				} finally {
+<b class="fc">&nbsp;					boolean toCloseTxnLock = txnLock;</b>
+<b class="fc">&nbsp;					txnLock = false;</b>
+<b class="pc">&nbsp;					if (toCloseTxnLock) {</b>
+<b class="fc">&nbsp;						txnLockManager.unlock();</b>
+&nbsp;					}
+<b class="fc">&nbsp;					observations = null;</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void setNamespace(String prefix, String name) {
+<b class="fc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="fc">&nbsp;			namespaceStore.setNamespace(prefix, name);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void removeNamespace(String prefix) {
+<b class="fc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="fc">&nbsp;			namespaceStore.removeNamespace(prefix);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void clearNamespaces() {
+<b class="fc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="fc">&nbsp;			namespaceStore.clear();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void observe(Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;				throws SailException {
+<b class="nc">&nbsp;			if (observations == null) {</b>
+<b class="nc">&nbsp;				observations = new HashSet&lt;&gt;();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (contexts == null) {</b>
+<b class="nc">&nbsp;				observations.add(new StatementPattern(new Var(&quot;s&quot;, subj), new Var(&quot;p&quot;, pred), new Var(&quot;o&quot;, obj),</b>
+&nbsp;						new Var(&quot;g&quot;, null)));
+<b class="nc">&nbsp;			} else if (contexts.length == 0) {</b>
+<b class="nc">&nbsp;				observations.add(new StatementPattern(new Var(&quot;s&quot;, subj), new Var(&quot;p&quot;, pred), new Var(&quot;o&quot;, obj)));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				for (Resource ctx : contexts) {</b>
+<b class="nc">&nbsp;					observations.add(new StatementPattern(new Var(&quot;s&quot;, subj), new Var(&quot;p&quot;, pred), new Var(&quot;o&quot;, obj),</b>
+&nbsp;							new Var(&quot;g&quot;, ctx)));
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void clear(Resource... contexts) {
+<b class="fc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="fc">&nbsp;			invalidateCache();</b>
+<b class="fc">&nbsp;			requireCleanup = true;</b>
+<b class="pc">&nbsp;			try (CloseableIteration&lt;MemStatement, SailException&gt; iter = createStatementIterator(null, null, null,</b>
+<b class="fc">&nbsp;					explicit, nextSnapshot, contexts)) {</b>
+<b class="fc">&nbsp;				while (iter.hasNext()) {</b>
+<b class="fc">&nbsp;					MemStatement st = iter.next();</b>
+<b class="fc">&nbsp;					st.setTillSnapshot(nextSnapshot);</b>
+<b class="fc">&nbsp;				}</b>
+<b class="pc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
+<b class="nc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="nc">&nbsp;			invalidateCache();</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				addStatement(subj, pred, obj, ctx, explicit);</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void approveAll(Set&lt;Statement&gt; approved, Set&lt;Resource&gt; approvedContexts) {
+<b class="fc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="fc">&nbsp;			invalidateCache();</b>
+&nbsp;			try {
+<b class="fc">&nbsp;				for (Statement statement : approved) {</b>
+<b class="fc">&nbsp;					addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),</b>
+<b class="fc">&nbsp;							statement.getContext(), explicit);</b>
+<b class="fc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void deprecateAll(Set&lt;Statement&gt; deprecated) {
+<b class="fc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="fc">&nbsp;			invalidateCache();</b>
+<b class="fc">&nbsp;			requireCleanup = true;</b>
+<b class="fc">&nbsp;			int nextSnapshot = this.nextSnapshot;</b>
+<b class="fc">&nbsp;			for (Statement statement : deprecated) {</b>
+<b class="fc">&nbsp;				innerDeprecate(statement, nextSnapshot);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public synchronized void deprecate(Statement statement) throws SailException {
+<b class="nc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="nc">&nbsp;			invalidateCache();</b>
+<b class="nc">&nbsp;			requireCleanup = true;</b>
+<b class="nc">&nbsp;			innerDeprecate(statement, nextSnapshot);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private void innerDeprecate(Statement statement, int nextSnapshot) {
+<b class="fc">&nbsp;			if (statement instanceof MemStatement) {</b>
+<b class="fc">&nbsp;				MemStatement toDeprecate = (MemStatement) statement;</b>
+<b class="pc">&nbsp;				if ((nextSnapshot &lt; 0 || toDeprecate.isInSnapshot(nextSnapshot))</b>
+<b class="pc">&nbsp;						&amp;&amp; toDeprecate.isExplicit() == explicit) {</b>
+<b class="fc">&nbsp;					toDeprecate.setTillSnapshot(nextSnapshot);</b>
+&nbsp;				}
+<b class="pc">&nbsp;			} else if (statement instanceof LinkedHashModel.ModelStatement</b>
+<b class="pc">&nbsp;					&amp;&amp; ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {</b>
+&nbsp;				// The Changeset uses a LinkedHashModel to store it&#39;s changes. It still keeps a reference to the
+&nbsp;				// original statement that can be retrieved here.
+<b class="nc">&nbsp;				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();</b>
+<b class="nc">&nbsp;				if ((nextSnapshot &lt; 0 || toDeprecate.isInSnapshot(nextSnapshot))</b>
+<b class="nc">&nbsp;						&amp;&amp; toDeprecate.isExplicit() == explicit) {</b>
+<b class="nc">&nbsp;					toDeprecate.setTillSnapshot(nextSnapshot);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else {</b>
+<b class="pc">&nbsp;				try (CloseableIteration&lt;MemStatement, SailException&gt; iter = createStatementIterator(</b>
+<b class="fc">&nbsp;						statement.getSubject(), statement.getPredicate(), statement.getObject(), explicit, nextSnapshot,</b>
+<b class="fc">&nbsp;						statement.getContext())) {</b>
+<b class="pc">&nbsp;					while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;						MemStatement st = iter.next();</b>
+<b class="nc">&nbsp;						st.setTillSnapshot(nextSnapshot);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="pc">&nbsp;				} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;					throw convertToSailException(e);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private void acquireExclusiveTransactionLock() throws SailException {
+<b class="fc">&nbsp;			if (!txnLock) {</b>
+<b class="fc">&nbsp;				synchronized (this) {</b>
+<b class="pc">&nbsp;					if (!txnLock) {</b>
+<b class="fc">&nbsp;						txnLockManager.lock();</b>
+<b class="fc">&nbsp;						nextSnapshot = currentSnapshot + 1;</b>
+<b class="fc">&nbsp;						txnLock = true;</b>
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+&nbsp;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private MemStatement addStatement(Resource subj, IRI pred, Value obj, Resource context, boolean explicit)
+&nbsp;				throws SailException, InterruptedException {
+<b class="pc">&nbsp;			if (!explicit) {</b>
+<b class="nc">&nbsp;				mayHaveInferred = true;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Get or create MemValues for the operands
+<b class="fc">&nbsp;			MemResource memSubj = valueFactory.getOrCreateMemResource(subj);</b>
+<b class="fc">&nbsp;			MemIRI memPred = valueFactory.getOrCreateMemURI(pred);</b>
+<b class="fc">&nbsp;			MemValue memObj = valueFactory.getOrCreateMemValue(obj);</b>
+<b class="fc">&nbsp;			MemResource memContext = context == null ? null : valueFactory.getOrCreateMemResource(context);</b>
+&nbsp;
+<b class="fc">&nbsp;			if (memSubj.hasSubjectStatements() &amp;&amp; memPred.hasPredicateStatements() &amp;&amp; memObj.hasObjectStatements()</b>
+<b class="fc">&nbsp;					&amp;&amp; (memContext == null || memContext.hasContextStatements())) {</b>
+&nbsp;				// All values are used in at least one statement. Possibly, the
+&nbsp;				// statement is already present. Check this.
+&nbsp;
+<b class="fc">&nbsp;				if (statementAlreadyExists(explicit, memSubj, memPred, memObj, memContext, nextSnapshot)) {</b>
+<b class="fc">&nbsp;					return null;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;			// completely new statement
+<b class="fc">&nbsp;			MemStatement st = new MemStatement(memSubj, memPred, memObj, memContext, explicit, nextSnapshot);</b>
+<b class="fc">&nbsp;			statements.add(st);</b>
+<b class="fc">&nbsp;			st.addToComponentLists();</b>
+<b class="fc">&nbsp;			invalidateCache();</b>
+<b class="fc">&nbsp;			return st;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private boolean statementAlreadyExists(boolean explicit, MemResource memSubj, MemIRI memPred, MemValue memObj,
+&nbsp;				MemResource memContext, int nextSnapshot) throws InterruptedException {
+&nbsp;
+<b class="fc">&nbsp;			MemStatementList statementList = getSmallestMemStatementList(memSubj, memPred, memObj, memContext);</b>
+&nbsp;
+<b class="fc">&nbsp;			MemStatement memStatement = statementList.getExact(memSubj, memPred, memObj, memContext,</b>
+&nbsp;					nextSnapshot);
+<b class="fc">&nbsp;			if (memStatement != null) {</b>
+<b class="pc">&nbsp;				if (!memStatement.isExplicit() &amp;&amp; explicit) {</b>
+&nbsp;					// Implicit statement is now added explicitly
+<b class="nc">&nbsp;					memStatement.setTillSnapshot(this.nextSnapshot);</b>
+&nbsp;				} else {
+&nbsp;					// statement already exists
+<b class="fc">&nbsp;					return true;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private MemStatementList getSmallestMemStatementList(MemResource memSubj, MemIRI memPred, MemValue memObj,
+&nbsp;				MemResource memContext) {
+<b class="fc">&nbsp;			MemStatementList statementList = memSubj.getSubjectStatementList();</b>
+<b class="fc">&nbsp;			if (statementList.size() &lt;= 1) {</b>
+<b class="fc">&nbsp;				return statementList;</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (memPred.getPredicateStatementCount() &lt; statementList.size()) {</b>
+<b class="fc">&nbsp;				statementList = memPred.getPredicateStatementList();</b>
+<b class="fc">&nbsp;				if (statementList.size() &lt;= 1) {</b>
+<b class="fc">&nbsp;					return statementList;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (memObj.getObjectStatementCount() &lt; statementList.size()) {</b>
+<b class="fc">&nbsp;				statementList = memObj.getObjectStatementList();</b>
+<b class="fc">&nbsp;				if (statementList.size() &lt;= 1) {</b>
+<b class="fc">&nbsp;					return statementList;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			if (memContext != null &amp;&amp; memContext.getContextStatementCount() &lt; statementList.size()) {</b>
+<b class="fc">&nbsp;				statementList = memContext.getContextStatementList();</b>
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			return statementList;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+<b class="nc">&nbsp;			acquireExclusiveTransactionLock();</b>
+<b class="nc">&nbsp;			boolean deprecated = false;</b>
+<b class="nc">&nbsp;			requireCleanup = true;</b>
+<b class="nc">&nbsp;			invalidateCache();</b>
+&nbsp;
+<b class="nc">&nbsp;			try (CloseableIteration&lt;MemStatement, SailException&gt; iter = createStatementIterator(subj, pred, obj,</b>
+<b class="nc">&nbsp;					explicit, nextSnapshot, contexts)) {</b>
+<b class="nc">&nbsp;				while (iter.hasNext()) {</b>
+<b class="nc">&nbsp;					deprecated = true;</b>
+<b class="nc">&nbsp;					MemStatement st = iter.next();</b>
+<b class="nc">&nbsp;					st.setTillSnapshot(nextSnapshot);</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			invalidateCache();</b>
+&nbsp;
+<b class="nc">&nbsp;			return deprecated;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @author James Leigh
+&nbsp;	 */
+&nbsp;	private final class MemorySailDataset implements SailDataset {
+&nbsp;
+&nbsp;		private final boolean explicit;
+&nbsp;
+&nbsp;		private final int snapshot;
+&nbsp;		private final SnapshotMonitor.ReservedSnapshot reservedSnapshot;
+&nbsp;		private volatile boolean closed;
+&nbsp;
+<b class="nc">&nbsp;		public MemorySailDataset(boolean explicit) throws SailException {</b>
+<b class="nc">&nbsp;			this.explicit = explicit;</b>
+<b class="nc">&nbsp;			this.snapshot = -1;</b>
+<b class="nc">&nbsp;			this.reservedSnapshot = null;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		public MemorySailDataset(boolean explicit, int snapshot) throws SailException {</b>
+<b class="fc">&nbsp;			this.explicit = explicit;</b>
+<b class="fc">&nbsp;			this.snapshot = snapshot;</b>
+<b class="fc">&nbsp;			this.reservedSnapshot = snapshotMonitor.reserve(snapshot, this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;			if (explicit) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;explicit &quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				sb.append(&quot;inferred &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (snapshot &gt;= 0) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;snapshot &quot;).append(snapshot);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				sb.append(super.toString());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return sb.toString();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void close() {
+<b class="pc">&nbsp;			if (closed) {</b>
+&nbsp;				return;
+&nbsp;			}
+<b class="fc">&nbsp;			closed = true;</b>
+<b class="pc">&nbsp;			if (reservedSnapshot != null) {</b>
+<b class="fc">&nbsp;				reservedSnapshot.release();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String getNamespace(String prefix) throws SailException {
+<b class="fc">&nbsp;			return namespaceStore.getNamespace(prefix);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;? extends Namespace, SailException&gt; getNamespaces() {
+<b class="nc">&nbsp;			return new CloseableIteratorIteration&lt;&gt;(namespaceStore.iterator());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;? extends Resource, SailException&gt; getContextIDs() throws SailException {
+&nbsp;			// Note: we can&#39;t do this in a streaming fashion due to concurrency
+&nbsp;			// issues; iterating over the set of IRIs or bnodes while another
+&nbsp;			// thread
+&nbsp;			// adds statements with new resources would result in
+&nbsp;			// ConcurrentModificationException&#39;s (issue SES-544).
+&nbsp;
+&nbsp;			// Create a list of all resources that are used as contexts
+<b class="fc">&nbsp;			ArrayList&lt;MemResource&gt; contextIDs = new ArrayList&lt;&gt;(32);</b>
+&nbsp;
+<b class="fc">&nbsp;			int snapshot = getCurrentSnapshot();</b>
+&nbsp;
+<b class="pc">&nbsp;			try (WeakObjectRegistry.AutoCloseableIterator&lt;MemIRI&gt; memIRIsIterator = valueFactory</b>
+<b class="fc">&nbsp;					.getMemIRIsIterator()) {</b>
+<b class="fc">&nbsp;				while (memIRIsIterator.hasNext()) {</b>
+<b class="fc">&nbsp;					MemResource memResource = memIRIsIterator.next();</b>
+<b class="fc">&nbsp;					if (isContextResource(memResource, snapshot)) {</b>
+<b class="fc">&nbsp;						contextIDs.add(memResource);</b>
+&nbsp;					}
+<b class="fc">&nbsp;				}</b>
+<b class="pc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="pc">&nbsp;			try (WeakObjectRegistry.AutoCloseableIterator&lt;MemBNode&gt; memBNodesIterator = valueFactory</b>
+<b class="fc">&nbsp;					.getMemBNodesIterator()) {</b>
+<b class="pc">&nbsp;				while (memBNodesIterator.hasNext()) {</b>
+<b class="nc">&nbsp;					MemResource memResource = memBNodesIterator.next();</b>
+<b class="nc">&nbsp;					if (isContextResource(memResource, snapshot)) {</b>
+<b class="nc">&nbsp;						contextIDs.add(memResource);</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="pc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;
+<b class="fc">&nbsp;			return new CloseableIteratorIteration&lt;&gt;(contextIDs.iterator());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;MemStatement, SailException&gt; getStatements(Resource subj, IRI pred, Value obj,
+&nbsp;				Resource... contexts) throws SailException {
+&nbsp;			try {
+<b class="fc">&nbsp;				return createStatementIterator(subj, pred, obj, explicit, getCurrentSnapshot(), contexts);</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public CloseableIteration&lt;MemTriple, SailException&gt; getTriples(Resource subj, IRI pred, Value obj)
+&nbsp;				throws SailException {
+&nbsp;			try {
+<b class="nc">&nbsp;				return createTripleIterator(subj, pred, obj, getCurrentSnapshot());</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				throw convertToSailException(e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private int getCurrentSnapshot() {
+<b class="pc">&nbsp;			if (snapshot &gt;= 0) {</b>
+<b class="fc">&nbsp;				return snapshot;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return currentSnapshot;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private boolean isContextResource(MemResource memResource, int snapshot)
+&nbsp;				throws SailException, InterruptedException {
+<b class="fc">&nbsp;			MemStatementList contextStatements = memResource.getContextStatementList();</b>
+&nbsp;
+&nbsp;			// Filter resources that are not used as context identifier
+<b class="fc">&nbsp;			if (contextStatements.size() == 0) {</b>
+<b class="fc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Filter more thoroughly by considering snapshot and read-mode
+&nbsp;			// parameters
+<b class="fc">&nbsp;			try (MemStatementIterator iter = new MemStatementIterator(contextStatements, null, null,</b>
+&nbsp;					null, null, snapshot, null)) {
+<b class="fc">&nbsp;				return iter.hasNext();</b>
+<b class="fc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private SailException convertToSailException(InterruptedException e) {
+<b class="nc">&nbsp;		Thread.currentThread().interrupt();</b>
+<b class="nc">&nbsp;		return new SailException(e);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * SnapshotMonitor is used to keep track of which snapshot version are no longer is use (read or write) so that we
+&nbsp;	 * can safely clean that snapshot version.
+&nbsp;	 */
+&nbsp;	static class SnapshotMonitor {
+<b class="fc">&nbsp;		private static final ConcurrentCleaner cleaner = new ConcurrentCleaner();</b>
+&nbsp;
+<b class="fc">&nbsp;		private final ConcurrentHashMap&lt;Integer, LongAdder&gt; activeSnapshots = new ConcurrentHashMap&lt;&gt;();</b>
+&nbsp;		private final boolean debug;
+&nbsp;
+&nbsp;		// The LongAdder used to track the number of reservations (uses) for a snapshot version is kept in the
+&nbsp;		// activeSnapshots map. When all reservations are released and the LongAdder.sum() == 0 we should be able to
+&nbsp;		// safely remove it, this can however cause race conditions if the LongAdder can still be incremented (e.g. when
+&nbsp;		// the snapshot version is the current snapshot). By assuming that there will never be any new reservations for
+&nbsp;		// an &quot;old&quot; snapshot version, we can then safely remove the LongAdder if the snapshot version that it is
+&nbsp;		// tracking is lower than the highestEverReservedSnapshot.
+<b class="fc">&nbsp;		private final AtomicInteger highestEverReservedSnapshot = new AtomicInteger(-1);</b>
+&nbsp;
+<b class="fc">&nbsp;		public SnapshotMonitor(boolean debug) {</b>
+<b class="fc">&nbsp;			this.debug = debug;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public int getFirstUnusedOrElse(int currentSnapshot) {
+&nbsp;
+<b class="nc">&nbsp;			int maximum = this.highestEverReservedSnapshot.getAcquire();</b>
+&nbsp;
+<b class="nc">&nbsp;			int min = Integer.MAX_VALUE;</b>
+<b class="nc">&nbsp;			for (Map.Entry&lt;Integer, LongAdder&gt; entry : activeSnapshots.entrySet()) {</b>
+<b class="nc">&nbsp;				if (entry.getKey() &lt;= min) {</b>
+<b class="nc">&nbsp;					if (entry.getKey() &lt; maximum &amp;&amp; entry.getValue().sum() == 0) {</b>
+<b class="nc">&nbsp;						activeSnapshots.computeIfPresent(entry.getKey(), (k, v) -&gt; {</b>
+<b class="nc">&nbsp;							if (v.sum() == 0) {</b>
+<b class="nc">&nbsp;								return null;</b>
+&nbsp;							}
+<b class="nc">&nbsp;							return v;</b>
+&nbsp;						});
+&nbsp;					} else {
+<b class="nc">&nbsp;						min = entry.getKey() - 1;</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (min == Integer.MAX_VALUE) {</b>
+<b class="nc">&nbsp;				return currentSnapshot - 1;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return min;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public ReservedSnapshot reserve(int snapshot, Object reservedBy) {
+<b class="fc">&nbsp;			int highestEverReservedSnapshot = this.highestEverReservedSnapshot.getAcquire();</b>
+<b class="fc">&nbsp;			while (snapshot &gt; highestEverReservedSnapshot) {</b>
+<b class="pc">&nbsp;				if (this.highestEverReservedSnapshot.compareAndSet(highestEverReservedSnapshot, snapshot)) {</b>
+<b class="fc">&nbsp;					highestEverReservedSnapshot = snapshot;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					highestEverReservedSnapshot = this.highestEverReservedSnapshot.getAcquire();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="fc">&nbsp;			LongAdder longAdder = activeSnapshots.computeIfAbsent(snapshot, (k) -&gt; new LongAdder());</b>
+<b class="fc">&nbsp;			longAdder.increment();</b>
+&nbsp;
+<b class="fc">&nbsp;			return new ReservedSnapshot(snapshot, reservedBy, debug, longAdder, activeSnapshots,</b>
+&nbsp;					this.highestEverReservedSnapshot);
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		static class ReservedSnapshot {</b>
+&nbsp;
+&nbsp;			private static final int SNAPSHOT_RELEASED = -1;
+&nbsp;			private final ConcurrentHashMap&lt;Integer, LongAdder&gt; activeSnapshots;
+&nbsp;			private final LongAdder frequency;
+&nbsp;			private final AtomicInteger highestEverReservedSnapshot;
+&nbsp;
+&nbsp;			private Cleaner.Cleanable cleanable;
+&nbsp;			private final Throwable stackTraceForDebugging;
+&nbsp;
+&nbsp;			@SuppressWarnings(&quot;FieldMayBeFinal&quot;)
+&nbsp;			private volatile int snapshot;
+&nbsp;			private final static VarHandle SNAPSHOT;
+&nbsp;
+&nbsp;			static {
+&nbsp;				try {
+<b class="fc">&nbsp;					SNAPSHOT = MethodHandles.lookup()</b>
+<b class="fc">&nbsp;							.in(ReservedSnapshot.class)</b>
+<b class="fc">&nbsp;							.findVarHandle(ReservedSnapshot.class, &quot;snapshot&quot;, int.class);</b>
+<b class="nc">&nbsp;				} catch (ReflectiveOperationException e) {</b>
+<b class="nc">&nbsp;					throw new Error(e);</b>
+<b class="fc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			public ReservedSnapshot(int snapshot, Object reservedBy, boolean debug,
+&nbsp;					LongAdder frequency, ConcurrentHashMap&lt;Integer, LongAdder&gt; activeSnapshots,
+<b class="fc">&nbsp;					AtomicInteger highestEverReservedSnapshot) {</b>
+<b class="fc">&nbsp;				this.snapshot = snapshot;</b>
+<b class="fc">&nbsp;				if (debug) {</b>
+<b class="fc">&nbsp;					stackTraceForDebugging = new Throwable(&quot;Unreleased snapshot version&quot;);</b>
+&nbsp;				} else {
+<b class="fc">&nbsp;					stackTraceForDebugging = null;</b>
+&nbsp;				}
+<b class="fc">&nbsp;				this.activeSnapshots = activeSnapshots;</b>
+<b class="fc">&nbsp;				this.frequency = frequency;</b>
+<b class="fc">&nbsp;				this.highestEverReservedSnapshot = highestEverReservedSnapshot;</b>
+<b class="fc">&nbsp;				cleanable = cleaner.register(reservedBy, () -&gt; {</b>
+<b class="fc">&nbsp;					int tempSnapshot = ((int) SNAPSHOT.getVolatile(this));</b>
+<b class="pc">&nbsp;					if (tempSnapshot != SNAPSHOT_RELEASED) {</b>
+<b class="nc">&nbsp;						String message = &quot;Releasing MemorySailStore snapshot {} which was reserved and never released (possibly unclosed MemorySailDataset or MemorySailSink).&quot;;</b>
+<b class="nc">&nbsp;						if (stackTraceForDebugging != null) {</b>
+<b class="nc">&nbsp;							logger.warn(message, tempSnapshot, stackTraceForDebugging);</b>
+&nbsp;						} else {
+<b class="nc">&nbsp;							logger.warn(message, tempSnapshot);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						release();</b>
+&nbsp;					}
+&nbsp;				});
+&nbsp;			}
+&nbsp;
+&nbsp;			public void release() {
+<b class="fc">&nbsp;				int snapshot = (int) SNAPSHOT.getAcquire(this);</b>
+<b class="pc">&nbsp;				if (snapshot != SNAPSHOT_RELEASED) {</b>
+<b class="pc">&nbsp;					if (SNAPSHOT.compareAndSet(this, snapshot, SNAPSHOT_RELEASED)) {</b>
+<b class="fc">&nbsp;						frequency.decrement();</b>
+<b class="pc">&nbsp;						assert frequency.sum() &gt;= 0;</b>
+<b class="pc">&nbsp;						if (snapshot &lt; highestEverReservedSnapshot.getAcquire() &amp;&amp; frequency.sum() == 0) {</b>
+<b class="nc">&nbsp;							activeSnapshots.computeIfPresent(snapshot, (k, v) -&gt; {</b>
+<b class="nc">&nbsp;								if (v.sum() == 0) {</b>
+<b class="nc">&nbsp;									return null;</b>
+&nbsp;								}
+<b class="nc">&nbsp;								return v;</b>
+&nbsp;							});
+&nbsp;						}
+&nbsp;					}
+&nbsp;				}
+&nbsp;
+<b class="fc">&nbsp;				Cleaner.Cleanable cleanable = this.cleanable;</b>
+<b class="pc">&nbsp;				if (cleanable != null) {</b>
+<b class="fc">&nbsp;					this.cleanable = null;</b>
+<b class="fc">&nbsp;					cleanable.clean();</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

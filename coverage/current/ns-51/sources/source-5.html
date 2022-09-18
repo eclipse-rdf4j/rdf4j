@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RepositoryRequestHandler</title>
+  <title>Coverage Report > QueryRequestHandler</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.http.server.repository.handler</a>
 </div>
 
-<h1>Coverage Summary for Class: RepositoryRequestHandler (org.eclipse.rdf4j.http.server.repository.handler)</h1>
+<h1>Coverage Summary for Class: QueryRequestHandler (org.eclipse.rdf4j.http.server.repository.handler)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RepositoryRequestHandler</td>
+  <td class="name">QueryRequestHandler</td>
 </tr>
 
 </table>
@@ -52,19 +52,19 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;package org.eclipse.rdf4j.http.server.repository.handler;
 &nbsp;
 &nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
 &nbsp;
+&nbsp;import org.springframework.web.bind.annotation.RequestMethod;
 &nbsp;import org.springframework.web.servlet.ModelAndView;
 &nbsp;
 &nbsp;/**
-&nbsp; * An interface used by {@link org.eclipse.rdf4j.http.server.repository.AbstractRepositoryController} to process HTTP
-&nbsp; * request for creating or deleting a repository.
+&nbsp; * Interface used by the {@link org.eclipse.rdf4j.http.server.repository.AbstractRepositoryController} to process a
+&nbsp; * query.
 &nbsp; */
-&nbsp;public interface RepositoryRequestHandler {
+&nbsp;public interface QueryRequestHandler {
 &nbsp;
-&nbsp;	ModelAndView handleCreateOrUpdateRepositoryRequest(HttpServletRequest request) throws Exception;
-&nbsp;
-&nbsp;	ModelAndView handleDeleteRepositoryRequest(HttpServletRequest request) throws Exception;
-&nbsp;
+&nbsp;	ModelAndView handleQueryRequest(HttpServletRequest request, RequestMethod requestMethod,
+&nbsp;			HttpServletResponse response) throws Exception;
 &nbsp;}
 </code>
 </pre>
@@ -89,7 +89,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

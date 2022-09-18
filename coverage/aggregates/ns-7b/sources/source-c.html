@@ -1,0 +1,257 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLQueries</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLQueries (org.eclipse.rdf4j.query.parser.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SPARQLQueries</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (1/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    6.2%
+  </span>
+  <span class="absValue">
+    (1/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    5.4%
+  </span>
+  <span class="absValue">
+    (3/56)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser.sparql;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.text.StringUtil;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility functions for working with SPARQL query strings.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class SPARQLQueries {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a string representing of the supplied {@link Namespace namespaces} as SPARQL prefix declarations. This
+&nbsp;	 * can be used when composing a SPARQL query string in code, for example:
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * &lt;code&gt;
+&nbsp;	 * String query = SPARQLQueries.getPrefixClauses(connection.getNamespaces()) + &quot;SELECT * WHERE { ?s ex:myprop ?o }&quot;;
+&nbsp;	 * &lt;/code&gt;
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param namespaces one or more {@link Namespace} objects.
+&nbsp;	 * @return one or more SPARQL prefix declarations (each separated by a newline), as a String.
+&nbsp;	 *
+&nbsp;	 * @since 3.6.0
+&nbsp;	 */
+&nbsp;	public static String getPrefixClauses(Iterable&lt;Namespace&gt; namespaces) {
+<b class="nc">&nbsp;		final StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (Namespace namespace : namespaces) {</b>
+<b class="nc">&nbsp;			sb.append(String.format(&quot;PREFIX %s: &lt;%s&gt;\n&quot;, namespace.getPrefix(), namespace.getName()));</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Escape the supplied string with backslashes for any special characters, so it can be used as a string literal
+&nbsp;	 * value in a SPARQL query.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-query/#grammarEscapes&quot;&gt;SPAQL 1.1 grammar escapes&lt;/a&gt;
+&nbsp;	 *
+&nbsp;	 * @since 3.6.0
+&nbsp;	 */
+&nbsp;	public static String escape(String s) {
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\\&quot;, &quot;\\\\&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\t&quot;, &quot;\\t&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\n&quot;, &quot;\\n&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\r&quot;, &quot;\\r&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\b&quot;, &quot;\\b&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\f&quot;, &quot;\\f&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;, s);</b>
+<b class="nc">&nbsp;		s = StringUtil.gsub(&quot;&#39;&quot;, &quot;\\&#39;&quot;, s);</b>
+<b class="nc">&nbsp;		return s;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Un-escapes a backslash-escaped SPARQL literal value string. Any recognized \-escape sequences are substituted
+&nbsp;	 * with their un-escaped value.
+&nbsp;	 *
+&nbsp;	 * @param s An SPARQL literal string with backslash escapes.
+&nbsp;	 * @return The un-escaped string.
+&nbsp;	 * @exception IllegalArgumentException If the supplied string is not a correctly escaped SPARQL string.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-query/#grammarEscapes&quot;&gt;SPAQL 1.1 grammar escapes&lt;/a&gt;
+&nbsp;	 *
+&nbsp;	 * @since 3.6.0
+&nbsp;	 */
+&nbsp;	public static String unescape(String s) {
+<b class="fc">&nbsp;		int backSlashIdx = s.indexOf(&#39;\\&#39;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (backSlashIdx == -1) {</b>
+&nbsp;			// No escaped characters found
+<b class="fc">&nbsp;			return s;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int startIdx = 0;</b>
+<b class="nc">&nbsp;		int sLength = s.length();</b>
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder(sLength);</b>
+&nbsp;
+<b class="nc">&nbsp;		while (backSlashIdx != -1) {</b>
+<b class="nc">&nbsp;			sb.append(s, startIdx, backSlashIdx);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (backSlashIdx + 1 &gt;= sLength) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			char c = s.charAt(backSlashIdx + 1);</b>
+<b class="nc">&nbsp;			switch (c) {</b>
+&nbsp;			case &#39;t&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\t&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;n&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\n&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;r&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\r&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;b&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\b&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;f&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\f&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;&quot;&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;&quot;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;\&#39;&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\&#39;&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case &#39;\\&#39;:
+<b class="nc">&nbsp;				sb.append(&#39;\\&#39;);</b>
+<b class="nc">&nbsp;				startIdx = backSlashIdx + 2;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Unescaped backslash in: &quot; + s);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			backSlashIdx = s.indexOf(&#39;\\&#39;, startIdx);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(s.substring(startIdx));</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

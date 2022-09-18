@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RepositoryResolverClient</title>
+  <title>Coverage Report > DelegatingRepositoryConnection</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository</a>
 </div>
 
-<h1>Coverage Summary for Class: RepositoryResolverClient (org.eclipse.rdf4j.repository)</h1>
+<h1>Coverage Summary for Class: DelegatingRepositoryConnection (org.eclipse.rdf4j.repository)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RepositoryResolverClient</td>
+  <td class="name">DelegatingRepositoryConnection</td>
 </tr>
 
 </table>
@@ -50,15 +50,11 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.repository;
 &nbsp;
-&nbsp;/**
-&nbsp; * Interface used by factory classes that need access to other repositories by their id&#39;s.
-&nbsp; *
-&nbsp; * @author Dale Visser
-&nbsp; * @since 2.3
-&nbsp; */
-&nbsp;public interface RepositoryResolverClient {
+&nbsp;public interface DelegatingRepositoryConnection extends RepositoryConnection {
 &nbsp;
-&nbsp;	void setRepositoryResolver(RepositoryResolver resolver);
+&nbsp;	RepositoryConnection getDelegate() throws RepositoryException;
+&nbsp;
+&nbsp;	void setDelegate(RepositoryConnection delegate);
 &nbsp;}
 </code>
 </pre>
@@ -83,7 +79,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

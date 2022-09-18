@@ -1,0 +1,241 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BufferedGroupingRDFHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: BufferedGroupingRDFHandler (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BufferedGroupingRDFHandler</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandler;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;
+&nbsp;/**
+&nbsp; * An {@link RDFHandlerWrapper} that buffers statements internally and passes them to underlying handlers grouped by
+&nbsp; * context, then subject, then predicate.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class BufferedGroupingRDFHandler extends RDFHandlerWrapper {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Default buffer size. Buffer size is expressed in number of RDF statements. The default is set to 1024.
+&nbsp;	 */
+&nbsp;	public static final int DEFAULT_BUFFER_SIZE = 1024;
+&nbsp;
+&nbsp;	private final int bufferSize;
+&nbsp;
+&nbsp;	private final Model bufferedStatements;
+&nbsp;
+&nbsp;	private final Set&lt;Resource&gt; contexts;
+&nbsp;
+<b class="nc">&nbsp;	private final Object bufferLock = new Object();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers, using the default buffer size.
+&nbsp;	 *
+&nbsp;	 * @param handlers one or more wrapped RDFHandlers
+&nbsp;	 */
+&nbsp;	public BufferedGroupingRDFHandler(RDFHandler... handlers) {
+<b class="nc">&nbsp;		this(DEFAULT_BUFFER_SIZE, handlers);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new BufferedGroupedWriter that wraps the supplied handlers, using the supplied buffer size.
+&nbsp;	 *
+&nbsp;	 * @param bufferSize size of the buffer expressed in number of RDF statements
+&nbsp;	 * @param handlers   one or more wrapped RDFHandlers
+&nbsp;	 */
+&nbsp;	public BufferedGroupingRDFHandler(int bufferSize, RDFHandler... handlers) {
+<b class="nc">&nbsp;		super(handlers);</b>
+<b class="nc">&nbsp;		this.bufferSize = bufferSize;</b>
+<b class="nc">&nbsp;		this.bufferedStatements = getModelFactory().createEmptyModel();</b>
+<b class="nc">&nbsp;		this.contexts = new HashSet&lt;&gt;();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected Model getBufferedStatements() {
+<b class="nc">&nbsp;		return bufferedStatements;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleStatement(Statement st) throws RDFHandlerException {
+<b class="nc">&nbsp;		synchronized (bufferLock) {</b>
+<b class="nc">&nbsp;			bufferedStatements.add(st);</b>
+<b class="nc">&nbsp;			contexts.add(st.getContext());</b>
+&nbsp;
+<b class="nc">&nbsp;			if (bufferedStatements.size() &gt;= this.bufferSize) {</b>
+<b class="nc">&nbsp;				processBuffer();</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * not synchronized, assumes calling method has obtained a lock on bufferLock
+&nbsp;	 */
+&nbsp;	protected void processBuffer() throws RDFHandlerException {
+&nbsp;		// primary grouping per context.
+<b class="nc">&nbsp;		for (Resource context : contexts) {</b>
+<b class="nc">&nbsp;			Model contextData = bufferedStatements.filter(null, null, null, context);</b>
+<b class="nc">&nbsp;			Set&lt;Resource&gt; subjects = contextData.subjects();</b>
+<b class="nc">&nbsp;			for (Resource subject : subjects) {</b>
+<b class="nc">&nbsp;				Set&lt;IRI&gt; processedPredicates = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;				// give rdf:type preference over other predicates.
+<b class="nc">&nbsp;				for (Statement typeStatement : contextData.getStatements(subject, RDF.TYPE, null)) {</b>
+<b class="nc">&nbsp;					super.handleStatement(typeStatement);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;
+<b class="nc">&nbsp;				processedPredicates.add(RDF.TYPE);</b>
+&nbsp;
+&nbsp;				// retrieve other statement from this context with the same
+&nbsp;				// subject, and output them grouped by predicate
+<b class="nc">&nbsp;				for (Statement subjectStatement : contextData.getStatements(subject, null, null)) {</b>
+<b class="nc">&nbsp;					IRI predicate = subjectStatement.getPredicate();</b>
+<b class="nc">&nbsp;					if (!processedPredicates.contains(predicate)) {</b>
+<b class="nc">&nbsp;						for (Statement toWrite : contextData.getStatements(subject, predicate, null)) {</b>
+<b class="nc">&nbsp;							super.handleStatement(toWrite);</b>
+<b class="nc">&nbsp;						}</b>
+<b class="nc">&nbsp;						processedPredicates.add(predicate);</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		bufferedStatements.clear();</b>
+<b class="nc">&nbsp;		contexts.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		synchronized (bufferLock) {</b>
+<b class="nc">&nbsp;			processBuffer();</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		super.endRDF();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

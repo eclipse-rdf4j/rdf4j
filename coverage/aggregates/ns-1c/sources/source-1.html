@@ -1,0 +1,202 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ASCIIUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.text</a>
+</div>
+
+<h1>Coverage Summary for Class: ASCIIUtil (org.eclipse.rdf4j.common.text)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ASCIIUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.4%
+  </span>
+  <span class="absValue">
+    (4/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    47.1%
+  </span>
+  <span class="absValue">
+    (16/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.4%
+  </span>
+  <span class="absValue">
+    (4/9)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.common.text;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for ASCII character checking.
+&nbsp; */
+<b class="nc">&nbsp;public class ASCIIUtil {</b>
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is a letter or number.
+&nbsp;	 *
+&nbsp;	 * @param c character
+&nbsp;	 * @return true if the character is a letter or a number
+&nbsp;	 * @see #isLetter
+&nbsp;	 * @see #isNumber
+&nbsp;	 */
+&nbsp;	public static boolean isLetterOrNumber(int c) {
+<b class="nc">&nbsp;		return isLetter(c) || isNumber(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is a letter.
+&nbsp;	 *
+&nbsp;	 * @param c character
+&nbsp;	 * @return true if the character is in the range [a-z] or [A-Z]
+&nbsp;	 */
+&nbsp;	public static boolean isLetter(int c) {
+<b class="fc">&nbsp;		return isUpperCaseLetter(c) || isLowerCaseLetter(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is an upper-case letter.
+&nbsp;	 *
+&nbsp;	 * @param c character
+&nbsp;	 * @return true if the character is in the range [A-Z]
+&nbsp;	 */
+&nbsp;	public static boolean isUpperCaseLetter(int c) {
+<b class="fc">&nbsp;		return (c &gt;= 65 &amp;&amp; c &lt;= 90); // A - Z</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is an lower-case letter.
+&nbsp;	 *
+&nbsp;	 * @param c character
+&nbsp;	 * @return true if the character is in the range [a-z]
+&nbsp;	 */
+&nbsp;	public static boolean isLowerCaseLetter(int c) {
+<b class="fc">&nbsp;		return (c &gt;= 97 &amp;&amp; c &lt;= 122); // a - z</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied character is a number.
+&nbsp;	 *
+&nbsp;	 * @param c character
+&nbsp;	 * @return true if the character is in the range [0-9]
+&nbsp;	 */
+&nbsp;	public static boolean isNumber(int c) {
+<b class="fc">&nbsp;		return (c &gt;= 48 &amp;&amp; c &lt;= 57); // 0 - 9</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check whether the supplied character is a Hexadecimal character.
+&nbsp;	 *
+&nbsp;	 * @param c character
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if c is a hexadecimal character, &lt;code&gt;false&lt;/code&gt; otherwise.
+&nbsp;	 */
+&nbsp;	public static boolean isHex(int c) {
+<b class="nc">&nbsp;		return isNumber(c) || isUpperCaseHexLetter(c) || isLowerCaseHexLetter(c);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isUpperCaseHexLetter(int c) {
+<b class="nc">&nbsp;		return (c &gt;= 65 &amp;&amp; c &lt;= 70);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isLowerCaseHexLetter(int c) {
+<b class="nc">&nbsp;		return (c &gt;= 97 &amp;&amp; c &lt;= 102);</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

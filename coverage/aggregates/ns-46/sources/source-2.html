@@ -1,0 +1,198 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ErrorType</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.protocol.error</a>
+</div>
+
+<h1>Coverage Summary for Class: ErrorType (org.eclipse.rdf4j.http.protocol.error)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ErrorType</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.protocol.error;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class ErrorType {
+&nbsp;
+<b class="nc">&nbsp;	private static final Map&lt;String, ErrorType&gt; registry = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final ErrorType MALFORMED_QUERY = register(&quot;MALFORMED QUERY&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final ErrorType MALFORMED_DATA = register(&quot;MALFORMED DATA&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final ErrorType UNSUPPORTED_QUERY_LANGUAGE = register(&quot;UNSUPPORTED QUERY LANGUAGE&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final ErrorType UNSUPPORTED_FILE_FORMAT = register(&quot;UNSUPPORTED FILE FORMAT&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;	public static final ErrorType REPOSITORY_EXISTS = register(&quot;REPOSITORY EXISTS&quot;);</b>
+&nbsp;
+&nbsp;	protected static ErrorType register(String label) {
+<b class="nc">&nbsp;		synchronized (registry) {</b>
+<b class="nc">&nbsp;			ErrorType errorType = registry.get(label);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (errorType == null) {</b>
+<b class="nc">&nbsp;				errorType = new ErrorType(label);</b>
+<b class="nc">&nbsp;				registry.put(label, errorType);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return errorType;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static ErrorType forLabel(String label) {
+<b class="nc">&nbsp;		synchronized (registry) {</b>
+<b class="nc">&nbsp;			return registry.get(label);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The error type&#39;s label.
+&nbsp;	 */
+&nbsp;	private final String label;
+&nbsp;
+<b class="nc">&nbsp;	private ErrorType(String label) {</b>
+<b class="nc">&nbsp;		this.label = label;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getLabel() {
+<b class="nc">&nbsp;		return label;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean equals(Object other) {
+<b class="nc">&nbsp;		if (other instanceof ErrorType) {</b>
+<b class="nc">&nbsp;			return ((ErrorType) other).getLabel().equals(this.getLabel());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public int hashCode() {
+<b class="nc">&nbsp;		return getLabel().hashCode();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String toString() {
+<b class="nc">&nbsp;		return label;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

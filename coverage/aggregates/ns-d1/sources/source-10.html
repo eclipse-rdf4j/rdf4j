@@ -1,0 +1,592 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > MemValueFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.memory.model</a>
+</div>
+
+<h1>Coverage Summary for Class: MemValueFactory (org.eclipse.rdf4j.sail.memory.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">MemValueFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    75.7%
+  </span>
+  <span class="absValue">
+    (28/37)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    67%
+  </span>
+  <span class="absValue">
+    (63/94)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    66.4%
+  </span>
+  <span class="absValue">
+    (93/140)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.memory.model;
+&nbsp;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.CoreDatatype;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.Literals;
+&nbsp;import org.eclipse.rdf4j.model.util.URIUtil;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.RDF;
+&nbsp;
+&nbsp;/**
+&nbsp; * A factory for MemValue objects that keeps track of created objects to prevent the creation of duplicate objects,
+&nbsp; * minimizing memory usage as a result.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author David Huynh
+&nbsp; */
+&nbsp;public class MemValueFactory extends AbstractValueFactory {
+&nbsp;
+&nbsp;	/*------------*
+&nbsp;	 * Attributes *
+&nbsp;	 *------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registry containing the set of MemURI objects as used by a MemoryStore. This registry enables the reuse of
+&nbsp;	 * objects, minimizing the number of objects in main memory.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final WeakObjectRegistry&lt;IRI, MemIRI&gt; iriRegistry = new WeakObjectRegistry&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registry containing the set of MemTriple objects as used by a MemoryStore. This registry enables the reuse of
+&nbsp;	 * objects, minimizing the number of objects in main memory.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final WeakObjectRegistry&lt;Triple, MemTriple&gt; tripleRegistry = new WeakObjectRegistry&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registry containing the set of MemBNode objects as used by a MemoryStore. This registry enables the reuse of
+&nbsp;	 * objects, minimizing the number of objects in main memory.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final WeakObjectRegistry&lt;BNode, MemBNode&gt; bnodeRegistry = new WeakObjectRegistry&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registry containing the set of MemLiteral objects as used by a MemoryStore. This registry enables the reuse of
+&nbsp;	 * objects, minimizing the number of objects in main memory.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final WeakObjectRegistry&lt;Literal, MemLiteral&gt; literalRegistry = new WeakObjectRegistry&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Registry containing the set of namespce strings as used by MemURI objects in a MemoryStore. This registry enables
+&nbsp;	 * the reuse of objects, minimizing the number of objects in main memory.
+&nbsp;	 */
+<b class="fc">&nbsp;	private final WeakObjectRegistry&lt;String, String&gt; namespaceRegistry = new WeakObjectRegistry&lt;&gt;();</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A cache of the most common IRIs to improve lookup performance when users use our vocabularies (eg.
+&nbsp;	 * {@link RDF#TYPE}).
+&nbsp;	 */
+&nbsp;
+&nbsp;//	private final Cache&lt;Value, MemLiteral&gt; literalCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+&nbsp;//	private final Cache&lt;Value, MemIRI&gt; iriCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+&nbsp;//	private final Cache&lt;Value, MemBNode&gt; bNodeCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+&nbsp;//	private final Cache&lt;Value, MemTriple&gt; tripleCache = CacheBuilder.newBuilder().concurrencyLevel(Runtime.getRuntime().availableProcessors()).weakKeys().weakValues().initialCapacity(1000).maximumSize(1000).build();
+<b class="fc">&nbsp;	public MemValueFactory() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void clear() {
+<b class="fc">&nbsp;		iriRegistry.clear();</b>
+<b class="fc">&nbsp;		tripleRegistry.clear();</b>
+<b class="fc">&nbsp;		bnodeRegistry.clear();</b>
+<b class="fc">&nbsp;		literalRegistry.clear();</b>
+<b class="fc">&nbsp;		namespaceRegistry.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a previously created MemValue that is equal to the supplied value, or &lt;var&gt;null&lt;/var&gt; if the supplied
+&nbsp;	 * value is a new value or is equal to &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 *
+&nbsp;	 * @param value The MemValue equivalent of the supplied value, or &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 * @return A previously created MemValue that is equal to &lt;var&gt;value&lt;/var&gt;, or &lt;var&gt;null&lt;/var&gt; if no such value
+&nbsp;	 *         exists or if &lt;var&gt;value&lt;/var&gt; is equal to &lt;var&gt;null&lt;/var&gt;.
+&nbsp;	 */
+&nbsp;	public MemValue getMemValue(Value value) {
+<b class="fc">&nbsp;		if (value == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+<b class="fc">&nbsp;		} else if (value.isIRI()) {</b>
+<b class="fc">&nbsp;			return getMemURI((IRI) value);</b>
+<b class="fc">&nbsp;		} else if (value.isBNode()) {</b>
+<b class="fc">&nbsp;			return getMemBNode((BNode) value);</b>
+<b class="pc">&nbsp;		} else if (value.isTriple()) {</b>
+<b class="nc">&nbsp;			return getMemTriple((Triple) value);</b>
+<b class="pc">&nbsp;		} else if (value.isLiteral()) {</b>
+<b class="fc">&nbsp;			return getMemLiteral((Literal) value);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;value is not a Resource or Literal: &quot; + value);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See getMemValue() for description.
+&nbsp;	 */
+&nbsp;	public MemResource getMemResource(Resource resource) {
+<b class="fc">&nbsp;		if (resource == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+<b class="fc">&nbsp;		} else if (resource.isIRI()) {</b>
+<b class="fc">&nbsp;			return getMemURI((IRI) resource);</b>
+<b class="pc">&nbsp;		} else if (resource.isBNode()) {</b>
+<b class="fc">&nbsp;			return getMemBNode((BNode) resource);</b>
+<b class="nc">&nbsp;		} else if (resource.isTriple()) {</b>
+<b class="nc">&nbsp;			return getMemTriple((Triple) resource);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;resource is not a URI or BNode: &quot; + resource);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See getMemValue() for description.
+&nbsp;	 */
+&nbsp;	public MemIRI getMemURI(IRI uri) {
+<b class="fc">&nbsp;		if (uri == null) {</b>
+<b class="fc">&nbsp;			return null;</b>
+<b class="fc">&nbsp;		} else if (isOwnMemIRI(uri)) {</b>
+<b class="fc">&nbsp;			return (MemIRI) uri;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return iriRegistry.get(uri);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See getMemValue() for description.
+&nbsp;	 */
+&nbsp;	public MemBNode getMemBNode(BNode bnode) {
+<b class="pc">&nbsp;		if (bnode == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="pc">&nbsp;		} else if (isOwnMemBnode(bnode)) {</b>
+<b class="fc">&nbsp;			return (MemBNode) bnode;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return bnodeRegistry.get(bnode);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See getMemValue() for description.
+&nbsp;	 */
+&nbsp;	public MemLiteral getMemLiteral(Literal literal) {
+<b class="pc">&nbsp;		if (literal == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="fc">&nbsp;		} else if (isOwnMemLiteral(literal)) {</b>
+<b class="fc">&nbsp;			return (MemLiteral) literal;</b>
+&nbsp;		} else {
+<b class="fc">&nbsp;			return literalRegistry.get(literal);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private MemTriple getMemTriple(Triple triple) {
+<b class="nc">&nbsp;		if (triple == null) {</b>
+<b class="nc">&nbsp;			return null;</b>
+<b class="nc">&nbsp;		} else if (isOwnMemTriple(triple)) {</b>
+<b class="nc">&nbsp;			return (MemTriple) triple;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return tripleRegistry.get(triple);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the supplied value is an instance of &lt;var&gt;MemValue&lt;/var&gt; and whether it has been created by this
+&nbsp;	 * MemValueFactory.
+&nbsp;	 */
+&nbsp;
+&nbsp;	private boolean isOwnMemBnode(BNode value) {
+<b class="pc">&nbsp;		return value instanceof MemBNode &amp;&amp; ((MemBNode) value).getCreator() == this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isOwnMemLiteral(Literal value) {
+<b class="pc">&nbsp;		return value instanceof MemLiteral &amp;&amp; ((MemLiteral) value).getCreator() == this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isOwnMemTriple(Triple value) {
+<b class="nc">&nbsp;		return value instanceof MemTriple &amp;&amp; ((MemTriple) value).getCreator() == this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private boolean isOwnMemIRI(IRI value) {
+<b class="fc">&nbsp;		return value instanceof MemIRI &amp;&amp; ((MemIRI) value).getCreator() == this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all URIs that are managed by this value factory.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;b&gt;Warning:&lt;/b&gt; This method is not synchronized.
+&nbsp;	 *
+&nbsp;	 * @return An unmodifiable Set of MemURI objects.
+&nbsp;	 * @deprecated Use getMemIRIsIterator() instead.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true, since = &quot;4.0.0&quot;)
+&nbsp;	public Set&lt;MemIRI&gt; getMemURIs() {
+<b class="nc">&nbsp;		return Collections.unmodifiableSet(iriRegistry);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all bnodes that are managed by this value factory.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;b&gt;Warning:&lt;/b&gt; This method is not synchronized.
+&nbsp;	 *
+&nbsp;	 * @return An unmodifiable Set of MemBNode objects.
+&nbsp;	 * @deprecated Use getMemBNodesIterator() instead.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true, since = &quot;4.0.0&quot;)
+&nbsp;	public Set&lt;MemBNode&gt; getMemBNodes() {
+<b class="nc">&nbsp;		return Collections.unmodifiableSet(bnodeRegistry);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all literals that are managed by this value factory.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;b&gt;Warning:&lt;/b&gt; This method is not synchronized.
+&nbsp;	 *
+&nbsp;	 * @return An unmodifiable Set of MemURI objects.
+&nbsp;	 * @deprecated Use getMemLiteralsIterator() instead.
+&nbsp;	 */
+&nbsp;	@Deprecated(forRemoval = true, since = &quot;4.0.0&quot;)
+&nbsp;	public Set&lt;MemLiteral&gt; getMemLiterals() {
+<b class="nc">&nbsp;		return Collections.unmodifiableSet(literalRegistry);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all URIs that are managed by this value factory.
+&nbsp;	 *
+&nbsp;	 * @return An autocloseable iterator.
+&nbsp;	 */
+&nbsp;	public WeakObjectRegistry.AutoCloseableIterator&lt;MemIRI&gt; getMemIRIsIterator() {
+<b class="fc">&nbsp;		return iriRegistry.closeableIterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all bnodes that are managed by this value factory.
+&nbsp;	 *
+&nbsp;	 * @return An autocloseable iterator.
+&nbsp;	 */
+&nbsp;	public WeakObjectRegistry.AutoCloseableIterator&lt;MemBNode&gt; getMemBNodesIterator() {
+<b class="fc">&nbsp;		return bnodeRegistry.closeableIterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets all literals that are managed by this value factory.
+&nbsp;	 *
+&nbsp;	 * @return An autocloseable iterator.
+&nbsp;	 */
+&nbsp;	public WeakObjectRegistry.AutoCloseableIterator&lt;MemLiteral&gt; getMemLiteralsIterator() {
+<b class="nc">&nbsp;		return literalRegistry.closeableIterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets or creates a MemValue for the supplied Value. If the factory already contains a MemValue object that is
+&nbsp;	 * equivalent to the supplied value then this equivalent value will be returned. Otherwise a new MemValue will be
+&nbsp;	 * created, stored for future calls and then returned.
+&nbsp;	 *
+&nbsp;	 * @param value A Resource or Literal.
+&nbsp;	 * @return The existing or created MemValue.
+&nbsp;	 */
+&nbsp;	public MemValue getOrCreateMemValue(Value value) {
+<b class="fc">&nbsp;		if (value.isResource()) {</b>
+<b class="fc">&nbsp;			return getOrCreateMemResource((Resource) value);</b>
+<b class="pc">&nbsp;		} else if (value.isLiteral()) {</b>
+<b class="fc">&nbsp;			return getOrCreateMemLiteral((Literal) value);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;value is not a Resource or Literal: &quot; + value);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See {@link #getOrCreateMemValue(Value)} for description.
+&nbsp;	 */
+&nbsp;	public MemResource getOrCreateMemResource(Resource resource) {
+<b class="fc">&nbsp;		if (resource.isIRI()) {</b>
+<b class="fc">&nbsp;			return getOrCreateMemURI((IRI) resource);</b>
+<b class="pc">&nbsp;		} else if (resource.isBNode()) {</b>
+<b class="fc">&nbsp;			return getOrCreateMemBNode((BNode) resource);</b>
+<b class="nc">&nbsp;		} else if (resource.isTriple()) {</b>
+<b class="nc">&nbsp;			return getOrCreateMemTriple((Triple) resource);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;resource is not a URI or BNode: &quot; + resource);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See {@link #getOrCreateMemValue(Value)} for description.
+&nbsp;	 */
+&nbsp;	public MemIRI getOrCreateMemURI(IRI uri) {
+<b class="fc">&nbsp;		if (isOwnMemIRI(uri)) {</b>
+<b class="fc">&nbsp;			return (MemIRI) uri;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return iriRegistry.getOrAdd(uri, () -&gt; {</b>
+&nbsp;
+<b class="fc">&nbsp;			String namespace = uri.getNamespace();</b>
+&nbsp;
+<b class="fc">&nbsp;			String sharedNamespace = namespaceRegistry.getOrAdd(namespace, () -&gt; namespace);</b>
+&nbsp;
+&nbsp;			// Create a MemURI and add it to the registry
+<b class="fc">&nbsp;			return new MemIRI(this, sharedNamespace, uri.getLocalName());</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See {@link #getOrCreateMemValue(Value)} for description.
+&nbsp;	 */
+&nbsp;	public MemBNode getOrCreateMemBNode(BNode bnode) {
+<b class="fc">&nbsp;		if (isOwnMemBnode(bnode)) {</b>
+<b class="fc">&nbsp;			return (MemBNode) bnode;</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return bnodeRegistry.getOrAdd(bnode, () -&gt; new MemBNode(this, bnode.getID()));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See {@link #getOrCreateMemValue(Value)} for description.
+&nbsp;	 */
+&nbsp;	public MemLiteral getOrCreateMemLiteral(Literal literal) {
+<b class="fc">&nbsp;		if (isOwnMemLiteral(literal)) {</b>
+<b class="fc">&nbsp;			return (MemLiteral) literal;</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return literalRegistry.getOrAdd(literal, () -&gt; {</b>
+<b class="fc">&nbsp;			String label = literal.getLabel();</b>
+<b class="fc">&nbsp;			CoreDatatype coreDatatype = literal.getCoreDatatype();</b>
+<b class="fc">&nbsp;			IRI datatype = coreDatatype != CoreDatatype.NONE ? coreDatatype.getIri() : literal.getDatatype();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (Literals.isLanguageLiteral(literal)) {</b>
+<b class="fc">&nbsp;				return new MemLiteral(this, label, literal.getLanguage().get());</b>
+&nbsp;			} else {
+&nbsp;				try {
+<b class="fc">&nbsp;					if (coreDatatype.isXSDDatatype()) {</b>
+<b class="fc">&nbsp;						if (((CoreDatatype.XSD) coreDatatype).isIntegerDatatype()) {</b>
+<b class="fc">&nbsp;							return new IntegerMemLiteral(this, label, literal.integerValue(), coreDatatype);</b>
+<b class="fc">&nbsp;						} else if (coreDatatype == CoreDatatype.XSD.DECIMAL) {</b>
+<b class="fc">&nbsp;							return new DecimalMemLiteral(this, label, literal.decimalValue(), coreDatatype);</b>
+<b class="fc">&nbsp;						} else if (coreDatatype == CoreDatatype.XSD.FLOAT) {</b>
+<b class="fc">&nbsp;							return new NumericMemLiteral(this, label, literal.floatValue(), coreDatatype);</b>
+<b class="fc">&nbsp;						} else if (coreDatatype == CoreDatatype.XSD.DOUBLE) {</b>
+<b class="fc">&nbsp;							return new NumericMemLiteral(this, label, literal.doubleValue(), coreDatatype);</b>
+<b class="fc">&nbsp;						} else if (coreDatatype == CoreDatatype.XSD.BOOLEAN) {</b>
+<b class="fc">&nbsp;							return new BooleanMemLiteral(this, label, literal.booleanValue());</b>
+<b class="fc">&nbsp;						} else if (coreDatatype == CoreDatatype.XSD.DATETIME) {</b>
+<b class="fc">&nbsp;							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());</b>
+<b class="pc">&nbsp;						} else if (coreDatatype == CoreDatatype.XSD.DATETIMESTAMP) {</b>
+<b class="nc">&nbsp;							return new CalendarMemLiteral(this, label, coreDatatype, literal.calendarValue());</b>
+&nbsp;						}
+&nbsp;					}
+&nbsp;
+<b class="fc">&nbsp;					return new MemLiteral(this, label, datatype, coreDatatype);</b>
+&nbsp;
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+&nbsp;					// Unable to parse literal label to primitive type
+<b class="nc">&nbsp;					return new MemLiteral(this, label, datatype);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * See {@link #getOrCreateMemValue(Value)} for description.
+&nbsp;	 */
+&nbsp;	private MemTriple getOrCreateMemTriple(Triple triple) {
+<b class="nc">&nbsp;		MemTriple memTriple = getMemTriple(triple);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (memTriple == null) {</b>
+&nbsp;			// Create a MemTriple and add it to the registry
+<b class="nc">&nbsp;			MemTriple newMemTriple = new MemTriple(this, getOrCreateMemResource(triple.getSubject()),</b>
+<b class="nc">&nbsp;					getOrCreateMemURI(triple.getPredicate()), getOrCreateMemValue(triple.getObject()));</b>
+<b class="nc">&nbsp;			boolean wasNew = tripleRegistry.add(newMemTriple);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!wasNew) {</b>
+<b class="nc">&nbsp;				return tripleRegistry.getOrAdd(triple, () -&gt; newMemTriple);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				return newMemTriple;</b>
+&nbsp;			}
+&nbsp;		} else {
+<b class="nc">&nbsp;			return memTriple;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String uri) {
+<b class="fc">&nbsp;		return getOrCreateMemURI(super.createIRI(uri));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String namespace, String localName) {
+<b class="fc">&nbsp;		return iriRegistry.getOrAdd(SimpleValueFactory.getInstance().createIRI(namespace, localName), () -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;			if (namespace.indexOf(&#39;:&#39;) == -1) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;Not a valid (absolute) URI: &quot; + namespace + localName);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			String correctNamespace;
+&nbsp;			String correctLocalName;
+&nbsp;
+<b class="nc">&nbsp;			if (!URIUtil.isCorrectURISplit(namespace, localName)) {</b>
+<b class="nc">&nbsp;				IRI iri = super.createIRI(namespace + localName);</b>
+<b class="nc">&nbsp;				correctNamespace = iri.getNamespace();</b>
+<b class="nc">&nbsp;				correctLocalName = iri.getLocalName();</b>
+&nbsp;
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				correctNamespace = namespace;</b>
+<b class="nc">&nbsp;				correctLocalName = localName;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			String sharedNamespace = namespaceRegistry.getOrAdd(correctNamespace, () -&gt; correctNamespace);</b>
+&nbsp;
+&nbsp;			// Create a MemURI and add it to the registry
+<b class="nc">&nbsp;			return new MemIRI(this, sharedNamespace, correctLocalName);</b>
+&nbsp;
+&nbsp;		});
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BNode createBNode(String nodeID) {
+<b class="fc">&nbsp;		return getOrCreateMemBNode(super.createBNode(nodeID));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String value) {
+<b class="fc">&nbsp;		return getOrCreateMemLiteral(super.createLiteral(value));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String value, String language) {
+<b class="fc">&nbsp;		return getOrCreateMemLiteral(super.createLiteral(value, language));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String value, IRI datatype) {
+<b class="fc">&nbsp;		return getOrCreateMemLiteral(super.createLiteral(value, datatype));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String value, CoreDatatype datatype) {
+<b class="fc">&nbsp;		return getOrCreateMemLiteral(super.createLiteral(value, datatype));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(boolean value) {
+<b class="nc">&nbsp;		MemLiteral newLiteral = new BooleanMemLiteral(this, value);</b>
+<b class="nc">&nbsp;		return getSharedLiteral(newLiteral);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(XMLGregorianCalendar calendar) {
+<b class="fc">&nbsp;		MemLiteral newLiteral = new CalendarMemLiteral(this, calendar);</b>
+<b class="fc">&nbsp;		return getSharedLiteral(newLiteral);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Literal getSharedLiteral(MemLiteral newLiteral) {
+<b class="fc">&nbsp;		return literalRegistry.getOrAdd(newLiteral, () -&gt; newLiteral);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,357 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailTripleSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: SailTripleSource (org.eclipse.rdf4j.federated.evaluation)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailTripleSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/52)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">SailTripleSource$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/54)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+&nbsp;import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.StatementConversionIteration;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A triple source to be used on any repository.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class SailTripleSource extends TripleSourceBase {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(SailTripleSource.class);</b>
+&nbsp;
+&nbsp;	SailTripleSource(Endpoint endpoint, FederationContext federationContext) {
+<b class="nc">&nbsp;		super(federationContext, endpoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(
+&nbsp;			StatementPattern stmt,
+&nbsp;			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);</b>
+<b class="nc">&nbsp;		Value predValue = QueryAlgebraUtil.getVarValue(stmt.getPredicateVar(), bindings);</b>
+<b class="nc">&nbsp;		Value objValue = QueryAlgebraUtil.getVarValue(stmt.getObjectVar(), bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		return withConnection((conn, resultHolder) -&gt; {</b>
+&nbsp;
+&nbsp;			// TODO we need to fix this here: if the dataset contains FROM NAMED, we cannot use
+&nbsp;			// the API and require to write as query
+&nbsp;
+<b class="nc">&nbsp;			RepositoryResult&lt;Statement&gt; repoResult = conn.getStatements((Resource) subjValue, (IRI) predValue, objValue,</b>
+<b class="nc">&nbsp;					queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, queryInfo.getDataset()));</b>
+&nbsp;
+&nbsp;			try {
+&nbsp;				// XXX implementation remark and TODO taken from Sesame
+&nbsp;				// The same variable might have been used multiple times in this
+&nbsp;				// StatementPattern, verify value equality in those cases.
+&nbsp;
+&nbsp;				// an iterator that converts the statements to var bindings
+<b class="nc">&nbsp;				resultHolder.set(new StatementConversionIteration(repoResult, bindings, stmt));</b>
+&nbsp;
+&nbsp;				// if filter is set, apply it
+<b class="nc">&nbsp;				if (filterExpr != null) {</b>
+<b class="nc">&nbsp;					FilteringIteration filteredRes = new FilteringIteration(filterExpr, resultHolder.get(),</b>
+<b class="nc">&nbsp;							queryInfo.getStrategy());</b>
+<b class="nc">&nbsp;					if (!filteredRes.hasNext()) {</b>
+<b class="nc">&nbsp;						filteredRes.close();</b>
+<b class="nc">&nbsp;						resultHolder.set(new EmptyIteration&lt;&gt;());</b>
+&nbsp;						return;
+&nbsp;					}
+<b class="nc">&nbsp;					resultHolder.set(filteredRes);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (Throwable t) {</b>
+<b class="nc">&nbsp;				repoResult.close();</b>
+<b class="nc">&nbsp;				throw t;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;Statement, QueryEvaluationException&gt; getStatements(
+&nbsp;			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+&nbsp;			throws RepositoryException,
+&nbsp;			MalformedQueryException, QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		return withConnection((conn, resultHolder) -&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;			RepositoryResult&lt;Statement&gt; repoResult = conn.getStatements(subj, pred, obj,</b>
+<b class="nc">&nbsp;					queryInfo.getIncludeInferred(), contexts);</b>
+&nbsp;
+&nbsp;			// XXX implementation remark and TODO taken from Sesame
+&nbsp;			// The same variable might have been used multiple times in this
+&nbsp;			// StatementPattern, verify value equality in those cases.
+&nbsp;
+<b class="nc">&nbsp;			resultHolder.set(new ExceptionConvertingIteration&lt;&gt;(repoResult) {</b>
+&nbsp;				@Override
+&nbsp;				protected QueryEvaluationException convert(Exception arg0) {
+<b class="nc">&nbsp;					return new QueryEvaluationException(arg0);</b>
+&nbsp;				}
+&nbsp;			});
+&nbsp;		});
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatements(StatementPattern stmt,
+&nbsp;			BindingSet bindings, QueryInfo queryInfo, Dataset dataset)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+<b class="nc">&nbsp;		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);</b>
+<b class="nc">&nbsp;		Value predValue = QueryAlgebraUtil.getVarValue(stmt.getPredicateVar(), bindings);</b>
+<b class="nc">&nbsp;		Value objValue = QueryAlgebraUtil.getVarValue(stmt.getObjectVar(), bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource[] contexts = FedXUtil.toContexts(dataset);</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection conn = endpoint.getConnection()) {</b>
+<b class="nc">&nbsp;			return conn.hasStatement((Resource) subjValue, (IRI) predValue, objValue, queryInfo.getIncludeInferred(),</b>
+&nbsp;					contexts);
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo) {
+&nbsp;		// we use a prepared query for variable GRAPH patterns (=&gt; cannot be done
+&nbsp;		// using the Repository API).
+<b class="nc">&nbsp;		if (stmt.getContextVar() != null &amp;&amp; !stmt.getContextVar().hasValue()) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Dataset ds = queryInfo.getDataset();</b>
+<b class="nc">&nbsp;		if (ds != null) {</b>
+&nbsp;
+&nbsp;			// if FROM NAMED is used we rely on a prepared query
+<b class="nc">&nbsp;			return !ds.getNamedGraphs().isEmpty();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// in all other cases: try to use the Repository API
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(
+&nbsp;			TupleExpr preparedQuery,
+&nbsp;			BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException,
+&nbsp;			QueryEvaluationException {
+&nbsp;
+&nbsp;		/*
+&nbsp;		 * Implementation note:
+&nbsp;		 *
+&nbsp;		 * a special strategy is registered for NativeStore instances. The specialized strategy allows to evaluate
+&nbsp;		 * prepared queries without prior (obsolete) optimization.
+&nbsp;		 */
+<b class="nc">&nbsp;		return withConnection((conn, resultHolder) -&gt; {</b>
+&nbsp;
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; res;
+<b class="nc">&nbsp;			SailConnection sailConn = ((SailRepositoryConnection) conn).getSailConnection();</b>
+&nbsp;
+&nbsp;			try {
+&nbsp;
+&nbsp;				// optimization attempt: use precompiled query
+<b class="nc">&nbsp;				PrecompiledQueryNode precompiledQueryNode = new PrecompiledQueryNode(preparedQuery);</b>
+<b class="nc">&nbsp;				res = (CloseableIteration&lt;BindingSet, QueryEvaluationException&gt;) sailConn.evaluate(precompiledQueryNode,</b>
+<b class="nc">&nbsp;						null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());</b>
+&nbsp;
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				log.warn(</b>
+<b class="nc">&nbsp;						&quot;Precompiled query optimization for native store could not be applied: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;				log.debug(&quot;Details:&quot;, e);</b>
+&nbsp;
+&nbsp;				// fallback: attempt the original tuple expression
+<b class="nc">&nbsp;				res = (CloseableIteration&lt;BindingSet, QueryEvaluationException&gt;) sailConn.evaluate(preparedQuery,</b>
+<b class="nc">&nbsp;						null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (bindings.size() &gt; 0) {</b>
+<b class="nc">&nbsp;				res = new InsertBindingsIteration(res, bindings);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			resultHolder.set(res);</b>
+&nbsp;		});
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

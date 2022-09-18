@@ -1,0 +1,636 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractReadWriteLockManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.common.concurrent.locks</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractReadWriteLockManager (org.eclipse.rdf4j.common.concurrent.locks)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractReadWriteLockManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/57)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/123)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">AbstractReadWriteLockManager$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">AbstractReadWriteLockManager$ReadLock</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">AbstractReadWriteLockManager$WriteLock</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/29)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/67)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/144)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.common.concurrent.locks;
+&nbsp;
+&nbsp;import java.lang.invoke.VarHandle;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;import java.util.concurrent.atomic.LongAdder;
+&nbsp;import java.util.concurrent.locks.StampedLock;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
+&nbsp;import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockTracking;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * An abstract base implementation of a read/write-lock manager.
+&nbsp; *
+&nbsp; * @author Håvard M. Ottestad
+&nbsp; */
+&nbsp;public abstract class AbstractReadWriteLockManager implements ReadWriteLockManager {
+&nbsp;
+&nbsp;	private final LockMonitoring&lt;ReadLock&gt; readLockMonitoring;
+&nbsp;	private final LockMonitoring&lt;WriteLock&gt; writeLockMonitoring;
+&nbsp;
+&nbsp;	// StampedLock for handling writers.
+<b class="nc">&nbsp;	final StampedLock stampedLock = new StampedLock();</b>
+&nbsp;
+&nbsp;	// LongAdder for handling readers. When the count is equal then there are no active readers.
+<b class="nc">&nbsp;	final LongAdder readersLocked = new LongAdder();</b>
+<b class="nc">&nbsp;	final LongAdder readersUnlocked = new LongAdder();</b>
+&nbsp;
+&nbsp;	// milliseconds to wait when calling the try-lock method of the stamped lock
+&nbsp;	private final int tryWriteLockMillis;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * When acquiring a write-lock, the thread will acquire the write-lock and then spin &amp; yield while waiting for
+&nbsp;	 * readers to unlock their locks. A deadlock is possible if someone already holding a read-lock acquires another
+&nbsp;	 * read-lock at the same time that another thread is waiting for a write-lock. To stop this from happening we can
+&nbsp;	 * set READ_PREFERENCE to a number higher than zero. READ_PREFERENCE of 1 means that the thread acquiring a
+&nbsp;	 * write-lock will release the write-lock if there are any readers. A READ_PREFERENCE of 100 means that the thread
+&nbsp;	 * acquiring a write-lock will spin &amp; yield 100 times before it attempts to release the write-lock.
+&nbsp;	 */
+&nbsp;	final int writePreference;
+&nbsp;
+&nbsp;	public AbstractReadWriteLockManager() {
+<b class="nc">&nbsp;		this(false);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public AbstractReadWriteLockManager(boolean trackLocks) {
+<b class="nc">&nbsp;		this(trackLocks, LockMonitoring.INITIAL_WAIT_TO_COLLECT);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public AbstractReadWriteLockManager(boolean trackLocks, int waitToCollect) {
+<b class="nc">&nbsp;		this(&quot;&quot;, waitToCollect, LockDiagnostics.fromLegacyTracking(trackLocks));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public AbstractReadWriteLockManager(String alias, LockDiagnostics... lockDiagnostics) {
+<b class="nc">&nbsp;		this(alias, LockMonitoring.INITIAL_WAIT_TO_COLLECT, lockDiagnostics);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public AbstractReadWriteLockManager(String alias, int waitToCollect, LockDiagnostics... lockDiagnostics) {</b>
+&nbsp;
+<b class="nc">&nbsp;		this.tryWriteLockMillis = Math.min(1000, waitToCollect);</b>
+&nbsp;
+&nbsp;		// WRITE_PREFERENCE can not be negative or 0.
+<b class="nc">&nbsp;		this.writePreference = Math.max(1, getWriterPreference());</b>
+&nbsp;
+<b class="nc">&nbsp;		boolean releaseAbandoned = false;</b>
+<b class="nc">&nbsp;		boolean detectStalledOrDeadlock = false;</b>
+<b class="nc">&nbsp;		boolean stackTrace = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		for (LockDiagnostics lockDiagnostic : lockDiagnostics) {</b>
+<b class="nc">&nbsp;			switch (lockDiagnostic) {</b>
+&nbsp;			case releaseAbandoned:
+<b class="nc">&nbsp;				releaseAbandoned = true;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case detectStalledOrDeadlock:
+<b class="nc">&nbsp;				detectStalledOrDeadlock = true;</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case stackTrace:
+<b class="nc">&nbsp;				stackTrace = true;</b>
+&nbsp;				break;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (lockDiagnostics.length == 0) {</b>
+<b class="nc">&nbsp;			readLockMonitoring = LockMonitoring</b>
+<b class="nc">&nbsp;					.wrap(Lock.ExtendedSupplier.wrap(this::createReadLockInner, this::tryReadLockInner));</b>
+<b class="nc">&nbsp;			writeLockMonitoring = LockMonitoring</b>
+<b class="nc">&nbsp;					.wrap(Lock.ExtendedSupplier.wrap(this::createWriteLockInner, this::tryWriteLockInner));</b>
+&nbsp;
+<b class="nc">&nbsp;		} else if (releaseAbandoned &amp;&amp; !detectStalledOrDeadlock) {</b>
+&nbsp;
+<b class="nc">&nbsp;			readLockMonitoring = new LockCleaner&lt;&gt;(</b>
+&nbsp;					stackTrace,
+&nbsp;					alias + &quot;_READ&quot;,
+<b class="nc">&nbsp;					LoggerFactory.getLogger(this.getClass()),</b>
+<b class="nc">&nbsp;					Lock.ExtendedSupplier.wrap(this::createReadLockInner, this::tryReadLockInner)</b>
+&nbsp;			);
+&nbsp;
+<b class="nc">&nbsp;			writeLockMonitoring = new LockCleaner&lt;&gt;(</b>
+&nbsp;					stackTrace,
+&nbsp;					alias + &quot;_WRITE&quot;,
+<b class="nc">&nbsp;					LoggerFactory.getLogger(this.getClass()),</b>
+<b class="nc">&nbsp;					Lock.ExtendedSupplier.wrap(this::createWriteLockInner, this::tryWriteLockInner)</b>
+&nbsp;			);
+&nbsp;
+&nbsp;		} else {
+&nbsp;
+<b class="nc">&nbsp;			readLockMonitoring = new LockTracking&lt;&gt;(</b>
+&nbsp;					stackTrace,
+&nbsp;					alias + &quot;_READ&quot;,
+<b class="nc">&nbsp;					LoggerFactory.getLogger(this.getClass()),</b>
+&nbsp;					waitToCollect,
+<b class="nc">&nbsp;					Lock.ExtendedSupplier.wrap(this::createReadLockInner, this::tryReadLockInner)</b>
+&nbsp;			);
+&nbsp;
+<b class="nc">&nbsp;			writeLockMonitoring = new LockTracking&lt;&gt;(</b>
+&nbsp;					stackTrace,
+&nbsp;					alias + &quot;_WRITE&quot;,
+<b class="nc">&nbsp;					LoggerFactory.getLogger(this.getClass()),</b>
+&nbsp;					waitToCollect,
+<b class="nc">&nbsp;					Lock.ExtendedSupplier.wrap(this::createWriteLockInner, this::tryWriteLockInner)</b>
+&nbsp;			);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	abstract int getWriterPreference();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public boolean isWriterActive() {
+<b class="nc">&nbsp;		return stampedLock.isWriteLocked();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public boolean isReaderActive() {
+<b class="nc">&nbsp;		long unlockedSum = readersUnlocked.sum();</b>
+<b class="nc">&nbsp;		long lockedSum = readersLocked.sum();</b>
+<b class="nc">&nbsp;		return unlockedSum != lockedSum;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void waitForActiveWriter() throws InterruptedException {
+<b class="nc">&nbsp;		while (stampedLock.isWriteLocked() &amp;&amp; !isReaderActive()) {</b>
+<b class="nc">&nbsp;			spinWait();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void waitForActiveReaders() throws InterruptedException {
+<b class="nc">&nbsp;		while (isReaderActive()) {</b>
+<b class="nc">&nbsp;			spinWait();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Lock getReadLock() throws InterruptedException {
+<b class="nc">&nbsp;		return readLockMonitoring.getLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	ReadLock createReadLockInner() throws InterruptedException {
+&nbsp;
+<b class="nc">&nbsp;		readersLocked.increment();</b>
+<b class="nc">&nbsp;		while (stampedLock.isWriteLocked()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				spinWaitAtReadLock();</b>
+<b class="nc">&nbsp;			} catch (InterruptedException e) {</b>
+<b class="nc">&nbsp;				readersUnlocked.increment();</b>
+<b class="nc">&nbsp;				throw e;</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new ReadLock(readersUnlocked);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Lock getWriteLock() throws InterruptedException {
+<b class="nc">&nbsp;		return writeLockMonitoring.getLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private WriteLock createWriteLockInner() throws InterruptedException {
+&nbsp;
+&nbsp;		// Acquire a write-lock.
+<b class="nc">&nbsp;		long writeStamp = writeLockInterruptibly();</b>
+<b class="nc">&nbsp;		boolean lockAcquired = false;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			int attempts = 0;</b>
+&nbsp;
+&nbsp;			// Wait for active readers to finish.
+&nbsp;			do {
+&nbsp;
+<b class="nc">&nbsp;				if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;					throw new InterruptedException();</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// The order is important here.
+<b class="nc">&nbsp;				long unlockedSum = readersUnlocked.sum();</b>
+<b class="nc">&nbsp;				long lockedSum = readersLocked.sum();</b>
+<b class="nc">&nbsp;				if (unlockedSum == lockedSum) {</b>
+&nbsp;					// No active readers.
+<b class="nc">&nbsp;					lockAcquired = true;</b>
+&nbsp;				} else {
+&nbsp;
+&nbsp;					// If a thread is allowed to acquire more than one read-lock then we could deadlock if we keep
+&nbsp;					// holding the write-lock while we wait for all readers to finish. This is because no read-locks can
+&nbsp;					// be acquired while the write-lock is locked.
+<b class="nc">&nbsp;					if (attempts++ &gt; writePreference) {</b>
+<b class="nc">&nbsp;						attempts = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;						stampedLock.unlockWrite(writeStamp);</b>
+<b class="nc">&nbsp;						writeStamp = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;						yieldWait();</b>
+&nbsp;
+<b class="nc">&nbsp;						writeStamp = writeLockInterruptibly();</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						spinWait();</b>
+&nbsp;					}
+&nbsp;
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;			} while (!lockAcquired);</b>
+&nbsp;		} finally {
+<b class="nc">&nbsp;			if (!lockAcquired &amp;&amp; writeStamp != 0) {</b>
+<b class="nc">&nbsp;				stampedLock.unlockWrite(writeStamp);</b>
+<b class="nc">&nbsp;				writeStamp = 0;</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		VarHandle.releaseFence();</b>
+<b class="nc">&nbsp;		return new WriteLock(stampedLock, writeStamp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private long writeLockInterruptibly() throws InterruptedException {
+&nbsp;
+<b class="nc">&nbsp;		if (writeLockMonitoring.requiresManualCleanup()) {</b>
+&nbsp;			long writeStamp;
+&nbsp;			do {
+<b class="nc">&nbsp;				if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;					throw new InterruptedException();</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				writeStamp = stampedLock.tryWriteLock(tryWriteLockMillis, TimeUnit.MILLISECONDS);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (writeStamp == 0) {</b>
+&nbsp;
+<b class="nc">&nbsp;					writeLockMonitoring.runCleanup();</b>
+<b class="nc">&nbsp;					readLockMonitoring.runCleanup();</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} while (writeStamp == 0);</b>
+<b class="nc">&nbsp;			return writeStamp;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return stampedLock.writeLockInterruptibly();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Lock tryReadLock() {
+<b class="nc">&nbsp;		return readLockMonitoring.tryLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ReadLock tryReadLockInner() {
+<b class="nc">&nbsp;		readersLocked.increment();</b>
+<b class="nc">&nbsp;		if (!stampedLock.isWriteLocked()) {</b>
+&nbsp;			// Everything is good! We have acquired a read-lock and there are no active writers.
+<b class="nc">&nbsp;			return new ReadLock(readersUnlocked);</b>
+&nbsp;		} else {
+&nbsp;			// There are active writers release our read lock
+<b class="nc">&nbsp;			readersUnlocked.increment();</b>
+&nbsp;
+<b class="nc">&nbsp;			readLockMonitoring.runCleanup();</b>
+<b class="nc">&nbsp;			writeLockMonitoring.runCleanup();</b>
+<b class="nc">&nbsp;			return null;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public Lock tryWriteLock() {
+<b class="nc">&nbsp;		return writeLockMonitoring.tryLock();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private WriteLock tryWriteLockInner() {
+&nbsp;		// Try to acquire a write-lock.
+<b class="nc">&nbsp;		long writeStamp = stampedLock.tryWriteLock();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (writeStamp != 0) {</b>
+&nbsp;
+&nbsp;			// The order is important here.
+<b class="nc">&nbsp;			long unlockedSum = readersUnlocked.sum();</b>
+<b class="nc">&nbsp;			long lockedSum = readersLocked.sum();</b>
+<b class="nc">&nbsp;			if (unlockedSum == lockedSum) {</b>
+&nbsp;				// No active readers.
+<b class="nc">&nbsp;				VarHandle.releaseFence();</b>
+<b class="nc">&nbsp;				return new WriteLock(stampedLock, writeStamp);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				stampedLock.unlockWrite(writeStamp);</b>
+&nbsp;
+<b class="nc">&nbsp;				readLockMonitoring.runCleanup();</b>
+<b class="nc">&nbsp;				writeLockMonitoring.runCleanup();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	void spinWait() throws InterruptedException {
+<b class="nc">&nbsp;		Thread.onSpinWait();</b>
+&nbsp;
+<b class="nc">&nbsp;		writeLockMonitoring.runCleanup();</b>
+<b class="nc">&nbsp;		readLockMonitoring.runCleanup();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;			throw new InterruptedException();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	void spinWaitAtReadLock() throws InterruptedException {
+<b class="nc">&nbsp;		Thread.onSpinWait();</b>
+&nbsp;
+<b class="nc">&nbsp;		writeLockMonitoring.runCleanup();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;			throw new InterruptedException();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private void yieldWait() throws InterruptedException {
+<b class="nc">&nbsp;		Thread.yield();</b>
+&nbsp;
+<b class="nc">&nbsp;		writeLockMonitoring.runCleanup();</b>
+<b class="nc">&nbsp;		readLockMonitoring.runCleanup();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (Thread.interrupted()) {</b>
+<b class="nc">&nbsp;			throw new InterruptedException();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	static class WriteLock implements Lock {</b>
+&nbsp;
+&nbsp;		private final StampedLock lock;
+&nbsp;		private long stamp;
+&nbsp;
+<b class="nc">&nbsp;		public WriteLock(StampedLock lock, long stamp) {</b>
+<b class="nc">&nbsp;			assert stamp != 0;</b>
+<b class="nc">&nbsp;			this.lock = lock;</b>
+<b class="nc">&nbsp;			this.stamp = stamp;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isActive() {
+<b class="nc">&nbsp;			return stamp != 0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void release() {
+<b class="nc">&nbsp;			long temp = stamp;</b>
+<b class="nc">&nbsp;			stamp = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (temp == 0) {</b>
+<b class="nc">&nbsp;				throw new IllegalMonitorStateException(&quot;Trying to release a lock that is not locked&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			lock.unlockWrite(temp);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	static class ReadLock implements Lock {
+&nbsp;
+&nbsp;		private final LongAdder readersUnlocked;
+<b class="nc">&nbsp;		private boolean locked = true;</b>
+&nbsp;
+<b class="nc">&nbsp;		public ReadLock(LongAdder readersUnlocked) {</b>
+<b class="nc">&nbsp;			this.readersUnlocked = readersUnlocked;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean isActive() {
+<b class="nc">&nbsp;			return locked;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void release() {
+<b class="nc">&nbsp;			if (!locked) {</b>
+<b class="nc">&nbsp;				throw new IllegalMonitorStateException(&quot;Trying to release a lock that is not locked&quot;);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			VarHandle.acquireFence();</b>
+<b class="nc">&nbsp;			locked = false;</b>
+<b class="nc">&nbsp;			readersUnlocked.increment();</b>
+&nbsp;
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

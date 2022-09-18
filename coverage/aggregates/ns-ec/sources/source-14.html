@@ -1,0 +1,261 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > UpdateQuery</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.core.query</a>
+</div>
+
+<h1>Coverage Summary for Class: UpdateQuery (org.eclipse.rdf4j.sparqlbuilder.core.query)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">UpdateQuery</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.core.query;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+&nbsp;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Base;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.Prefix;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.PrefixDeclarations;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.core.TriplesTemplate;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.graphpattern.GraphName;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * A SPARQL Update query
+&nbsp; *
+&nbsp; * @param &lt;T&gt; The type of update query. Used to support fluency.
+&nbsp; *
+&nbsp; * @see &lt;a href=&quot;https://www.w3.org/TR/sparql11-update/&quot;&gt; SPARQL Update Query&lt;/a&gt;
+&nbsp; */
+&nbsp;@SuppressWarnings(&quot;unchecked&quot;)
+&nbsp;abstract class UpdateQuery&lt;T extends UpdateQuery&lt;T&gt;&gt; implements QueryElement {
+<b class="nc">&nbsp;	private Optional&lt;Base&gt; base = Optional.empty();</b>
+<b class="nc">&nbsp;	private Optional&lt;PrefixDeclarations&gt; prefixes = Optional.empty();</b>
+&nbsp;
+<b class="nc">&nbsp;	UpdateQuery() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the base IRI of this query
+&nbsp;	 *
+&nbsp;	 * @param iri the base IRI
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T base(Iri iri) {
+<b class="nc">&nbsp;		this.base = Optional.of(SparqlBuilder.base(iri));</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the base IRI of this query
+&nbsp;	 *
+&nbsp;	 * @param iri the base IRI
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T base(IRI iri) {
+<b class="nc">&nbsp;		return base(iri(iri));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the Base clause of this query
+&nbsp;	 *
+&nbsp;	 * @param base the {@link Base} clause to set
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T base(Base base) {
+<b class="nc">&nbsp;		this.base = Optional.of(base);</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add prefix declarations to this query
+&nbsp;	 *
+&nbsp;	 * @param prefixes the prefixes to add
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T prefix(Prefix... prefixes) {
+<b class="nc">&nbsp;		this.prefixes = SparqlBuilderUtils.getOrCreateAndModifyOptional(this.prefixes, SparqlBuilder::prefixes,</b>
+<b class="nc">&nbsp;				p -&gt; p.addPrefix(prefixes));</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add prefix declarations to this query
+&nbsp;	 *
+&nbsp;	 * @param namespaces the namespaces to use for prefixes
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public T prefix(Namespace... namespaces) {
+<b class="nc">&nbsp;		return prefix(Arrays</b>
+<b class="nc">&nbsp;				.stream(namespaces)</b>
+<b class="nc">&nbsp;				.map(n -&gt; SparqlBuilder.prefix(n))</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList())</b>
+<b class="nc">&nbsp;				.toArray(new Prefix[namespaces.length])</b>
+&nbsp;		);
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set the Prefix declarations of this query
+&nbsp;	 *
+&nbsp;	 * @param prefixes the {@link PrefixDeclarations} to set
+&nbsp;	 * @return this
+&nbsp;	 */
+&nbsp;	public T prefix(PrefixDeclarations prefixes) {
+<b class="nc">&nbsp;		this.prefixes = Optional.of(prefixes);</b>
+&nbsp;
+<b class="nc">&nbsp;		return (T) this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected abstract String getQueryActionString();
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getQueryString() {
+<b class="nc">&nbsp;		StringBuilder query = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendAndNewlineIfPresent(base, query);</b>
+<b class="nc">&nbsp;		SparqlBuilderUtils.appendAndNewlineIfPresent(prefixes, query);</b>
+&nbsp;
+<b class="nc">&nbsp;		String queryString = getQueryActionString();</b>
+<b class="nc">&nbsp;		if (prefixes.isPresent()) {</b>
+<b class="nc">&nbsp;			queryString = prefixes.get().replacePrefixesInQuery(queryString);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		query.append(queryString);</b>
+&nbsp;
+<b class="nc">&nbsp;		return query.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void appendNamedTriplesTemplates(StringBuilder queryString, Optional&lt;GraphName&gt; graphName,
+&nbsp;			TriplesTemplate triples) {
+<b class="nc">&nbsp;		queryString.append(graphName</b>
+<b class="nc">&nbsp;				.map(graph -&gt; SparqlBuilderUtils</b>
+<b class="nc">&nbsp;						.getBracedString(&quot;GRAPH &quot; + graph.getQueryString() + &quot; &quot; + triples.getQueryString()))</b>
+<b class="nc">&nbsp;				.orElseGet(triples::getQueryString));</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

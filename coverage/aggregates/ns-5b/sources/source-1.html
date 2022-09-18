@@ -1,0 +1,750 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > GraphComparisons</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.util</a>
+</div>
+
+<h1>Coverage Summary for Class: GraphComparisons (org.eclipse.rdf4j.model.util)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">GraphComparisons</td>
+<td class="coverageStat">
+  <span class="percent">
+    40%
+  </span>
+  <span class="absValue">
+    (8/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    11.4%
+  </span>
+  <span class="absValue">
+    (13/114)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    16.9%
+  </span>
+  <span class="absValue">
+    (29/172)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">GraphComparisons$Partitioning</td>
+<td class="coverageStat">
+  <span class="percent">
+    25%
+  </span>
+  <span class="absValue">
+    (5/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    4.5%
+  </span>
+  <span class="absValue">
+    (1/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    17.1%
+  </span>
+  <span class="absValue">
+    (12/70)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">GraphComparisons$Partitioning$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    31%
+  </span>
+  <span class="absValue">
+    (13/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    10.1%
+  </span>
+  <span class="absValue">
+    (14/138)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    16.3%
+  </span>
+  <span class="absValue">
+    (41/251)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model.util;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.util.Values.bnode;
+&nbsp;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Comparator;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Map.Entry;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;import com.google.common.collect.HashMultimap;
+&nbsp;import com.google.common.collect.Multimap;
+&nbsp;import com.google.common.collect.MultimapBuilder;
+&nbsp;import com.google.common.collect.Multimaps;
+&nbsp;import com.google.common.hash.HashCode;
+&nbsp;import com.google.common.hash.HashFunction;
+&nbsp;import com.google.common.hash.Hashing;
+&nbsp;
+&nbsp;/**
+&nbsp; * Functions for canonicalizing RDF models and computing isomorphism.
+&nbsp; *
+&nbsp; * @implNote The algorithms used in this class are based on the iso-canonical algorithm as described in: Hogan, A.
+&nbsp; *           (2017). Canonical forms for isomorphic and equivalent RDF graphs: algorithms for leaning and labelling
+&nbsp; *           blank nodes. ACM Transactions on the Web (TWEB), 11(4), 1-62.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;class GraphComparisons {</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final Logger logger = LoggerFactory.getLogger(GraphComparisons.class);</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final HashFunction hashFunction = Hashing.sha256();</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final HashCode initialHashCode = hashFunction.hashString(&quot;&quot;, StandardCharsets.UTF_8);</b>
+<b class="fc">&nbsp;	private static final HashCode outgoing = hashFunction.hashString(&quot;+&quot;, StandardCharsets.UTF_8);</b>
+<b class="fc">&nbsp;	private static final HashCode incoming = hashFunction.hashString(&quot;-&quot;, StandardCharsets.UTF_8);</b>
+<b class="fc">&nbsp;	private static final HashCode distinguisher = hashFunction.hashString(&quot;@&quot;, StandardCharsets.UTF_8);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two RDF models, and returns &lt;var&gt;true&lt;/var&gt; if they consist of isomorphic graphs and the isomorphic
+&nbsp;	 * graph identifiers map 1:1 to each other. RDF graphs are isomorphic graphs if statements from one graphs can be
+&nbsp;	 * mapped 1:1 on to statements in the other graphs. In this mapping, blank nodes are not considered mapped when
+&nbsp;	 * having an identical internal id, but are mapped from one graph to the other by looking at the statements in which
+&nbsp;	 * the blank nodes occur. A Model can consist of more than one graph (denoted by context identifiers). Two models
+&nbsp;	 * are considered isomorphic if for each of the graphs in one model, an isomorphic graph exists in the other model,
+&nbsp;	 * and the context identifiers of these graphs are identical.
+&nbsp;	 *
+&nbsp;	 * @implNote The algorithm used by this comparison is a depth-first search for an iso-canonical blank node mapping
+&nbsp;	 *           for each model, and using that as a basis for comparison. The algorithm is described in detail in:
+&nbsp;	 *           Hogan, A. (2017). Canonical forms for isomorphic and equivalent RDF graphs: algorithms for leaning and
+&nbsp;	 *           labelling blank nodes. ACM Transactions on the Web (TWEB), 11(4), 1-62.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism&quot;&gt;RDF Concepts &amp;amp; Abstract Syntax, section
+&nbsp;	 *      3.6 (Graph Comparison)&lt;/a&gt;
+&nbsp;	 * @see &lt;a href=&quot;http://aidanhogan.com/docs/rdf-canonicalisation.pdf&quot;&gt;Hogan, A. (2017). Canonical forms for
+&nbsp;	 *      isomorphic and equivalent RDF graphs: algorithms for leaning and labelling blank nodes. ACM Transactions on
+&nbsp;	 *      the Web (TWEB), 11(4), 1-62. Technical Paper (PDF )&lt;/a&gt;
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public static boolean isomorphic(Model model1, Model model2) {
+<b class="pc">&nbsp;		if (model1 == model2) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (model1.size() != model2.size()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (model1.contexts().size() != model2.contexts().size()) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (model1.contexts().size() &gt; 1) {</b>
+&nbsp;			// model contains more than one context (including the null context). We compare per individual context.
+<b class="nc">&nbsp;			for (Resource context : model1.contexts()) {</b>
+<b class="nc">&nbsp;				Model contextInModel1 = model1.filter(null, null, null, context);</b>
+<b class="nc">&nbsp;				if (context != null &amp;&amp; context.isBNode()) {</b>
+&nbsp;					// context identifier is a blank node. We to find blank node identifiers in the other model that map
+&nbsp;					// iso-canonically.
+<b class="nc">&nbsp;					Map&lt;BNode, HashCode&gt; mapping1 = getIsoCanonicalMapping(model1);</b>
+<b class="nc">&nbsp;					Multimap&lt;HashCode, BNode&gt; partitionMapping2 = partitionMapping(getIsoCanonicalMapping(model2));</b>
+&nbsp;
+<b class="nc">&nbsp;					Collection&lt;BNode&gt; contextCandidates = partitionMapping2.get(mapping1.get(context));</b>
+<b class="nc">&nbsp;					if (contextCandidates.isEmpty()) {</b>
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+&nbsp;
+<b class="nc">&nbsp;					boolean foundIsomorphicBlankNodeContext = false;</b>
+<b class="nc">&nbsp;					for (BNode context2 : contextCandidates) {</b>
+<b class="nc">&nbsp;						Model contextInModel2 = model2.filter(null, null, null, context2);</b>
+<b class="nc">&nbsp;						if (contextInModel1.size() != contextInModel2.size()) {</b>
+<b class="nc">&nbsp;							continue;</b>
+&nbsp;						}
+<b class="nc">&nbsp;						if (isomorphicSingleContext(contextInModel1, contextInModel2)) {</b>
+<b class="nc">&nbsp;							foundIsomorphicBlankNodeContext = true;</b>
+<b class="nc">&nbsp;							break;</b>
+&nbsp;						}
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					if (!foundIsomorphicBlankNodeContext) {</b>
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else {</b>
+&nbsp;					// context identifier is an iri. Simple per-context check will suffice.
+<b class="nc">&nbsp;					Model contextInModel2 = model2.filter(null, null, null, context);</b>
+<b class="nc">&nbsp;					if (contextInModel1.size() != contextInModel2.size()) {</b>
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					final Model canonicalizedContext1 = isoCanonicalize(contextInModel1);</b>
+<b class="nc">&nbsp;					final Model canonicalizedContext2 = isoCanonicalize(contextInModel2);</b>
+<b class="nc">&nbsp;					if (!canonicalizedContext1.equals(canonicalizedContext2)) {</b>
+<b class="nc">&nbsp;						return false;</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		} else {
+&nbsp;			// only one context (the null context), so we&#39;re dealing with one graph only.
+<b class="fc">&nbsp;			return isomorphicSingleContext(model1, model2);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean isomorphicSingleContext(Model model1, Model model2) {
+<b class="fc">&nbsp;		final Map&lt;BNode, HashCode&gt; mapping1 = getIsoCanonicalMapping(model1);</b>
+<b class="pc">&nbsp;		if (mapping1.isEmpty()) {</b>
+&nbsp;			// no blank nodes in model1 - simple collection equality will do
+<b class="fc">&nbsp;			return model1.equals(model2);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		final Map&lt;BNode, HashCode&gt; mapping2 = getIsoCanonicalMapping(model2);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (mappingsIncompatible(mapping1, mapping2)) {</b>
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// Compatible blank node mapping found. We need to check that statements not involving blank nodes are equal in
+&nbsp;		// both models.
+<b class="nc">&nbsp;		Optional&lt;Statement&gt; missingInModel2 = model1.stream()</b>
+<b class="nc">&nbsp;				.filter(st -&gt; !(st.getSubject().isBNode() || st.getObject().isBNode()</b>
+<b class="nc">&nbsp;						|| st.getContext() instanceof BNode))</b>
+<b class="nc">&nbsp;				.filter(st -&gt; !model2.contains(st))</b>
+<b class="nc">&nbsp;				.findAny();</b>
+&nbsp;
+&nbsp;		// Because we have previously already checked that the models are the same size, we don&#39;t have to check both
+&nbsp;		// ways to establish model equality.
+<b class="nc">&nbsp;		return !missingInModel2.isPresent();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean mappingsIncompatible(Map&lt;BNode, HashCode&gt; mapping1, Map&lt;BNode, HashCode&gt; mapping2) {
+<b class="nc">&nbsp;		if (mapping1.size() != mapping2.size()) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Set&lt;HashCode&gt; values1 = new HashSet&lt;&gt;(mapping1.values());</b>
+<b class="nc">&nbsp;		Set&lt;HashCode&gt; values2 = new HashSet&lt;&gt;(mapping2.values());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!(values1.equals(values2))) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static Model isoCanonicalize(Model m) {
+<b class="nc">&nbsp;		return labelModel(m, getIsoCanonicalMapping(m));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static Map&lt;BNode, HashCode&gt; getIsoCanonicalMapping(Model m) {
+<b class="fc">&nbsp;		Partitioning partitioning = hashBNodes(m);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (partitioning.isFine()) {</b>
+<b class="fc">&nbsp;			return partitioning.getCurrentNodeMapping();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return distinguish(m, partitioning, null, new ArrayList&lt;&gt;(), new ArrayList&lt;&gt;());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static Set&lt;BNode&gt; getBlankNodes(Model m) {
+<b class="fc">&nbsp;		final Set&lt;BNode&gt; blankNodes = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="fc">&nbsp;		m.forEach(st -&gt; {</b>
+<b class="pc">&nbsp;			if (st.getSubject().isBNode()) {</b>
+<b class="nc">&nbsp;				blankNodes.add((BNode) st.getSubject());</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (st.getObject().isBNode()) {</b>
+<b class="nc">&nbsp;				blankNodes.add((BNode) st.getObject());</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (st.getContext() != null &amp;&amp; st.getContext().isBNode()) {</b>
+<b class="nc">&nbsp;				blankNodes.add((BNode) st.getContext());</b>
+&nbsp;			}
+&nbsp;		});
+<b class="fc">&nbsp;		return blankNodes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Map&lt;BNode, HashCode&gt; distinguish(Model m, Partitioning partitioning,
+&nbsp;			Map&lt;BNode, HashCode&gt; lowestFound, List&lt;BNode&gt; parentFixpoints,
+&nbsp;			List&lt;Map&lt;BNode, HashCode&gt;&gt; finePartitionMappings) {
+&nbsp;
+<b class="nc">&nbsp;		for (BNode node : partitioning.getLowestNonTrivialPartition()) {</b>
+<b class="nc">&nbsp;			List&lt;BNode&gt; fixpoints = new ArrayList&lt;&gt;(parentFixpoints);</b>
+<b class="nc">&nbsp;			fixpoints.add(node);</b>
+&nbsp;
+<b class="nc">&nbsp;			Partitioning clonedPartitioning = new Partitioning(partitioning.getCurrentNodeMapping(),</b>
+<b class="nc">&nbsp;					partitioning.getStaticValueMapping());</b>
+&nbsp;
+<b class="nc">&nbsp;			clonedPartitioning.setCurrentHashCode(node,</b>
+<b class="nc">&nbsp;					hashTuple(clonedPartitioning.getCurrentHashCode(node), distinguisher));</b>
+<b class="nc">&nbsp;			clonedPartitioning = hashBNodes(m, clonedPartitioning);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (clonedPartitioning.isFine()) {</b>
+<b class="nc">&nbsp;				finePartitionMappings.add(clonedPartitioning.getCurrentNodeMapping());</b>
+<b class="nc">&nbsp;				if (lowestFound == null</b>
+<b class="nc">&nbsp;						|| clonedPartitioning.getMappingSize().compareTo(partitioning.getMappingSize()) &lt; 0) {</b>
+<b class="nc">&nbsp;					lowestFound = clonedPartitioning.getCurrentNodeMapping();</b>
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				Map&lt;BNode, BNode&gt; compatibleAutomorphism = findCompatibleAutomorphism(fixpoints, finePartitionMappings);</b>
+<b class="nc">&nbsp;				if (compatibleAutomorphism != null) {</b>
+&nbsp;					// prune
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				lowestFound = distinguish(m, clonedPartitioning, lowestFound, fixpoints, finePartitionMappings);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return lowestFound;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static Map&lt;BNode, BNode&gt; findCompatibleAutomorphism(List&lt;BNode&gt; fixpoints,
+&nbsp;			List&lt;Map&lt;BNode, HashCode&gt;&gt; partitionMappings) {
+&nbsp;		// check if two mappings with identical hash codes exist
+<b class="nc">&nbsp;		for (Map&lt;BNode, HashCode&gt; mapping : partitionMappings) {</b>
+<b class="nc">&nbsp;			Map&lt;BNode, HashCode&gt; compatibleMapping = null;</b>
+<b class="nc">&nbsp;			for (Map&lt;BNode, HashCode&gt; om : partitionMappings) {</b>
+<b class="nc">&nbsp;				if (om.equals(mapping)) {</b>
+<b class="nc">&nbsp;					continue;</b>
+&nbsp;				}
+&nbsp;
+<b class="nc">&nbsp;				if (om.values().containsAll(mapping.values())) {</b>
+<b class="nc">&nbsp;					compatibleMapping = om;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (compatibleMapping != null) {</b>
+<b class="nc">&nbsp;				Map&lt;HashCode, BNode&gt; invertedMapping = mapping.entrySet()</b>
+<b class="nc">&nbsp;						.stream()</b>
+<b class="nc">&nbsp;						.collect(Collectors.toMap(Entry::getValue, Entry::getKey));</b>
+&nbsp;
+<b class="nc">&nbsp;				Map&lt;BNode, BNode&gt; automorphism = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				for (Entry&lt;BNode, HashCode&gt; entry : compatibleMapping.entrySet()) {</b>
+<b class="nc">&nbsp;					automorphism.put(entry.getKey(), invertedMapping.get(entry.getValue()));</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;				// check if fixpoints all map, if so we have a compatible automorphism
+<b class="nc">&nbsp;				for (BNode fixpoint : fixpoints) {</b>
+<b class="nc">&nbsp;					if (!automorphism.get(fixpoint).equals(fixpoint)) {</b>
+<b class="nc">&nbsp;						break;</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return automorphism;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static List&lt;Collection&lt;BNode&gt;&gt; partitions(Multimap&lt;HashCode, BNode&gt; partitionMapping) {
+<b class="nc">&nbsp;		List&lt;Collection&lt;BNode&gt;&gt; partition = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Entry&lt;HashCode, Collection&lt;BNode&gt;&gt; entry : partitionMapping.asMap().entrySet()) {</b>
+<b class="nc">&nbsp;			partition.add(entry.getValue());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return partition;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static Multimap&lt;HashCode, BNode&gt; partitionMapping(Map&lt;BNode, HashCode&gt; blankNodeMapping) {
+<b class="nc">&nbsp;		return Multimaps.invertFrom(Multimaps.forMap(blankNodeMapping),</b>
+<b class="nc">&nbsp;				MultimapBuilder.hashKeys(blankNodeMapping.keySet().size()).arrayListValues().build());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Model labelModel(Model original, Map&lt;BNode, HashCode&gt; hash) {
+<b class="nc">&nbsp;		Model result = new DynamicModelFactory().createEmptyModel();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (Statement st : original) {</b>
+<b class="nc">&nbsp;			if (st.getSubject().isBNode() || st.getObject().isBNode()</b>
+<b class="nc">&nbsp;					|| (st.getContext() != null &amp;&amp; st.getContext().isBNode())) {</b>
+<b class="nc">&nbsp;				Resource subject = st.getSubject().isBNode()</b>
+<b class="nc">&nbsp;						? createCanonicalBNode((BNode) st.getSubject(), hash)</b>
+<b class="nc">&nbsp;						: st.getSubject();</b>
+<b class="nc">&nbsp;				IRI predicate = st.getPredicate();</b>
+<b class="nc">&nbsp;				Value object = st.getObject().isBNode()</b>
+<b class="nc">&nbsp;						? createCanonicalBNode((BNode) st.getObject(), hash)</b>
+<b class="nc">&nbsp;						: st.getObject();</b>
+<b class="nc">&nbsp;				Resource context = (st.getContext() != null &amp;&amp; st.getContext().isBNode())</b>
+<b class="nc">&nbsp;						? createCanonicalBNode((BNode) st.getContext(), hash)</b>
+<b class="nc">&nbsp;						: st.getContext();</b>
+&nbsp;
+<b class="nc">&nbsp;				result.add(subject, predicate, object, context);</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				result.add(st);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static Partitioning hashBNodes(Model m) {
+<b class="fc">&nbsp;		return hashBNodes(m, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Partitioning hashBNodes(Model m, Partitioning partitioning) {
+<b class="pc">&nbsp;		if (partitioning == null) {</b>
+<b class="fc">&nbsp;			final Set&lt;BNode&gt; blankNodes = getBlankNodes(m);</b>
+<b class="fc">&nbsp;			partitioning = new Partitioning(blankNodes);</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (!partitioning.getNodes().isEmpty()) {</b>
+&nbsp;			do {
+<b class="nc">&nbsp;				partitioning.nextIteration();</b>
+<b class="nc">&nbsp;				for (BNode b : partitioning.getNodes()) {</b>
+<b class="nc">&nbsp;					for (Statement st : m.getStatements(b, null, null)) {</b>
+<b class="nc">&nbsp;						HashCode c = hashTuple(</b>
+<b class="nc">&nbsp;								partitioning.getPreviousHashCode(st.getObject()),</b>
+<b class="nc">&nbsp;								partitioning.getPreviousHashCode(st.getPredicate()),</b>
+&nbsp;								outgoing);
+<b class="nc">&nbsp;						partitioning.setCurrentHashCode(b,</b>
+<b class="nc">&nbsp;								hashBag(c, partitioning.getCurrentHashCode(b)));</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;					for (Statement st : m.getStatements(null, null, b)) {</b>
+<b class="nc">&nbsp;						HashCode c = hashTuple(</b>
+<b class="nc">&nbsp;								partitioning.getPreviousHashCode(st.getSubject()),</b>
+<b class="nc">&nbsp;								partitioning.getPreviousHashCode(st.getPredicate()),</b>
+&nbsp;								incoming);
+<b class="nc">&nbsp;						partitioning.setCurrentHashCode(b,</b>
+<b class="nc">&nbsp;								hashBag(c, partitioning.getCurrentHashCode(b)));</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			} while (!partitioning.isFullyDistinguished());</b>
+&nbsp;		}
+<b class="fc">&nbsp;		return partitioning;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static HashCode hashTuple(HashCode... hashCodes) {
+<b class="nc">&nbsp;		return Hashing.combineOrdered(Arrays.asList(hashCodes));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static HashCode hashBag(HashCode... hashCodes) {
+<b class="nc">&nbsp;		return Hashing.combineUnordered(Arrays.asList(hashCodes));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static BNode createCanonicalBNode(BNode node, Map&lt;BNode, HashCode&gt; mapping) {
+<b class="nc">&nbsp;		return bnode(&quot;iso-&quot; + mapping.get(node).toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Encapsulates the current partitioning state of the algorithm, keeping track of previous and current node:hashcode
+&nbsp;	 * mappings as well as static value mappings.
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	static class Partitioning {
+&nbsp;
+&nbsp;		private final Map&lt;Value, HashCode&gt; staticValueMapping;
+&nbsp;
+&nbsp;		private Map&lt;BNode, HashCode&gt; previousNodeMapping;
+&nbsp;
+&nbsp;		private Map&lt;BNode, HashCode&gt; currentNodeMapping;
+&nbsp;
+&nbsp;		private Multimap&lt;HashCode, BNode&gt; currentHashCodeMapping;
+&nbsp;
+&nbsp;		private final int nodeCount;
+&nbsp;
+<b class="fc">&nbsp;		public Partitioning(Set&lt;BNode&gt; blankNodes) {</b>
+<b class="fc">&nbsp;			this.staticValueMapping = new HashMap&lt;&gt;();</b>
+<b class="fc">&nbsp;			this.nodeCount = blankNodes.size();</b>
+<b class="fc">&nbsp;			this.currentNodeMapping = new HashMap&lt;&gt;(nodeCount);</b>
+<b class="fc">&nbsp;			blankNodes.forEach(node -&gt; currentNodeMapping.put(node, initialHashCode));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public Partitioning(Map&lt;BNode, HashCode&gt; nodeMapping, Map&lt;Value, HashCode&gt; staticValueMapping) {</b>
+<b class="nc">&nbsp;			this.staticValueMapping = staticValueMapping;</b>
+<b class="nc">&nbsp;			this.nodeCount = nodeMapping.keySet().size();</b>
+<b class="nc">&nbsp;			this.currentNodeMapping = new HashMap&lt;&gt;(nodeMapping);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Map&lt;Value, HashCode&gt; getStaticValueMapping() {
+<b class="nc">&nbsp;			return staticValueMapping;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public HashCode getCurrentHashCode(Value value) {
+<b class="nc">&nbsp;			if (value.isBNode()) {</b>
+<b class="nc">&nbsp;				return currentNodeMapping.get((BNode) value);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (value.isLiteral()) {</b>
+<b class="nc">&nbsp;				return getStaticLiteralHashCode((Literal) value);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return staticValueMapping.computeIfAbsent(value,</b>
+<b class="nc">&nbsp;					v -&gt; hashFunction.hashString(v.stringValue(), StandardCharsets.UTF_8));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Set&lt;BNode&gt; getNodes() {
+<b class="fc">&nbsp;			return currentNodeMapping.keySet();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public HashCode getPreviousHashCode(Value value) {
+<b class="nc">&nbsp;			if (value.isBNode()) {</b>
+<b class="nc">&nbsp;				return previousNodeMapping.get((BNode) value);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (value.isLiteral()) {</b>
+<b class="nc">&nbsp;				return getStaticLiteralHashCode((Literal) value);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return staticValueMapping.computeIfAbsent(value,</b>
+<b class="nc">&nbsp;					v -&gt; hashFunction.hashString(v.stringValue(), StandardCharsets.UTF_8));</b>
+&nbsp;
+&nbsp;		}
+&nbsp;
+&nbsp;		public void setCurrentHashCode(BNode bnode, HashCode hashCode) {
+<b class="nc">&nbsp;			currentNodeMapping.put(bnode, hashCode);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Map&lt;BNode, HashCode&gt; getCurrentNodeMapping() {
+<b class="fc">&nbsp;			return Collections.unmodifiableMap(currentNodeMapping);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public void nextIteration() {
+<b class="nc">&nbsp;			previousNodeMapping = currentNodeMapping;</b>
+<b class="nc">&nbsp;			currentNodeMapping = new HashMap&lt;&gt;(currentNodeMapping);</b>
+<b class="nc">&nbsp;			currentHashCodeMapping = null;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * A partitioning is fine if every hashcode maps to exactly one blank node.
+&nbsp;		 *
+&nbsp;		 * @return true if the partitioning is fine, false otherwise.
+&nbsp;		 */
+&nbsp;		public boolean isFine() {
+<b class="pc">&nbsp;			return getCurrentHashCodeMapping().asMap().values().stream().allMatch(member -&gt; member.size() == 1);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean isFullyDistinguished() {
+<b class="nc">&nbsp;			if (isFine()) { // no two terms share a hash</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return currentUnchanged();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Collection&lt;BNode&gt; getLowestNonTrivialPartition() {
+<b class="nc">&nbsp;			final List&lt;Collection&lt;BNode&gt;&gt; sortedPartitions = new ArrayList&lt;&gt;(</b>
+<b class="nc">&nbsp;					getCurrentHashCodeMapping().asMap().values());</b>
+<b class="nc">&nbsp;			Collections.sort(sortedPartitions, new Comparator&lt;Collection&lt;BNode&gt;&gt;() {</b>
+&nbsp;				public int compare(Collection&lt;BNode&gt; a, Collection&lt;BNode&gt; b) {
+<b class="nc">&nbsp;					int result = a.size() - b.size();</b>
+<b class="nc">&nbsp;					if (result == 0) {</b>
+&nbsp;						// break tie by comparing value hash
+<b class="nc">&nbsp;						HashCode hashOfA = currentNodeMapping.get(a.iterator().next());</b>
+<b class="nc">&nbsp;						HashCode hashOfB = currentNodeMapping.get(b.iterator().next());</b>
+&nbsp;
+<b class="nc">&nbsp;						BigInteger difference = new BigInteger(1, hashOfA.asBytes())</b>
+<b class="nc">&nbsp;								.subtract(new BigInteger(1, hashOfB.asBytes()));</b>
+<b class="nc">&nbsp;						result = difference.compareTo(BigInteger.ZERO);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					return result;</b>
+&nbsp;				}
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			Collection&lt;BNode&gt; lowestNonTrivialPartition = sortedPartitions.stream()</b>
+<b class="nc">&nbsp;					.filter(part -&gt; part.size() &gt; 1)</b>
+<b class="nc">&nbsp;					.findFirst()</b>
+<b class="nc">&nbsp;					.orElseThrow(RuntimeException::new);</b>
+&nbsp;
+<b class="nc">&nbsp;			return lowestNonTrivialPartition;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Return a mapping size to determine a canonical lowest mapping.
+&nbsp;		 */
+&nbsp;		public BigInteger getMappingSize() {
+<b class="nc">&nbsp;			BigInteger size = currentNodeMapping.values()</b>
+<b class="nc">&nbsp;					.stream()</b>
+<b class="nc">&nbsp;					.map(h -&gt; new BigInteger(1, h.asBytes()))</b>
+<b class="nc">&nbsp;					.reduce(BigInteger.ZERO, (v1, v2) -&gt; v1.add(v2));</b>
+<b class="nc">&nbsp;			return size;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private HashCode getStaticLiteralHashCode(Literal value) {
+&nbsp;			// GH-2834: we need to include language and datatype when computing a unique hash code for literals
+<b class="nc">&nbsp;			return staticValueMapping.computeIfAbsent(value,</b>
+&nbsp;					v -&gt; {
+<b class="nc">&nbsp;						Literal l = (Literal) v;</b>
+<b class="nc">&nbsp;						List&lt;HashCode&gt; hashSequence = new ArrayList&lt;&gt;(3);</b>
+&nbsp;
+<b class="nc">&nbsp;						hashSequence.add(hashFunction.hashString(l.getLabel(), StandardCharsets.UTF_8));</b>
+&nbsp;
+&nbsp;						// Per BCP47, language tags are case-insensitive. Use normalized form to ensure consistency if
+&nbsp;						// possible, otherwise just use lower-case.
+<b class="nc">&nbsp;						l.getLanguage()</b>
+<b class="nc">&nbsp;								.map(lang -&gt; hashFunction.hashString(</b>
+<b class="nc">&nbsp;										Literals.isValidLanguageTag(lang) ? Literals.normalizeLanguageTag(lang)</b>
+<b class="nc">&nbsp;												: lang.toLowerCase(),</b>
+&nbsp;										StandardCharsets.UTF_8))
+<b class="nc">&nbsp;								.ifPresent(h -&gt; hashSequence.add(h));</b>
+<b class="nc">&nbsp;						hashSequence</b>
+<b class="nc">&nbsp;								.add(hashFunction.hashString(l.getDatatype().stringValue(), StandardCharsets.UTF_8));</b>
+<b class="nc">&nbsp;						return Hashing.combineOrdered(hashSequence);</b>
+&nbsp;					}
+&nbsp;			);
+&nbsp;		}
+&nbsp;
+&nbsp;		private Multimap&lt;HashCode, BNode&gt; getCurrentHashCodeMapping() {
+<b class="pc">&nbsp;			if (currentHashCodeMapping == null) {</b>
+<b class="fc">&nbsp;				currentHashCodeMapping = Multimaps.invertFrom(Multimaps.forMap(currentNodeMapping),</b>
+<b class="fc">&nbsp;						HashMultimap.create());</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return currentHashCodeMapping;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Verify if the current node mapping is unchanged compared to the previous node mapping.
+&nbsp;		 * &lt;p&gt;
+&nbsp;		 * it is unchanged if: all bnodes that have the same hashcode in current also shared the same hashcode in
+&nbsp;		 * previous, and all bnodes that have different ones in current also have different ones in previous.
+&nbsp;		 *
+&nbsp;		 * @return true if unchanged, false otherwise
+&nbsp;		 */
+&nbsp;		private boolean currentUnchanged() {
+&nbsp;
+<b class="nc">&nbsp;			final Multimap&lt;HashCode, BNode&gt; previous = Multimaps.invertFrom(Multimaps.forMap(previousNodeMapping),</b>
+<b class="nc">&nbsp;					HashMultimap.create());</b>
+<b class="nc">&nbsp;			for (Collection&lt;BNode&gt; currentSharedHashNodes : getCurrentHashCodeMapping().asMap().values()) {</b>
+&nbsp;				// pick a BNode, doesn&#39;t matter which: they all share the same hashcode
+<b class="nc">&nbsp;				BNode node = currentSharedHashNodes.iterator().next();</b>
+<b class="nc">&nbsp;				HashCode previousHashCode = previousNodeMapping.get(node);</b>
+<b class="nc">&nbsp;				if (!previous.get(previousHashCode).equals(currentSharedHashNodes)) {</b>
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

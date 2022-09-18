@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > TupleQueryResultMapper</title>
+  <title>Coverage Report > UpdateCallback</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.spring.dao.support</a>
 </div>
 
-<h1>Coverage Summary for Class: TupleQueryResultMapper (org.eclipse.rdf4j.spring.dao.support)</h1>
+<h1>Coverage Summary for Class: UpdateCallback (org.eclipse.rdf4j.spring.dao.support)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">TupleQueryResultMapper</td>
+  <td class="name">UpdateCallback</td>
 </tr>
 
 </table>
@@ -51,15 +51,16 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;
 &nbsp;package org.eclipse.rdf4j.spring.dao.support;
 &nbsp;
-&nbsp;import java.util.function.Function;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.function.Consumer;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.model.Value;
 &nbsp;
 &nbsp;/**
 &nbsp; * @since 4.0.0
 &nbsp; * @author Florian Kleedorfer
 &nbsp; */
-&nbsp;public interface TupleQueryResultMapper&lt;T&gt; extends Function&lt;TupleQueryResult, T&gt; {
+&nbsp;public interface UpdateCallback extends Consumer&lt;Map&lt;String, Value&gt;&gt; {
 &nbsp;}
 </code>
 </pre>
@@ -84,7 +85,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

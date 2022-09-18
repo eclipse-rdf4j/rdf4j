@@ -1,0 +1,448 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > StatementConvertor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps</a>
+</div>
+
+<h1>Coverage Summary for Class: StatementConvertor (org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">StatementConvertor</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    64.5%
+  </span>
+  <span class="absValue">
+    (20/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    40.6%
+  </span>
+  <span class="absValue">
+    (52/128)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    65.4%
+  </span>
+  <span class="absValue">
+    (104/159)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
+&nbsp;
+&nbsp;import java.util.function.BiConsumer;
+&nbsp;import java.util.function.Predicate;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.MutableBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+&nbsp;
+<b class="nc">&nbsp;class StatementConvertor {</b>
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; s(QueryEvaluationContext context, Var s) {
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="fc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; p(QueryEvaluationContext context, Var p) {
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="pc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; o(QueryEvaluationContext context, Var o) {
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="fc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; c(QueryEvaluationContext context, Var c) {
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+<b class="nc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="nc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="nc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; sp(QueryEvaluationContext context, Var s, Var p) {
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="pc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; so(QueryEvaluationContext context, Var s, Var o) {
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+&nbsp;
+<b class="fc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; sc(QueryEvaluationContext context, Var s, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="nc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="nc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; po(QueryEvaluationContext context, Var p, Var o) {
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="pc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; pc(QueryEvaluationContext context, Var p, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="nc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="nc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; oc(QueryEvaluationContext context, Var o, Var c) {
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="pc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; spo(QueryEvaluationContext context, Var s, Var p, Var o) {
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="fc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+<b class="fc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; spc(QueryEvaluationContext context, Var s, Var p, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="nc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="nc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; soc(QueryEvaluationContext context, Var s, Var o, Var c) {
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+&nbsp;
+<b class="pc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; poc(QueryEvaluationContext context, Var p, Var o, Var c) {
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="nc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+&nbsp;
+<b class="nc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="nc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="nc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="nc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static BiConsumer&lt;MutableBindingSet, Statement&gt; spoc(QueryEvaluationContext context, Var s, Var p, Var o,
+&nbsp;			Var c) {
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setS = context.addBinding(s.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; sIsSet = context.hasBinding(s.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setP = context.addBinding(p.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; pIsSet = context.hasBinding(p.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setO = context.addBinding(o.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; oIsSet = context.hasBinding(o.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		BiConsumer&lt;Value, MutableBindingSet&gt; setC = context.addBinding(c.getName());</b>
+<b class="fc">&nbsp;		Predicate&lt;BindingSet&gt; cIsSet = context.hasBinding(c.getName());</b>
+&nbsp;
+<b class="fc">&nbsp;		return (result, st) -&gt; {</b>
+<b class="fc">&nbsp;			boolean empty = result.isEmpty();</b>
+<b class="pc">&nbsp;			if (empty || !sIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setS.accept(st.getSubject(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !pIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setP.accept(st.getPredicate(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !oIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setO.accept(st.getObject(), result);</b>
+&nbsp;			}
+<b class="pc">&nbsp;			if (empty || !cIsSet.test(result)) {</b>
+<b class="fc">&nbsp;				setC.accept(st.getContext(), result);</b>
+&nbsp;			}
+&nbsp;		};
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

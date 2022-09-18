@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > HttpClientDependent</title>
+  <title>Coverage Report > HttpClientSessionManager</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.http.client</a>
 </div>
 
-<h1>Coverage Summary for Class: HttpClientDependent (org.eclipse.rdf4j.http.client)</h1>
+<h1>Coverage Summary for Class: HttpClientSessionManager (org.eclipse.rdf4j.http.client)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">HttpClientDependent</td>
+  <td class="name">HttpClientSessionManager</td>
 </tr>
 
 </table>
@@ -53,29 +53,33 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;import org.apache.http.client.HttpClient;
 &nbsp;
 &nbsp;/**
-&nbsp; * Common interface for objects, such as Repository and RepositoryConnection, that are dependent on {@link HttpClient}.
+&nbsp; * Manager for remote HTTP sessions using a {@link HttpClient}.
 &nbsp; *
 &nbsp; * @author James Leigh
 &nbsp; */
-&nbsp;public interface HttpClientDependent {
+&nbsp;@SuppressWarnings(&quot;deprecation&quot;)
+&nbsp;public interface HttpClientSessionManager {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * {@link HttpClient} that has been assigned or has been used by this object. The life cycle might not be or might
-&nbsp;	 * be tied to this object, depending on whether {@link HttpClient} was passed to or created by this object
-&nbsp;	 * respectively.
-&nbsp;	 *
-&nbsp;	 * @return an {@link HttpClient} instance or null
+&nbsp;	 * @return Returns the httpClient.
 &nbsp;	 */
 &nbsp;	HttpClient getHttpClient();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Assign an {@link HttpClient} that this object should use. The life cycle of the given {@link HttpClient} is
-&nbsp;	 * independent of this object. Closing or shutting down this object does not have any impact on the given client.
-&nbsp;	 * Callers must ensure that the given client is properly closed elsewhere.
-&nbsp;	 *
-&nbsp;	 * @param client
+&nbsp;	 * Creates a new SPARQL Protocol session to the remote SPARQL endpoint.
 &nbsp;	 */
-&nbsp;	void setHttpClient(HttpClient client);
+&nbsp;	SPARQLProtocolSession createSPARQLProtocolSession(String queryEndpointUrl, String updateEndpointUrl);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new session to the remote RDF4J REST API.
+&nbsp;	 */
+&nbsp;	RDF4JProtocolSession createRDF4JProtocolSession(String serverURL);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Closes any remaining connections and threads used by the sessions created by this object.
+&nbsp;	 */
+&nbsp;	void shutDown();
+&nbsp;
 &nbsp;}
 </code>
 </pre>
@@ -100,7 +104,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

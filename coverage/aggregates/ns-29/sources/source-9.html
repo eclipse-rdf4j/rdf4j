@@ -1,0 +1,263 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Export</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: Export (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Export</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/37)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.Writer;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.nio.file.StandardOpenOption;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.console.Util;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+&nbsp;import org.eclipse.rdf4j.console.setting.WorkDir;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Export triples to file
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public class Export extends ConsoleCommand {
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;export&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Exports repository data to a file&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return PrintHelp.USAGE + &quot;export &lt;file&gt;                 Exports the entirey repository to a file\n&quot;</b>
+&nbsp;				+ &quot;export &lt;file&gt; (&lt;uri&gt;|null)... Exports the specified context(s) to a file\n&quot;;
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String[] usesSettings() {
+<b class="nc">&nbsp;		return new String[] { WorkDir.NAME };</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 * @param settings
+&nbsp;	 */
+&nbsp;	public Export(ConsoleIO consoleIO, ConsoleState state, Map&lt;String, ConsoleSetting&gt; settings) {
+<b class="nc">&nbsp;		super(consoleIO, state, settings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(String... tokens) {
+<b class="nc">&nbsp;		Repository repository = state.getRepository();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (repository == null) {</b>
+<b class="nc">&nbsp;			writeUnopenedError();</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		if (tokens.length &lt; 2) {</b>
+<b class="nc">&nbsp;			writeln(getHelpLong());</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String fileName = tokens[1];</b>
+&nbsp;
+&nbsp;		Resource[] contexts;
+&nbsp;		try {
+<b class="nc">&nbsp;			contexts = Util.getContexts(tokens, 2, repository);</b>
+<b class="nc">&nbsp;		} catch (IllegalArgumentException ioe) {</b>
+<b class="nc">&nbsp;			writeError(ioe.getMessage());</b>
+&nbsp;			return;
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		export(repository, fileName, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get working dir setting.
+&nbsp;	 *
+&nbsp;	 * @return path of working dir
+&nbsp;	 */
+&nbsp;	private Path getWorkDir() {
+<b class="nc">&nbsp;		return ((WorkDir) settings.get(WorkDir.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Export to a file
+&nbsp;	 *
+&nbsp;	 * @param repository repository to export
+&nbsp;	 * @param fileName   file name
+&nbsp;	 * @param context    context(s) (if any)
+&nbsp;	 * @throws UnsupportedRDFormatException
+&nbsp;	 */
+&nbsp;	private void export(Repository repository, String fileName, Resource... contexts) {
+<b class="nc">&nbsp;		Path path = Util.getNormalizedPath(getWorkDir(), fileName);</b>
+<b class="nc">&nbsp;		if (path == null) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Invalid file name &quot; + fileName);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (path.toFile().exists()) {</b>
+<b class="nc">&nbsp;			boolean overwrite = askProceed(&quot;File exists, continue ?&quot;, false);</b>
+<b class="nc">&nbsp;			if (!overwrite) {</b>
+<b class="nc">&nbsp;				writeln(&quot;Export aborted&quot;);</b>
+&nbsp;				return;
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection conn = repository.getConnection();</b>
+<b class="nc">&nbsp;				Writer w = Files.newBufferedWriter(path, StandardCharsets.UTF_8, StandardOpenOption.CREATE,</b>
+&nbsp;						StandardOpenOption.TRUNCATE_EXISTING)) {
+&nbsp;
+<b class="nc">&nbsp;			RDFFormat fmt = Rio.getWriterFormatForFileName(fileName)</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new UnsupportedRDFormatException(&quot;No RDF parser for &quot; + fileName));</b>
+<b class="nc">&nbsp;			RDFWriter writer = Rio.createWriter(fmt, w);</b>
+&nbsp;
+<b class="nc">&nbsp;			long startTime = System.nanoTime();</b>
+<b class="nc">&nbsp;			writeln(&quot;Exporting data...&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;			conn.export(writer, contexts);</b>
+&nbsp;
+<b class="nc">&nbsp;			long diff = (System.nanoTime() - startTime) / 1_000_000;</b>
+<b class="nc">&nbsp;			writeln(&quot;Data has been written to file (&quot; + diff + &quot; ms)&quot;);</b>
+<b class="nc">&nbsp;		} catch (IOException | UnsupportedRDFormatException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to export data&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

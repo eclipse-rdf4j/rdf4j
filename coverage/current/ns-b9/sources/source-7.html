@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > SailFactory</title>
+  <title>Coverage Report > DelegatingSailImplConfig</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail.config</a>
 </div>
 
-<h1>Coverage Summary for Class: SailFactory (org.eclipse.rdf4j.sail.config)</h1>
+<h1>Coverage Summary for Class: DelegatingSailImplConfig (org.eclipse.rdf4j.sail.config)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">SailFactory</td>
+  <td class="name">DelegatingSailImplConfig</td>
 </tr>
 
 </table>
@@ -50,34 +50,12 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail.config;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.sail.Sail;
-&nbsp;
 &nbsp;/**
-&nbsp; * A SailFactory takes care of creating and initializing a specific type of {@link Sail} based on RDF configuration
-&nbsp; * data. SailFactory&#39;s are used to create specific Sails and to initialize them based on the configuration data that is
-&nbsp; * supplied to it, for example in a server environment.
-&nbsp; *
 &nbsp; * @author Arjohn Kampman
 &nbsp; */
-&nbsp;public interface SailFactory {
+&nbsp;public interface DelegatingSailImplConfig extends SailImplConfig {
 &nbsp;
-&nbsp;	/**
-&nbsp;	 * Returns the type of the Sails that this factory creates. Sail types are used for identification and should
-&nbsp;	 * uniquely identify specific implementations of the Sail API. This type &lt;em&gt;can&lt;/em&gt; be equal to the fully
-&nbsp;	 * qualified class name of the Sail, but this is not required.
-&nbsp;	 */
-&nbsp;	String getSailType();
-&nbsp;
-&nbsp;	SailImplConfig getConfig();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Returns a Sail instance that has been initialized using the supplied configuration data.
-&nbsp;	 *
-&nbsp;	 * @param config TODO
-&nbsp;	 * @return The created (but un-initialized) Sail.
-&nbsp;	 * @throws SailConfigException If no Sail could be created due to invalid or incomplete configuration data.
-&nbsp;	 */
-&nbsp;	Sail getSail(SailImplConfig config) throws SailConfigException;
+&nbsp;	SailImplConfig getDelegate();
 &nbsp;}
 </code>
 </pre>
@@ -102,7 +80,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

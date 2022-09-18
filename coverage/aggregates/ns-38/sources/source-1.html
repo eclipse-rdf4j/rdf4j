@@ -1,0 +1,424 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ControlledWorkerBoundJoin</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation.join</a>
+</div>
+
+<h1>Coverage Summary for Class: ControlledWorkerBoundJoin (org.eclipse.rdf4j.federated.evaluation.join)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ControlledWorkerBoundJoin</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/53)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ControlledWorkerBoundJoin$BoundJoinTaskCreator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ControlledWorkerBoundJoin$CheckJoinTaskCreator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ControlledWorkerBoundJoin$FedXServiceJoinTaskCreator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/5)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ControlledWorkerBoundJoin$TaskCreator</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/68)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation.join;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.concurrent.Phaser;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.FedXConfig;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.CheckStatementPattern;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXService;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ControlledWorkerScheduler;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Execute the nested loop join in an asynchronous fashion, using grouped requests, i.e. group bindings into one SPARQL
+&nbsp; * request using the UNION operator.
+&nbsp; *
+&nbsp; * The number of concurrent threads is controlled by a {@link ControlledWorkerScheduler} which works according to the
+&nbsp; * FIFO principle and uses worker threads.
+&nbsp; *
+&nbsp; * This join cursor blocks until all scheduled tasks are finished, however the result iteration can be accessed from
+&nbsp; * different threads to allow for pipelining.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class ControlledWorkerBoundJoin extends ControlledWorkerJoin {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(ControlledWorkerBoundJoin.class);</b>
+&nbsp;
+&nbsp;	public ControlledWorkerBoundJoin(ControlledWorkerScheduler&lt;BindingSet&gt; scheduler, FederationEvalStrategy strategy,
+&nbsp;			CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; leftIter,
+&nbsp;			TupleExpr rightArg, BindingSet bindings, QueryInfo queryInfo)
+&nbsp;			throws QueryEvaluationException {
+<b class="nc">&nbsp;		super(scheduler, strategy, leftIter, rightArg, bindings, queryInfo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void handleBindings() throws Exception {
+<b class="nc">&nbsp;		if (!(canApplyVectoredEvaluation(rightArg))) {</b>
+<b class="nc">&nbsp;			log.debug(</b>
+&nbsp;					&quot;Right argument is not an applicable BoundJoinTupleExpr. Fallback on ControlledWorkerJoin implementation: &quot;
+<b class="nc">&nbsp;							+ rightArg.getClass().getCanonicalName());</b>
+<b class="nc">&nbsp;			super.handleBindings(); // fallback</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		int nBindingsCfg = this.queryInfo.getFederationContext().getConfig().getBoundJoinBlockSize();</b>
+<b class="nc">&nbsp;		int totalBindings = 0; // the total number of bindings</b>
+<b class="nc">&nbsp;		TupleExpr expr = rightArg;</b>
+&nbsp;
+<b class="nc">&nbsp;		TaskCreator taskCreator = null;</b>
+<b class="nc">&nbsp;		Phaser currentPhaser = phaser;</b>
+&nbsp;
+&nbsp;		// first item is always sent in a non-bound way
+<b class="nc">&nbsp;		if (!isClosed() &amp;&amp; leftIter.hasNext()) {</b>
+<b class="nc">&nbsp;			BindingSet b = leftIter.next();</b>
+<b class="nc">&nbsp;			totalBindings++;</b>
+<b class="nc">&nbsp;			if (expr instanceof StatementTupleExpr) {</b>
+<b class="nc">&nbsp;				StatementTupleExpr stmt = (StatementTupleExpr) expr;</b>
+<b class="nc">&nbsp;				if (stmt.hasFreeVarsFor(b)) {</b>
+<b class="nc">&nbsp;					taskCreator = new BoundJoinTaskCreator(strategy, stmt);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					expr = new CheckStatementPattern(stmt, queryInfo);</b>
+<b class="nc">&nbsp;					taskCreator = new CheckJoinTaskCreator(strategy, (CheckStatementPattern) expr);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} else if (expr instanceof FedXService) {</b>
+<b class="nc">&nbsp;				taskCreator = new FedXServiceJoinTaskCreator(strategy, (FedXService) expr);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new RuntimeException(&quot;Expr is of unexpected type: &quot; + expr.getClass().getCanonicalName()</b>
+&nbsp;						+ &quot;. Please report this problem.&quot;);
+&nbsp;			}
+<b class="nc">&nbsp;			phaser.register();</b>
+<b class="nc">&nbsp;			scheduler.schedule(</b>
+&nbsp;					new ParallelJoinTask(new PhaserHandlingParallelExecutor(this, currentPhaser), strategy, expr, b));
+&nbsp;		}
+&nbsp;
+&nbsp;		int nBindings;
+&nbsp;		List&lt;BindingSet&gt; bindings;
+<b class="nc">&nbsp;		while (!isClosed() &amp;&amp; leftIter.hasNext()) {</b>
+&nbsp;
+&nbsp;			// create a new phaser if there are more than 10000 parties
+&nbsp;			// note: a phaser supports only up to 65535 registered parties
+<b class="nc">&nbsp;			if (currentPhaser.getRegisteredParties() &gt;= 10000) {</b>
+<b class="nc">&nbsp;				currentPhaser = new Phaser(currentPhaser);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * XXX idea:
+&nbsp;			 *
+&nbsp;			 * make nBindings dependent on the number of intermediate results of the left argument.
+&nbsp;			 *
+&nbsp;			 * If many intermediate results, increase the number of bindings. This will result in less remote SPARQL
+&nbsp;			 * requests.
+&nbsp;			 *
+&nbsp;			 */
+&nbsp;
+<b class="nc">&nbsp;			if (totalBindings &gt; 10) {</b>
+<b class="nc">&nbsp;				nBindings = nBindingsCfg;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				nBindings = 3;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			bindings = new ArrayList&lt;&gt;(nBindings);</b>
+&nbsp;
+<b class="nc">&nbsp;			int count = 0;</b>
+<b class="nc">&nbsp;			while (!isClosed() &amp;&amp; count &lt; nBindings &amp;&amp; leftIter.hasNext()) {</b>
+<b class="nc">&nbsp;				bindings.add(leftIter.next());</b>
+<b class="nc">&nbsp;				count++;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			totalBindings += count;</b>
+&nbsp;
+<b class="nc">&nbsp;			phaser.register();</b>
+<b class="nc">&nbsp;			scheduler.schedule(taskCreator.getTask(new PhaserHandlingParallelExecutor(this, currentPhaser), bindings));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		leftIter.close();</b>
+&nbsp;
+<b class="nc">&nbsp;		scheduler.informFinish(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (log.isDebugEnabled()) {</b>
+<b class="nc">&nbsp;			log.debug(&quot;JoinStats: left iter of &quot; + getDisplayId() + &quot; had &quot; + totalBindings + &quot; results.&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		phaser.awaitAdvanceInterruptibly(phaser.arrive(), queryInfo.getMaxRemainingTimeMS(), TimeUnit.MILLISECONDS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleClose() throws QueryEvaluationException {
+&nbsp;		try {
+<b class="nc">&nbsp;			super.handleClose();</b>
+&nbsp;		} finally {
+&nbsp;			// signal the phaser to close (if currently being blocked)
+<b class="nc">&nbsp;			phaser.forceTermination();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns true if the vectored evaluation can be applied for the join argument, i.e. there is no fallback to
+&nbsp;	 * {@link ControlledWorkerJoin#handleBindings()}. This is
+&nbsp;	 *
+&nbsp;	 * a) if the expr is a {@link BoundJoinTupleExpr} (Mind the special handling for {@link FedXService} as defined in
+&nbsp;	 * b) b) if the expr is a {@link FedXService} and {@link FedXConfig#getEnableServiceAsBoundJoin()}
+&nbsp;	 *
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private boolean canApplyVectoredEvaluation(TupleExpr expr) {
+<b class="nc">&nbsp;		if (expr instanceof BoundJoinTupleExpr) {</b>
+<b class="nc">&nbsp;			if (expr instanceof FedXService) {</b>
+<b class="nc">&nbsp;				return this.queryInfo.getFederationContext().getConfig().getEnableServiceAsBoundJoin();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected interface TaskCreator {
+&nbsp;		ParallelTask&lt;BindingSet&gt; getTask(ParallelExecutor&lt;BindingSet&gt; control, List&lt;BindingSet&gt; bindings);
+&nbsp;	}
+&nbsp;
+&nbsp;	protected class BoundJoinTaskCreator implements TaskCreator {
+&nbsp;		protected final FederationEvalStrategy _strategy;
+&nbsp;		protected final StatementTupleExpr _expr;
+&nbsp;
+&nbsp;		public BoundJoinTaskCreator(
+<b class="nc">&nbsp;				FederationEvalStrategy strategy, StatementTupleExpr expr) {</b>
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			_strategy = strategy;</b>
+<b class="nc">&nbsp;			_expr = expr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ParallelTask&lt;BindingSet&gt; getTask(ParallelExecutor&lt;BindingSet&gt; control, List&lt;BindingSet&gt; bindings) {
+<b class="nc">&nbsp;			return new ParallelBoundJoinTask(control, _strategy, _expr, bindings);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected class CheckJoinTaskCreator implements TaskCreator {
+&nbsp;		protected final FederationEvalStrategy _strategy;
+&nbsp;		protected final CheckStatementPattern _expr;
+&nbsp;
+&nbsp;		public CheckJoinTaskCreator(
+<b class="nc">&nbsp;				FederationEvalStrategy strategy, CheckStatementPattern expr) {</b>
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			_strategy = strategy;</b>
+<b class="nc">&nbsp;			_expr = expr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ParallelTask&lt;BindingSet&gt; getTask(ParallelExecutor&lt;BindingSet&gt; control, List&lt;BindingSet&gt; bindings) {
+<b class="nc">&nbsp;			return new ParallelCheckJoinTask(control, _strategy, _expr, bindings);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	protected class FedXServiceJoinTaskCreator implements TaskCreator {
+&nbsp;		protected final FederationEvalStrategy _strategy;
+&nbsp;		protected final FedXService _expr;
+&nbsp;
+&nbsp;		public FedXServiceJoinTaskCreator(
+<b class="nc">&nbsp;				FederationEvalStrategy strategy, FedXService expr) {</b>
+<b class="nc">&nbsp;			super();</b>
+<b class="nc">&nbsp;			_strategy = strategy;</b>
+<b class="nc">&nbsp;			_expr = expr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public ParallelTask&lt;BindingSet&gt; getTask(ParallelExecutor&lt;BindingSet&gt; control, List&lt;BindingSet&gt; bindings) {
+<b class="nc">&nbsp;			return new ParallelServiceJoinTask(control, _strategy, _expr, bindings);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

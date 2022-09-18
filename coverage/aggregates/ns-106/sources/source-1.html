@@ -1,0 +1,184 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > OperationExecutionStats</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.spring.operationlog.log</a>
+</div>
+
+<h1>Coverage Summary for Class: OperationExecutionStats (org.eclipse.rdf4j.spring.operationlog.log)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">OperationExecutionStats</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/9)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.spring.operationlog.log;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.Operation;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class OperationExecutionStats {
+&nbsp;	private final int bindingsHashCode;
+&nbsp;	private final String operation;
+&nbsp;	private final long start;
+<b class="nc">&nbsp;	private Long end = null;</b>
+<b class="nc">&nbsp;	private boolean failed = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	public OperationExecutionStats(String operation, int bindingsHashCode) {</b>
+<b class="nc">&nbsp;		this.bindingsHashCode = bindingsHashCode;</b>
+<b class="nc">&nbsp;		this.operation = operation;</b>
+<b class="nc">&nbsp;		this.start = System.currentTimeMillis();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static OperationExecutionStats of(Operation operation) {
+<b class="nc">&nbsp;		return new OperationExecutionStats(</b>
+<b class="nc">&nbsp;				operation.toString(), operation.getBindings().hashCode());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static OperationExecutionStats of(PseudoOperation operation) {
+<b class="nc">&nbsp;		return new OperationExecutionStats(operation.getOperation(), operation.getValuesHash());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void operationSuccessful() {
+<b class="nc">&nbsp;		this.end = System.currentTimeMillis();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void operationFailed() {
+<b class="nc">&nbsp;		this.end = System.currentTimeMillis();</b>
+<b class="nc">&nbsp;		this.failed = true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public String getOperation() {
+<b class="nc">&nbsp;		return operation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getBindingsHashCode() {
+<b class="nc">&nbsp;		return bindingsHashCode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getQueryDuration() {
+<b class="nc">&nbsp;		if (this.end == null) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Cannot calculate duration - end is null&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return end - start;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isFailed() {
+<b class="nc">&nbsp;		return failed;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

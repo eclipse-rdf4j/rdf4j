@@ -1,0 +1,230 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SubselectTest</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.testsuite.sparql.tests</a>
+</div>
+
+<h1>Coverage Summary for Class: SubselectTest (org.eclipse.rdf4j.testsuite.sparql.tests)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SubselectTest</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (3/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    50%
+  </span>
+  <span class="absValue">
+    (7/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (24/24)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2022 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.testsuite.sparql.tests;
+&nbsp;
+&nbsp;import static org.junit.Assert.assertEquals;
+&nbsp;import static org.junit.Assert.assertTrue;
+&nbsp;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.QueryResults;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQueryResult;
+&nbsp;import org.eclipse.rdf4j.testsuite.sparql.AbstractComplianceTest;
+&nbsp;import org.junit.Test;
+&nbsp;
+&nbsp;/**
+&nbsp; * Tests on SPARQL nested SELECT query handling.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="fc">&nbsp;public class SubselectTest extends AbstractComplianceTest {</b>
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSES2373SubselectOptional() {
+<b class="fc">&nbsp;		conn.prepareUpdate(QueryLanguage.SPARQL,</b>
+&nbsp;				&quot;insert data {&quot; + &quot;&lt;u:1&gt; &lt;u:r&gt; &lt;u:subject&gt; .&quot; + &quot;&lt;u:1&gt; &lt;u:v&gt; 1 .&quot; + &quot;&lt;u:1&gt; &lt;u:x&gt; &lt;u:x1&gt; .&quot;
+&nbsp;						+ &quot;&lt;u:2&gt; &lt;u:r&gt; &lt;u:subject&gt; .&quot; + &quot;&lt;u:2&gt; &lt;u:v&gt; 2 .&quot; + &quot;&lt;u:2&gt; &lt;u:x&gt; &lt;u:x2&gt; .&quot;
+&nbsp;						+ &quot;&lt;u:3&gt; &lt;u:r&gt; &lt;u:subject&gt; .&quot; + &quot;&lt;u:3&gt; &lt;u:v&gt; 3 .&quot; + &quot;&lt;u:3&gt; &lt;u:x&gt; &lt;u:x3&gt; .&quot;
+&nbsp;						+ &quot;&lt;u:4&gt; &lt;u:r&gt; &lt;u:subject&gt; .&quot; + &quot;&lt;u:4&gt; &lt;u:v&gt; 4 .&quot; + &quot;&lt;u:4&gt; &lt;u:x&gt; &lt;u:x4&gt; .&quot;
+&nbsp;						+ &quot;&lt;u:5&gt; &lt;u:r&gt; &lt;u:subject&gt; .&quot; + &quot;&lt;u:5&gt; &lt;u:v&gt; 5 .&quot; + &quot;&lt;u:5&gt; &lt;u:x&gt; &lt;u:x5&gt; .&quot; + &quot;}&quot;)
+<b class="fc">&nbsp;				.execute();</b>
+&nbsp;
+<b class="fc">&nbsp;		String qb = &quot;select ?x { \n&quot; +</b>
+&nbsp;				&quot; { select ?v { ?v &lt;u:r&gt; &lt;u:subject&gt; filter (?v = &lt;u:1&gt;) } }.\n&quot; +
+&nbsp;				&quot;  optional {  select ?val { ?v &lt;u:v&gt; ?val .} }\n&quot; +
+&nbsp;				&quot;  ?v &lt;u:x&gt; ?x \n&quot; +
+&nbsp;				&quot;}\n&quot;;
+&nbsp;
+<b class="fc">&nbsp;		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);</b>
+<b class="pc">&nbsp;		try (TupleQueryResult result = tq.evaluate()) {</b>
+<b class="fc">&nbsp;			assertTrue(&quot;The query should return a result&quot;, result.hasNext());</b>
+<b class="fc">&nbsp;			BindingSet b = result.next();</b>
+<b class="fc">&nbsp;			assertTrue(&quot;?x is from the mandatory part of the query and should be bound&quot;, b.hasBinding(&quot;x&quot;));</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Test
+&nbsp;	public void testSES2154SubselectOptional() {
+&nbsp;
+<b class="fc">&nbsp;		String ub = &quot;insert data { \n&quot; +</b>
+&nbsp;				&quot; &lt;urn:s1&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s2&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s3&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s4&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s5&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s6&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s7&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s8&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s9&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s10&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s11&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s12&gt; a &lt;urn:C&gt; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s1&gt; &lt;urn:p&gt; \&quot;01\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s2&gt; &lt;urn:p&gt; \&quot;02\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s3&gt; &lt;urn:p&gt; \&quot;03\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s4&gt; &lt;urn:p&gt; \&quot;04\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s5&gt; &lt;urn:p&gt; \&quot;05\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s6&gt; &lt;urn:p&gt; \&quot;06\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s7&gt; &lt;urn:p&gt; \&quot;07\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s8&gt; &lt;urn:p&gt; \&quot;08\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s9&gt; &lt;urn:p&gt; \&quot;09\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s10&gt; &lt;urn:p&gt; \&quot;10\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s11&gt; &lt;urn:p&gt; \&quot;11\&quot; .  \n&quot; +
+&nbsp;				&quot; &lt;urn:s12&gt; &lt;urn:p&gt; \&quot;12\&quot; .  \n&quot; +
+&nbsp;				&quot;} \n&quot;;
+&nbsp;
+<b class="fc">&nbsp;		conn.prepareUpdate(QueryLanguage.SPARQL, ub).execute();</b>
+&nbsp;
+<b class="fc">&nbsp;		String qb = &quot;SELECT ?s ?label\n&quot; +</b>
+&nbsp;				&quot;WHERE { \n&quot; +
+&nbsp;				&quot; 	  ?s a &lt;urn:C&gt; \n .\n&quot; +
+&nbsp;				&quot; 	  OPTIONAL  { {SELECT ?label  WHERE { \n&quot; +
+&nbsp;				&quot;                     ?s &lt;urn:p&gt; ?label . \n&quot; +
+&nbsp;				&quot;   	      } ORDER BY ?label LIMIT 2 \n&quot; +
+&nbsp;				&quot;		    }\n&quot; +
+&nbsp;				&quot;       }\n&quot; +
+&nbsp;				&quot;}\n&quot; +
+&nbsp;				&quot;ORDER BY ?s\n&quot; +
+&nbsp;				&quot;LIMIT 10 \n&quot;;
+&nbsp;
+<b class="fc">&nbsp;		TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);</b>
+<b class="pc">&nbsp;		try (TupleQueryResult evaluate = tq.evaluate()) {</b>
+<b class="fc">&nbsp;			assertTrue(&quot;The query should return a result&quot;, evaluate.hasNext());</b>
+&nbsp;
+<b class="fc">&nbsp;			List&lt;BindingSet&gt; result = QueryResults.asList(evaluate);</b>
+<b class="fc">&nbsp;			assertEquals(10, result.size());</b>
+<b class="fc">&nbsp;			for (BindingSet bs : result) {</b>
+<b class="fc">&nbsp;				Literal label = (Literal) bs.getValue(&quot;label&quot;);</b>
+<b class="fc">&nbsp;				assertTrue(&quot;wrong label value (expected &#39;01&#39; or &#39;02&#39;, but got &#39;&quot; + label.stringValue() + &quot;&#39;)&quot;,</b>
+<b class="pc">&nbsp;						label.stringValue().equals(&quot;01&quot;) || label.stringValue().equals(&quot;02&quot;));</b>
+<b class="fc">&nbsp;			}</b>
+<b class="pc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

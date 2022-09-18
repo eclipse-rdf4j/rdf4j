@@ -1,0 +1,1079 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryStringUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.util</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryStringUtil (org.eclipse.rdf4j.federated.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryStringUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/114)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/322)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.util;
+&nbsp;
+&nbsp;import java.io.BufferedReader;
+&nbsp;import java.io.FileNotFoundException;
+&nbsp;import java.io.FileReader;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.atomic.AtomicBoolean;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.SparqlFederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
+&nbsp;import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Various static functions for query handling and parsing.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+<b class="nc">&nbsp;public class QueryStringUtil {</b>
+&nbsp;
+&nbsp;	/* TODO make operations more performant, i.e. use same instance of StringBuilder more permanently */
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(QueryStringUtil.class);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A dummy URI which is used as a replacement for {@link BNode}s in {@link #appendBNode(StringBuilder, BNode)} since
+&nbsp;	 * BNodes cannot be expressed in SPARQL queries
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final IRI BNODE_URI = FedXUtil.iri(&quot;http://fluidops.com/fedx/bnode&quot;);</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * returns true iff there is at least one free variable, i.e. there is no binding for any variable
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @return whether free vars are available
+&nbsp;	 */
+&nbsp;	public static boolean hasFreeVars(StatementPattern stmt, BindingSet bindings) {
+<b class="nc">&nbsp;		for (Var var : stmt.getVarList()) {</b>
+<b class="nc">&nbsp;			if (!var.hasValue() &amp;&amp; !bindings.hasBinding(var.getName())) {</b>
+<b class="nc">&nbsp;				return true; // there is at least one free var</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return a string representation of this statement using the following pattern, where variables are indicated using
+&nbsp;	 * ?var and values are represented as strings.
+&nbsp;	 *
+&nbsp;	 * Pattern: {s; p; o}
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @return a string representation of the statement
+&nbsp;	 */
+&nbsp;	public static String toString(StatementPattern stmt) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		sb.append(&quot;{&quot;);</b>
+<b class="nc">&nbsp;		appendVar(sb, stmt.getSubjectVar(), new HashSet&lt;&gt;(), EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;		sb.append(&quot;; &quot;);</b>
+<b class="nc">&nbsp;		appendVar(sb, stmt.getPredicateVar(), new HashSet&lt;&gt;(), EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;		sb.append(&quot;; &quot;);</b>
+<b class="nc">&nbsp;		appendVar(sb, stmt.getObjectVar(), new HashSet&lt;&gt;(), EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;		sb.append(&quot;}&quot;);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts an {@link ArbitraryLengthPath} node to a sub query string and makes sure to insert any bindings.
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method assumes that the {@link ArbitraryLengthPath#getPathExpression()} is a {@link StatementPattern}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param node
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the query string
+&nbsp;	 */
+&nbsp;	public static String toString(ArbitraryLengthPath node, Set&lt;String&gt; varNames, BindingSet bindings) {
+&nbsp;
+&nbsp;		// assumes that the path expr is a statement pattern
+<b class="nc">&nbsp;		if (!(node.getPathExpression() instanceof StatementPattern)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Can only handle path expressions of type StatementPattern, was &quot;</b>
+<b class="nc">&nbsp;					+ node.getPathExpression().getClass());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		StatementPattern stmt = (StatementPattern) node.getPathExpression();</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(&quot; &quot;);</b>
+&nbsp;
+&nbsp;		// append the path expression with the modifier
+<b class="nc">&nbsp;		sb = appendVar(sb, stmt.getPredicateVar(), varNames, bindings);</b>
+<b class="nc">&nbsp;		sb.append(node.getMinLength() == 0 ? &quot;*&quot; : &quot;+&quot;);</b>
+<b class="nc">&nbsp;		sb.append(&quot; &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(&quot; . &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static String toString(Var var) {
+<b class="nc">&nbsp;		if (!var.hasValue()) {</b>
+<b class="nc">&nbsp;			return &quot;?&quot; + var.getName();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return getValueString(var.getValue());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return a string representation of this statement using the following pattern, where variables are indicated using
+&nbsp;	 * ?var and values are represented as strings.
+&nbsp;	 *
+&nbsp;	 * Pattern: {s; p; o}
+&nbsp;	 *
+&nbsp;	 * @param subj the subject
+&nbsp;	 * @param pred the predicate
+&nbsp;	 * @param obj  the object
+&nbsp;	 * @return a string representation
+&nbsp;	 */
+&nbsp;	public static String toString(Resource subj, IRI pred, Value obj) {
+<b class="nc">&nbsp;		return toString(QueryAlgebraUtil.toStatementPattern(subj, pred, obj));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided statement.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @param filterExpr
+&nbsp;	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
+&nbsp;	 *                   beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query
+&nbsp;	 * @throws IllegalQueryException if the query does not have any free variables
+&nbsp;	 */
+&nbsp;	public static String selectQueryString(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
+&nbsp;			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		String s = constructStatement(stmt, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;SELECT &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (varNames.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalQueryException(&quot;SELECT query needs at least one projection!&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			res.append(&quot; ?&quot;).append(var);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE { &quot;).append(s);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				String filter = FilterUtils.toSparqlString(filterExpr);</b>
+<b class="nc">&nbsp;				res.append(&quot;FILTER &quot;).append(filter);</b>
+<b class="nc">&nbsp;				evaluated.set(true);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				log.debug(&quot;Filter could not be evaluated remotely. &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;				log.trace(&quot;Details: &quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (stmt instanceof FedXStatementPattern) {</b>
+<b class="nc">&nbsp;			long upperLimit = ((FedXStatementPattern) stmt).getUpperLimit();</b>
+<b class="nc">&nbsp;			if (upperLimit &gt; 0) {</b>
+<b class="nc">&nbsp;				res.append(&quot; LIMIT &quot;).append(upperLimit);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided {@link ExclusiveTupleExprRenderer}
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @param filterExpr
+&nbsp;	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
+&nbsp;	 *                   beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query
+&nbsp;	 * @throws IllegalQueryException if the query does not have any free variables
+&nbsp;	 */
+&nbsp;	public static String selectQueryString(ExclusiveTupleExprRenderer expr, BindingSet bindings,
+&nbsp;			FilterValueExpr filterExpr,
+&nbsp;			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		String s = constructJoinArg(expr, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;SELECT &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (varNames.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalQueryException(&quot;SELECT query needs at least one projection!&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			res.append(&quot; ?&quot;).append(var);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE { &quot;).append(s);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				String filter = FilterUtils.toSparqlString(filterExpr);</b>
+<b class="nc">&nbsp;				res.append(&quot;FILTER &quot;).append(filter);</b>
+<b class="nc">&nbsp;				evaluated.set(true);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				log.debug(&quot;Filter could not be evaluated remotely. &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;				log.trace(&quot;Details: &quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; }&quot;);</b>
+&nbsp;
+&nbsp;		// TODO add support for this in ExclusiveTupleExprRenderer
+&nbsp;//		long upperLimit = stmt.getUpperLimit();
+&nbsp;//		if (upperLimit &gt; 0) {
+&nbsp;//			res.append(&quot; LIMIT &quot;).append(upperLimit);
+&nbsp;//		}
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided {@link ExclusiveGroup}. Note that bindings and filterExpr are applied
+&nbsp;	 * whenever possible.
+&nbsp;	 *
+&nbsp;	 * @param group      the expression for the query
+&nbsp;	 * @param bindings   the bindings to be applied
+&nbsp;	 * @param filterExpr a filter expression or null
+&nbsp;	 * @param evaluated  parameter can be used outside this method to check whether FILTER has been evaluated, false in
+&nbsp;	 *                   beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query string
+&nbsp;	 * @throws IllegalQueryException
+&nbsp;	 *
+&nbsp;	 */
+&nbsp;	public static String selectQueryString(ExclusiveGroup group, BindingSet bindings, FilterValueExpr filterExpr,
+&nbsp;			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (ExclusiveTupleExpr s : group.getExclusiveExpressions()) {</b>
+<b class="nc">&nbsp;			sb.append(constructJoinArg(s, varNames, bindings));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (varNames.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalQueryException(&quot;SELECT query needs at least one projection!&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+<b class="nc">&nbsp;		res.append(&quot;SELECT  &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			res.append(&quot; ?&quot;).append(var);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE { &quot;).append(sb);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (filterExpr != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				String filter = FilterUtils.toSparqlString(filterExpr);</b>
+<b class="nc">&nbsp;				res.append(&quot;FILTER &quot;).append(filter);</b>
+<b class="nc">&nbsp;				evaluated.set(true);</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				log.debug(&quot;Filter could not be evaluated remotely. &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;				log.trace(&quot;Details&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Transform the {@link ExclusiveTupleExpr} into a ASK query string
+&nbsp;	 *
+&nbsp;	 * @param expr
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the ASK query string
+&nbsp;	 * @throws IllegalQueryException
+&nbsp;	 */
+&nbsp;	public static String askQueryString(ExclusiveTupleExpr expr, BindingSet bindings, Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+<b class="nc">&nbsp;		res.append(&quot;ASK &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;{ &quot;).append(constructJoinArg(expr, varNames, bindings)).append(&quot; }&quot;);</b>
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query string for a bound union.
+&nbsp;	 *
+&nbsp;	 * Pattern:
+&nbsp;	 *
+&nbsp;	 * SELECT ?v_1 ?v_2 ?v_N WHERE { { ?v_1 p o } UNION { ?v_2 p o } UNION ... }
+&nbsp;	 *
+&nbsp;	 * Note that the filterExpr is not evaluated at the moment.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param unionBindings
+&nbsp;	 * @param filterExpr
+&nbsp;	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
+&nbsp;	 *                      in beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query string
+&nbsp;	 * @deprecated replaced with
+&nbsp;	 *             {@link #selectQueryStringBoundJoinVALUES(StatementPattern, List, FilterValueExpr, AtomicBoolean)}
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	public static String selectQueryStringBoundUnion(StatementPattern stmt, List&lt;BindingSet&gt; unionBindings,
+&nbsp;			FilterValueExpr filterExpr, Boolean evaluated, Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		StringBuilder unions = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; unionBindings.size(); i++) {</b>
+<b class="nc">&nbsp;			String s = constructStatementId(stmt, Integer.toString(i), varNames, unionBindings.get(i));</b>
+<b class="nc">&nbsp;			if (i &gt; 0) {</b>
+<b class="nc">&nbsp;				unions.append(&quot; UNION&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			unions.append(&quot; { &quot;).append(s).append(&quot; }&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;SELECT &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			res.append(&quot; ?&quot;).append(var);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE { &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(unions);</b>
+&nbsp;
+&nbsp;		// TODO evaluate filter expression remote
+&nbsp;//		if (filterExpr!=null) {
+&nbsp;//
+&nbsp;//		}
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a bound join subquery using the SPARQL 1.1 VALUES operator.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Example subquery:
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * SELECT ?v ?__index WHERE {
+&nbsp;	 *    VALUES (?s ?__index) {
+&nbsp;	 *      (:s1 1) (:s2 2)
+&nbsp;	 *      ...
+&nbsp;	 *      (:sN N)
+&nbsp;	 *    }
+&nbsp;	 *    ?s name ?v.
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param unionBindings
+&nbsp;	 * @param filterExpr
+&nbsp;	 * @param evaluated     parameter can be used outside this method to check whether FILTER has been evaluated, false
+&nbsp;	 *                      in beginning
+&nbsp;	 *
+&nbsp;	 * @return the SELECT query string
+&nbsp;	 * @see SparqlFederationEvalStrategy
+&nbsp;	 * @see BoundJoinVALUESConversionIteration
+&nbsp;	 * @since 3.0
+&nbsp;	 */
+&nbsp;	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List&lt;BindingSet&gt; unionBindings,
+&nbsp;			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new LinkedHashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		String stmtPattern = constructStatement(stmt, varNames, new EmptyBindingSet());</b>
+<b class="nc">&nbsp;		res.append(&quot;SELECT &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			res.append(&quot; ?&quot;).append(var);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; ?&quot;).append(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME);</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE {&quot;);</b>
+&nbsp;
+&nbsp;		// TODO evaluate filter expression remote
+&nbsp;//		if (filterExpr!=null) {
+&nbsp;//
+&nbsp;//		}
+&nbsp;
+&nbsp;		// add VALUES clause
+<b class="nc">&nbsp;		res.append(&quot; VALUES (&quot;);</b>
+&nbsp;
+&nbsp;		// find relevant bindings
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			res.append(&quot;?&quot;).append(var).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		res.append(&quot; ?__index) { &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		int index = 0;</b>
+<b class="nc">&nbsp;		for (BindingSet b : unionBindings) {</b>
+<b class="nc">&nbsp;			res.append(&quot;(&quot;);</b>
+<b class="nc">&nbsp;			for (String var : varNames) {</b>
+<b class="nc">&nbsp;				if (b.hasBinding(var)) {</b>
+<b class="nc">&nbsp;					appendValue(res, b.getValue(var)).append(&quot; &quot;);</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					res.append(&quot;UNDEF &quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			res.append(&quot;\&quot;&quot;).append(index).append(&quot;\&quot;) &quot;);</b>
+<b class="nc">&nbsp;			index++;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; } &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(stmtPattern);</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for a grouped bound check.
+&nbsp;	 *
+&nbsp;	 * Pattern:
+&nbsp;	 *
+&nbsp;	 * SELECT ?o_1 .. ?o_N WHERE { { s1 p1 ?o_1 FILTER ?o_1=o1 } UNION ... UNION { sN pN ?o_N FILTER ?o_N=oN }}
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param unionBindings
+&nbsp;	 * @return the SELECT query string
+&nbsp;	 */
+&nbsp;	public static String selectQueryStringBoundCheck(StatementPattern stmt, List&lt;BindingSet&gt; unionBindings,
+&nbsp;			Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder unions = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; unionBindings.size(); i++) {</b>
+<b class="nc">&nbsp;			String s = constructStatementCheckId(stmt, i, varNames, unionBindings.get(i));</b>
+<b class="nc">&nbsp;			if (i &gt; 0) {</b>
+<b class="nc">&nbsp;				unions.append(&quot; UNION&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			unions.append(&quot; { &quot;).append(s).append(&quot; }&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;SELECT &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String var : varNames) {</b>
+<b class="nc">&nbsp;			res.append(&quot; ?&quot;).append(var);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE {&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(unions).append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected static String constructInnerUnion(StatementPattern stmt, int outerID, Set&lt;String&gt; varNames,
+&nbsp;			List&lt;BindingSet&gt; bindings) {
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder innerUnion = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (int idx = 0; idx &lt; bindings.size(); idx++) {</b>
+<b class="nc">&nbsp;			if (idx &gt; 0) {</b>
+<b class="nc">&nbsp;				innerUnion.append(&quot;UNION &quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			innerUnion.append(&quot;{&quot;)</b>
+<b class="nc">&nbsp;					.append(constructStatementId(stmt, outerID + &quot;_&quot; + idx, varNames, bindings.get(idx)))</b>
+<b class="nc">&nbsp;					.append(&quot;} &quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return innerUnion.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a query substring from the {@link ExclusiveTupleExpr} that can be used as an argument to a
+&nbsp;	 * {@link Join}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method can only be used for {@link ExclusiveTupleExpr} that additionally provide
+&nbsp;	 * {@link ExclusiveTupleExprRenderer} capabilities. An exception to this is if the given expression is a
+&nbsp;	 * {@link StatementPattern}, e.g. an {@link ExclusiveStatement} or {@link ExclusiveGroup}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param exclusiveExpr
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the query string with bindings inserted
+&nbsp;	 */
+&nbsp;	protected static String constructJoinArg(ExclusiveTupleExpr exclusiveExpr, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+&nbsp;
+<b class="nc">&nbsp;		if (exclusiveExpr instanceof StatementPattern) {</b>
+<b class="nc">&nbsp;			return constructStatement((StatementPattern) exclusiveExpr, varNames, bindings);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (exclusiveExpr instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;			StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;			for (ExclusiveTupleExpr s : ((ExclusiveGroup) exclusiveExpr).getExclusiveExpressions()) {</b>
+<b class="nc">&nbsp;				sb.append(constructJoinArg(s, varNames, bindings));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			return sb.toString();</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (!(exclusiveExpr instanceof ExclusiveTupleExprRenderer)) {</b>
+<b class="nc">&nbsp;			throw new IllegalStateException(&quot;Cannot render tupl expr of type &quot; + exclusiveExpr.getClass());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return ((ExclusiveTupleExprRenderer) exclusiveExpr).toQueryString(varNames, bindings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a boolean ASK query for the provided statement.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the ASK query string
+&nbsp;	 */
+&nbsp;	public static String askQueryString(StatementPattern stmt, BindingSet bindings, Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		String s = constructStatement(stmt, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;ASK &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot; { &quot;);</b>
+<b class="nc">&nbsp;		res.append(s).append(&quot; }&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided statement with LIMIT 1. Such query can be used for source selection
+&nbsp;	 * instead of ASK queries.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the SELECT query string
+&nbsp;	 */
+&nbsp;	public static String selectQueryStringLimit1(StatementPattern stmt, BindingSet bindings, Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		String s = constructStatement(stmt, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;SELECT * &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE { &quot;);</b>
+<b class="nc">&nbsp;		res.append(s).append(&quot; } LIMIT 1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided expr with LIMIT 1. Such query can be used for source selection instead
+&nbsp;	 * of ASK queries.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the SELECT query string
+&nbsp;	 */
+&nbsp;	public static String selectQueryStringLimit1(ExclusiveTupleExpr expr, BindingSet bindings, Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		if (expr instanceof ExclusiveGroup) {</b>
+<b class="nc">&nbsp;			return selectQueryStringLimit1((ExclusiveGroup) expr, bindings, dataset);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		String s = constructJoinArg(expr, varNames, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;SELECT * &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE {&quot;);</b>
+<b class="nc">&nbsp;		res.append(s).append(&quot; } LIMIT 1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct a SELECT query for the provided {@link ExclusiveGroup} with LIMIT 1. Such query can be used for source
+&nbsp;	 * selection instead of ASK queries.
+&nbsp;	 *
+&nbsp;	 * @param group
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the SELECT query string
+&nbsp;	 */
+&nbsp;	public static String selectQueryStringLimit1(ExclusiveGroup group, BindingSet bindings, Dataset dataset) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		StringBuilder res = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot;SELECT * &quot;);</b>
+<b class="nc">&nbsp;		appendDatasetClause(res, dataset);</b>
+<b class="nc">&nbsp;		res.append(&quot;WHERE {&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		for (ExclusiveTupleExpr s : group.getExclusiveExpressions()) {</b>
+<b class="nc">&nbsp;			res.append(constructJoinArg(s, varNames, bindings));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		res.append(&quot; } LIMIT 1&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return res.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct the statement string, i.e. &quot;s p o . &quot; with bindings inserted wherever possible. Note that the relevant
+&nbsp;	 * free variables are added to the varNames set for further evaluation.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the constructed statement pattern
+&nbsp;	 */
+&nbsp;	protected static String constructStatement(StatementPattern stmt, Set&lt;String&gt; varNames, BindingSet bindings) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			appendVar(sb, stmt.getContextVar(), varNames, bindings);</b>
+<b class="nc">&nbsp;			sb.append(&quot; { &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		sb = appendVar(sb, stmt.getPredicateVar(), varNames, bindings).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(&quot; . &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;} &quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct the statement string, i.e. &quot;s p o . &quot; with bindings inserted wherever possible. Variables are renamed
+&nbsp;	 * to &quot;var_&quot;+varId to identify query results in bound queries. Note that the free variables are also added to the
+&nbsp;	 * varNames set for further evaluation.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the constructed statement pattern
+&nbsp;	 */
+&nbsp;	protected static String constructStatementId(StatementPattern stmt, String varID, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		sb = appendVarId(sb, stmt.getSubjectVar(), varID, varNames, bindings).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		sb = appendVarId(sb, stmt.getPredicateVar(), varID, varNames, bindings).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		sb = appendVarId(sb, stmt.getObjectVar(), varID, varNames, bindings).append(&quot; . &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Construct the statement string, i.e. &quot;s p ?o_varID FILTER ?o_N=o &quot;. This kind of statement pattern is necessary
+&nbsp;	 * to later on identify available results.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param varID
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 * @return the statement pattern string
+&nbsp;	 */
+&nbsp;	protected static String constructStatementCheckId(StatementPattern stmt, int varID, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+&nbsp;
+<b class="nc">&nbsp;		String _varID = Integer.toString(varID);</b>
+<b class="nc">&nbsp;		sb = appendVarId(sb, stmt.getSubjectVar(), _varID, varNames, bindings).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		sb = appendVarId(sb, stmt.getPredicateVar(), _varID, varNames, bindings).append(&quot; &quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot;?o_&quot;).append(_varID);</b>
+<b class="nc">&nbsp;		varNames.add(&quot;o_&quot; + _varID);</b>
+&nbsp;
+&nbsp;		String objValue;
+<b class="nc">&nbsp;		if (stmt.getObjectVar().hasValue()) {</b>
+<b class="nc">&nbsp;			objValue = getValueString(stmt.getObjectVar().getValue());</b>
+<b class="nc">&nbsp;		} else if (bindings.hasBinding(stmt.getObjectVar().getName())) {</b>
+<b class="nc">&nbsp;			objValue = getValueString(bindings.getBinding(stmt.getObjectVar().getName()).getValue());</b>
+&nbsp;		} else {
+&nbsp;			// just to make sure that we see an error, will be deleted soon
+<b class="nc">&nbsp;			throw new RuntimeException(&quot;Unexpected.&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		sb.append(&quot; FILTER (?o_&quot;).append(_varID).append(&quot; = &quot;).append(objValue).append(&quot; )&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append the variable to the provided StringBuilder.
+&nbsp;	 *
+&nbsp;	 * Cases: 1) unbound: check provided bindingset for possible match a) match found: append matching value b) no
+&nbsp;	 * match: append ?varName and add to varNames 2) bound: append value
+&nbsp;	 *
+&nbsp;	 * @param sb
+&nbsp;	 * @param var
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the stringbuilder
+&nbsp;	 */
+&nbsp;	protected static StringBuilder appendVar(StringBuilder sb, Var var, Set&lt;String&gt; varNames, BindingSet bindings) {
+<b class="nc">&nbsp;		if (!var.hasValue()) {</b>
+<b class="nc">&nbsp;			if (bindings.hasBinding(var.getName())) {</b>
+<b class="nc">&nbsp;				return appendValue(sb, bindings.getValue(var.getName()));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			varNames.add(var.getName());</b>
+<b class="nc">&nbsp;			return sb.append(&quot;?&quot;).append(var.getName());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return appendValue(sb, var.getValue());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append the variable to the provided StringBuilder, however change name of variable by appending &quot;_varId&quot; to it.
+&nbsp;	 *
+&nbsp;	 * Cases: 1) unbound: check provided bindingset for possible match a) match found: append matching value b) no
+&nbsp;	 * match: append ?varName_varId and add to varNames 2) bound: append value
+&nbsp;	 *
+&nbsp;	 * @param sb
+&nbsp;	 * @param var
+&nbsp;	 * @param varNames
+&nbsp;	 * @param bindings
+&nbsp;	 *
+&nbsp;	 * @return the complemented string builder
+&nbsp;	 */
+&nbsp;	protected static StringBuilder appendVarId(StringBuilder sb, Var var, String varID, Set&lt;String&gt; varNames,
+&nbsp;			BindingSet bindings) {
+<b class="nc">&nbsp;		if (!var.hasValue()) {</b>
+<b class="nc">&nbsp;			if (bindings.hasBinding(var.getName())) {</b>
+<b class="nc">&nbsp;				return appendValue(sb, bindings.getValue(var.getName()));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			String newName = var.getName() + &quot;_&quot; + varID;</b>
+<b class="nc">&nbsp;			varNames.add(newName);</b>
+<b class="nc">&nbsp;			return sb.append(&quot;?&quot;).append(newName);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return appendValue(sb, var.getValue());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the string representation of this value, see {@link #appendValue(StringBuilder, Value)} for details.
+&nbsp;	 *
+&nbsp;	 * @param value
+&nbsp;	 *
+&nbsp;	 * @return the string representation
+&nbsp;	 */
+&nbsp;	protected static String getValueString(Value value) {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		appendValue(sb, value);</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append a string representation of the value to the string builder.
+&nbsp;	 *
+&nbsp;	 * 1. URI: &lt;http://myUri&gt; 2. Literal: &quot;myLiteral&quot;^^&lt;dataType&gt;
+&nbsp;	 *
+&nbsp;	 * @param sb
+&nbsp;	 * @param value
+&nbsp;	 * @return the string builder
+&nbsp;	 */
+&nbsp;	protected static StringBuilder appendValue(StringBuilder sb, Value value) {
+&nbsp;
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			return appendURI(sb, (IRI) value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			return appendLiteral(sb, (Literal) value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			return appendBNode(sb, (BNode) value);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new RuntimeException(&quot;Type not supported: &quot; + value.getClass().getCanonicalName());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append the uri to the stringbuilder, i.e. &lt;uri.stringValue&gt;.
+&nbsp;	 *
+&nbsp;	 * @param sb
+&nbsp;	 * @param uri
+&nbsp;	 * @return the string builder
+&nbsp;	 */
+&nbsp;	protected static StringBuilder appendURI(StringBuilder sb, IRI uri) {
+<b class="nc">&nbsp;		sb.append(&quot;&lt;&quot;).append(uri.stringValue()).append(&quot;&gt;&quot;);</b>
+<b class="nc">&nbsp;		return sb;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append a dummy string (see {@link #BNODE_URI}) to represent the BNode.
+&nbsp;	 *
+&nbsp;	 * Note: currently it is not possible to retrieve values for a BNode via SPARQL, hence we use a dummy BNode which
+&nbsp;	 * does not produce any results. A warning is printed to debug.
+&nbsp;	 *
+&nbsp;	 * @param sb
+&nbsp;	 * @param bNode
+&nbsp;	 * @return the string builder
+&nbsp;	 */
+&nbsp;	protected static StringBuilder appendBNode(StringBuilder sb, BNode bNode) {
+<b class="nc">&nbsp;		log.debug(&quot;Cannot express BNodes in SPARQl: Bnode &quot; + bNode.toString() + &quot; is replaced with &quot;</b>
+<b class="nc">&nbsp;				+ BNODE_URI.stringValue());</b>
+&nbsp;		// TODO think how this can be done in queries, for now we just append a
+&nbsp;		// dummy URI which does not produce any results
+<b class="nc">&nbsp;		return appendURI(sb, BNODE_URI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append the literal to the stringbuilder.
+&nbsp;	 *
+&nbsp;	 * @param sb
+&nbsp;	 * @param lit
+&nbsp;	 * @return the string builder
+&nbsp;	 */
+&nbsp;	protected static StringBuilder appendLiteral(StringBuilder sb, Literal lit) {
+<b class="nc">&nbsp;		sb.append(&quot;&#39;&#39;&#39;&quot;);</b>
+<b class="nc">&nbsp;		sb.append(lit.getLabel().replace(&quot;\&quot;&quot;, &quot;\\\&quot;&quot;));</b>
+<b class="nc">&nbsp;		sb.append(&quot;&#39;&#39;&#39;&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (lit.getLanguage().isPresent()) {</b>
+<b class="nc">&nbsp;			sb.append(&#39;@&#39;);</b>
+<b class="nc">&nbsp;			sb.append(lit.getLanguage().get());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			if (lit.getDatatype() != null) {</b>
+<b class="nc">&nbsp;				sb.append(&quot;^^&lt;&quot;);</b>
+<b class="nc">&nbsp;				sb.append(lit.getDatatype().stringValue());</b>
+<b class="nc">&nbsp;				sb.append(&#39;&gt;&#39;);</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return sb;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * load the queries from a queries file located at the specified path.
+&nbsp;	 *
+&nbsp;	 * Expected format: - Queries are SPARQL queries in String format - queries are allowed to span several lines - a
+&nbsp;	 * query is interpreted to be finished if an empty line occurs
+&nbsp;	 *
+&nbsp;	 * Ex:
+&nbsp;	 *
+&nbsp;	 * QUERY1 ... Q1 cntd
+&nbsp;	 *
+&nbsp;	 * QUERY2
+&nbsp;	 *
+&nbsp;	 * @param queryFile
+&nbsp;	 * @return a list of queries for the query type
+&nbsp;	 * @throws FileNotFoundException
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	public static List&lt;String&gt; loadQueries(String queryFile) throws FileNotFoundException, IOException {
+<b class="nc">&nbsp;		ArrayList&lt;String&gt; res = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		try (BufferedReader in = new BufferedReader(new FileReader(queryFile))) {</b>
+&nbsp;			String tmp;
+<b class="nc">&nbsp;			String tmpQuery = &quot;&quot;;</b>
+<b class="nc">&nbsp;			while ((tmp = in.readLine()) != null) {</b>
+<b class="nc">&nbsp;				if (tmp.isEmpty()) {</b>
+<b class="nc">&nbsp;					if (!tmpQuery.isEmpty()) {</b>
+<b class="nc">&nbsp;						res.add(tmpQuery);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					tmpQuery = &quot;&quot;;</b>
+&nbsp;				} else {
+<b class="nc">&nbsp;					tmpQuery = tmpQuery + tmp;</b>
+&nbsp;				}
+&nbsp;			}
+<b class="nc">&nbsp;			if (!tmpQuery.isEmpty()) {</b>
+<b class="nc">&nbsp;				res.add(tmpQuery);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return res;</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	private static StringBuilder appendDatasetClause(StringBuilder sb, Dataset dataset) {
+<b class="nc">&nbsp;		if (dataset == null) {</b>
+<b class="nc">&nbsp;			return sb;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		for (IRI context : dataset.getDefaultGraphs()) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;FROM &lt;&quot;).append(context.stringValue()).append(&quot;&gt; &quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		for (IRI namedContext : dataset.getNamedGraphs()) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;FROM NAMED &lt;&quot;).append(namedContext.stringValue()).append(&quot;&gt; &quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return sb;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

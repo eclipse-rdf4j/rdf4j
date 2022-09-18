@@ -1,0 +1,520 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FilterOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: FilterOptimizer (org.eclipse.rdf4j.query.algebra.evaluation.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FilterOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">FilterOptimizer$DeMergeFilterFinder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FilterOptimizer$FilterFinder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FilterOptimizer$FilterRelocator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">FilterOptimizer$MergeFilterFinder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/26)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/79)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl;
+&nbsp;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Distinct;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Order;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Reduced;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+&nbsp;
+&nbsp;/**
+&nbsp; * Optimizes a query model by pushing {@link Filter}s as far down in the model tree as possible.
+&nbsp; *
+&nbsp; * To make the first optimization succeed more often it splits filters which contains {@link And} conditions.
+&nbsp; *
+&nbsp; * &lt;code&gt;
+&nbsp; * SELECT * WHERE {
+&nbsp; * ?s ?p ?o .
+&nbsp; * ?s ?p ?o2  .
+&nbsp; * FILTER(?o &gt; &#39;2&#39;^^xsd:int &amp;&amp; ?o2 &lt; &#39;4&#39;^^xsd:int)
+&nbsp; * }
+&nbsp; * &lt;/code&gt; May be more efficient when decomposed into &lt;code&gt;
+&nbsp; * SELECT * WHERE {
+&nbsp; * ?s ?p ?o .
+&nbsp; * FILTER(?o &gt; &#39;2&#39;^^xsd:int)
+&nbsp; * ?s ?p ?o2  .
+&nbsp; * FILTER(?o2 &lt; &#39;4&#39;^^xsd:int)
+&nbsp; * }
+&nbsp; * &lt;/code&gt;
+&nbsp; *
+&nbsp; * Then it optimizes a query model by merging adjacent {@link Filter}s. e.g. &lt;code&gt;
+&nbsp; * SELECT * WHERE {
+&nbsp; *  ?s ?p ?o .
+&nbsp; *  FILTER(?o &gt; 2) .
+&nbsp; *  FILTER(?o &lt; 4) .
+&nbsp; *  }
+&nbsp; * &lt;/code&gt; may be merged into &lt;code&gt;
+&nbsp; * SELECT * WHERE {
+&nbsp; *   ?s ?p ?o .
+&nbsp; *   FILTER(?o &gt; 2 &amp;&amp; ?o &lt; 4) . }
+&nbsp; *  &lt;/code&gt;
+&nbsp; *
+&nbsp; * This optimization allows for sharing evaluation costs in the future and removes an iterator. This is done as a second
+&nbsp; * step to not break the first optimization. In the case that the splitting was done but did not help it is now undone.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Jerven Bolleman
+&nbsp; */
+&nbsp;@Deprecated(forRemoval = true, since = &quot;4.1.0&quot;)
+<b class="nc">&nbsp;public class FilterOptimizer implements QueryOptimizer {</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="nc">&nbsp;		tupleExpr.visit(new DeMergeFilterFinder());</b>
+<b class="nc">&nbsp;		tupleExpr.visit(new FilterFinder(tupleExpr));</b>
+<b class="nc">&nbsp;		tupleExpr.visit(new MergeFilterFinder());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------------------*
+&nbsp;	 * Inner class FilterFinder *
+&nbsp;	 *--------------------------*/
+&nbsp;
+&nbsp;	protected static class FilterFinder extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+&nbsp;		protected final TupleExpr tupleExpr;
+&nbsp;
+<b class="nc">&nbsp;		public FilterFinder(TupleExpr tupleExpr) {</b>
+<b class="nc">&nbsp;			this.tupleExpr = tupleExpr;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter filter) {
+<b class="nc">&nbsp;			super.meet(filter);</b>
+<b class="nc">&nbsp;			FilterRelocator.relocate(filter);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------------------------*
+&nbsp;	 * Inner class FilterRelocator *
+&nbsp;	 *-----------------------------*/
+&nbsp;
+<b class="nc">&nbsp;	protected static class FilterRelocator extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;		public static void relocate(Filter filter) {
+<b class="nc">&nbsp;			filter.visit(new FilterRelocator(filter));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected final Filter filter;
+&nbsp;
+&nbsp;		protected final Set&lt;String&gt; filterVars;
+&nbsp;
+<b class="nc">&nbsp;		public FilterRelocator(Filter filter) {</b>
+<b class="nc">&nbsp;			this.filter = filter;</b>
+<b class="nc">&nbsp;			filterVars = VarNameCollector.process(filter.getCondition());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetNode(QueryModelNode node) {
+&nbsp;			// By default, do not traverse
+<b class="nc">&nbsp;			assert node instanceof TupleExpr;</b>
+<b class="nc">&nbsp;			relocate(filter, (TupleExpr) node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Join join) {
+<b class="nc">&nbsp;			if (join.getLeftArg().getBindingNames().containsAll(filterVars)) {</b>
+&nbsp;				// All required vars are bound by the left expr
+<b class="nc">&nbsp;				join.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;			} else if (join.getRightArg().getBindingNames().containsAll(filterVars)) {</b>
+&nbsp;				// All required vars are bound by the right expr
+<b class="nc">&nbsp;				join.getRightArg().visit(this);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				relocate(filter, join);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(StatementPattern sp) {
+<b class="nc">&nbsp;			if (sp.getBindingNames().containsAll(filterVars)) {</b>
+&nbsp;				// All required vars are bound by the left expr
+<b class="nc">&nbsp;				relocate(filter, sp);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(LeftJoin leftJoin) {
+<b class="nc">&nbsp;			if (leftJoin.getLeftArg().getBindingNames().containsAll(filterVars)) {</b>
+<b class="nc">&nbsp;				leftJoin.getLeftArg().visit(this);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				relocate(filter, leftJoin);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Union union) {
+<b class="nc">&nbsp;			Filter clone = new Filter();</b>
+<b class="nc">&nbsp;			clone.setCondition(filter.getCondition().clone());</b>
+&nbsp;
+<b class="nc">&nbsp;			relocate(filter, union.getLeftArg());</b>
+<b class="nc">&nbsp;			relocate(clone, union.getRightArg());</b>
+&nbsp;
+<b class="nc">&nbsp;			FilterRelocator.relocate(filter);</b>
+<b class="nc">&nbsp;			FilterRelocator.relocate(clone);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Difference node) {
+<b class="nc">&nbsp;			Filter clone = new Filter();</b>
+<b class="nc">&nbsp;			clone.setCondition(filter.getCondition().clone());</b>
+&nbsp;
+<b class="nc">&nbsp;			relocate(filter, node.getLeftArg());</b>
+<b class="nc">&nbsp;			relocate(clone, node.getRightArg());</b>
+&nbsp;
+<b class="nc">&nbsp;			FilterRelocator.relocate(filter);</b>
+<b class="nc">&nbsp;			FilterRelocator.relocate(clone);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Intersection node) {
+<b class="nc">&nbsp;			Filter clone = new Filter();</b>
+<b class="nc">&nbsp;			clone.setCondition(filter.getCondition().clone());</b>
+&nbsp;
+<b class="nc">&nbsp;			relocate(filter, node.getLeftArg());</b>
+<b class="nc">&nbsp;			relocate(clone, node.getRightArg());</b>
+&nbsp;
+<b class="nc">&nbsp;			FilterRelocator.relocate(filter);</b>
+<b class="nc">&nbsp;			FilterRelocator.relocate(clone);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Extension node) {
+<b class="nc">&nbsp;			if (node.getArg().getBindingNames().containsAll(filterVars)) {</b>
+<b class="nc">&nbsp;				node.getArg().visit(this);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				relocate(filter, node);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(EmptySet node) {
+<b class="nc">&nbsp;			if (filter.getParentNode() != null) {</b>
+&nbsp;				// Remove filter from its original location
+<b class="nc">&nbsp;				filter.replaceWith(filter.getArg());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter filter) {
+&nbsp;			// Filters are commutative
+<b class="nc">&nbsp;			filter.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Distinct node) {
+<b class="nc">&nbsp;			node.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Order node) {
+<b class="nc">&nbsp;			node.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(QueryRoot node) {
+<b class="nc">&nbsp;			node.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Reduced node) {
+<b class="nc">&nbsp;			node.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected void relocate(Filter filter, TupleExpr newFilterArg) {
+<b class="nc">&nbsp;			if (filter.getArg() != newFilterArg) {</b>
+<b class="nc">&nbsp;				if (filter.getParentNode() != null) {</b>
+&nbsp;					// Remove filter from its original location
+<b class="nc">&nbsp;					filter.replaceWith(filter.getArg());</b>
+&nbsp;				}
+&nbsp;
+&nbsp;				// Insert filter at the new location
+<b class="nc">&nbsp;				newFilterArg.replaceWith(filter);</b>
+<b class="nc">&nbsp;				filter.setArg(newFilterArg);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------------------*
+&nbsp;	 * Inner class MergeFilterFinder *
+&nbsp;	 *--------------------------*/
+&nbsp;
+<b class="nc">&nbsp;	protected static class MergeFilterFinder extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter filter) {
+<b class="nc">&nbsp;			super.meet(filter);</b>
+<b class="nc">&nbsp;			if (filter.getParentNode() instanceof Filter) {</b>
+&nbsp;
+<b class="nc">&nbsp;				Filter parentFilter = (Filter) filter.getParentNode();</b>
+<b class="nc">&nbsp;				QueryModelNode grandParent = parentFilter.getParentNode();</b>
+<b class="nc">&nbsp;				ValueExpr parentCondition = parentFilter.getCondition();</b>
+<b class="nc">&nbsp;				ValueExpr thisCondition = filter.getCondition();</b>
+<b class="nc">&nbsp;				And merge = new And(parentCondition, thisCondition);</b>
+<b class="nc">&nbsp;				filter.setCondition(merge);</b>
+<b class="nc">&nbsp;				grandParent.replaceChildNode(parentFilter, filter);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/*--------------------------*
+&nbsp;	 * Inner class DeMergeFilterFinder *
+&nbsp;	 *--------------------------*/
+&nbsp;
+<b class="nc">&nbsp;	protected static class DeMergeFilterFinder extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Filter filter) {
+<b class="nc">&nbsp;			super.meet(filter);</b>
+<b class="nc">&nbsp;			if (filter.getCondition() instanceof And) {</b>
+&nbsp;
+<b class="nc">&nbsp;				And and = (And) filter.getCondition();</b>
+<b class="nc">&nbsp;				ValueExpr left = and.getLeftArg();</b>
+<b class="nc">&nbsp;				ValueExpr right = and.getRightArg();</b>
+<b class="nc">&nbsp;				filter.setCondition(left);</b>
+<b class="nc">&nbsp;				Filter newFilter = new Filter(filter.getArg(), right);</b>
+<b class="nc">&nbsp;				filter.replaceChildNode(filter.getArg(), newFilter);</b>
+<b class="nc">&nbsp;				meet(newFilter);</b>
+<b class="nc">&nbsp;				meet(filter);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,304 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConsoleCommand</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: ConsoleCommand (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConsoleCommand</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/17)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.console.Command;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.console.Help;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * Abstract command
+&nbsp; *
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public abstract class ConsoleCommand implements Command, Help {
+<b class="nc">&nbsp;	protected final Logger LOGGER = LoggerFactory.getLogger(getClass());</b>
+&nbsp;
+&nbsp;	final ConsoleIO consoleIO;
+&nbsp;	final ConsoleState state;
+&nbsp;
+&nbsp;	final Map&lt;String, ConsoleSetting&gt; settings;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console IO
+&nbsp;	 *
+&nbsp;	 * @return console IO
+&nbsp;	 */
+&nbsp;	public ConsoleIO getConsoleIO() {
+<b class="nc">&nbsp;		return this.consoleIO;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console state
+&nbsp;	 *
+&nbsp;	 * @return console state
+&nbsp;	 */
+&nbsp;	public ConsoleState getConsoleState() {
+<b class="nc">&nbsp;		return this.state;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console settings map
+&nbsp;	 *
+&nbsp;	 * @return map of console settings
+&nbsp;	 */
+&nbsp;	public Map&lt;String, ConsoleSetting&gt; getConsoleSettings() {
+<b class="nc">&nbsp;		return this.settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get short description, small enough to fit on one console row
+&nbsp;	 *
+&nbsp;	 * @return help string
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;No help available&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get long description
+&nbsp;	 *
+&nbsp;	 * @return string, can be multiple lines
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		return &quot;No additional help available&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String[] usesSettings() {
+<b class="nc">&nbsp;		return new String[0];</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 */
+<b class="nc">&nbsp;	public ConsoleCommand(ConsoleIO consoleIO) {</b>
+<b class="nc">&nbsp;		this.consoleIO = consoleIO;</b>
+<b class="nc">&nbsp;		this.state = null;</b>
+<b class="nc">&nbsp;		this.settings = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 */
+<b class="nc">&nbsp;	public ConsoleCommand(ConsoleIO consoleIO, ConsoleState state) {</b>
+<b class="nc">&nbsp;		this.consoleIO = consoleIO;</b>
+<b class="nc">&nbsp;		this.state = state;</b>
+<b class="nc">&nbsp;		this.settings = null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO console IO
+&nbsp;	 * @param state     console state
+&nbsp;	 * @param settings  console settings
+&nbsp;	 */
+<b class="nc">&nbsp;	public ConsoleCommand(ConsoleIO consoleIO, ConsoleState state, Map&lt;String, ConsoleSetting&gt; settings) {</b>
+<b class="nc">&nbsp;		this.consoleIO = consoleIO;</b>
+<b class="nc">&nbsp;		this.state = state;</b>
+<b class="nc">&nbsp;		this.settings = settings;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(String... parameters) throws IOException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(&quot;Not supported yet.&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a string to the console
+&nbsp;	 *
+&nbsp;	 * @param str text
+&nbsp;	 */
+&nbsp;	protected void write(String str) {
+<b class="nc">&nbsp;		consoleIO.write(str);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a string + newline to the console
+&nbsp;	 *
+&nbsp;	 * @param str text
+&nbsp;	 */
+&nbsp;	protected void writeln(String str) {
+<b class="nc">&nbsp;		consoleIO.writeln(str);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a string + newline to the console and to the log at level INFO
+&nbsp;	 *
+&nbsp;	 * @param str text
+&nbsp;	 */
+&nbsp;	protected void writeInfo(String str) {
+<b class="nc">&nbsp;		consoleIO.writeln(str);</b>
+<b class="nc">&nbsp;		LOGGER.info(str);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a string + newline to the console and to the log as an error
+&nbsp;	 *
+&nbsp;	 * @param str text
+&nbsp;	 */
+&nbsp;	protected void writeError(String str) {
+<b class="nc">&nbsp;		consoleIO.writeError(str);</b>
+<b class="nc">&nbsp;		LOGGER.error(str);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write a string + message of exception + newline to the console and to the log as an error
+&nbsp;	 *
+&nbsp;	 * @param str text
+&nbsp;	 * @param e   exception
+&nbsp;	 */
+&nbsp;	protected void writeError(String str, Exception e) {
+<b class="nc">&nbsp;		consoleIO.writeError(str + &quot;: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;		LOGGER.error(str, e);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Write repository not opened error
+&nbsp;	 */
+&nbsp;	protected void writeUnopenedError() {
+<b class="nc">&nbsp;		consoleIO.writeUnopenedError();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Ask user to proceed
+&nbsp;	 *
+&nbsp;	 * @param str    question to ask
+&nbsp;	 * @param defVal default value
+&nbsp;	 * @return true
+&nbsp;	 */
+&nbsp;	protected boolean askProceed(String str, boolean defVal) {
+&nbsp;		try {
+<b class="nc">&nbsp;			return consoleIO.askProceed(str, defVal);</b>
+<b class="nc">&nbsp;		} catch (IOException ex) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Error reading answer&quot;, ex);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return defVal;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

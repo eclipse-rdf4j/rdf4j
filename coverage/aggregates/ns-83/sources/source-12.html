@@ -1,0 +1,149 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SPARQLResultsXMLConstants</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.sparqlxml</a>
+</div>
+
+<h1>Coverage Summary for Class: SPARQLResultsXMLConstants (org.eclipse.rdf4j.query.resultio.sparqlxml)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">SPARQLResultsXMLConstants</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.sparqlxml;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface defining tags and attribute names that are used in SPARQL Results Documents. See
+&nbsp; * &lt;a href=&quot;http://www.w3.org/TR/rdf-sparql-XMLres/&quot;&gt;SPARQL Query Results XML Format&lt;/a&gt; for the definition of this
+&nbsp; * format.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;interface SPARQLResultsXMLConstants {
+&nbsp;
+&nbsp;	String NAMESPACE = &quot;http://www.w3.org/2005/sparql-results#&quot;;
+&nbsp;
+&nbsp;	String ROOT_TAG = &quot;sparql&quot;;
+&nbsp;
+&nbsp;	String HEAD_TAG = &quot;head&quot;;
+&nbsp;
+&nbsp;	String LINK_TAG = &quot;link&quot;;
+&nbsp;
+&nbsp;	String VAR_TAG = &quot;variable&quot;;
+&nbsp;
+&nbsp;	String VAR_NAME_ATT = &quot;name&quot;;
+&nbsp;
+&nbsp;	String HREF_ATT = &quot;href&quot;;
+&nbsp;
+&nbsp;	String BOOLEAN_TAG = &quot;boolean&quot;;
+&nbsp;
+&nbsp;	String BOOLEAN_TRUE = &quot;true&quot;;
+&nbsp;
+&nbsp;	String BOOLEAN_FALSE = &quot;false&quot;;
+&nbsp;
+&nbsp;	String RESULT_SET_TAG = &quot;results&quot;;
+&nbsp;
+&nbsp;	String RESULT_TAG = &quot;result&quot;;
+&nbsp;
+&nbsp;	String BINDING_TAG = &quot;binding&quot;;
+&nbsp;
+&nbsp;	String BINDING_NAME_ATT = &quot;name&quot;;
+&nbsp;
+&nbsp;	String URI_TAG = &quot;uri&quot;;
+&nbsp;
+&nbsp;	String BNODE_TAG = &quot;bnode&quot;;
+&nbsp;
+&nbsp;	String LITERAL_TAG = &quot;literal&quot;;
+&nbsp;
+&nbsp;	String LITERAL_LANG_ATT = &quot;xml:lang&quot;;
+&nbsp;
+&nbsp;	String LITERAL_DATATYPE_ATT = &quot;datatype&quot;;
+&nbsp;
+&nbsp;	String UNBOUND_TAG = &quot;unbound&quot;;
+&nbsp;
+&nbsp;	String QNAME = &quot;q:qname&quot;;
+&nbsp;
+&nbsp;	/* tag constants for serialization of RDF-star values in results */
+&nbsp;
+&nbsp;	String TRIPLE_TAG = &quot;triple&quot;;
+&nbsp;
+&nbsp;	/* Stardog variant */
+&nbsp;	String STATEMENT_TAG = &quot;statement&quot;;
+&nbsp;
+&nbsp;	String SUBJECT_TAG = &quot;subject&quot;;
+&nbsp;	/* Stardog variant */
+&nbsp;	String S_TAG = &quot;s&quot;;
+&nbsp;
+&nbsp;	String PREDICATE_TAG = &quot;predicate&quot;;
+&nbsp;	/* Stardog variant */
+&nbsp;	String P_TAG = &quot;p&quot;;
+&nbsp;
+&nbsp;	String OBJECT_TAG = &quot;object&quot;;
+&nbsp;	/* Stardog variant */
+&nbsp;	String O_TAG = &quot;o&quot;;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

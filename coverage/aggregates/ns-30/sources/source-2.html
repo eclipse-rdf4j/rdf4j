@@ -1,0 +1,359 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FedX</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: FedX (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FedX</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/55)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+&nbsp;import org.eclipse.rdf4j.federated.endpoint.ResolvableEndpoint;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXException;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+&nbsp;import org.eclipse.rdf4j.federated.util.FedXUtil;
+&nbsp;import org.eclipse.rdf4j.federated.write.DefaultWriteStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.federated.write.ReadOnlyWriteStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.write.RepositoryWriteStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.write.WriteStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.write.WriteStrategyFactory;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolver;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResolverClient;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.helpers.AbstractSail;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * FedX serves as implementation of the federation layer. It implements RDF4J&#39;s Sail interface and can thus be used as a
+&nbsp; * normal repository in a RDF4J environment. The federation layer enables transparent access to the underlying members
+&nbsp; * as if they were a central repository.
+&nbsp; * &lt;p&gt;
+&nbsp; *
+&nbsp; * For initialization of the federation and usage see {@link FederationManager}.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; */
+&nbsp;public class FedX extends AbstractSail implements RepositoryResolverClient {
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(FedX.class);</b>
+&nbsp;
+<b class="nc">&nbsp;	private final List&lt;Endpoint&gt; members = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private FederationContext federationContext;
+&nbsp;
+&nbsp;	private RepositoryResolver repositoryResolver;
+&nbsp;
+&nbsp;	private FederationEvaluationStrategyFactory strategyFactory;
+&nbsp;
+&nbsp;	private WriteStrategyFactory writeStrategyFactory;
+&nbsp;
+&nbsp;	private File dataDir;
+&nbsp;
+<b class="nc">&nbsp;	public FedX(List&lt;Endpoint&gt; endpoints) {</b>
+<b class="nc">&nbsp;		if (endpoints != null) {</b>
+<b class="nc">&nbsp;			members.addAll(endpoints);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		setDefaultIsolationLevel(IsolationLevels.NONE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setFederationContext(FederationContext federationContext) {
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Note: consumers must obtain the instance through
+&nbsp;	 * {@link FederationManager#getFederationEvaluationStrategyFactory()}
+&nbsp;	 *
+&nbsp;	 * @return the {@link FederationEvaluationStrategyFactory}
+&nbsp;	 */
+&nbsp;	/* package */ FederationEvaluationStrategyFactory getFederationEvaluationStrategyFactory() {
+<b class="nc">&nbsp;		if (strategyFactory == null) {</b>
+<b class="nc">&nbsp;			strategyFactory = new FederationEvaluationStrategyFactory();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return strategyFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setFederationEvaluationStrategy(FederationEvaluationStrategyFactory strategyFactory) {
+<b class="nc">&nbsp;		this.strategyFactory = strategyFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param writeStrategyFactory the {@link WriteStrategyFactory}
+&nbsp;	 */
+&nbsp;	public void setWriteStrategyFactory(WriteStrategyFactory writeStrategyFactory) {
+<b class="nc">&nbsp;		this.writeStrategyFactory = writeStrategyFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/* package */ WriteStrategyFactory getWriteStrategyFactory() {
+<b class="nc">&nbsp;		if (writeStrategyFactory == null) {</b>
+<b class="nc">&nbsp;			writeStrategyFactory = new DefaultWriteStrategyFactory();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return writeStrategyFactory;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add a member to the federation (internal).
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the federation is already initialized, the given endpoint is explicitly initialized as well.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @param endpoint
+&nbsp;	 */
+&nbsp;	protected void addMember(Endpoint endpoint) {
+<b class="nc">&nbsp;		if (isInitialized()) {</b>
+<b class="nc">&nbsp;			initializeMember(endpoint);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		members.add(endpoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove a member from the federation (internal)
+&nbsp;	 *
+&nbsp;	 * @param endpoint
+&nbsp;	 * @return whether the member was removed
+&nbsp;	 */
+&nbsp;	public boolean removeMember(Endpoint endpoint) {
+<b class="nc">&nbsp;		endpoint.shutDown();</b>
+<b class="nc">&nbsp;		return members.remove(endpoint);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compute and return the {@link WriteStrategy} depending on the current federation configuration.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The default implementation uses the {@link RepositoryWriteStrategy} with the first discovered writable
+&nbsp;	 * {@link Endpoint}. In none is found, the {@link ReadOnlyWriteStrategy} is used.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @return the {@link WriteStrategy}
+&nbsp;	 * @throws FedXRuntimeException if the {@link WriteStrategy} could not be created
+&nbsp;	 * @see FedXFactory#withWriteStrategyFactory(WriteStrategyFactory)
+&nbsp;	 */
+&nbsp;	/* package */ WriteStrategy getWriteStrategy() {
+&nbsp;		try {
+<b class="nc">&nbsp;			return getWriteStrategyFactory()</b>
+<b class="nc">&nbsp;					.create(members, federationContext);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(&quot;Failed to instantiate write strategy: &quot; + e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected SailConnection getConnectionInternal() throws SailException {
+<b class="nc">&nbsp;		return new FedXConnection(this, federationContext);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public File getDataDir() {
+<b class="nc">&nbsp;		return dataDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public ValueFactory getValueFactory() {
+<b class="nc">&nbsp;		return FedXUtil.valueFactory();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void initializeInternal() throws SailException {
+<b class="nc">&nbsp;		log.debug(&quot;Initializing federation....&quot;);</b>
+<b class="nc">&nbsp;		for (Endpoint member : members) {</b>
+<b class="nc">&nbsp;			initializeMember(member);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected void initializeMember(Endpoint member) throws SailException {
+<b class="nc">&nbsp;		if (member.isInitialized()) {</b>
+<b class="nc">&nbsp;			log.warn(&quot;Endpoint &quot; + member.getId() + &quot; was already initialized.&quot;);</b>
+&nbsp;			return;
+&nbsp;		}
+<b class="nc">&nbsp;		if (member instanceof ResolvableEndpoint) {</b>
+<b class="nc">&nbsp;			if (this.repositoryResolver != null) {</b>
+<b class="nc">&nbsp;				((ResolvableEndpoint) member).setRepositoryResolver(this.repositoryResolver);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			member.init(federationContext);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			log.error(&quot;Initialization of endpoint &quot; + member.getId() + &quot; failed: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			throw new SailException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isWritable() throws SailException {
+&nbsp;		// the federation is writable if there is a WriteStrategy defined
+<b class="nc">&nbsp;		return !(getWriteStrategy() instanceof ReadOnlyWriteStrategy);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setDataDir(File dataDir) {
+<b class="nc">&nbsp;		this.dataDir = dataDir;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Try to shut down all federation members.
+&nbsp;	 *
+&nbsp;	 * @throws FedXException if not all members could be shut down
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected void shutDownInternal() throws SailException {
+&nbsp;
+<b class="nc">&nbsp;		List&lt;Exception&gt; errors = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (Endpoint member : members) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				member.shutDown();</b>
+<b class="nc">&nbsp;			} catch (Exception e) {</b>
+<b class="nc">&nbsp;				log.error(ExceptionUtil.getExceptionString(&quot;Error shutting down endpoint &quot; + member.getId(), e));</b>
+<b class="nc">&nbsp;				errors.add(e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		if (errors.size() &gt; 0) {</b>
+<b class="nc">&nbsp;			throw new SailException(&quot;Federation could not be shut down. See logs for details.&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return an unmodifiable view of the current members
+&nbsp;	 */
+&nbsp;	public List&lt;Endpoint&gt; getMembers() {
+<b class="nc">&nbsp;		return Collections.unmodifiableList(members);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setRepositoryResolver(RepositoryResolver resolver) {
+<b class="nc">&nbsp;		this.repositoryResolver = resolver;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

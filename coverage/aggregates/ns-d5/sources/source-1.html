@@ -1,0 +1,320 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > NativeStoreConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.config</a>
+</div>
+
+<h1>Coverage Summary for Class: NativeStoreConfig (org.eclipse.rdf4j.sail.nativerdf.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">NativeStoreConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/69)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.config;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.FORCE_SYNC;
+&nbsp;import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE;
+&nbsp;import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE_CACHE_SIZE;
+&nbsp;import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.NAMESPACE_ID_CACHE_SIZE;
+&nbsp;import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.TRIPLE_INDEXES;
+&nbsp;import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.VALUE_CACHE_SIZE;
+&nbsp;import static org.eclipse.rdf4j.sail.nativerdf.config.NativeStoreSchema.VALUE_ID_CACHE_SIZE;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailConfigException;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public class NativeStoreConfig extends BaseSailConfig {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	private String tripleIndexes;
+&nbsp;
+<b class="nc">&nbsp;	private boolean forceSync = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int valueCacheSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int valueIDCacheSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int namespaceCacheSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int namespaceIDCacheSize = -1;</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public NativeStoreConfig() {
+<b class="nc">&nbsp;		super(NativeStoreFactory.SAIL_TYPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public NativeStoreConfig(String tripleIndexes) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		setTripleIndexes(tripleIndexes);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public NativeStoreConfig(String tripleIndexes, boolean forceSync) {
+<b class="nc">&nbsp;		this(tripleIndexes);</b>
+<b class="nc">&nbsp;		setForceSync(forceSync);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public String getTripleIndexes() {
+<b class="nc">&nbsp;		return tripleIndexes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setTripleIndexes(String tripleIndexes) {
+<b class="nc">&nbsp;		this.tripleIndexes = tripleIndexes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean getForceSync() {
+<b class="nc">&nbsp;		return forceSync;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setForceSync(boolean forceSync) {
+<b class="nc">&nbsp;		this.forceSync = forceSync;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getValueCacheSize() {
+<b class="nc">&nbsp;		return valueCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setValueCacheSize(int valueCacheSize) {
+<b class="nc">&nbsp;		this.valueCacheSize = valueCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getValueIDCacheSize() {
+<b class="nc">&nbsp;		return valueIDCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setValueIDCacheSize(int valueIDCacheSize) {
+<b class="nc">&nbsp;		this.valueIDCacheSize = valueIDCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getNamespaceCacheSize() {
+<b class="nc">&nbsp;		return namespaceCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setNamespaceCacheSize(int namespaceCacheSize) {
+<b class="nc">&nbsp;		this.namespaceCacheSize = namespaceCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getNamespaceIDCacheSize() {
+<b class="nc">&nbsp;		return namespaceIDCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void setNamespaceIDCacheSize(int namespaceIDCacheSize) {
+<b class="nc">&nbsp;		this.namespaceIDCacheSize = namespaceIDCacheSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model m) {
+<b class="nc">&nbsp;		Resource implNode = super.export(m);</b>
+<b class="nc">&nbsp;		ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		m.setNamespace(&quot;ns&quot;, NAMESPACE);</b>
+<b class="nc">&nbsp;		if (tripleIndexes != null) {</b>
+<b class="nc">&nbsp;			m.add(implNode, TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (forceSync) {</b>
+<b class="nc">&nbsp;			m.add(implNode, FORCE_SYNC, vf.createLiteral(forceSync));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (valueCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, VALUE_CACHE_SIZE, vf.createLiteral(valueCacheSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (valueIDCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, VALUE_ID_CACHE_SIZE, vf.createLiteral(valueIDCacheSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (namespaceCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, NAMESPACE_CACHE_SIZE, vf.createLiteral(namespaceCacheSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (namespaceIDCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, NAMESPACE_ID_CACHE_SIZE, vf.createLiteral(namespaceIDCacheSize));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return implNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model m, Resource implNode) throws SailConfigException {
+<b class="nc">&nbsp;		super.parse(m, implNode);</b>
+&nbsp;
+&nbsp;		try {
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, TRIPLE_INDEXES, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; setTripleIndexes(lit.getLabel()));</b>
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, FORCE_SYNC, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setForceSync(lit.booleanValue());</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Boolean value required for &quot; + FORCE_SYNC + &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, VALUE_CACHE_SIZE, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setValueCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Integer value required for &quot; + VALUE_CACHE_SIZE + &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, VALUE_ID_CACHE_SIZE, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setValueIDCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Integer value required for &quot; + VALUE_ID_CACHE_SIZE + &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, NAMESPACE_CACHE_SIZE, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setNamespaceCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Integer value required for &quot; + NAMESPACE_CACHE_SIZE + &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, NAMESPACE_ID_CACHE_SIZE, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setNamespaceIDCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Integer value required for &quot; + NAMESPACE_ID_CACHE_SIZE + &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+<b class="nc">&nbsp;		} catch (ModelException e) {</b>
+<b class="nc">&nbsp;			throw new SailConfigException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

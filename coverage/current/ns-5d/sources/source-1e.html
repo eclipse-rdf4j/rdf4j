@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > BooleanQuery</title>
+  <title>Coverage Report > BooleanQueryResultHandler</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query</a>
 </div>
 
-<h1>Coverage Summary for Class: BooleanQuery (org.eclipse.rdf4j.query)</h1>
+<h1>Coverage Summary for Class: BooleanQueryResultHandler (org.eclipse.rdf4j.query)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">BooleanQuery</td>
+  <td class="name">BooleanQueryResultHandler</td>
 </tr>
 
 </table>
@@ -51,11 +51,13 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp;package org.eclipse.rdf4j.query;
 &nbsp;
 &nbsp;/**
-&nbsp; * @author Arjohn Kampman
+&nbsp; * An interface that indicates that this QueryResultHandler is capable of handling boolean results using the
+&nbsp; * {@link #handleBoolean(boolean)} method.
+&nbsp; *
+&nbsp; * @author Peter Ansell
 &nbsp; */
-&nbsp;public interface BooleanQuery extends Query {
+&nbsp;public interface BooleanQueryResultHandler extends QueryResultHandler {
 &nbsp;
-&nbsp;	boolean evaluate() throws QueryEvaluationException;
 &nbsp;}
 </code>
 </pre>
@@ -80,7 +82,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

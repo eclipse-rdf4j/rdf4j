@@ -1,0 +1,225 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BinaryQueryResultConstants</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.resultio.binary</a>
+</div>
+
+<h1>Coverage Summary for Class: BinaryQueryResultConstants (org.eclipse.rdf4j.query.resultio.binary)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BinaryQueryResultConstants</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.resultio.binary;
+&nbsp;
+&nbsp;import java.io.DataInput;
+&nbsp;import java.io.DataOutput;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface defining constants for the binary table result format. Files in this format consist of a header followed by
+&nbsp; * zero or more records. Data fields are encoded as specified in the interfaces {@link DataInput} and
+&nbsp; * {@link DataOutput}, except for the encoding of string values. String values are encoded in UTF-8 and are preceeded by
+&nbsp; * a 32-bit integer specifying the length in bytes of this UTF-8 encoded string.
+&nbsp; * &lt;p&gt;
+&nbsp; * The file header is 13 bytes long:
+&nbsp; * &lt;ul&gt;
+&nbsp; * &lt;li&gt;Bytes 1-4 contain the ASCII codes for the string &quot;BRTR&quot;, which stands for Binary RDF Table Result.
+&nbsp; * &lt;li&gt;Bytes 5-8 specify the format version (an integer).
+&nbsp; * &lt;li&gt;Byte 9 specifies some flags, specifically &#39;distinct&#39; and &#39;ordered&#39;.
+&nbsp; * &lt;li&gt;Bytes 10-13 specify the number of columns of the query result that will follow (an integer).
+&nbsp; * &lt;/ul&gt;
+&nbsp; * Following this are the column headers, which are encoded as UTF-8 strings. There are as many column headers as the
+&nbsp; * number of columns that has been specified in the header.
+&nbsp; * &lt;p&gt;
+&nbsp; * Zero or more records follow after the column headers. This can be a mixture of records describing a result and
+&nbsp; * supporting records. The results table is described by the result records which are written from left to right, from
+&nbsp; * top to bottom. Each record starts with a record type marker (a single byte). The following records are defined in the
+&nbsp; * current format:
+&nbsp; * &lt;ul&gt;
+&nbsp; * &lt;li&gt;&lt;var&gt;NULL&lt;/var&gt; (byte value: 0):&lt;br&gt;
+&nbsp; * This indicates a NULL value in the table and consists of nothing more than the record type marker.
+&nbsp; * &lt;li&gt;&lt;var&gt;REPEAT&lt;/var&gt; (byte value: 1):&lt;br&gt;
+&nbsp; * This indicates that the next value is identical to the value in the same column in the previous row. The REPEAT
+&nbsp; * record consists of nothing more than the record type marker.
+&nbsp; * &lt;li&gt;&lt;var&gt;NAMESPACE&lt;/var&gt; (byte value: 2):&lt;br&gt;
+&nbsp; * This is a supporting record that assigns an ID (non-negative integer) to a namespace. This ID can later be used in in
+&nbsp; * a QNAME record to combine it with a local name to form a full URI. The record type marker is followed by a
+&nbsp; * non-negative integer for the ID and an UTF-8 encoded string for the namespace.
+&nbsp; * &lt;li&gt;&lt;var&gt;QNAME &lt;/var&gt;(byte value: 3):&lt;br&gt;
+&nbsp; * This indicates a URI value, the value of which is encoded as a namespace ID and a local name. The namespace ID is
+&nbsp; * required to be mapped to a namespace in a previous NAMESPACE record. The record type marker is followed by a
+&nbsp; * non-negative integer (the namespace ID) and an UTF-8 encoded string for the local name.
+&nbsp; * &lt;li&gt;&lt;var&gt;URI&lt;/var&gt; (byte value: 4):&lt;br&gt;
+&nbsp; * This also indicates a URI value, but one that does not use a namespace ID. This record type marker is simply followed
+&nbsp; * by an UTF-8 encoded string for the full URI.
+&nbsp; * &lt;li&gt;&lt;var&gt;BNODE&lt;/var&gt; (byte value: 5):&lt;br&gt;
+&nbsp; * This indicates a blank node. The record type marker is followed by an UTF-8 encoded string for the bnode ID.
+&nbsp; * &lt;li&gt;&lt;var&gt;PLAIN_LITERAL&lt;/var&gt; (byte value: 6):&lt;br&gt;
+&nbsp; * This indicates a plain literal value. The record type marker is followed by an UTF-8 encoded string for the literal&#39;s
+&nbsp; * label.
+&nbsp; * &lt;li&gt;&lt;var&gt;LANG_LITERAL&lt;/var&gt; (byte value: 7):&lt;br&gt;
+&nbsp; * This indicates a literal value with a language attribute. The record type marker is followed by an UTF-8 encoded
+&nbsp; * string for the literal&#39;s label, followed by an UTF-8 encoded string for the language attribute.
+&nbsp; * &lt;li&gt;&lt;var&gt;DATATYPE_LITERAL&lt;/var&gt; (byte value: 8):&lt;br&gt;
+&nbsp; * This indicates a datatyped literal. The record type marker is followed by an UTF-8 encoded string for the literal&#39;s
+&nbsp; * label. Following this label is either a QNAME or URI record for the literal&#39;s datatype.
+&nbsp; * &lt;li&gt;&lt;var&gt;EMPTY_ROW&lt;/var&gt; (byte value: 9):&lt;br&gt;
+&nbsp; * This indicates a row with zero values.
+&nbsp; * &lt;li&gt;&lt;var&gt;TRIPLE&lt;/var&gt; (byte value: 10):&lt;br&gt;
+&nbsp; * This indicates an RDF-star triple value. It is followed by the subject, predicate and object values of the triple.
+&nbsp; * &lt;li&gt;&lt;var&gt;ERROR&lt;/var&gt; (byte value: 126):&lt;br&gt;
+&nbsp; * This record indicates a error. The type of error is indicates by the byte directly following the record type marker:
+&nbsp; * &lt;var&gt;1&lt;/var&gt; for a malformed query error, &lt;var&gt;2&lt;/var&gt; for a query evaluation error. The error type byte is followed
+&nbsp; * by an UTF-8 string for the error message.
+&nbsp; * &lt;li&gt;&lt;var&gt;TABLE_END&lt;/var&gt; (byte value: 127):&lt;br&gt;
+&nbsp; * This is a special record that indicates the end of the results table and consists of nothing more than the record
+&nbsp; * type marker. Any data following this record should be ignored.
+&nbsp; * &lt;/ul&gt;
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public interface BinaryQueryResultConstants {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Magic number for Binary RDF Table Result files.
+&nbsp;	 */
+<b class="nc">&nbsp;	byte[] MAGIC_NUMBER = new byte[] { &#39;B&#39;, &#39;R&#39;, &#39;T&#39;, &#39;R&#39; };</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The version number of the current format.
+&nbsp;	 */
+&nbsp;	int FORMAT_VERSION = 4;
+&nbsp;
+&nbsp;	/* RECORD TYPES */
+&nbsp;	int NULL_RECORD_MARKER = 0;
+&nbsp;
+&nbsp;	int REPEAT_RECORD_MARKER = 1;
+&nbsp;
+&nbsp;	int NAMESPACE_RECORD_MARKER = 2;
+&nbsp;
+&nbsp;	int QNAME_RECORD_MARKER = 3;
+&nbsp;
+&nbsp;	int URI_RECORD_MARKER = 4;
+&nbsp;
+&nbsp;	int BNODE_RECORD_MARKER = 5;
+&nbsp;
+&nbsp;	int PLAIN_LITERAL_RECORD_MARKER = 6;
+&nbsp;
+&nbsp;	int LANG_LITERAL_RECORD_MARKER = 7;
+&nbsp;
+&nbsp;	int DATATYPE_LITERAL_RECORD_MARKER = 8;
+&nbsp;
+&nbsp;	int EMPTY_ROW_RECORD_MARKER = 9;
+&nbsp;
+&nbsp;	int TRIPLE_RECORD_MARKER = 10;
+&nbsp;
+&nbsp;	int ERROR_RECORD_MARKER = 126;
+&nbsp;
+&nbsp;	int TABLE_END_RECORD_MARKER = 127;
+&nbsp;
+&nbsp;	/* ERROR TYPES */
+&nbsp;	int MALFORMED_QUERY_ERROR = 1;
+&nbsp;
+&nbsp;	int QUERY_EVALUATION_ERROR = 2;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

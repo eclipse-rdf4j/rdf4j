@@ -1,0 +1,833 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TransactionController</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.http.server.repository.transaction</a>
+</div>
+
+<h1>Coverage Summary for Class: TransactionController (org.eclipse.rdf4j.http.server.repository.transaction)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TransactionController</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/149)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/322)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">TransactionController$1</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/149)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/323)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.http.server.repository.transaction;
+&nbsp;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_NOT_ACCEPTABLE;
+&nbsp;import static javax.servlet.http.HttpServletResponse.SC_SERVICE_UNAVAILABLE;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.BINDING_PREFIX;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.CONTEXT_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.DEFAULT_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.INCLUDE_INFERRED_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.INSERT_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.NAMED_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.OBJECT_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.PREDICATE_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_LANGUAGE_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.REMOVE_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.SUBJECT_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.USING_GRAPH_PARAM_NAME;
+&nbsp;import static org.eclipse.rdf4j.http.protocol.Protocol.USING_NAMED_GRAPH_PARAM_NAME;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.Enumeration;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.ExecutionException;
+&nbsp;import java.util.concurrent.TimeUnit;
+&nbsp;
+&nbsp;import javax.servlet.http.HttpServletRequest;
+&nbsp;import javax.servlet.http.HttpServletResponse;
+&nbsp;
+&nbsp;import org.apache.commons.io.IOUtils;
+&nbsp;import org.eclipse.rdf4j.common.lang.FileFormat;
+&nbsp;import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry;
+&nbsp;import org.eclipse.rdf4j.common.webapp.views.EmptySuccessView;
+&nbsp;import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol;
+&nbsp;import org.eclipse.rdf4j.http.protocol.Protocol.Action;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
+&nbsp;import org.eclipse.rdf4j.http.protocol.error.ErrorType;
+&nbsp;import org.eclipse.rdf4j.http.server.ClientHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.HTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.ProtocolUtil;
+&nbsp;import org.eclipse.rdf4j.http.server.ServerHTTPException;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.BooleanQueryResultView;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.QueryResultView;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+&nbsp;import org.eclipse.rdf4j.http.server.repository.TupleQueryResultView;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterFactory;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriterRegistry;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;import org.springframework.beans.factory.DisposableBean;
+&nbsp;import org.springframework.context.ApplicationContextException;
+&nbsp;import org.springframework.web.servlet.ModelAndView;
+&nbsp;import org.springframework.web.servlet.View;
+&nbsp;import org.springframework.web.servlet.mvc.AbstractController;
+&nbsp;
+&nbsp;/**
+&nbsp; * Handles requests for transaction creation on a repository.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class TransactionController extends AbstractController implements DisposableBean {
+&nbsp;
+<b class="nc">&nbsp;	private final Logger logger = LoggerFactory.getLogger(this.getClass());</b>
+&nbsp;
+<b class="nc">&nbsp;	public TransactionController() throws ApplicationContextException {</b>
+<b class="nc">&nbsp;		setSupportedMethods(new String[] { METHOD_POST, &quot;PUT&quot;, &quot;DELETE&quot; });</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected ModelAndView handleRequestInternal(HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws Exception {
+&nbsp;		ModelAndView result;
+&nbsp;
+<b class="nc">&nbsp;		String reqMethod = request.getMethod();</b>
+<b class="nc">&nbsp;		UUID transactionId = getTransactionID(request);</b>
+<b class="nc">&nbsp;		logger.debug(&quot;transaction id: {}&quot;, transactionId);</b>
+<b class="nc">&nbsp;		logger.debug(&quot;request content type: {}&quot;, request.getContentType());</b>
+&nbsp;
+<b class="nc">&nbsp;		Transaction transaction = ActiveTransactionRegistry.INSTANCE.getTransaction(transactionId);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (transaction == null) {</b>
+<b class="nc">&nbsp;			logger.warn(&quot;could not find transaction for transaction id {}&quot;, transactionId);</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+&nbsp;					&quot;unable to find registered transaction for transaction id &#39;&quot; + transactionId + &quot;&#39;&quot;);
+&nbsp;		}
+&nbsp;
+&nbsp;		// if no action is specified in the request, it&#39;s a rollback (since it&#39;s
+&nbsp;		// the only txn operation that does not require the action parameter).
+<b class="nc">&nbsp;		final String actionParam = request.getParameter(Protocol.ACTION_PARAM_NAME);</b>
+<b class="nc">&nbsp;		final Action action = actionParam != null ? Action.valueOf(actionParam) : Action.ROLLBACK;</b>
+<b class="nc">&nbsp;		switch (action) {</b>
+&nbsp;		case QUERY:
+&nbsp;			// TODO SES-2238 note that we allow POST requests for backward
+&nbsp;			// compatibility reasons with earlier
+&nbsp;			// 2.8.x releases, even though according to the protocol spec only
+&nbsp;			// PUT is allowed.
+<b class="nc">&nbsp;			if (&quot;PUT&quot;.equals(reqMethod) || METHOD_POST.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;{} txn query request&quot;, reqMethod);</b>
+<b class="nc">&nbsp;				result = processQuery(transaction, request, response);</b>
+<b class="nc">&nbsp;				logger.info(&quot;{} txn query request finished&quot;, reqMethod);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,</b>
+&nbsp;						&quot;Method not allowed: &quot; + reqMethod);
+&nbsp;			}
+&nbsp;			break;
+&nbsp;		case GET:
+<b class="nc">&nbsp;			if (&quot;PUT&quot;.equals(reqMethod) || METHOD_POST.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;{} txn get/export statements request&quot;, reqMethod);</b>
+<b class="nc">&nbsp;				result = getExportStatementsResult(transaction, request, response);</b>
+<b class="nc">&nbsp;				logger.info(&quot;{} txn get/export statements request finished&quot;, reqMethod);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,</b>
+&nbsp;						&quot;Method not allowed: &quot; + reqMethod);
+&nbsp;			}
+&nbsp;			break;
+&nbsp;		case SIZE:
+<b class="nc">&nbsp;			if (&quot;PUT&quot;.equals(reqMethod) || METHOD_POST.equals(reqMethod)) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;{} txn size request&quot;, reqMethod);</b>
+<b class="nc">&nbsp;				result = getSize(transaction, request, response);</b>
+<b class="nc">&nbsp;				logger.info(&quot;{} txn size request finished&quot;, reqMethod);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,</b>
+&nbsp;						&quot;Method not allowed: &quot; + reqMethod);
+&nbsp;			}
+&nbsp;			break;
+&nbsp;		case PING:
+<b class="nc">&nbsp;			String text = Long.toString(ActiveTransactionRegistry.INSTANCE.getTimeout(TimeUnit.MILLISECONDS));</b>
+<b class="nc">&nbsp;			Map&lt;String, String&gt; model = Collections.singletonMap(SimpleResponseView.CONTENT_KEY, text);</b>
+<b class="nc">&nbsp;			result = new ModelAndView(SimpleResponseView.getInstance(), model);</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		default:
+&nbsp;			// TODO Action.ROLLBACK check is for backward compatibility with
+&nbsp;			// older 2.8.x releases only. It&#39;s not in the protocol spec.
+<b class="nc">&nbsp;			if (&quot;DELETE&quot;.equals(reqMethod)</b>
+<b class="nc">&nbsp;					|| (action.equals(Action.ROLLBACK) &amp;&amp; (&quot;PUT&quot;.equals(reqMethod) || METHOD_POST.equals(reqMethod)))) {</b>
+<b class="nc">&nbsp;				logger.info(&quot;transaction rollback&quot;);</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					transaction.rollback();</b>
+&nbsp;				} finally {
+<b class="nc">&nbsp;					try {</b>
+<b class="nc">&nbsp;						transaction.close();</b>
+&nbsp;					} finally {
+<b class="nc">&nbsp;						ActiveTransactionRegistry.INSTANCE.deregister(transaction);</b>
+<b class="nc">&nbsp;					}</b>
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;				result = new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;				logger.info(&quot;transaction rollback request finished.&quot;);</b>
+<b class="nc">&nbsp;			} else if (&quot;PUT&quot;.equals(reqMethod) || METHOD_POST.equals(reqMethod)) {</b>
+&nbsp;				// TODO filter for appropriate PUT operations
+<b class="nc">&nbsp;				logger.info(&quot;{} txn operation&quot;, reqMethod);</b>
+<b class="nc">&nbsp;				result = processModificationOperation(transaction, action, request, response);</b>
+<b class="nc">&nbsp;				logger.info(&quot;PUT txn operation request finished.&quot;);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ClientHTTPException(HttpServletResponse.SC_METHOD_NOT_ALLOWED,</b>
+&nbsp;						&quot;Method not allowed: &quot; + reqMethod);
+&nbsp;			}
+&nbsp;			break;
+&nbsp;		}
+<b class="nc">&nbsp;		if (!(transaction.isClosed() || transaction.isComplete())) {</b>
+<b class="nc">&nbsp;			ActiveTransactionRegistry.INSTANCE.active(transaction);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private UUID getTransactionID(HttpServletRequest request) throws ClientHTTPException {
+<b class="nc">&nbsp;		String pathInfoStr = request.getPathInfo();</b>
+&nbsp;
+<b class="nc">&nbsp;		UUID txnID = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (pathInfoStr != null &amp;&amp; !pathInfoStr.equals(&quot;/&quot;)) {</b>
+<b class="nc">&nbsp;			String[] pathInfo = pathInfoStr.substring(1).split(&quot;/&quot;);</b>
+&nbsp;			// should be of the form: /&lt;Repository&gt;/transactions/&lt;txnID&gt;
+<b class="nc">&nbsp;			if (pathInfo.length == 3) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					txnID = UUID.fromString(pathInfo[2]);</b>
+<b class="nc">&nbsp;					logger.debug(&quot;txnID is &#39;{}&#39;&quot;, txnID);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;not a valid transaction id: &quot; + pathInfo[2]);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				logger.warn(&quot;could not determine transaction id from path info {} &quot;, pathInfoStr);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return txnID;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView processModificationOperation(Transaction transaction, Action action,
+&nbsp;			HttpServletRequest request, HttpServletResponse response) throws IOException, HTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		String baseURI = request.getParameter(Protocol.BASEURI_PARAM_NAME);</b>
+<b class="nc">&nbsp;		if (baseURI == null) {</b>
+<b class="nc">&nbsp;			baseURI = &quot;&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		final Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME,</b>
+<b class="nc">&nbsp;				SimpleValueFactory.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;		final boolean preserveNodeIds = ProtocolUtil.parseBooleanParam(request, Protocol.PRESERVE_BNODE_ID_PARAM_NAME,</b>
+&nbsp;				false);
+&nbsp;
+&nbsp;		try {
+&nbsp;			RDFFormat format;
+<b class="nc">&nbsp;			switch (action) {</b>
+&nbsp;			case ADD:
+<b class="nc">&nbsp;				format = Rio.getParserFormatForMIMEType(request.getContentType())</b>
+<b class="nc">&nbsp;						.orElseThrow(Rio.unsupportedFormat(request.getContentType()));</b>
+<b class="nc">&nbsp;				transaction.add(request.getInputStream(), baseURI, format, preserveNodeIds, contexts);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case DELETE:
+<b class="nc">&nbsp;				format = Rio.getParserFormatForMIMEType(request.getContentType())</b>
+<b class="nc">&nbsp;						.orElseThrow(Rio.unsupportedFormat(request.getContentType()));</b>
+<b class="nc">&nbsp;				transaction.delete(format, request.getInputStream(), baseURI);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case UPDATE:
+<b class="nc">&nbsp;				return getSparqlUpdateResult(transaction, request, response);</b>
+&nbsp;			case PREPARE:
+<b class="nc">&nbsp;				transaction.prepare();</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			case COMMIT:
+<b class="nc">&nbsp;				transaction.commit();</b>
+&nbsp;				// If commit fails with an exception, deregister should be skipped so the user
+&nbsp;				// has a chance to do a proper rollback. See #725.
+<b class="nc">&nbsp;				ActiveTransactionRegistry.INSTANCE.deregister(transaction);</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			default:
+<b class="nc">&nbsp;				logger.warn(&quot;transaction modification action &#39;{}&#39; not recognized&quot;, action);</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(&quot;modification action not recognized: &quot; + action);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			model.put(SimpleResponseView.SC_KEY, HttpServletResponse.SC_OK);</b>
+<b class="nc">&nbsp;			return new ModelAndView(SimpleResponseView.getInstance(), model);</b>
+<b class="nc">&nbsp;		} catch (Exception e) {</b>
+<b class="nc">&nbsp;			if (e instanceof ClientHTTPException) {</b>
+<b class="nc">&nbsp;				throw (ClientHTTPException) e;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ServerHTTPException(HttpServletResponse.SC_INTERNAL_SERVER_ERROR,</b>
+<b class="nc">&nbsp;						&quot;Transaction handling error: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView getSize(Transaction transaction, HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws HTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		final boolean headersOnly = METHOD_HEAD.equals(request.getMethod());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!headersOnly) {</b>
+<b class="nc">&nbsp;			Repository repository = RepositoryInterceptor.getRepository(request);</b>
+&nbsp;
+<b class="nc">&nbsp;			ValueFactory vf = repository.getValueFactory();</b>
+<b class="nc">&nbsp;			Resource[] contexts = ProtocolUtil.parseContextParam(request, Protocol.CONTEXT_PARAM_NAME, vf);</b>
+&nbsp;
+&nbsp;			long size;
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				size = transaction.getSize(contexts);</b>
+<b class="nc">&nbsp;			} catch (RepositoryException | InterruptedException | ExecutionException e) {</b>
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Repository error: &quot; + e.getMessage(), e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			model.put(SimpleResponseView.CONTENT_KEY, String.valueOf(size));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new ModelAndView(SimpleResponseView.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get all statements and export them as RDF.
+&nbsp;	 *
+&nbsp;	 * @return a model and view for exporting the statements.
+&nbsp;	 */
+&nbsp;	private ModelAndView getExportStatementsResult(Transaction transaction, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws ClientHTTPException {
+<b class="nc">&nbsp;		ProtocolUtil.logRequestParameters(request);</b>
+&nbsp;
+<b class="nc">&nbsp;		ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		Resource subj = ProtocolUtil.parseResourceParam(request, SUBJECT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		IRI pred = ProtocolUtil.parseURIParam(request, PREDICATE_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		Value obj = ProtocolUtil.parseValueParam(request, OBJECT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		Resource[] contexts = ProtocolUtil.parseContextParam(request, CONTEXT_PARAM_NAME, vf);</b>
+<b class="nc">&nbsp;		boolean useInferencing = ProtocolUtil.parseBooleanParam(request, INCLUDE_INFERRED_PARAM_NAME, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		RDFWriterFactory rdfWriterFactory = ProtocolUtil.getAcceptableService(request, response,</b>
+<b class="nc">&nbsp;				RDFWriterRegistry.getInstance());</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.SUBJECT_KEY, subj);</b>
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.PREDICATE_KEY, pred);</b>
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.OBJECT_KEY, obj);</b>
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.CONTEXTS_KEY, contexts);</b>
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.USE_INFERENCING_KEY, Boolean.valueOf(useInferencing));</b>
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.FACTORY_KEY, rdfWriterFactory);</b>
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.HEADERS_ONLY, METHOD_HEAD.equals(request.getMethod()));</b>
+&nbsp;
+<b class="nc">&nbsp;		model.put(TransactionExportStatementsView.TRANSACTION_KEY, transaction);</b>
+<b class="nc">&nbsp;		return new ModelAndView(TransactionExportStatementsView.getInstance(), model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluates a query on the given connection and returns the resulting {@link QueryResultView}. The
+&nbsp;	 * {@link QueryResultView} will take care of correctly releasing the connection back to the
+&nbsp;	 * {@link ActiveTransactionRegistry}, after fully rendering the query result for sending over the wire.
+&nbsp;	 */
+&nbsp;	private ModelAndView processQuery(Transaction txn, HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws IOException, HTTPException {
+&nbsp;		String queryStr;
+<b class="nc">&nbsp;		final String contentType = request.getContentType();</b>
+<b class="nc">&nbsp;		if (contentType != null &amp;&amp; contentType.contains(Protocol.SPARQL_QUERY_MIME_TYPE)) {</b>
+<b class="nc">&nbsp;			Charset charset = getCharset(request);</b>
+<b class="nc">&nbsp;			queryStr = IOUtils.toString(request.getInputStream(), charset);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			queryStr = request.getParameter(QUERY_PARAM_NAME);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		View view;
+&nbsp;		Object queryResult;
+&nbsp;		FileFormatServiceRegistry&lt;? extends FileFormat, ?&gt; registry;
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Query query = getQuery(txn, queryStr, request, response);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (query instanceof TupleQuery) {</b>
+<b class="nc">&nbsp;				TupleQuery tQuery = (TupleQuery) query;</b>
+&nbsp;
+<b class="nc">&nbsp;				queryResult = txn.evaluate(tQuery);</b>
+<b class="nc">&nbsp;				registry = TupleQueryResultWriterRegistry.getInstance();</b>
+<b class="nc">&nbsp;				view = TupleQueryResultView.getInstance();</b>
+<b class="nc">&nbsp;			} else if (query instanceof GraphQuery) {</b>
+<b class="nc">&nbsp;				GraphQuery gQuery = (GraphQuery) query;</b>
+&nbsp;
+<b class="nc">&nbsp;				queryResult = txn.evaluate(gQuery);</b>
+<b class="nc">&nbsp;				registry = RDFWriterRegistry.getInstance();</b>
+<b class="nc">&nbsp;				view = GraphQueryResultView.getInstance();</b>
+<b class="nc">&nbsp;			} else if (query instanceof BooleanQuery) {</b>
+<b class="nc">&nbsp;				BooleanQuery bQuery = (BooleanQuery) query;</b>
+&nbsp;
+<b class="nc">&nbsp;				queryResult = txn.evaluate(bQuery);</b>
+<b class="nc">&nbsp;				registry = BooleanQueryResultWriterRegistry.getInstance();</b>
+<b class="nc">&nbsp;				view = BooleanQueryResultView.getInstance();</b>
+<b class="nc">&nbsp;			} else {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Unsupported query type: &quot; + query.getClass().getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (QueryInterruptedException | InterruptedException | ExecutionException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof MalformedQueryException) {</b>
+<b class="nc">&nbsp;				ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getCause().getMessage());</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				logger.info(&quot;Query interrupted&quot;, e);</b>
+<b class="nc">&nbsp;				throw new ServerHTTPException(SC_SERVICE_UNAVAILABLE, &quot;Query execution interrupted&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;			logger.info(&quot;Query evaluation error&quot;, e);</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof HTTPException) {</b>
+&nbsp;				// custom signal from the backend, throw as HTTPException
+&nbsp;				// directly (see SES-1016).
+<b class="nc">&nbsp;				throw (HTTPException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Query evaluation error: &quot; + e.getMessage());</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		Object factory = ProtocolUtil.getAcceptableService(request, response, registry);</b>
+&nbsp;
+<b class="nc">&nbsp;		Map&lt;String, Object&gt; model = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.FILENAME_HINT_KEY, &quot;query-result&quot;);</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.QUERY_RESULT_KEY, queryResult);</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.FACTORY_KEY, factory);</b>
+<b class="nc">&nbsp;		model.put(QueryResultView.HEADERS_ONLY, false); // TODO needed for HEAD</b>
+&nbsp;		// requests.
+<b class="nc">&nbsp;		return new ModelAndView(view, model);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static Charset getCharset(HttpServletRequest request) {
+<b class="nc">&nbsp;		return request.getCharacterEncoding() != null ? Charset.forName(request.getCharacterEncoding())</b>
+<b class="nc">&nbsp;				: StandardCharsets.UTF_8;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private Query getQuery(Transaction txn, String queryStr, HttpServletRequest request, HttpServletResponse response)
+&nbsp;			throws IOException, ClientHTTPException, InterruptedException, ExecutionException {
+<b class="nc">&nbsp;		Query result = null;</b>
+&nbsp;
+&nbsp;		// default query language is SPARQL
+<b class="nc">&nbsp;		QueryLanguage queryLn = QueryLanguage.SPARQL;</b>
+&nbsp;
+<b class="nc">&nbsp;		String queryLnStr = request.getParameter(QUERY_LANGUAGE_PARAM_NAME);</b>
+<b class="nc">&nbsp;		logger.debug(&quot;query language param = {}&quot;, queryLnStr);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (queryLnStr != null) {</b>
+<b class="nc">&nbsp;			queryLn = QueryLanguage.valueOf(queryLnStr);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (queryLn == null) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Unknown query language: &quot; + queryLnStr);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String baseURI = request.getParameter(Protocol.BASEURI_PARAM_NAME);</b>
+&nbsp;
+&nbsp;		// determine if inferred triples should be included in query evaluation
+<b class="nc">&nbsp;		boolean includeInferred = ProtocolUtil.parseBooleanParam(request, INCLUDE_INFERRED_PARAM_NAME, true);</b>
+&nbsp;
+<b class="nc">&nbsp;		String timeout = request.getParameter(Protocol.TIMEOUT_PARAM_NAME);</b>
+<b class="nc">&nbsp;		int maxQueryTime = 0;</b>
+<b class="nc">&nbsp;		if (timeout != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				maxQueryTime = Integer.parseInt(timeout);</b>
+<b class="nc">&nbsp;			} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Invalid timeout value: &quot; + timeout);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// build a dataset, if specified
+<b class="nc">&nbsp;		String[] defaultGraphURIs = request.getParameterValues(DEFAULT_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] namedGraphURIs = request.getParameterValues(NAMED_GRAPH_PARAM_NAME);</b>
+&nbsp;
+<b class="nc">&nbsp;		SimpleDataset dataset = null;</b>
+<b class="nc">&nbsp;		if (defaultGraphURIs != null || namedGraphURIs != null) {</b>
+<b class="nc">&nbsp;			dataset = new SimpleDataset();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (defaultGraphURIs != null) {</b>
+<b class="nc">&nbsp;				for (String defaultGraphURI : defaultGraphURIs) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						IRI uri = null;</b>
+<b class="nc">&nbsp;						if (!&quot;null&quot;.equals(defaultGraphURI)) {</b>
+<b class="nc">&nbsp;							uri = SimpleValueFactory.getInstance().createIRI(defaultGraphURI);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						dataset.addDefaultGraph(uri);</b>
+<b class="nc">&nbsp;					} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;						throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+&nbsp;								&quot;Illegal URI for default graph: &quot; + defaultGraphURI);
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (namedGraphURIs != null) {</b>
+<b class="nc">&nbsp;				for (String namedGraphURI : namedGraphURIs) {</b>
+&nbsp;					try {
+<b class="nc">&nbsp;						IRI uri = null;</b>
+<b class="nc">&nbsp;						if (!&quot;null&quot;.equals(namedGraphURI)) {</b>
+<b class="nc">&nbsp;							uri = SimpleValueFactory.getInstance().createIRI(namedGraphURI);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						dataset.addNamedGraph(uri);</b>
+<b class="nc">&nbsp;					} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;						throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for named graph: &quot; + namedGraphURI);</b>
+<b class="nc">&nbsp;					}</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			result = txn.prepareQuery(queryLn, queryStr, baseURI);</b>
+<b class="nc">&nbsp;			result.setIncludeInferred(includeInferred);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (maxQueryTime &gt; 0) {</b>
+<b class="nc">&nbsp;				result.setMaxExecutionTime(maxQueryTime);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			if (dataset != null) {</b>
+<b class="nc">&nbsp;				result.setDataset(dataset);</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// determine if any variable bindings have been set on this query.
+&nbsp;			@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;			Enumeration&lt;String&gt; parameterNames = request.getParameterNames();</b>
+&nbsp;
+<b class="nc">&nbsp;			while (parameterNames.hasMoreElements()) {</b>
+<b class="nc">&nbsp;				String parameterName = parameterNames.nextElement();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (parameterName.startsWith(BINDING_PREFIX) &amp;&amp; parameterName.length() &gt; BINDING_PREFIX.length()) {</b>
+<b class="nc">&nbsp;					String bindingName = parameterName.substring(BINDING_PREFIX.length());</b>
+<b class="nc">&nbsp;					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,</b>
+<b class="nc">&nbsp;							SimpleValueFactory.getInstance());</b>
+<b class="nc">&nbsp;					result.setBinding(bindingName, bindingValue);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		} catch (UnsupportedQueryLanguageException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.UNSUPPORTED_QUERY_LANGUAGE, queryLn.getName());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			logger.error(&quot;Repository error&quot;, e);</b>
+<b class="nc">&nbsp;			response.sendError(SC_INTERNAL_SERVER_ERROR);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private ModelAndView getSparqlUpdateResult(Transaction transaction, HttpServletRequest request,
+&nbsp;			HttpServletResponse response) throws ServerHTTPException, ClientHTTPException, HTTPException {
+&nbsp;		String sparqlUpdateString;
+<b class="nc">&nbsp;		final String contentType = request.getContentType();</b>
+<b class="nc">&nbsp;		if (contentType != null &amp;&amp; contentType.contains(Protocol.SPARQL_UPDATE_MIME_TYPE)) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				Charset charset = getCharset(request);</b>
+<b class="nc">&nbsp;				sparqlUpdateString = IOUtils.toString(request.getInputStream(), charset);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				logger.warn(&quot;error reading sparql update string from request body&quot;, e);</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST,</b>
+<b class="nc">&nbsp;						&quot;could not read SPARQL update string from body: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			sparqlUpdateString = request.getParameter(Protocol.UPDATE_PARAM_NAME);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (null == sparqlUpdateString) {</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_NOT_ACCEPTABLE, &quot;Could not read SPARQL update string from body.&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		logger.debug(&quot;SPARQL update string: {}&quot;, sparqlUpdateString);</b>
+&nbsp;
+&nbsp;		// default query language is SPARQL
+<b class="nc">&nbsp;		QueryLanguage queryLn = QueryLanguage.SPARQL;</b>
+&nbsp;
+<b class="nc">&nbsp;		String queryLnStr = request.getParameter(QUERY_LANGUAGE_PARAM_NAME);</b>
+<b class="nc">&nbsp;		logger.debug(&quot;query language param = {}&quot;, queryLnStr);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (queryLnStr != null) {</b>
+<b class="nc">&nbsp;			queryLn = QueryLanguage.valueOf(queryLnStr);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (queryLn == null) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Unknown query language: &quot; + queryLnStr);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String baseURI = request.getParameter(Protocol.BASEURI_PARAM_NAME);</b>
+&nbsp;
+&nbsp;		// determine if inferred triples should be included in query evaluation
+<b class="nc">&nbsp;		boolean includeInferred = ProtocolUtil.parseBooleanParam(request, INCLUDE_INFERRED_PARAM_NAME, true);</b>
+&nbsp;
+&nbsp;		// build a dataset, if specified
+<b class="nc">&nbsp;		String[] defaultRemoveGraphURIs = request.getParameterValues(REMOVE_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] defaultInsertGraphURIs = request.getParameterValues(INSERT_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] defaultGraphURIs = request.getParameterValues(USING_GRAPH_PARAM_NAME);</b>
+<b class="nc">&nbsp;		String[] namedGraphURIs = request.getParameterValues(USING_NAMED_GRAPH_PARAM_NAME);</b>
+&nbsp;
+<b class="nc">&nbsp;		SimpleDataset dataset = new SimpleDataset();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (defaultRemoveGraphURIs != null) {</b>
+<b class="nc">&nbsp;			for (String graphURI : defaultRemoveGraphURIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI uri = null;</b>
+<b class="nc">&nbsp;					if (!&quot;null&quot;.equals(graphURI)) {</b>
+<b class="nc">&nbsp;						uri = SimpleValueFactory.getInstance().createIRI(graphURI);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					dataset.addDefaultRemoveGraph(uri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for default remove graph: &quot; + graphURI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (defaultInsertGraphURIs != null &amp;&amp; defaultInsertGraphURIs.length &gt; 0) {</b>
+<b class="nc">&nbsp;			String graphURI = defaultInsertGraphURIs[0];</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				IRI uri = null;</b>
+<b class="nc">&nbsp;				if (!&quot;null&quot;.equals(graphURI)) {</b>
+<b class="nc">&nbsp;					uri = SimpleValueFactory.getInstance().createIRI(graphURI);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				dataset.setDefaultInsertGraph(uri);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;				throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for default insert graph: &quot; + graphURI);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (defaultGraphURIs != null) {</b>
+<b class="nc">&nbsp;			for (String defaultGraphURI : defaultGraphURIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI uri = null;</b>
+<b class="nc">&nbsp;					if (!&quot;null&quot;.equals(defaultGraphURI)) {</b>
+<b class="nc">&nbsp;						uri = SimpleValueFactory.getInstance().createIRI(defaultGraphURI);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					dataset.addDefaultGraph(uri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for default graph: &quot; + defaultGraphURI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (namedGraphURIs != null) {</b>
+<b class="nc">&nbsp;			for (String namedGraphURI : namedGraphURIs) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					IRI uri = null;</b>
+<b class="nc">&nbsp;					if (!&quot;null&quot;.equals(namedGraphURI)) {</b>
+<b class="nc">&nbsp;						uri = SimpleValueFactory.getInstance().createIRI(namedGraphURI);</b>
+&nbsp;					}
+<b class="nc">&nbsp;					dataset.addNamedGraph(uri);</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new ClientHTTPException(SC_BAD_REQUEST, &quot;Illegal URI for named graph: &quot; + namedGraphURI);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+&nbsp;			// determine if any variable bindings have been set on this update.
+&nbsp;			@SuppressWarnings(&quot;unchecked&quot;)
+<b class="nc">&nbsp;			Enumeration&lt;String&gt; parameterNames = request.getParameterNames();</b>
+&nbsp;
+<b class="nc">&nbsp;			Map&lt;String, Value&gt; bindings = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;			while (parameterNames.hasMoreElements()) {</b>
+<b class="nc">&nbsp;				String parameterName = parameterNames.nextElement();</b>
+&nbsp;
+<b class="nc">&nbsp;				if (parameterName.startsWith(BINDING_PREFIX) &amp;&amp; parameterName.length() &gt; BINDING_PREFIX.length()) {</b>
+<b class="nc">&nbsp;					String bindingName = parameterName.substring(BINDING_PREFIX.length());</b>
+<b class="nc">&nbsp;					Value bindingValue = ProtocolUtil.parseValueParam(request, parameterName,</b>
+<b class="nc">&nbsp;							SimpleValueFactory.getInstance());</b>
+<b class="nc">&nbsp;					bindings.put(bindingName, bindingValue);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			transaction.executeUpdate(queryLn, sparqlUpdateString, baseURI, includeInferred, dataset, bindings);</b>
+&nbsp;
+<b class="nc">&nbsp;			return new ModelAndView(EmptySuccessView.getInstance());</b>
+<b class="nc">&nbsp;		} catch (UpdateExecutionException | InterruptedException | ExecutionException | RepositoryException e) {</b>
+<b class="nc">&nbsp;			if (e.getCause() != null &amp;&amp; e.getCause() instanceof HTTPException) {</b>
+&nbsp;				// custom signal from the backend, throw as HTTPException directly
+&nbsp;				// (see SES-1016).
+<b class="nc">&nbsp;				throw (HTTPException) e.getCause();</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				throw new ServerHTTPException(&quot;Repository update error: &quot; + e.getMessage(), e);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;		// custom signal from the backend, throw as HTTPException directly
+&nbsp;		// (see SES-1016).
+<b class="nc">&nbsp;		catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			ErrorInfo errInfo = new ErrorInfo(ErrorType.MALFORMED_QUERY, e.getMessage());</b>
+<b class="nc">&nbsp;			throw new ClientHTTPException(SC_BAD_REQUEST, errInfo.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	// Comes from disposableBean interface so to be able to stop the ActiveTransactionRegistry scheduler
+&nbsp;	@Override
+&nbsp;	public void destroy()
+&nbsp;			throws Exception {
+<b class="nc">&nbsp;		ActiveTransactionRegistry.INSTANCE.destroyScheduler();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

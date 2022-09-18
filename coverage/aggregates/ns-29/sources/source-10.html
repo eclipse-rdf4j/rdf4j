@@ -1,0 +1,246 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SetParameters</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: SetParameters (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SetParameters</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/45)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Objects;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleIO;
+&nbsp;import org.eclipse.rdf4j.console.ConsoleState;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * Set parameters command
+&nbsp; *
+&nbsp; * @author dale
+&nbsp; */
+&nbsp;public class SetParameters extends ConsoleCommand {
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getName() {
+<b class="nc">&nbsp;		return &quot;set&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpShort() {
+<b class="nc">&nbsp;		return &quot;Allows various console parameters to be set&quot;;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getHelpLong() {
+<b class="nc">&nbsp;		StringBuilder builder = new StringBuilder(settings.size() * 80);</b>
+<b class="nc">&nbsp;		for (ConsoleSetting setting : settings.values()) {</b>
+<b class="nc">&nbsp;			builder.append(setting.getHelpLong());</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return PrintHelp.USAGE + &quot;set                            Shows all parameter values\n&quot; + builder.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param consoleIO
+&nbsp;	 * @param state
+&nbsp;	 * @param settings
+&nbsp;	 */
+&nbsp;	public SetParameters(ConsoleIO consoleIO, ConsoleState state, Map&lt;String, ConsoleSetting&gt; settings) {
+<b class="nc">&nbsp;		super(consoleIO, state, settings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void execute(String... tokens) {
+<b class="nc">&nbsp;		switch (tokens.length) {</b>
+&nbsp;		case 0:
+<b class="nc">&nbsp;			writeln(getHelpLong());</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		case 1:
+<b class="nc">&nbsp;			for (String setting : settings.keySet()) {</b>
+<b class="nc">&nbsp;				showSetting(setting);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			break;</b>
+&nbsp;		default:
+<b class="nc">&nbsp;			String param = tokens[1];</b>
+<b class="nc">&nbsp;			int eqIdx = param.indexOf(&#39;=&#39;);</b>
+<b class="nc">&nbsp;			if (eqIdx &lt; 0) {</b>
+<b class="nc">&nbsp;				showSetting(param);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				String key = param.substring(0, eqIdx);</b>
+&nbsp;				// FIXME: somewhat ugly, join back together to set parameter which may contain spaces
+<b class="nc">&nbsp;				String values = String.join(&quot; &quot;, tokens);</b>
+<b class="nc">&nbsp;				eqIdx = values.indexOf(&#39;=&#39;);</b>
+<b class="nc">&nbsp;				setParameter(key, values.substring(eqIdx + 1));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Show parameter
+&nbsp;	 *
+&nbsp;	 * @param key parameter key
+&nbsp;	 */
+&nbsp;	private void showSetting(String key) {
+<b class="nc">&nbsp;		String str = key.toLowerCase();</b>
+<b class="nc">&nbsp;		ConsoleSetting setting = settings.get(str);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (setting != null) {</b>
+<b class="nc">&nbsp;			String s = setting.getAsString();</b>
+&nbsp;			// quick and dirty wrapping of too long values
+<b class="nc">&nbsp;			if ((s.length() &gt; 80 - 10) &amp;&amp; s.contains(&quot;,&quot;)) {</b>
+<b class="nc">&nbsp;				StringBuilder builder = new StringBuilder();</b>
+<b class="nc">&nbsp;				for (String val : s.split(&quot;,&quot;)) {</b>
+<b class="nc">&nbsp;					builder.append(&quot;\n    &quot;).append(val);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				s = builder.toString();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			writeln(key + &quot;: &quot; + s);</b>
+<b class="nc">&nbsp;		} else {</b>
+<b class="nc">&nbsp;			writeError(&quot;Unknown parameter: &quot; + key);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set parameter
+&nbsp;	 *
+&nbsp;	 * @param key
+&nbsp;	 * @param value
+&nbsp;	 */
+&nbsp;	private void setParameter(String key, String value) {
+<b class="nc">&nbsp;		Objects.requireNonNull(key, &quot;parameter key was missing&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(value, &quot;parameter value was missing&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		String str = key.toLowerCase();</b>
+&nbsp;
+<b class="nc">&nbsp;		ConsoleSetting setting = settings.get(str);</b>
+<b class="nc">&nbsp;		if (setting != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				setting.setFromString(value);</b>
+<b class="nc">&nbsp;			} catch (IllegalArgumentException iae) {</b>
+<b class="nc">&nbsp;				writeError(iae.getMessage());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeError(&quot;Unknown parameter: &quot; + key);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,314 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > FunctionArguments</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql</a>
+</div>
+
+<h1>Coverage Summary for Class: FunctionArguments (org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">FunctionArguments</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/28)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/49)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.function.geosparql;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.text.ParseException;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEO;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.GEOF;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+&nbsp;import org.locationtech.spatial4j.context.SpatialContext;
+&nbsp;import org.locationtech.spatial4j.distance.DistanceUtils;
+&nbsp;import org.locationtech.spatial4j.exception.InvalidShapeException;
+&nbsp;import org.locationtech.spatial4j.io.ShapeReader;
+&nbsp;import org.locationtech.spatial4j.shape.Point;
+&nbsp;import org.locationtech.spatial4j.shape.Shape;
+&nbsp;
+&nbsp;class FunctionArguments {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Empty constructor
+&nbsp;	 */
+&nbsp;	private FunctionArguments() {
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the double value
+&nbsp;	 *
+&nbsp;	 * @param func function
+&nbsp;	 * @param v    value
+&nbsp;	 * @return double
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static double getDouble(Function func, Value v) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		if (!(v instanceof Literal)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid argument for &quot; + func.getURI() + &quot;: &quot; + v);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			return ((Literal) v).doubleValue();</b>
+<b class="nc">&nbsp;		} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(e);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the string value
+&nbsp;	 *
+&nbsp;	 * @param func function
+&nbsp;	 * @param v    value
+&nbsp;	 * @return string
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static String getString(Function func, Value v) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		Literal l = getLiteral(func, v, XSD.STRING);</b>
+<b class="nc">&nbsp;		return l.stringValue();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the geo shape
+&nbsp;	 *
+&nbsp;	 * @param func    function
+&nbsp;	 * @param v       value
+&nbsp;	 * @param context
+&nbsp;	 * @return shape
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static Shape getShape(Function func, Value v, SpatialContext context) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		Literal wktLiteral = getLiteral(func, v, GEO.WKT_LITERAL);</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			ShapeReader reader = context.getFormats().getWktReader();</b>
+<b class="nc">&nbsp;			return reader.read(wktLiteral.getLabel());</b>
+<b class="nc">&nbsp;		} catch (IOException | InvalidShapeException | ParseException e) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid argument for &quot; + func.getURI() + &quot;: &quot; + wktLiteral, e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the geo point
+&nbsp;	 *
+&nbsp;	 * @param func       function
+&nbsp;	 * @param v          value
+&nbsp;	 * @param geoContext
+&nbsp;	 * @return point
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static Point getPoint(Function func, Value v, SpatialContext geoContext)
+&nbsp;			throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		Shape p = FunctionArguments.getShape(func, v, geoContext);</b>
+<b class="nc">&nbsp;		if (!(p instanceof Point)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid argument for &quot; + func.getURI() + &quot; (not a point): &quot; + v);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (Point) p;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the literal of a specific data type
+&nbsp;	 *
+&nbsp;	 * @param func             function
+&nbsp;	 * @param v                value
+&nbsp;	 * @param expectedDatatype
+&nbsp;	 * @return literal
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static Literal getLiteral(Function func, Value v, IRI expectedDatatype) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		if (!(v instanceof Literal)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid argument for &quot; + func.getURI() + &quot;: &quot; + v);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Literal lit = (Literal) v;</b>
+<b class="nc">&nbsp;		if (!expectedDatatype.equals(lit.getDatatype())) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(</b>
+<b class="nc">&nbsp;					&quot;Invalid datatype &quot; + lit.getDatatype() + &quot; for &quot; + func.getURI() + &quot;: &quot; + v);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return lit;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the UoM IRI of the unit
+&nbsp;	 *
+&nbsp;	 * @param func function
+&nbsp;	 * @param v    value
+&nbsp;	 * @return UoM IRI
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static IRI getUnits(Function func, Value v) throws ValueExprEvaluationException {
+<b class="nc">&nbsp;		if (!(v instanceof IRI)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid argument for &quot; + func.getURI() + &quot;: &quot; + v);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		IRI unitUri = (IRI) v;</b>
+<b class="nc">&nbsp;		if (!unitUri.getNamespace().equals(GEOF.UOM_NAMESPACE)) {</b>
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid unit of measurement URI for &quot; + func.getURI() + &quot;: &quot; + v);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return unitUri;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert degrees to another unit
+&nbsp;	 *
+&nbsp;	 * @param degs  degrees
+&nbsp;	 * @param units UoM IRI of the unit to convert to
+&nbsp;	 * @return converted value as a double
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static double convertFromDegrees(double degs, IRI units) throws ValueExprEvaluationException {
+&nbsp;		double v;
+&nbsp;
+<b class="nc">&nbsp;		if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			v = degs;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			v = DistanceUtils.toRadians(degs);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			v = degs / 180.0;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			v = DistanceUtils.degrees2Dist(degs, DistanceUtils.EARTH_MEAN_RADIUS_KM) * 1000.0;</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid unit of measurement: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return v;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Convert a value to degrees
+&nbsp;	 *
+&nbsp;	 * @param v     value
+&nbsp;	 * @param units UoM IRI of the unit
+&nbsp;	 * @return degrees as a double
+&nbsp;	 * @throws ValueExprEvaluationException
+&nbsp;	 */
+&nbsp;	public static double convertToDegrees(double v, IRI units) throws ValueExprEvaluationException {
+&nbsp;		double degs;
+&nbsp;
+<b class="nc">&nbsp;		if (GEOF.UOM_DEGREE.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = v;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_RADIAN.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = DistanceUtils.toDegrees(v);</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_UNITY.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = v * 180.0;</b>
+<b class="nc">&nbsp;		} else if (GEOF.UOM_METRE.equals(units)) {</b>
+<b class="nc">&nbsp;			degs = DistanceUtils.dist2Degrees(v / 1000.0, DistanceUtils.EARTH_MEAN_RADIUS_KM);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new ValueExprEvaluationException(&quot;Invalid unit of measurement: &quot; + units);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return degs;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

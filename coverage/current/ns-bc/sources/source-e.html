@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > ClientProvider</title>
+  <title>Coverage Report > ElasticsearchId</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail.elasticsearchstore</a>
 </div>
 
-<h1>Coverage Summary for Class: ClientProvider (org.eclipse.rdf4j.sail.elasticsearchstore)</h1>
+<h1>Coverage Summary for Class: ElasticsearchId (org.eclipse.rdf4j.sail.elasticsearchstore)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">ClientProvider</td>
+  <td class="name">ElasticsearchId</td>
 </tr>
 
 </table>
@@ -50,16 +50,13 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail.elasticsearchstore;
 &nbsp;
-&nbsp;import org.elasticsearch.client.Client;
+&nbsp;import org.eclipse.rdf4j.sail.extensiblestore.valuefactory.ExtensibleStatement;
 &nbsp;
 &nbsp;/**
 &nbsp; * @author Håvard Mikkelsen Ottestad
 &nbsp; */
-&nbsp;interface ClientProvider extends AutoCloseable {
-&nbsp;
-&nbsp;	Client getClient();
-&nbsp;
-&nbsp;	boolean isClosed();
+&nbsp;interface ElasticsearchId extends ExtensibleStatement {
+&nbsp;	String getElasticsearchId();
 &nbsp;}
 </code>
 </pre>
@@ -84,7 +81,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

@@ -1,0 +1,153 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TriXParserSettings</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: TriXParserSettings (org.eclipse.rdf4j.rio.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TriXParserSettings</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.helpers;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;
+&nbsp;/**
+&nbsp; * ParserSettings for the TriX parser features.
+&nbsp; * &lt;p&gt;
+&nbsp; * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public class TriXParserSettings {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether the TriX parser should treat missing datatypes as an error.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_MISSING_DATATYPE = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype&quot;, &quot;Fail on TriX missing datatype&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Boolean setting for parser to determine whether the TriX parser should treat invalid statements as an error.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Defaults to true.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement}.
+&nbsp;	 */
+<b class="nc">&nbsp;	public static final RioSetting&lt;Boolean&gt; FAIL_ON_INVALID_STATEMENT = new BooleanRioSetting(</b>
+&nbsp;			&quot;org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement&quot;, &quot;Fail on TriX invalid statement&quot;, Boolean.TRUE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Private constructor
+&nbsp;	 */
+&nbsp;	private TriXParserSettings() {
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

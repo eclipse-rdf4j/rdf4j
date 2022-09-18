@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > Command</title>
+  <title>Coverage Report > ConsoleState</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.console</a>
 </div>
 
-<h1>Coverage Summary for Class: Command (org.eclipse.rdf4j.console)</h1>
+<h1>Coverage Summary for Class: ConsoleState (org.eclipse.rdf4j.console)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">Command</td>
+  <td class="name">ConsoleState</td>
 </tr>
 
 </table>
@@ -50,28 +50,88 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.console;
 &nbsp;
-&nbsp;import java.io.IOException;
+&nbsp;import java.io.File;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 &nbsp;
 &nbsp;/**
-&nbsp; * Abstraction of console commands.
+&nbsp; * Console state interface
 &nbsp; *
 &nbsp; * @author Dale Visser
 &nbsp; */
-&nbsp;public interface Command {
-&nbsp;	/**
-&nbsp;	 * Execute the given parameters.
-&nbsp;	 *
-&nbsp;	 * @param parameters parameters typed by user
-&nbsp;	 * @throws IOException if a problem occurs reading or writing
-&nbsp;	 */
-&nbsp;	void execute(String... parameters) throws IOException;
+&nbsp;public interface ConsoleState {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Return the names of the settings used.
+&nbsp;	 * Get application name
 &nbsp;	 *
-&nbsp;	 * @return string array of settings
+&nbsp;	 * @return application name
 &nbsp;	 */
-&nbsp;	String[] usesSettings();
+&nbsp;	String getApplicationName();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get repository data directory
+&nbsp;	 *
+&nbsp;	 * @return directory
+&nbsp;	 */
+&nbsp;	File getDataDirectory();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get repository manager ID
+&nbsp;	 *
+&nbsp;	 * @return repository manager ID
+&nbsp;	 */
+&nbsp;	String getManagerID();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get repository ID
+&nbsp;	 *
+&nbsp;	 * @return repository ID
+&nbsp;	 */
+&nbsp;	String getRepositoryID();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get repository manager
+&nbsp;	 *
+&nbsp;	 * @return repository manager
+&nbsp;	 */
+&nbsp;	RepositoryManager getManager();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set repository manager
+&nbsp;	 *
+&nbsp;	 * @param manager repository manager
+&nbsp;	 */
+&nbsp;	void setManager(RepositoryManager manager);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set repository manager
+&nbsp;	 *
+&nbsp;	 * @param managerID repository manager ID
+&nbsp;	 */
+&nbsp;	void setManagerID(String managerID);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get repository
+&nbsp;	 *
+&nbsp;	 * @return repository
+&nbsp;	 */
+&nbsp;	Repository getRepository();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set repository ID
+&nbsp;	 *
+&nbsp;	 * @param repositoryID repository ID
+&nbsp;	 */
+&nbsp;	void setRepositoryID(String repositoryID);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Set repository
+&nbsp;	 *
+&nbsp;	 * @param repository repository
+&nbsp;	 */
+&nbsp;	void setRepository(Repository repository);
+&nbsp;
 &nbsp;}
 </code>
 </pre>
@@ -96,7 +156,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

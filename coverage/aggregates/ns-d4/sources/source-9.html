@@ -1,0 +1,97 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RecordComparator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.nativerdf.btree</a>
+</div>
+
+<h1>Coverage Summary for Class: RecordComparator (org.eclipse.rdf4j.sail.nativerdf.btree)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">RecordComparator</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.nativerdf.btree;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;public interface RecordComparator {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares the supplied &lt;var&gt;key&lt;/var&gt; to the value of length &lt;var&gt;length&lt;/var&gt;, starting at offset
+&nbsp;	 * &lt;var&gt;offset&lt;/var&gt; in the supplied &lt;var&gt;data&lt;/var&gt; array.
+&nbsp;	 *
+&nbsp;	 * @param key    A byte array representing the search key.
+&nbsp;	 * @param data   A byte array containing the value to compare the key to.
+&nbsp;	 * @param offset The offset (0-based) of the value in &lt;var&gt;data&lt;/var&gt;.
+&nbsp;	 * @param length The length of the value.
+&nbsp;	 * @return A negative integer when the key is smaller than the value, a positive integer when the key is larger than
+&nbsp;	 *         the value, or &lt;var&gt;0&lt;/var&gt; when the key is equal to the value.
+&nbsp;	 */
+&nbsp;	int compareBTreeValues(byte[] key, byte[] data, int offset, int length);
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

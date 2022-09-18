@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > EndpointConfiguration</title>
+  <title>Coverage Report > Endpoint</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.federated.endpoint</a>
 </div>
 
-<h1>Coverage Summary for Class: EndpointConfiguration (org.eclipse.rdf4j.federated.endpoint)</h1>
+<h1>Coverage Summary for Class: Endpoint (org.eclipse.rdf4j.federated.endpoint)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">EndpointConfiguration</td>
+  <td class="name">Endpoint</td>
 </tr>
 
 </table>
@@ -50,19 +50,140 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.federated.endpoint;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.federated.evaluation.SparqlTripleSource;
+&nbsp;import org.eclipse.rdf4j.federated.FederationContext;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.iterator.CloseDependentConnectionIteration;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
 &nbsp;
 &nbsp;/**
-&nbsp; * Additional marker interface for Endpoint Configurations.
 &nbsp; *
-&nbsp; * An {@link EndpointConfiguration} may bring additional configuration settings for an {@link Endpoint}, e.g. in the
-&nbsp; * case of a {@link SparqlTripleSource} it may decide whether ASK or SELECT queries shall be used for source selection.
+&nbsp; * Structure to maintain endpoint information, e.g. {@link Repository} type, location.
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * The {@link Repository} to use can be obtained by calling {@link #getRepository()}
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * &lt;p&gt;
+&nbsp; * A {@link RepositoryConnection} for interacting with the store can be obtained using {@link #getConnection()}. Note
+&nbsp; * that typically the {@link TripleSource} of the endpoint should be used.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
 &nbsp; *
 &nbsp; * @author Andreas Schwarte
+&nbsp; * @see ManagedRepositoryEndpoint
+&nbsp; * @see RepositoryEndpoint
+&nbsp; * @see ResolvableEndpoint
 &nbsp; *
 &nbsp; */
-&nbsp;public interface EndpointConfiguration {
+&nbsp;public interface Endpoint {
 &nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the initialized {@link Repository}
+&nbsp;	 */
+&nbsp;	Repository getRepository();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return a {@link RepositoryConnection} for the {@link Repository} represented by this endpoint.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Callers of this method need to ensure to close the connection after use.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Typical pattern:
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;pre&gt;
+&nbsp;	 * try (RepositoryConnection conn = endpoint.getConnection()) {
+&nbsp;	 * 	// do something with the connection
+&nbsp;	 * }
+&nbsp;	 * &lt;/pre&gt;
+&nbsp;	 *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * If the {@link RepositoryConnection} needs to stay open outside the scope of a method (e.g. for streaming
+&nbsp;	 * results), consider using {@link CloseDependentConnectionIteration}.
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 *
+&nbsp;	 * @return the repository connection
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException if the repository is not initialized
+&nbsp;	 */
+&nbsp;	RepositoryConnection getConnection();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the {@link TripleSource}
+&nbsp;	 */
+&nbsp;	TripleSource getTripleSource();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the {@link EndpointClassification}
+&nbsp;	 */
+&nbsp;	EndpointClassification getEndpointClassification();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return whether this endpoint is writable
+&nbsp;	 */
+&nbsp;	boolean isWritable();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the identifier of the federation member
+&nbsp;	 */
+&nbsp;	String getId();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return the name of the federation member
+&nbsp;	 */
+&nbsp;	String getName();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the endpoint location, e.g. for SPARQL endpoints the url
+&nbsp;	 *
+&nbsp;	 * @return the endpoint location
+&nbsp;	 */
+&nbsp;	String getEndpoint();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the size of the given repository, i.e. the number of triples.
+&nbsp;	 *
+&nbsp;	 * @return the size of the endpoint
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	long size() throws RepositoryException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Initialize this {@link Endpoint}
+&nbsp;	 *
+&nbsp;	 * @param federationContext
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	void init(FederationContext federationContext) throws RepositoryException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Shutdown this {@link Endpoint}
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	void shutDown() throws RepositoryException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return whether this Endpoint is initialized
+&nbsp;	 */
+&nbsp;	boolean isInitialized();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Additional endpoint specific configuration.
+&nbsp;	 *
+&nbsp;	 * @return the endpointConfiguration
+&nbsp;	 */
+&nbsp;	EndpointConfiguration getEndpointConfiguration();
 &nbsp;}
 </code>
 </pre>
@@ -87,7 +208,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

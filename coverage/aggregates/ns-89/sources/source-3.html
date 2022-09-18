@@ -1,0 +1,601 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SparqlTupleExprRenderer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.queryrender.sparql</a>
+</div>
+
+<h1>Coverage Summary for Class: SparqlTupleExprRenderer (org.eclipse.rdf4j.queryrender.sparql)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SparqlTupleExprRenderer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/140)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.queryrender.sparql;
+&nbsp;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Map;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Compare;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Datatype;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IRIFunction;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.In;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsBNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsLiteral;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsNumeric;
+&nbsp;import org.eclipse.rdf4j.query.algebra.IsURI;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Lang;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LangMatches;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SameTerm;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Str;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.queryrender.BaseTupleExprRenderer;
+&nbsp;import org.eclipse.rdf4j.queryrender.RenderUtils;
+&nbsp;
+&nbsp;/**
+&nbsp; * &lt;p&gt;
+&nbsp; * Extends the BaseTupleExprRenderer to provide support for rendering tuple expressions as SPARQL queries.
+&nbsp; * &lt;/p&gt;
+&nbsp; *
+&nbsp; * @author Michael Grove
+&nbsp; */
+<b class="nc">&nbsp;public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {</b>
+&nbsp;
+<b class="nc">&nbsp;	private StringBuffer mJoinBuffer = new StringBuffer();</b>
+&nbsp;
+<b class="nc">&nbsp;	private Map&lt;TupleExpr, Var&gt; mContexts = new HashMap&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;	private int mIndent = 2;</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void reset() {
+<b class="nc">&nbsp;		super.reset();</b>
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer = new StringBuffer();</b>
+<b class="nc">&nbsp;		mContexts.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public String render(final TupleExpr theExpr) throws Exception {
+<b class="nc">&nbsp;		mContexts = ContextCollector.collectContexts(theExpr);</b>
+&nbsp;
+<b class="nc">&nbsp;		theExpr.visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		return mJoinBuffer.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private String indent() {
+<b class="nc">&nbsp;		final StringBuilder aBuilder = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (int i = 0; i &lt; mIndent; i++) {</b>
+<b class="nc">&nbsp;			aBuilder.append(&quot; &quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return aBuilder.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	protected String renderValueExpr(final ValueExpr theExpr) throws Exception {
+<b class="nc">&nbsp;		return new SparqlValueExprRenderer().render(theExpr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void ctxOpen(TupleExpr theExpr) {
+<b class="nc">&nbsp;		Var aContext = mContexts.get(theExpr);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (aContext != null) {</b>
+<b class="nc">&nbsp;			mJoinBuffer.append(indent()).append(&quot;GRAPH &quot;);</b>
+<b class="nc">&nbsp;			if (aContext.hasValue()) {</b>
+<b class="nc">&nbsp;				mJoinBuffer.append(RenderUtils.toSPARQL(aContext.getValue()));</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				mJoinBuffer.append(&quot;?&quot;).append(aContext.getName());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			mJoinBuffer.append(&quot; {&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;			mIndent += 2;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void ctxClose(TupleExpr theExpr) {
+<b class="nc">&nbsp;		Var aContext = mContexts.get(theExpr);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (aContext != null) {</b>
+<b class="nc">&nbsp;			mJoinBuffer.append(&quot;}&quot;);</b>
+<b class="nc">&nbsp;			mIndent -= 2;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Join theJoin) throws Exception {
+<b class="nc">&nbsp;		ctxOpen(theJoin);</b>
+&nbsp;
+<b class="nc">&nbsp;		theJoin.getLeftArg().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		theJoin.getRightArg().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		ctxClose(theJoin);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(LeftJoin theJoin) throws Exception {
+<b class="nc">&nbsp;		ctxOpen(theJoin);</b>
+&nbsp;
+&nbsp;		// try and reverse engineer the original scoping intent of the query
+<b class="nc">&nbsp;		final boolean aNeedsNewScope = theJoin.getParentNode() != null</b>
+<b class="nc">&nbsp;				&amp;&amp; (theJoin.getParentNode() instanceof Join || theJoin.getParentNode() instanceof LeftJoin);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (aNeedsNewScope) {</b>
+<b class="nc">&nbsp;			mJoinBuffer.append(&quot;{&quot;).append(System.lineSeparator());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		theJoin.getLeftArg().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;OPTIONAL {&quot;).append(System.lineSeparator());</b>
+&nbsp;
+<b class="nc">&nbsp;		mIndent += 2;</b>
+<b class="nc">&nbsp;		theJoin.getRightArg().visit(this);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (theJoin.getCondition() != null) {</b>
+<b class="nc">&nbsp;			mJoinBuffer.append(indent())</b>
+<b class="nc">&nbsp;					.append(&quot;filter&quot;)</b>
+<b class="nc">&nbsp;					.append(renderValueExpr(theJoin.getCondition()))</b>
+<b class="nc">&nbsp;					.append(System.lineSeparator());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		mIndent -= 2;</b>
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;}.&quot;).append(System.lineSeparator());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (aNeedsNewScope) {</b>
+<b class="nc">&nbsp;			mJoinBuffer.append(&quot;}.&quot;).append(System.lineSeparator());</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ctxClose(theJoin);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Renders the tuple expression as a query string. It creates a new SparqlTupleExprRenderer rather than reusing this
+&nbsp;	 * one.
+&nbsp;	 *
+&nbsp;	 * @param theExpr the expr to render
+&nbsp;	 * @return the rendered expression
+&nbsp;	 * @throws Exception if there is an error while rendering
+&nbsp;	 */
+&nbsp;	private String renderTupleExpr(TupleExpr theExpr) throws Exception {
+<b class="nc">&nbsp;		SparqlTupleExprRenderer aRenderer = new SparqlTupleExprRenderer();</b>
+&nbsp;
+&nbsp;		// aRenderer.mProjection = new ArrayList&lt;ProjectionElemList&gt;(mProjection);
+&nbsp;		// aRenderer.mDistinct = mDistinct;
+&nbsp;		// aRenderer.mReduced = mReduced;
+&nbsp;		// aRenderer.mExtensions = new HashMap&lt;String, ValueExpr&gt;(mExtensions);
+&nbsp;		// aRenderer.mOrdering = new ArrayList&lt;OrderElem&gt;(mOrdering);
+&nbsp;		// aRenderer.mLimit = mLimit;
+&nbsp;		// aRenderer.mOffset = mOffset;
+&nbsp;
+<b class="nc">&nbsp;		aRenderer.mIndent = mIndent;</b>
+<b class="nc">&nbsp;		aRenderer.mContexts = new HashMap&lt;&gt;(mContexts);</b>
+&nbsp;
+<b class="nc">&nbsp;		return aRenderer.render(theExpr);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Union theOp) throws Exception {
+<b class="nc">&nbsp;		ctxOpen(theOp);</b>
+&nbsp;
+<b class="nc">&nbsp;		String aLeft = renderTupleExpr(theOp.getLeftArg());</b>
+<b class="nc">&nbsp;		if (aLeft.endsWith(System.lineSeparator())) {</b>
+<b class="nc">&nbsp;			aLeft = aLeft.substring(0, aLeft.length() - 1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		String aRight = renderTupleExpr(theOp.getRightArg());</b>
+<b class="nc">&nbsp;		if (aRight.endsWith(System.lineSeparator())) {</b>
+<b class="nc">&nbsp;			aRight = aRight.substring(0, aRight.length() - 1);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;{&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(aLeft).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;}&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;union&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;{&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(aRight).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;}.&quot;).append(System.lineSeparator());</b>
+&nbsp;
+<b class="nc">&nbsp;		ctxClose(theOp);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Difference theOp) throws Exception {
+<b class="nc">&nbsp;		String aLeft = renderTupleExpr(theOp.getLeftArg());</b>
+<b class="nc">&nbsp;		String aRight = renderTupleExpr(theOp.getRightArg());</b>
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;{&quot;).append(aLeft).append(&quot;}&quot;);</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(System.lineSeparator()).append(&quot;minus&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;{&quot;).append(aRight).append(&quot;}.&quot;).append(System.lineSeparator());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Intersection theOp) throws Exception {
+<b class="nc">&nbsp;		String aLeft = renderTupleExpr(theOp.getLeftArg());</b>
+<b class="nc">&nbsp;		String aRight = renderTupleExpr(theOp.getRightArg());</b>
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(System.lineSeparator());</b>
+&nbsp;		// is &quot;{&quot; missing?
+<b class="nc">&nbsp;		mJoinBuffer.append(aLeft).append(&quot;}&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;intersection&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;{&quot;).append(aRight).append(&quot;}.&quot;).append(System.lineSeparator());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(final Filter theFilter) throws Exception {
+<b class="nc">&nbsp;		ctxOpen(theFilter);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (theFilter.getArg() != null) {</b>
+<b class="nc">&nbsp;			theFilter.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// try and reverse engineer the original scoping intent of the query
+<b class="nc">&nbsp;		final boolean aNeedsNewScope = theFilter.getParentNode() != null</b>
+<b class="nc">&nbsp;				&amp;&amp; (theFilter.getParentNode() instanceof Join || theFilter.getParentNode() instanceof LeftJoin);</b>
+&nbsp;
+<b class="nc">&nbsp;		String aFilter = renderValueExpr(theFilter.getCondition());</b>
+<b class="nc">&nbsp;		if (theFilter.getCondition() instanceof ValueConstant || theFilter.getCondition() instanceof Var) {</b>
+&nbsp;			// means the filter is something like &quot;filter (true)&quot; or &quot;filter (?v)&quot;
+&nbsp;			// so we&#39;ll need to wrap it in parens since they can&#39;t live
+&nbsp;			// in the query w/o them, but we can&#39;t always wrap them in parens in
+&nbsp;			// the normal renderer
+&nbsp;
+<b class="nc">&nbsp;			aFilter = &quot;(&quot; + aFilter + &quot;)&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(indent());</b>
+&nbsp;
+&nbsp;		// if (aNeedsNewScope) {
+&nbsp;		// mJoinBuffer.append(&quot;{ &quot;);
+&nbsp;		// }
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;filter &quot;).append(aFilter).append(&quot;.&quot;);</b>
+&nbsp;
+&nbsp;		// if (aNeedsNewScope) {
+&nbsp;		// mJoinBuffer.append(&quot;}.&quot;);
+&nbsp;		// }
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(System.lineSeparator());</b>
+&nbsp;
+<b class="nc">&nbsp;		ctxClose(theFilter);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(StatementPattern thePattern) throws Exception {
+<b class="nc">&nbsp;		ctxOpen(thePattern);</b>
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(renderPattern(thePattern));</b>
+&nbsp;
+<b class="nc">&nbsp;		ctxClose(thePattern);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Extension node) throws Exception {
+<b class="nc">&nbsp;		node.visitChildren(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(ExtensionElem node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(indent()).append(&quot;bind(&quot;);</b>
+<b class="nc">&nbsp;		node.visitChildren(this);</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot; as ?&quot;).append(node.getName()).append(&quot;).&quot;).append(System.lineSeparator());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(FunctionCall node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(AggregateFunctionCall node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(And node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Or node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Compare node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Bound node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(If theOp) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;if(&quot;);</b>
+<b class="nc">&nbsp;		theOp.getCondition().visit(this);</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;, &quot;);</b>
+<b class="nc">&nbsp;		theOp.getResult().visit(this);</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;, &quot;);</b>
+<b class="nc">&nbsp;		theOp.getAlternative().visit(this);</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(&quot;)&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(In node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	// @Override
+&nbsp;	// public void meet(Coalesce node) throws Exception {
+&nbsp;	// mJoinBuffer.append(renderValueExpr(node));
+&nbsp;	// }
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(SameTerm node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsURI node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsBNode node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsLiteral node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IsNumeric node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Datatype node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(IRIFunction node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Str node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Regex node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Lang node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LangMatches node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(ArbitraryLengthPath node) throws Exception {
+<b class="nc">&nbsp;		if (!(node.getPathExpression() instanceof StatementPattern)) {</b>
+&nbsp;			// unsupported ArbitraryLengthPath
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		StatementPattern statement = (StatementPattern) node.getPathExpression();</b>
+&nbsp;
+<b class="nc">&nbsp;		String plusSymbol = &quot;&quot;;</b>
+<b class="nc">&nbsp;		if (node.getMinLength() == 1) {</b>
+<b class="nc">&nbsp;			plusSymbol = &quot;+&quot;;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(statement.getSubjectVar())).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(statement.getPredicateVar())).append(plusSymbol).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(statement.getObjectVar())).append(&quot;.&quot;).append(System.lineSeparator());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(ValueConstant node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @throws Exception {@inheritDoc}
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void meet(Var node) throws Exception {
+<b class="nc">&nbsp;		mJoinBuffer.append(renderValueExpr(node));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	String renderPattern(StatementPattern thePattern) throws Exception {
+<b class="nc">&nbsp;		StringBuffer sb = new StringBuffer();</b>
+<b class="nc">&nbsp;		sb.append(renderValueExpr(thePattern.getSubjectVar())).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(renderValueExpr(thePattern.getPredicateVar())).append(&quot; &quot;);</b>
+<b class="nc">&nbsp;		sb.append(renderValueExpr(thePattern.getObjectVar())).append(&quot;.&quot;).append(System.lineSeparator());</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

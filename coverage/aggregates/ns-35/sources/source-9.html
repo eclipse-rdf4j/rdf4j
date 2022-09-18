@@ -1,0 +1,313 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TripleSource</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated.evaluation</a>
+</div>
+
+<h1>Coverage Summary for Class: TripleSource (org.eclipse.rdf4j.federated.evaluation)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TripleSource</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated.evaluation;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
+&nbsp;import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryType;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Interface for implementations of triple sources. Particular implementations define how to evaluate the expression on
+&nbsp; * the endpoint. Different implementations might be necessary depending on the underlying repository.
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; *
+&nbsp; * @see SparqlTripleSource
+&nbsp; * @see SailTripleSource
+&nbsp; */
+&nbsp;public interface TripleSource {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the prepared query in its internal representation on the provided endpoint.
+&nbsp;	 *
+&nbsp;	 * @param preparedQuery a prepared query to evaluate
+&nbsp;	 * @param bindings      the bindings to use
+&nbsp;	 * @param filterExpr    the filter expression to apply or null if there is no filter or if it is evaluated already
+&nbsp;	 *
+&nbsp;	 * @return the resulting iteration
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(TupleExpr preparedQuery,
+&nbsp;			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the prepared query (SPARQL query as String) on the provided endpoint.
+&nbsp;	 *
+&nbsp;	 * @param preparedQuery a prepared query to evaluate (SPARQL query as String)
+&nbsp;	 * @param bindings      the bindings to use
+&nbsp;	 * @param filterExpr    the filter expression to apply or null if there is no filter or if it is evaluated already
+&nbsp;	 *
+&nbsp;	 * @return the resulting iteration
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(String preparedQuery,
+&nbsp;			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a given SPARQL query of the provided query type at the given source.
+&nbsp;	 *
+&nbsp;	 * @param preparedQuery
+&nbsp;	 * @param queryType
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @return the statements
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @Deprecated will be removed in 4.0. Replaced with
+&nbsp;	 *             {@link #getStatements(String, BindingSet, QueryType, QueryInfo)}
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	default CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(String preparedQuery,
+&nbsp;			QueryType queryType, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+<b class="nc">&nbsp;		return getStatements(preparedQuery, EmptyBindingSet.getInstance(), queryType, queryInfo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a given SPARQL query of the provided query type at the given source.
+&nbsp;	 *
+&nbsp;	 * @param preparedQuery
+&nbsp;	 * @param queryBindings optional query bindings, use {@link EmptyBindingSet} if there are none
+&nbsp;	 * @param queryType
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @return the statements
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(String preparedQuery,
+&nbsp;			BindingSet queryBindings,
+&nbsp;			QueryType queryType, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate the query expression on the provided endpoint.
+&nbsp;	 *
+&nbsp;	 * @param stmt       the stmt expression to evaluate
+&nbsp;	 * @param bindings   the bindings to use
+&nbsp;	 * @param filterExpr the filter expression to apply or null if there is no filter or if it is evaluated already
+&nbsp;	 *
+&nbsp;	 * @return the resulting iteration
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;BindingSet, QueryEvaluationException&gt; getStatements(StatementPattern stmt,
+&nbsp;			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Return the statements matching the given pattern as a {@link Statement} iteration.
+&nbsp;	 *
+&nbsp;	 * @param subj
+&nbsp;	 * @param pred
+&nbsp;	 * @param obj
+&nbsp;	 * @param contexts
+&nbsp;	 *
+&nbsp;	 * @return the resulting iteration
+&nbsp;	 *
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	CloseableIteration&lt;Statement, QueryEvaluationException&gt; getStatements(
+&nbsp;			Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the provided statement can return results.
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param bindings  a binding set. in case no bindings are present, an {@link EmptyBindingSet} can be used (i.e.
+&nbsp;	 *                  never null)
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @param dataset
+&nbsp;	 *
+&nbsp;	 * @return whether the source can return results
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 */
+&nbsp;	boolean hasStatements(StatementPattern stmt, BindingSet bindings, QueryInfo queryInfo, Dataset dataset)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the repository can return results for the given triple pattern represented by subj, pred and obj
+&nbsp;	 *
+&nbsp;	 * @param subj
+&nbsp;	 * @param pred
+&nbsp;	 * @param obj
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @param contexts
+&nbsp;	 * @return whether the source can provide results
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	boolean hasStatements(Resource subj, IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts)
+&nbsp;			throws RepositoryException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if the repository can return results for the given {@link ExclusiveTupleExpr}, e.g. for an
+&nbsp;	 * {@link ExclusiveGroup} with a list of Statements.
+&nbsp;	 *
+&nbsp;	 * @param group
+&nbsp;	 * @param bindings
+&nbsp;	 * @return whether the repository can return results
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	boolean hasStatements(ExclusiveTupleExpr expr, BindingSet bindings)
+&nbsp;			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @return true if a prepared query is to be used preferably, false otherwise
+&nbsp;	 * @deprecated replaced with {@link #usePreparedQuery(StatementPattern, QueryInfo)}, to be removed in 4.0
+&nbsp;	 */
+&nbsp;	@Deprecated
+&nbsp;	default boolean usePreparedQuery() {
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 *
+&nbsp;	 * @param stmt
+&nbsp;	 * @param queryInfo
+&nbsp;	 * @return true if a prepared query is to be used preferably, false otherwise
+&nbsp;	 */
+&nbsp;	boolean usePreparedQuery(StatementPattern stmt, QueryInfo queryInfo);
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

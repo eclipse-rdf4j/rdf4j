@@ -1,0 +1,564 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LuceneSailBuffer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lucene</a>
+</div>
+
+<h1>Coverage Summary for Class: LuceneSailBuffer (org.eclipse.rdf4j.sail.lucene)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LuceneSailBuffer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/40)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">LuceneSailBuffer$AddRemoveOperation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/19)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">LuceneSailBuffer$ClearContextOperation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">LuceneSailBuffer$ClearOperation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">LuceneSailBuffer$ContextAwareStatementImpl</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/20)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">LuceneSailBuffer$Operation</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/60)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/82)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lucene;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;
+&nbsp;/**
+&nbsp; * A buffer collecting all transaction operations (triples that need to be added, removed, clear operations) so that
+&nbsp; * they can be executed at once during commit.
+&nbsp; *
+&nbsp; * @author sauermann
+&nbsp; * @author andriy.nikolov
+&nbsp; *
+&nbsp; * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
+&nbsp; *             warning from one release to the next.
+&nbsp; */
+&nbsp;@Deprecated
+&nbsp;@InternalUseOnly
+&nbsp;public class LuceneSailBuffer {
+&nbsp;
+&nbsp;	private static class ContextAwareStatementImpl implements Statement {
+&nbsp;
+&nbsp;		private static final long serialVersionUID = -2976244503679342649L;
+&nbsp;
+&nbsp;		private final Statement delegate;
+&nbsp;
+<b class="nc">&nbsp;		public ContextAwareStatementImpl(Statement delegate) {</b>
+<b class="nc">&nbsp;			if (delegate == null) {</b>
+<b class="nc">&nbsp;				throw new RuntimeException(&quot;Trying to add/remove a null statement&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			this.delegate = delegate;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Resource getSubject() {
+<b class="nc">&nbsp;			return delegate.getSubject();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public IRI getPredicate() {
+<b class="nc">&nbsp;			return delegate.getPredicate();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Value getObject() {
+<b class="nc">&nbsp;			return delegate.getObject();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Resource getContext() {
+<b class="nc">&nbsp;			return delegate.getContext();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public boolean equals(Object obj) {
+<b class="nc">&nbsp;			if (this == obj) {</b>
+<b class="nc">&nbsp;				return true;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			if (obj instanceof Statement) {</b>
+<b class="nc">&nbsp;				Statement other = (Statement) obj;</b>
+&nbsp;
+<b class="nc">&nbsp;				return this.delegate.equals(other)</b>
+<b class="nc">&nbsp;						&amp;&amp; ((this.getContext() == null &amp;&amp; other.getContext() == null) || (this.getContext() != null</b>
+<b class="nc">&nbsp;								&amp;&amp; other.getContext() != null &amp;&amp; this.getContext().equals(other.getContext())));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public int hashCode() {
+<b class="nc">&nbsp;			return delegate.hashCode() + ((getContext() == null) ? 0 : 29791 * getContext().hashCode());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public String toString() {
+<b class="nc">&nbsp;			return delegate.toString();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public static class Operation {</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;	public static class AddRemoveOperation extends Operation {
+&nbsp;
+<b class="nc">&nbsp;		HashSet&lt;Statement&gt; added = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		HashSet&lt;Statement&gt; removed = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		Map&lt;Resource, Boolean&gt; typeAdded;
+&nbsp;
+&nbsp;		Set&lt;Resource&gt; typeRemoved;
+&nbsp;
+&nbsp;		public AddRemoveOperation() {
+<b class="nc">&nbsp;			this(false);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public AddRemoveOperation(boolean useType) {</b>
+<b class="nc">&nbsp;			if (useType) {</b>
+<b class="nc">&nbsp;				typeAdded = new HashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;				typeRemoved = new HashSet&lt;&gt;();</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public void add(Statement s) {
+<b class="nc">&nbsp;			if (!removed.remove(s)) {</b>
+<b class="nc">&nbsp;				added.add(s);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public void addType(Statement s, boolean rightType) {
+<b class="nc">&nbsp;			if (!typeRemoved.remove(s.getSubject())) {</b>
+<b class="nc">&nbsp;				typeAdded.put(s.getSubject(), rightType);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public void remove(Statement s) {
+<b class="nc">&nbsp;			if (!added.remove(s)) {</b>
+<b class="nc">&nbsp;				removed.add(s);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		public void removeType(Statement s) {
+<b class="nc">&nbsp;			if (typeAdded.remove(s.getSubject()) == null) {</b>
+<b class="nc">&nbsp;				typeRemoved.add(s.getSubject());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the added.
+&nbsp;		 */
+&nbsp;		public HashSet&lt;Statement&gt; getAdded() {
+<b class="nc">&nbsp;			return added;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the removed.
+&nbsp;		 */
+&nbsp;		public HashSet&lt;Statement&gt; getRemoved() {
+<b class="nc">&nbsp;			return removed;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the added type
+&nbsp;		 */
+&nbsp;		public Map&lt;Resource, Boolean&gt; getTypeAdded() {
+<b class="nc">&nbsp;			return typeAdded;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the removed type
+&nbsp;		 */
+&nbsp;		public Set&lt;Resource&gt; getTypeRemoved() {
+<b class="nc">&nbsp;			return typeRemoved;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	public static class ClearContextOperation extends Operation {
+&nbsp;
+&nbsp;		Resource[] contexts;
+&nbsp;
+<b class="nc">&nbsp;		public ClearContextOperation(Resource[] contexts) {</b>
+<b class="nc">&nbsp;			this.contexts = contexts;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * @return Returns the contexts.
+&nbsp;		 */
+&nbsp;		public Resource[] getContexts() {
+<b class="nc">&nbsp;			return contexts;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public static class ClearOperation extends Operation {</b>
+&nbsp;
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private final ArrayList&lt;Operation&gt; operations = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private final boolean useType;
+&nbsp;
+&nbsp;	public LuceneSailBuffer() {
+<b class="nc">&nbsp;		this(false);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public LuceneSailBuffer(boolean useType) {</b>
+<b class="nc">&nbsp;		this.useType = useType;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add this statement to the buffer
+&nbsp;	 *
+&nbsp;	 * @param s the statement
+&nbsp;	 */
+&nbsp;	public synchronized void add(Statement s) {
+&nbsp;		// check if the last operation was adding/Removing triples
+<b class="nc">&nbsp;		Operation o = (operations.isEmpty()) ? null : operations.get(operations.size() - 1);</b>
+<b class="nc">&nbsp;		if ((o == null) || !(o instanceof AddRemoveOperation)) {</b>
+<b class="nc">&nbsp;			o = new AddRemoveOperation(useType);</b>
+<b class="nc">&nbsp;			operations.add(o);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		AddRemoveOperation aro = (AddRemoveOperation) o;</b>
+<b class="nc">&nbsp;		aro.add(new ContextAwareStatementImpl(s));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add this type statement to the buffer
+&nbsp;	 *
+&nbsp;	 * @param s the statement
+&nbsp;	 */
+&nbsp;	public synchronized void addTypeStatement(Statement s, boolean rightType) {
+&nbsp;		// check if the last operation was adding/Removing triples
+<b class="nc">&nbsp;		Operation o = (operations.isEmpty()) ? null : operations.get(operations.size() - 1);</b>
+<b class="nc">&nbsp;		if (!(o instanceof AddRemoveOperation)) {</b>
+<b class="nc">&nbsp;			o = new AddRemoveOperation(useType);</b>
+<b class="nc">&nbsp;			operations.add(o);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		AddRemoveOperation aro = (AddRemoveOperation) o;</b>
+<b class="nc">&nbsp;		aro.addType(new ContextAwareStatementImpl(s), rightType);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove this statement to the buffer
+&nbsp;	 *
+&nbsp;	 * @param s the statement
+&nbsp;	 */
+&nbsp;	public synchronized void remove(Statement s) {
+&nbsp;		// check if the last operation was adding/Removing triples
+<b class="nc">&nbsp;		Operation o = (operations.isEmpty()) ? null : operations.get(operations.size() - 1);</b>
+<b class="nc">&nbsp;		if ((o == null) || !(o instanceof AddRemoveOperation)) {</b>
+<b class="nc">&nbsp;			o = new AddRemoveOperation(useType);</b>
+<b class="nc">&nbsp;			operations.add(o);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		AddRemoveOperation aro = (AddRemoveOperation) o;</b>
+<b class="nc">&nbsp;		aro.remove(new ContextAwareStatementImpl(s));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Remove this type statement to the buffer
+&nbsp;	 *
+&nbsp;	 * @param s the statement
+&nbsp;	 */
+&nbsp;	public synchronized void removeTypeStatement(Statement s) {
+&nbsp;		// check if the last operation was adding/Removing triples
+<b class="nc">&nbsp;		Operation o = (operations.isEmpty()) ? null : operations.get(operations.size() - 1);</b>
+<b class="nc">&nbsp;		if (!(o instanceof AddRemoveOperation)) {</b>
+<b class="nc">&nbsp;			o = new AddRemoveOperation(useType);</b>
+<b class="nc">&nbsp;			operations.add(o);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		AddRemoveOperation aro = (AddRemoveOperation) o;</b>
+<b class="nc">&nbsp;		aro.removeType(new ContextAwareStatementImpl(s));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public synchronized void clear(Resource[] contexts) {
+<b class="nc">&nbsp;		if ((contexts == null) || (contexts.length == 0)) {</b>
+<b class="nc">&nbsp;			operations.add(new ClearOperation());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			operations.add(new ClearContextOperation(contexts));</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Iterator over the operations
+&nbsp;	 */
+&nbsp;	public synchronized Iterator&lt;Operation&gt; operationsIterator() {
+<b class="nc">&nbsp;		return operations.iterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * the list of operations. You must not change it
+&nbsp;	 */
+&nbsp;	public synchronized List&lt;Operation&gt; operations() {
+<b class="nc">&nbsp;		return operations;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Optimize will remove any changes that are done before a clear()
+&nbsp;	 */
+&nbsp;	public void optimize() {
+<b class="nc">&nbsp;		for (int i = operations.size() - 1; i &gt;= 0; i--) {</b>
+<b class="nc">&nbsp;			Operation o = operations.get(i);</b>
+<b class="nc">&nbsp;			if (o instanceof ClearOperation) {</b>
+&nbsp;				// remove everything before
+&nbsp;				// is is now the size of the operations to be removed
+<b class="nc">&nbsp;				while (i &gt; 0) {</b>
+<b class="nc">&nbsp;					operations.remove(i);</b>
+<b class="nc">&nbsp;					i--;</b>
+&nbsp;				}
+&nbsp;				return;
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * reset the buffer, empty the operations list
+&nbsp;	 */
+&nbsp;	public void reset() {
+<b class="nc">&nbsp;		operations.clear();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > RDFStarTripleSource</title>
+  <title>Coverage Report > QueryPreparer</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation</a>
 </div>
 
-<h1>Coverage Summary for Class: RDFStarTripleSource (org.eclipse.rdf4j.query.algebra.evaluation)</h1>
+<h1>Coverage Summary for Class: QueryPreparer (org.eclipse.rdf4j.query.algebra.evaluation)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">RDFStarTripleSource</td>
+  <td class="name">QueryPreparer</td>
 </tr>
 
 </table>
@@ -39,7 +39,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <pre>
 <code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
-&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
 &nbsp; *
 &nbsp; * All rights reserved. This program and the accompanying materials
 &nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
@@ -50,27 +50,29 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query.algebra.evaluation;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-&nbsp;import org.eclipse.rdf4j.model.IRI;
-&nbsp;import org.eclipse.rdf4j.model.Resource;
-&nbsp;import org.eclipse.rdf4j.model.Triple;
-&nbsp;import org.eclipse.rdf4j.model.Value;
-&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.Update;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 &nbsp;
-&nbsp;public interface RDFStarTripleSource extends TripleSource {
-&nbsp;	/**
-&nbsp;	 * Gets all Triple nodes that have a specific subject, predicate and/or object. All three parameters may be null to
-&nbsp;	 * indicate wildcards.
-&nbsp;	 *
-&nbsp;	 * @param subj A Resource specifying the triple&#39;s subject, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
-&nbsp;	 * @param pred A URI specifying the triple&#39;s predicate, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
-&nbsp;	 * @param obj  A Value specifying the triple&#39;s object, or &lt;var&gt;null&lt;/var&gt; for a wildcard.
-&nbsp;	 * @return An iterator over the relevant triples.
-&nbsp;	 * @throws QueryEvaluationException If the rdf star triple source failed to get the statements.
-&nbsp;	 */
-&nbsp;	CloseableIteration&lt;? extends Triple, QueryEvaluationException&gt; getRdfStarTriples(Resource subj, IRI pred,
-&nbsp;			Value obj) throws QueryEvaluationException;
+&nbsp;/**
+&nbsp; * A generic interface for executing queries over a {@link TripleSource}.
+&nbsp; */
+&nbsp;public interface QueryPreparer {
 &nbsp;
+&nbsp;	BooleanQuery prepare(ParsedBooleanQuery q);
+&nbsp;
+&nbsp;	TupleQuery prepare(ParsedTupleQuery q);
+&nbsp;
+&nbsp;	GraphQuery prepare(ParsedGraphQuery q);
+&nbsp;
+&nbsp;	Update prepare(ParsedUpdate u);
+&nbsp;
+&nbsp;	TripleSource getTripleSource();
 &nbsp;}
 </code>
 </pre>
@@ -95,7 +97,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

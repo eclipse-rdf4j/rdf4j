@@ -1,0 +1,369 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > JSONLDHierarchicalProcessor</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.jsonld</a>
+</div>
+
+<h1>Coverage Summary for Class: JSONLDHierarchicalProcessor (org.eclipse.rdf4j.rio.jsonld)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">JSONLDHierarchicalProcessor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/34)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/57)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">JSONLDHierarchicalProcessor$TreeNode</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/70)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2018 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio.jsonld;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.LinkedHashMap;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;/**
+&nbsp; * Converts a JSON-LD object to a hierarchical form
+&nbsp; *
+&nbsp; * @author Yasen Marinov
+&nbsp; */
+<b class="nc">&nbsp;public class JSONLDHierarchicalProcessor {</b>
+&nbsp;
+&nbsp;	public static final String ID = &quot;@id&quot;;
+&nbsp;	public static final String GRAPH = &quot;@graph&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Converts a JSON-LD object to a hierarchical JSON-LD object
+&nbsp;	 *
+&nbsp;	 * @param jsonLdObject JSON-LD object to be converted. Gets modified during processing
+&nbsp;	 * @return hierarchical JSON-LD object
+&nbsp;	 */
+&nbsp;	public static Object fromJsonLdObject(Object jsonLdObject) {
+<b class="nc">&nbsp;		return expandInDepth(jsonLdObject);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Expands the JSON-LD object to a hierarchical shape.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * As the first level of nodes in the object can be either a triple or a whole graph we first expand the graph nodes
+&nbsp;	 * and after that we expand the default graph.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The different graphs are processed independently to keep them in insulation.
+&nbsp;	 *
+&nbsp;	 * @param input the JSON-LD object. Gets modified during processing.
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	private static Object expandInDepth(Object input) {
+<b class="nc">&nbsp;		for (Map&lt;String, Object&gt; graph : (ArrayList&lt;Map&lt;String, Object&gt;&gt;) input) {</b>
+<b class="nc">&nbsp;			if (graph.containsKey(GRAPH)) {</b>
+<b class="nc">&nbsp;				graph.compute(GRAPH, (key, o) -&gt; expandContextInDepth(o));</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return expandContextInDepth(input);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Transforms a JSON-LD object to a more human-readable hierarchical form.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The steps performed are
+&nbsp;	 * &lt;ol&gt;
+&nbsp;	 * &lt;li&gt;Take all triples which will take part of the processing and add them to a separate map&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;Create a separate list the triples sorted by number of predicates in the descending order&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;Select a root to start&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;Take this root from the graph and start a DFS traversing. For each traversed node
+&nbsp;	 * &lt;ol&gt;
+&nbsp;	 * &lt;li&gt;Mark this node as visited&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;Find all sub-nodes (effectively objects in triples in which the current node is subject)&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;Expand the sub-nodes (replace them with their full version) and add them to the traversing if the following
+&nbsp;	 * conditions are met
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;sub-node is IRI or BlankNode&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;sub-node has not been expanded already in the current path&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;sub-node is not the same as it&#39;s parent&lt;/li&gt;
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 * &lt;/li&gt;
+&nbsp;	 * &lt;/ol&gt;
+&nbsp;	 * &lt;/li&gt;
+&nbsp;	 * &lt;li&gt;If the visited list shows there are still unvisited nodes choose a new root from the list of sorted nodes and
+&nbsp;	 * start another traversal&lt;/li&gt;
+&nbsp;	 * &lt;/ol&gt;
+&nbsp;	 *
+&nbsp;	 * @param input JSON-LD object. Gets modified during processing
+&nbsp;	 * @return the hierarchical JSON-LD object
+&nbsp;	 */
+&nbsp;	private static Object expandContextInDepth(Object input) {
+&nbsp;
+<b class="nc">&nbsp;		final Map&lt;String, Object&gt; graph = new LinkedHashMap&lt;&gt;();</b>
+<b class="nc">&nbsp;		final List&lt;Object&gt; expanded = new ArrayList&lt;&gt;();</b>
+<b class="nc">&nbsp;		for (Map&lt;String, Object&gt; jsonNode : (ArrayList&lt;Map&lt;String, Object&gt;&gt;) input) {</b>
+<b class="nc">&nbsp;			if (jsonNode.containsKey(GRAPH)) {</b>
+&nbsp;				// Add graph nodes to the return result without further processing
+<b class="nc">&nbsp;				expanded.add(jsonNode);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				graph.put(jsonNode.get(ID).toString(), jsonNode);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		LinkedList&lt;TreeNode&gt; frontier = new LinkedList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; visited = new HashSet&lt;&gt;();</b>
+<b class="nc">&nbsp;		List&lt;String&gt; sortedNodes = getNodesOrder(graph);</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; children = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		while (visited.size() &lt; graph.size()) {</b>
+<b class="nc">&nbsp;			Object rootNode = graph.get(getNextRoot(visited, sortedNodes));</b>
+<b class="nc">&nbsp;			frontier.add(new TreeNode((Map&lt;String, Object&gt;) rootNode));</b>
+<b class="nc">&nbsp;			expanded.add(rootNode);</b>
+&nbsp;
+<b class="nc">&nbsp;			while (!frontier.isEmpty()) {</b>
+<b class="nc">&nbsp;				TreeNode currentTreeNode = frontier.removeLast();</b>
+<b class="nc">&nbsp;				visited.add(currentTreeNode.getNodeID());</b>
+<b class="nc">&nbsp;				Map&lt;String, Object&gt; currentNode = currentTreeNode.node;</b>
+<b class="nc">&nbsp;				for (String predicate : currentNode.keySet()) {</b>
+<b class="nc">&nbsp;					Object object = currentNode.get(predicate);</b>
+<b class="nc">&nbsp;					if (object instanceof List&lt;?&gt;) {</b>
+<b class="nc">&nbsp;						ArrayList&lt;Map&lt;String, Object&gt;&gt; objectsPredSubjPairs = (ArrayList&lt;Map&lt;String, Object&gt;&gt;) object;</b>
+<b class="nc">&nbsp;						for (int i = 0; i &lt; objectsPredSubjPairs.size(); i++) {</b>
+<b class="nc">&nbsp;							if (objectsPredSubjPairs.get(i) instanceof Map</b>
+<b class="nc">&nbsp;									&amp;&amp; objectsPredSubjPairs.get(i).get(ID) != null) {</b>
+<b class="nc">&nbsp;								String objectsPredId = objectsPredSubjPairs.get(i).get(ID).toString();</b>
+<b class="nc">&nbsp;								if (graph.containsKey(objectsPredId) &amp;&amp; !currentNode.get(ID).equals(objectsPredId)</b>
+<b class="nc">&nbsp;										&amp;&amp; !currentTreeNode.hasPassedThrough(objectsPredId)) {</b>
+<b class="nc">&nbsp;									children.add(objectsPredId);</b>
+<b class="nc">&nbsp;									objectsPredSubjPairs.set(i, (Map&lt;String, Object&gt;) graph.get(objectsPredId));</b>
+<b class="nc">&nbsp;									frontier.add(new TreeNode(objectsPredSubjPairs.get(i), currentTreeNode));</b>
+&nbsp;								}
+&nbsp;							}
+&nbsp;						}
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		expanded.removeIf(o -&gt; {</b>
+<b class="nc">&nbsp;			if (o instanceof Map&lt;?, ?&gt;) {</b>
+<b class="nc">&nbsp;				return children.contains(((Map&lt;String, Object&gt;) o).get(ID).toString());</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		});
+<b class="nc">&nbsp;		return expanded;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the next node to be a root. Chooses the first non-visited node from the sortedNodes list.
+&nbsp;	 *
+&nbsp;	 * @param visited     contains the visited nodes so-far
+&nbsp;	 * @param sortedNodes contains the nodes in a specific order. This list will get modified by the method!
+&nbsp;	 * @return root for the next tree
+&nbsp;	 */
+&nbsp;	private static String getNextRoot(Set&lt;String&gt; visited, List&lt;String&gt; sortedNodes) {
+&nbsp;		String rootOffer;
+<b class="nc">&nbsp;		while (!sortedNodes.isEmpty()) {</b>
+<b class="nc">&nbsp;			rootOffer = sortedNodes.remove(0);</b>
+<b class="nc">&nbsp;			if (!visited.contains(rootOffer)) {</b>
+<b class="nc">&nbsp;				return rootOffer;</b>
+&nbsp;			}
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns the nodes in a JSON-LD object ordered by the number of their subnodes (predicates in which the nodes are
+&nbsp;	 * subjects)
+&nbsp;	 *
+&nbsp;	 * @param graph JSON-LD object
+&nbsp;	 * @return List with the nodes&#39; ids
+&nbsp;	 */
+&nbsp;	private static List&lt;String&gt; getNodesOrder(Map&lt;String, Object&gt; graph) {
+<b class="nc">&nbsp;		return graph.entrySet()</b>
+<b class="nc">&nbsp;				.stream()</b>
+<b class="nc">&nbsp;				.sorted(Map.Entry.comparingByValue((o1, o2) -&gt; ((Map) o2).size() - ((Map) o1).size()))</b>
+<b class="nc">&nbsp;				.map(entry -&gt; entry.getKey())</b>
+<b class="nc">&nbsp;				.collect(Collectors.toList());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static class TreeNode {
+&nbsp;		private final TreeNode parent;
+&nbsp;		private final Map&lt;String, Object&gt; node;
+&nbsp;
+<b class="nc">&nbsp;		public TreeNode(Map&lt;String, Object&gt; node) {</b>
+<b class="nc">&nbsp;			this.node = node;</b>
+<b class="nc">&nbsp;			this.parent = null;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		public TreeNode(Map&lt;String, Object&gt; node, TreeNode parent) {</b>
+<b class="nc">&nbsp;			this.parent = parent;</b>
+<b class="nc">&nbsp;			this.node = node;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public String getNodeID() {
+<b class="nc">&nbsp;			return node.get(ID).toString();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public boolean hasPassedThrough(String nodeId) {
+<b class="nc">&nbsp;			TreeNode curr = this.parent;</b>
+<b class="nc">&nbsp;			while (curr != null) {</b>
+<b class="nc">&nbsp;				if (curr.getNodeID().equals(nodeId)) {</b>
+<b class="nc">&nbsp;					return true;</b>
+&nbsp;				}
+<b class="nc">&nbsp;				curr = curr.parent;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

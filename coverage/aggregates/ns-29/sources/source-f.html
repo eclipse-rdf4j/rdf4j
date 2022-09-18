@@ -1,0 +1,543 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryEvaluator</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.console.command</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryEvaluator (org.eclipse.rdf4j.console.command)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryEvaluator</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/120)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.console.command;
+&nbsp;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.nio.file.Files;
+&nbsp;import java.nio.file.Path;
+&nbsp;import java.nio.file.StandardOpenOption;
+&nbsp;import java.util.Arrays;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Collections;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Locale;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.regex.Matcher;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.UncloseableOutputStream;
+&nbsp;import org.eclipse.rdf4j.console.Util;
+&nbsp;import org.eclipse.rdf4j.console.setting.ConsoleWidth;
+&nbsp;import org.eclipse.rdf4j.console.setting.Prefixes;
+&nbsp;import org.eclipse.rdf4j.console.setting.QueryPrefix;
+&nbsp;import org.eclipse.rdf4j.console.setting.ShowPrefix;
+&nbsp;import org.eclipse.rdf4j.console.setting.WorkDir;
+&nbsp;import org.eclipse.rdf4j.console.util.ConsoleQueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.console.util.ConsoleRDFWriter;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryInterruptedException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+&nbsp;import org.eclipse.rdf4j.query.UpdateExecutionException;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+&nbsp;import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.Rio;
+&nbsp;
+&nbsp;/**
+&nbsp; * Abstract query evaluator command
+&nbsp; *
+&nbsp; * @author Dale Visser
+&nbsp; * @author Bart Hanssens
+&nbsp; */
+&nbsp;public abstract class QueryEvaluator extends ConsoleCommand {
+&nbsp;	private final TupleAndGraphQueryEvaluator evaluator;
+&nbsp;
+<b class="nc">&nbsp;	private final List&lt;String&gt; sparqlQueryStart = Arrays</b>
+<b class="nc">&nbsp;			.asList(new String[] { &quot;select&quot;, &quot;construct&quot;, &quot;describe&quot;, &quot;ask&quot;, &quot;prefix&quot;, &quot;base&quot; });</b>
+&nbsp;
+<b class="nc">&nbsp;	private final long MAX_INPUT = 1_000_000;</b>
+&nbsp;
+&nbsp;	// [INFILE=&quot;input file&quot;[,enc]] [OUTPUT=&quot;out/file&quot;]
+<b class="nc">&nbsp;	private final static Pattern PATTERN_IO = Pattern.compile(</b>
+&nbsp;			&quot;^(?&lt;in&gt;INFILE=\&quot;(?&lt;i&gt;[^\&quot;]+)\&quot;&quot; + &quot;,?(?&lt;enc&gt;\\w[\\w-]+)?)? ?&quot; + &quot;(?&lt;out&gt;OUTFILE=\&quot;(?&lt;o&gt;[^\&quot;]+)\&quot;)?&quot;,
+&nbsp;			Pattern.CASE_INSENSITIVE);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Constructor
+&nbsp;	 *
+&nbsp;	 * @param evaluator
+&nbsp;	 */
+&nbsp;	public QueryEvaluator(TupleAndGraphQueryEvaluator evaluator) {
+<b class="nc">&nbsp;		super(evaluator.getConsoleIO(), evaluator.getConsoleState(), evaluator.getConsoleSettings());</b>
+<b class="nc">&nbsp;		this.evaluator = evaluator;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Check if query string already contains query prefixes
+&nbsp;	 *
+&nbsp;	 * @param query query string
+&nbsp;	 * @return true if namespaces are already used
+&nbsp;	 */
+&nbsp;	protected abstract boolean hasQueryPrefixes(String query);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add namespace prefixes to query
+&nbsp;	 *
+&nbsp;	 * @param result
+&nbsp;	 * @param namespaces collection of known namespaces
+&nbsp;	 */
+&nbsp;	protected abstract void addQueryPrefixes(StringBuffer result, Collection&lt;Namespace&gt; namespaces);
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String[] usesSettings() {
+<b class="nc">&nbsp;		return new String[] { ConsoleWidth.NAME,</b>
+&nbsp;				Prefixes.NAME, QueryPrefix.NAME, ShowPrefix.NAME,
+&nbsp;				WorkDir.NAME };
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get console width setting.
+&nbsp;	 *
+&nbsp;	 * @return width in columns
+&nbsp;	 */
+&nbsp;	private int getConsoleWidth() {
+<b class="nc">&nbsp;		return ((ConsoleWidth) settings.get(ConsoleWidth.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get query prefix setting.
+&nbsp;	 *
+&nbsp;	 * @return true if prefixes are used for querying
+&nbsp;	 */
+&nbsp;	private boolean getQueryPrefix() {
+<b class="nc">&nbsp;		return ((QueryPrefix) settings.get(QueryPrefix.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get show prefix setting.
+&nbsp;	 *
+&nbsp;	 * @return true if prefixes are used for displaying.
+&nbsp;	 */
+&nbsp;	private boolean getShowPrefix() {
+<b class="nc">&nbsp;		return ((ShowPrefix) settings.get(ShowPrefix.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a set of namespaces
+&nbsp;	 *
+&nbsp;	 * @return set of namespace prefixes
+&nbsp;	 */
+&nbsp;	private Set&lt;Namespace&gt; getPrefixes() {
+<b class="nc">&nbsp;		return ((Prefixes) settings.get(Prefixes.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get working dir setting Use a working dir setting when not found.
+&nbsp;	 *
+&nbsp;	 * @return path of working dir
+&nbsp;	 */
+&nbsp;	private Path getWorkDir() {
+<b class="nc">&nbsp;		return ((WorkDir) settings.get(WorkDir.NAME)).get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Execute a SPARQL query
+&nbsp;	 *
+&nbsp;	 * @param command   to execute
+&nbsp;	 * @param operation &quot;sparql&quot;, &quot;base&quot; or SPARQL query form
+&nbsp;	 */
+&nbsp;	public void executeQuery(final String command, final String operation) {
+<b class="nc">&nbsp;		Repository repository = state.getRepository();</b>
+<b class="nc">&nbsp;		if (repository == null) {</b>
+<b class="nc">&nbsp;			writeUnopenedError();</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (sparqlQueryStart.contains(operation)) {</b>
+<b class="nc">&nbsp;			parseAndEvaluateQuery(QueryLanguage.SPARQL, command);</b>
+<b class="nc">&nbsp;		} else if (&quot;sparql&quot;.equals(operation)) {</b>
+<b class="nc">&nbsp;			parseAndEvaluateQuery(QueryLanguage.SPARQL, command.substring(&quot;sparql&quot;.length()));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeError(&quot;Unknown command&quot;);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read query string from a file. Optionally a character set can be specified, otherwise UTF-8 will be used.
+&nbsp;	 *
+&nbsp;	 * @param filename file name
+&nbsp;	 * @param cset     character set name or null
+&nbsp;	 * @return query from file as string
+&nbsp;	 * @throws IllegalArgumentException when character set was not recognized
+&nbsp;	 * @throws IOException              when input file could not be read
+&nbsp;	 */
+&nbsp;	private String readFile(String filename, String cset) throws IllegalArgumentException, IOException {
+<b class="nc">&nbsp;		if (filename == null || filename.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Empty file name&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Charset charset = (cset == null || cset.isEmpty()) ? StandardCharsets.UTF_8 : Charset.forName(cset);</b>
+&nbsp;
+<b class="nc">&nbsp;		Path p = Util.getNormalizedPath(getWorkDir(), filename);</b>
+<b class="nc">&nbsp;		if (!p.toFile().canRead()) {</b>
+<b class="nc">&nbsp;			throw new IOException(&quot;Cannot read file &quot; + p);</b>
+&nbsp;		}
+&nbsp;		// limit file size
+<b class="nc">&nbsp;		if (p.toFile().length() &gt; MAX_INPUT) {</b>
+<b class="nc">&nbsp;			throw new IOException(&quot;File larger than &quot; + MAX_INPUT + &quot; bytes&quot;);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		byte[] bytes = Files.readAllBytes(p);</b>
+<b class="nc">&nbsp;		return new String(bytes, charset);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get absolute path to output file, using working directory for relative file name. Verifies that the file doesn&#39;t
+&nbsp;	 * exist or can be overwritten if it does exist.
+&nbsp;	 *
+&nbsp;	 * @param filename file name
+&nbsp;	 * @return path absolute path
+&nbsp;	 * @throws IllegalArgumentException
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private Path getPathForOutput(String filename) throws IllegalArgumentException, IOException {
+<b class="nc">&nbsp;		if (filename == null || filename.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Empty file name&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Path p = Util.getNormalizedPath(getWorkDir(), filename);</b>
+<b class="nc">&nbsp;		if (!p.toFile().exists() || askProceed(&quot;File exists, continue ?&quot;, false)) {</b>
+<b class="nc">&nbsp;			return p;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		throw new IOException(&quot;Could not open file for output&quot;);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Read (possibly multi-line) query. Returns multi-line query as one string, or the original string if query is not
+&nbsp;	 * multi-line.
+&nbsp;	 *
+&nbsp;	 * @param queryLn   query language
+&nbsp;	 * @param queryText query string
+&nbsp;	 * @return query or null
+&nbsp;	 */
+&nbsp;	private String readMultiline(QueryLanguage queryLn, String queryText) {
+<b class="nc">&nbsp;		String str = queryText.trim();</b>
+<b class="nc">&nbsp;		if (!str.isEmpty()) {</b>
+<b class="nc">&nbsp;			return str;</b>
+&nbsp;		}
+&nbsp;		try {
+<b class="nc">&nbsp;			writeln(&quot;Enter multi-line &quot; + queryLn.getName() + &quot; query &quot;</b>
+&nbsp;					+ &quot;(terminate with line containing single &#39;.&#39;)&quot;);
+<b class="nc">&nbsp;			return consoleIO.readMultiLineInput();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to read query&quot;, e);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return null;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * if results are to be written to an output file.
+&nbsp;	 *
+&nbsp;	 * @param queryLn   query language
+&nbsp;	 * @param queryText query string
+&nbsp;	 */
+&nbsp;	private void parseAndEvaluateQuery(QueryLanguage queryLn, String queryText) {
+<b class="nc">&nbsp;		String str = readMultiline(queryLn, queryText);</b>
+<b class="nc">&nbsp;		if (str == null || str.isEmpty()) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Empty query string&quot;);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Path path = null;</b>
+&nbsp;
+&nbsp;		// check if input and/or output file are specified
+<b class="nc">&nbsp;		Matcher m = PATTERN_IO.matcher(str);</b>
+<b class="nc">&nbsp;		if (m.lookingAt()) {</b>
+&nbsp;			try {
+&nbsp;				// check for output file first
+<b class="nc">&nbsp;				String outfile = m.group(&quot;o&quot;);</b>
+<b class="nc">&nbsp;				if (outfile != null &amp;&amp; !outfile.isEmpty()) {</b>
+<b class="nc">&nbsp;					path = getPathForOutput(outfile);</b>
+<b class="nc">&nbsp;					str = str.substring(m.group(0).length()); // strip both INPUT/OUTPUT from query</b>
+&nbsp;				}
+<b class="nc">&nbsp;				String infile = m.group(&quot;i&quot;);</b>
+<b class="nc">&nbsp;				if (infile != null &amp;&amp; !infile.isEmpty()) {</b>
+<b class="nc">&nbsp;					str = readFile(infile, m.group(&quot;enc&quot;)); // ignore remainder of command line query</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (IOException | IllegalArgumentException ex) {</b>
+<b class="nc">&nbsp;				writeError(ex.getMessage());</b>
+&nbsp;				return;
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// add namespace prefixes
+<b class="nc">&nbsp;		String queryString = addQueryPrefixes(str);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			ParsedOperation query = QueryParserUtil.parseOperation(queryLn, queryString, null);</b>
+<b class="nc">&nbsp;			evaluateQuery(queryLn, query, path);</b>
+<b class="nc">&nbsp;		} catch (UnsupportedQueryLanguageException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Unsupported query language: &quot; + queryLn.getName());</b>
+<b class="nc">&nbsp;		} catch (MalformedQueryException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Malformed query&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (QueryInterruptedException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Query interrupted&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Query evaluation error&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to evaluate query&quot;, e);</b>
+<b class="nc">&nbsp;		} catch (UpdateExecutionException e) {</b>
+<b class="nc">&nbsp;			writeError(&quot;Failed to execute update&quot;, e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a query result writer based upon the file name (extension), or return the console result writer when path is
+&nbsp;	 * null.
+&nbsp;	 *
+&nbsp;	 * @param path path or null
+&nbsp;	 * @param out  output stream or null
+&nbsp;	 * @return result writer
+&nbsp;	 * @throws IllegalArgumentException
+&nbsp;	 */
+&nbsp;	private QueryResultWriter getQueryResultWriter(Path path, OutputStream out) throws IllegalArgumentException {
+&nbsp;		QueryResultWriter w;
+&nbsp;
+<b class="nc">&nbsp;		if (path == null) {</b>
+<b class="nc">&nbsp;			w = new ConsoleQueryResultWriter(consoleIO, getConsoleWidth());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			Optional&lt;QueryResultFormat&gt; fmt = QueryResultIO.getWriterFormatForFileName(path.toFile().toString());</b>
+<b class="nc">&nbsp;			if (!fmt.isPresent()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;No suitable result writer found&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			w = QueryResultIO.createWriter(fmt.get(), out);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (getShowPrefix()) {</b>
+<b class="nc">&nbsp;			getPrefixes().stream().forEach(ns -&gt; w.handleNamespace(ns.getPrefix(), ns.getName()));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return w;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get a graph result (RIO) writer based upon the file name (extension), or return the console result writer when
+&nbsp;	 * path is null.
+&nbsp;	 *
+&nbsp;	 * @param path path or null
+&nbsp;	 * @param out  output stream or null
+&nbsp;	 * @return result writer
+&nbsp;	 * @throws IllegalArgumentException
+&nbsp;	 */
+&nbsp;	private RDFWriter getRDFWriter(Path path, OutputStream out) throws IllegalArgumentException {
+&nbsp;		RDFWriter w;
+<b class="nc">&nbsp;		if (path == null) {</b>
+<b class="nc">&nbsp;			w = new ConsoleRDFWriter(consoleIO, getConsoleWidth());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			Optional&lt;RDFFormat&gt; fmt = Rio.getWriterFormatForFileName(path.toFile().toString());</b>
+<b class="nc">&nbsp;			if (!fmt.isPresent()) {</b>
+<b class="nc">&nbsp;				throw new IllegalArgumentException(&quot;No suitable result writer found&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			w = Rio.createWriter(fmt.get(), out);</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return w;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get output stream for a file, or for the console output if path is null
+&nbsp;	 *
+&nbsp;	 * @param path file path or null
+&nbsp;	 * @return file or console output stream
+&nbsp;	 * @throws IOException
+&nbsp;	 */
+&nbsp;	private OutputStream getOutputStream(Path path) throws IOException {
+<b class="nc">&nbsp;		return (path != null) ? Files.newOutputStream(path, StandardOpenOption.CREATE,</b>
+&nbsp;				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)
+<b class="nc">&nbsp;				: new UncloseableOutputStream(consoleIO.getOutputStream());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Evaluate a SPARQL query that has already been parsed
+&nbsp;	 *
+&nbsp;	 * @param queryLn query language
+&nbsp;	 * @param query   parsed query
+&nbsp;	 * @param path
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws QueryEvaluationException
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 * @throws UpdateExecutionException
+&nbsp;	 */
+&nbsp;	private void evaluateQuery(QueryLanguage queryLn, ParsedOperation query, Path path)
+&nbsp;			throws MalformedQueryException, QueryEvaluationException, UpdateExecutionException {
+&nbsp;
+<b class="nc">&nbsp;		String queryString = query.getSourceString();</b>
+&nbsp;
+<b class="nc">&nbsp;		try (OutputStream os = getOutputStream(path)) {</b>
+<b class="nc">&nbsp;			if (query instanceof ParsedTupleQuery) {</b>
+<b class="nc">&nbsp;				QueryResultWriter writer = getQueryResultWriter(path, os);</b>
+<b class="nc">&nbsp;				evaluator.evaluateTupleQuery(queryLn, queryString, writer);</b>
+<b class="nc">&nbsp;			} else if (query instanceof ParsedBooleanQuery) {</b>
+<b class="nc">&nbsp;				QueryResultWriter writer = getQueryResultWriter(path, os);</b>
+<b class="nc">&nbsp;				evaluator.evaluateBooleanQuery(queryLn, queryString, writer);</b>
+<b class="nc">&nbsp;			} else if (query instanceof ParsedGraphQuery) {</b>
+<b class="nc">&nbsp;				RDFWriter writer = getRDFWriter(path, os);</b>
+<b class="nc">&nbsp;				evaluator.evaluateGraphQuery(queryLn, queryString, writer,</b>
+<b class="nc">&nbsp;						getShowPrefix() ? getPrefixes() : Collections.emptySet());</b>
+<b class="nc">&nbsp;			} else if (query instanceof ParsedUpdate) {</b>
+&nbsp;				// no outputstream for updates, can only be console output
+<b class="nc">&nbsp;				if (path != null) {</b>
+<b class="nc">&nbsp;					throw new IllegalArgumentException(&quot;Update query does not produce output&quot;);</b>
+&nbsp;				}
+<b class="nc">&nbsp;				evaluator.executeUpdate(queryLn, queryString);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeError(&quot;Unexpected query type&quot;);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IllegalArgumentException | IOException ioe) {</b>
+<b class="nc">&nbsp;			writeError(ioe.getMessage());</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add namespace prefixes to SPARQL query
+&nbsp;	 *
+&nbsp;	 * @param queryString query string
+&nbsp;	 * @return query string with prefixes
+&nbsp;	 */
+&nbsp;	private String addQueryPrefixes(String queryString) {
+<b class="nc">&nbsp;		StringBuffer result = new StringBuffer(queryString.length() + 512);</b>
+<b class="nc">&nbsp;		result.append(queryString);</b>
+&nbsp;
+<b class="nc">&nbsp;		String upperCaseQuery = queryString.toUpperCase(Locale.ENGLISH);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (getQueryPrefix() &amp;&amp; !hasQueryPrefixes(upperCaseQuery)) {</b>
+<b class="nc">&nbsp;			addQueryPrefixes(result, getPrefixes());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result.toString();</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

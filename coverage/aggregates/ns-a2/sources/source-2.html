@@ -1,0 +1,225 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Connections</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.util</a>
+</div>
+
+<h1>Coverage Summary for Class: Connections (org.eclipse.rdf4j.repository.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Connections</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/11)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.util;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.function.Consumer;
+&nbsp;import java.util.function.Function;
+&nbsp;import java.util.function.Supplier;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.GetStatementOptional;
+&nbsp;import org.eclipse.rdf4j.model.util.RDFCollections;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryResult;
+&nbsp;
+&nbsp;/**
+&nbsp; * Convenience functions for use with {@link RepositoryConnection}s.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+<b class="nc">&nbsp;public class Connections {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve all {@link Statement}s that together form the RDF Collection starting with the supplied start resource
+&nbsp;	 * and send them to the supplied {@link Consumer}.
+&nbsp;	 *
+&nbsp;	 * @param conn               the {@link RepositoryConnection} to use for statement retrieval.
+&nbsp;	 * @param head               the start resource of the RDF Collection. May not be {@code null}.
+&nbsp;	 * @param collectionConsumer a {@link Consumer} function to which all retrieved statements will be reported. May not
+&nbsp;	 *                           be {@code null}.
+&nbsp;	 * @param contexts           the context(s) from which to read the RDF Collection. This argument is an optional
+&nbsp;	 *                           vararg and can be left out.
+&nbsp;	 * @throws RepositoryException if an error occurred while reading the collection statements, for example if a cycle
+&nbsp;	 *                             is detected in the RDF collection, or some other anomaly which makes it
+&nbsp;	 *                             non-wellformed.
+&nbsp;	 * @see RDFCollections
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/rdf-schema/#ch_collectionvocab&quot;&gt;RDF Schema 1.1 section on Collection
+&nbsp;	 *      vocabulary&lt;/a&gt;.
+&nbsp;	 */
+&nbsp;	public static void consumeRDFCollection(RepositoryConnection conn, Resource head,
+&nbsp;			Consumer&lt;Statement&gt; collectionConsumer, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		GetStatementOptional statementSupplier = (s, p, o, c) -&gt; getStatement(conn, s, p, o, c);</b>
+<b class="nc">&nbsp;		Function&lt;String, Supplier&lt;RepositoryException&gt;&gt; exceptionSupplier = Repositories::repositoryException;</b>
+<b class="nc">&nbsp;		RDFCollections.extract(statementSupplier, head, collectionConsumer, exceptionSupplier, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve all {@link Statement}s that together form the RDF Collection starting with the supplied starting
+&nbsp;	 * resource.
+&nbsp;	 *
+&nbsp;	 * @param conn                the {@link RepositoryConnection} to use for statement retrieval.
+&nbsp;	 * @param head                the start resource of the RDF Collection. May not be {@code null}.
+&nbsp;	 * @param statementCollection a {@link Collection} of {@link Statement}s (for example, a {@link Model}) to which all
+&nbsp;	 *                            retrieved statements will be reported. May not be {@code null}.
+&nbsp;	 * @param contexts            the context(s) from which to read the RDF Collection. This argument is an optional
+&nbsp;	 *                            vararg and can be left out.
+&nbsp;	 * @return the input statement collection, with the statements forming the retrieved RDF Collection added.
+&nbsp;	 * @throws RepositoryException if an error occurred while reading the collection statements, for example if a cycle
+&nbsp;	 *                             is detected in the RDF collection, or some other anomaly which makes it
+&nbsp;	 *                             non-wellformed.
+&nbsp;	 * @see RDFCollections
+&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/rdf-schema/#ch_collectionvocab&quot;&gt;RDF Schema 1.1 section on Collection
+&nbsp;	 *      vocabulary&lt;/a&gt;.
+&nbsp;	 */
+&nbsp;	public static &lt;C extends Collection&lt;Statement&gt;&gt; C getRDFCollection(RepositoryConnection conn, Resource head,
+&nbsp;			C statementCollection, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		Objects.requireNonNull(statementCollection, &quot;statementCollection may not be null&quot;);</b>
+<b class="nc">&nbsp;		consumeRDFCollection(conn, head, st -&gt; statementCollection.add(st), contexts);</b>
+<b class="nc">&nbsp;		return statementCollection;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve a single {@link Statement} matching with the supplied subject, predicate, object and context(s) from the
+&nbsp;	 * given {@link RepositoryConnection}. If more than one Statement matches, any one Statement is selected and
+&nbsp;	 * returned.
+&nbsp;	 *
+&nbsp;	 * @param conn      the {@link RepositoryConnection} from which to retrieve the statement.
+&nbsp;	 * @param subject   the subject to which the statement should match. May be {@code null}.
+&nbsp;	 * @param predicate the predicate to which the statement should match. May be {@code null}.
+&nbsp;	 * @param object    the object to which the statement should match. May be {@code null} .
+&nbsp;	 * @param contexts  the context(s) from which to read the Statement. This argument is an optional vararg and can be
+&nbsp;	 *                  left out.
+&nbsp;	 * @return an {@link Optional} of {@link Statement}. If no matching Statement was found, {@link Optional#empty()} is
+&nbsp;	 *         returned.
+&nbsp;	 * @throws RepositoryException
+&nbsp;	 */
+&nbsp;	public static Optional&lt;Statement&gt; getStatement(RepositoryConnection conn, Resource subject, IRI predicate,
+&nbsp;			Value object, Resource... contexts) throws RepositoryException {
+<b class="nc">&nbsp;		try (RepositoryResult&lt;Statement&gt; stmts = conn.getStatements(subject, predicate, object, contexts)) {</b>
+<b class="nc">&nbsp;			Statement st = stmts.hasNext() ? stmts.next() : null;</b>
+<b class="nc">&nbsp;			return Optional.ofNullable(st);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

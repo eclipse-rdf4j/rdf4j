@@ -1,0 +1,350 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > RepositoryUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.util</a>
+</div>
+
+<h1>Coverage Summary for Class: RepositoryUtil (org.eclipse.rdf4j.repository.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">RepositoryUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/6)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.util;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.Iterator;
+&nbsp;import java.util.LinkedList;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.Iterations;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility methods for comparing sets of statements (graphs) with each other. The supplied comparison operations map
+&nbsp; * bnodes in the two supplied models on to each other and thus define a graph isomorphism.
+&nbsp; *
+&nbsp; * @author jeen
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class RepositoryUtil {</b>
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares the models in the default contexts of the two supplied repositories and returns true if they are equal.
+&nbsp;	 * Models are equal if they contain the same set of statements. bNodes IDs are not relevant for model equality, they
+&nbsp;	 * are mapped from one model to the other by using the attached properties. Note that the method pulls the entire
+&nbsp;	 * default context of both repositories into main memory. Use with caution.
+&nbsp;	 */
+&nbsp;	public static boolean equals(Repository rep1, Repository rep2) throws RepositoryException {
+&nbsp;		// Fetch statements from rep1 and rep2
+&nbsp;		Set&lt;Statement&gt; model1, model2;
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con1 = rep1.getConnection()) {</b>
+<b class="nc">&nbsp;			model1 = Iterations.asSet(con1.getStatements(null, null, null, true));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con2 = rep2.getConnection()) {</b>
+<b class="nc">&nbsp;			model2 = Iterations.asSet(con2.getStatements(null, null, null, true));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return Models.isomorphic(model1, model2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares the models of the default context of two repositories and returns true if rep1 is a subset of rep2. Note
+&nbsp;	 * that the method pulls the entire default context of both repositories into main memory. Use with caution.
+&nbsp;	 */
+&nbsp;	public static boolean isSubset(Repository rep1, Repository rep2) throws RepositoryException {
+&nbsp;		Set&lt;Statement&gt; model1, model2;
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con1 = rep1.getConnection()) {</b>
+<b class="nc">&nbsp;			model1 = Iterations.asSet(con1.getStatements(null, null, null, true));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con2 = rep2.getConnection()) {</b>
+<b class="nc">&nbsp;			model2 = Iterations.asSet(con2.getStatements(null, null, null, true));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return Models.isSubset(model1, model2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two models defined by the default context of two repositories and returns the difference between the
+&nbsp;	 * first and the second model (that is, all statements that are present in rep1 but not in rep2). Blank node IDs are
+&nbsp;	 * not relevant for model equality, they are mapped from one model to the other by using the attached properties.
+&nbsp;	 * Note that the method pulls the entire default context of both repositories into main memory. Use with caution.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;b&gt;NOTE: this algorithm is currently broken; it doesn&#39;t actually map blank nodes between the two models.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @return The collection of statements that is the difference between rep1 and rep2.
+&nbsp;	 */
+&nbsp;	public static Collection&lt;? extends Statement&gt; difference(Repository rep1, Repository rep2)
+&nbsp;			throws RepositoryException {
+&nbsp;		Collection&lt;Statement&gt; model1;
+&nbsp;		Collection&lt;Statement&gt; model2;
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con1 = rep1.getConnection()) {</b>
+<b class="nc">&nbsp;			model1 = Iterations.asSet(con1.getStatements(null, null, null, false));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		try (RepositoryConnection con2 = rep2.getConnection()) {</b>
+<b class="nc">&nbsp;			model2 = Iterations.asSet(con2.getStatements(null, null, null, false));</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return difference(model1, model2);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Compares two models, defined by two statement collections, and returns the difference between the first and the
+&nbsp;	 * second model (that is, all statements that are present in model1 but not in model2). Blank node IDs are not
+&nbsp;	 * relevant for model equality, they are mapped from one model to the other by using the attached properties. *
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * &lt;b&gt;NOTE: this algorithm is currently broken; it doesn&#39;t actually map blank nodes between the two models.&lt;/b&gt;
+&nbsp;	 *
+&nbsp;	 * @return The collection of statements that is the difference between model1 and model2.
+&nbsp;	 */
+&nbsp;	public static Collection&lt;? extends Statement&gt; difference(Collection&lt;? extends Statement&gt; model1,
+&nbsp;			Collection&lt;? extends Statement&gt; model2) {
+&nbsp;		// Create working copies
+<b class="nc">&nbsp;		LinkedList&lt;Statement&gt; copy1 = new LinkedList&lt;&gt;(model1);</b>
+<b class="nc">&nbsp;		LinkedList&lt;Statement&gt; copy2 = new LinkedList&lt;&gt;(model2);</b>
+&nbsp;
+<b class="nc">&nbsp;		Collection&lt;Statement&gt; result = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		// Compare statements that don&#39;t contain bNodes
+<b class="nc">&nbsp;		Iterator&lt;Statement&gt; iter1 = copy1.iterator();</b>
+<b class="nc">&nbsp;		while (iter1.hasNext()) {</b>
+<b class="nc">&nbsp;			Statement st = iter1.next();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (st.getSubject() instanceof BNode || st.getObject() instanceof BNode) {</b>
+&nbsp;				// One or more of the statement&#39;s components is a bNode,
+&nbsp;				// these statements are handled later
+<b class="nc">&nbsp;				continue;</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// Try to remove the statement from model2
+<b class="nc">&nbsp;			boolean removed = copy2.remove(st);</b>
+<b class="nc">&nbsp;			if (!removed) {</b>
+&nbsp;				// statement was not present in model2 and is part of the difference
+<b class="nc">&nbsp;				result.add(st);</b>
+&nbsp;			}
+<b class="nc">&nbsp;			iter1.remove();</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// FIXME: this algorithm is broken: bNodeMapping is assumed to contain a
+&nbsp;		// bnode mapping while in reallity it is an empty map
+&nbsp;
+<b class="nc">&nbsp;		HashMap&lt;BNode, BNode&gt; bNodeMapping = new HashMap&lt;&gt;();</b>
+&nbsp;		// mapBlankNodes(copy1, copy2, bNodeMapping, 0);
+&nbsp;
+<b class="nc">&nbsp;		for (Statement st1 : copy1) {</b>
+<b class="nc">&nbsp;			boolean foundMatch = false;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Statement st2 : copy2) {</b>
+<b class="nc">&nbsp;				if (statementsMatch(st1, st2, bNodeMapping)) {</b>
+&nbsp;					// Found a matching statement
+<b class="nc">&nbsp;					foundMatch = true;</b>
+<b class="nc">&nbsp;					break;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!foundMatch) {</b>
+&nbsp;				// No statement matching st1 was found in model2, st1 is part of
+&nbsp;				// the difference.
+<b class="nc">&nbsp;				result.add(st1);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private static boolean statementsMatch(Statement st1, Statement st2, Map&lt;BNode, BNode&gt; bNodeMapping) {
+<b class="nc">&nbsp;		IRI pred1 = st1.getPredicate();</b>
+<b class="nc">&nbsp;		IRI pred2 = st2.getPredicate();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!pred1.equals(pred2)) {</b>
+&nbsp;			// predicates don&#39;t match
+<b class="nc">&nbsp;			return false;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Resource subj1 = st1.getSubject();</b>
+<b class="nc">&nbsp;		Resource subj2 = st2.getSubject();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!(subj1 instanceof BNode)) {</b>
+<b class="nc">&nbsp;			if (!subj1.equals(subj2)) {</b>
+&nbsp;				// subjects are not bNodes and don&#39;t match
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		} else { // subj1 instanceof BNode
+<b class="nc">&nbsp;			BNode mappedBNode = bNodeMapping.get(subj1);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (mappedBNode != null) {</b>
+&nbsp;				// bNode &#39;subj1&#39; was already mapped to some other bNode
+<b class="nc">&nbsp;				if (!subj2.equals(mappedBNode)) {</b>
+&nbsp;					// &#39;subj1&#39; and &#39;subj2&#39; do not match
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			} else {
+&nbsp;				// &#39;subj1&#39; was not yet mapped. we need to check if &#39;subj2&#39; is a
+&nbsp;				// possible mapping candidate
+<b class="nc">&nbsp;				if (bNodeMapping.containsValue(subj2)) {</b>
+&nbsp;					// &#39;subj2&#39; is already mapped to some other value.
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Value obj1 = st1.getObject();</b>
+<b class="nc">&nbsp;		Value obj2 = st2.getObject();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (!(obj1 instanceof BNode)) {</b>
+<b class="nc">&nbsp;			if (!obj1.equals(obj2)) {</b>
+&nbsp;				// objects are not bNodes and don&#39;t match
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;		} else { // obj1 instanceof BNode
+<b class="nc">&nbsp;			BNode mappedBNode = bNodeMapping.get(obj1);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (mappedBNode != null) {</b>
+&nbsp;				// bNode &#39;obj1&#39; was already mapped to some other bNode
+<b class="nc">&nbsp;				if (!obj2.equals(mappedBNode)) {</b>
+&nbsp;					// &#39;obj1&#39; and &#39;obj2&#39; do not match
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			} else {
+&nbsp;				// &#39;obj1&#39; was not yet mapped. we need to check if &#39;obj2&#39; is a
+&nbsp;				// possible mapping candidate
+<b class="nc">&nbsp;				if (bNodeMapping.containsValue(obj2)) {</b>
+&nbsp;					// &#39;obj2&#39; is already mapped to some other value.
+<b class="nc">&nbsp;					return false;</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return true;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

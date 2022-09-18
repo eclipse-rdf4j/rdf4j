@@ -1,0 +1,524 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > ConstantOptimizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: ConstantOptimizer (org.eclipse.rdf4j.query.algebra.evaluation.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">ConstantOptimizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/25)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">ConstantOptimizer$ConstantVisitor</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/13)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/62)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/104)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">ConstantOptimizer$VarNameCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/74)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/133)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl;
+&nbsp;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Bound;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Extension;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.FunctionCall;
+&nbsp;import org.eclipse.rdf4j.query.algebra.If;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Regex;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.STRUUID;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.UUID;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * A query optimizer that optimizes constant value expressions.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;@Deprecated(forRemoval = true, since = &quot;4.1.0&quot;)
+&nbsp;public class ConstantOptimizer implements QueryOptimizer {
+&nbsp;
+<b class="nc">&nbsp;	protected static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);</b>
+&nbsp;
+&nbsp;	protected final EvaluationStrategy strategy;
+&nbsp;
+<b class="nc">&nbsp;	public ConstantOptimizer(EvaluationStrategy strategy) {</b>
+<b class="nc">&nbsp;		this.strategy = strategy;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="nc">&nbsp;		ConstantVisitor visitor = new ConstantVisitor();</b>
+<b class="nc">&nbsp;		tupleExpr.visit(visitor);</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; varsBefore = visitor.varNames;</b>
+&nbsp;
+<b class="nc">&nbsp;		VarNameCollector varCollector = new VarNameCollector();</b>
+<b class="nc">&nbsp;		tupleExpr.visit(varCollector);</b>
+<b class="nc">&nbsp;		Set&lt;String&gt; varsAfter = varCollector.varNames;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (varsAfter.size() &lt; varsBefore.size()) {</b>
+<b class="nc">&nbsp;			varsBefore.removeAll(varsAfter);</b>
+<b class="nc">&nbsp;			for (ProjectionElemList projElems : visitor.projElemLists) {</b>
+<b class="nc">&nbsp;				for (ProjectionElem projElem : projElems.getElements()) {</b>
+<b class="nc">&nbsp;					String name = projElem.getName();</b>
+<b class="nc">&nbsp;					if (varsBefore.contains(name)) {</b>
+<b class="nc">&nbsp;						UnaryTupleOperator proj = (UnaryTupleOperator) projElems.getParentNode();</b>
+<b class="nc">&nbsp;						Extension ext = new Extension(proj.getArg());</b>
+<b class="nc">&nbsp;						proj.setArg(ext);</b>
+<b class="nc">&nbsp;						Var lostVar = new Var(name);</b>
+<b class="nc">&nbsp;						Value value = bindings.getValue(name);</b>
+<b class="nc">&nbsp;						if (value != null) {</b>
+<b class="nc">&nbsp;							lostVar.setValue(value);</b>
+&nbsp;						}
+<b class="nc">&nbsp;						ext.addElement(new ExtensionElem(lostVar, name));</b>
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	protected class ConstantVisitor extends VarNameCollector {</b>
+&nbsp;
+<b class="nc">&nbsp;		final List&lt;ProjectionElemList&gt; projElemLists = new ArrayList&lt;&gt;();</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(ProjectionElemList projElems) {
+<b class="nc">&nbsp;			super.meet(projElems);</b>
+<b class="nc">&nbsp;			projElemLists.add(projElems);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Or or) {
+<b class="nc">&nbsp;			or.visitChildren(this);</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				if (isConstant(or.getLeftArg()) &amp;&amp; isConstant(or.getRightArg())) {</b>
+<b class="nc">&nbsp;					boolean value = strategy.isTrue(or, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					or.replaceWith(new ValueConstant(BooleanLiteral.valueOf(value)));</b>
+<b class="nc">&nbsp;				} else if (isConstant(or.getLeftArg())) {</b>
+<b class="nc">&nbsp;					boolean leftIsTrue = strategy.isTrue(or.getLeftArg(), EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					if (leftIsTrue) {</b>
+<b class="nc">&nbsp;						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						or.replaceWith(or.getRightArg());</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (isConstant(or.getRightArg())) {</b>
+<b class="nc">&nbsp;					boolean rightIsTrue = strategy.isTrue(or.getRightArg(), EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					if (rightIsTrue) {</b>
+<b class="nc">&nbsp;						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						or.replaceWith(or.getLeftArg());</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (ValueExprEvaluationException e) {</b>
+&nbsp;				// TODO: incompatible values types(?), remove the affected part of
+&nbsp;				// the query tree
+<b class="nc">&nbsp;				logger.debug(&quot;Failed to evaluate BinaryValueOperator with two constant arguments&quot;, e);</b>
+<b class="nc">&nbsp;			} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Query evaluation exception caught&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(And and) {
+<b class="nc">&nbsp;			and.visitChildren(this);</b>
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				if (isConstant(and.getLeftArg()) &amp;&amp; isConstant(and.getRightArg())) {</b>
+<b class="nc">&nbsp;					boolean value = strategy.isTrue(and, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					and.replaceWith(new ValueConstant(BooleanLiteral.valueOf(value)));</b>
+<b class="nc">&nbsp;				} else if (isConstant(and.getLeftArg())) {</b>
+<b class="nc">&nbsp;					boolean leftIsTrue = strategy.isTrue(and.getLeftArg(), EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					if (leftIsTrue) {</b>
+<b class="nc">&nbsp;						and.replaceWith(and.getRightArg());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} else if (isConstant(and.getRightArg())) {</b>
+<b class="nc">&nbsp;					boolean rightIsTrue = strategy.isTrue(and.getRightArg(), EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					if (rightIsTrue) {</b>
+<b class="nc">&nbsp;						and.replaceWith(and.getLeftArg());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));</b>
+&nbsp;					}
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (ValueExprEvaluationException e) {</b>
+&nbsp;				// TODO: incompatible values types(?), remove the affected part of
+&nbsp;				// the query tree
+<b class="nc">&nbsp;				logger.debug(&quot;Failed to evaluate BinaryValueOperator with two constant arguments&quot;, e);</b>
+<b class="nc">&nbsp;			} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Query evaluation exception caught&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetBinaryValueOperator(BinaryValueOperator binaryValueOp) {
+<b class="nc">&nbsp;			super.meetBinaryValueOperator(binaryValueOp);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isConstant(binaryValueOp.getLeftArg()) &amp;&amp; isConstant(binaryValueOp.getRightArg())) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					Value value = strategy.evaluate(binaryValueOp, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					binaryValueOp.replaceWith(new ValueConstant(value));</b>
+<b class="nc">&nbsp;				} catch (ValueExprEvaluationException e) {</b>
+&nbsp;					// TODO: incompatible values types(?), remove the affected part
+&nbsp;					// of the query tree
+<b class="nc">&nbsp;					logger.debug(&quot;Failed to evaluate BinaryValueOperator with two constant arguments&quot;, e);</b>
+<b class="nc">&nbsp;				} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Query evaluation exception caught&quot;, e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetUnaryValueOperator(UnaryValueOperator unaryValueOp) {
+<b class="nc">&nbsp;			super.meetUnaryValueOperator(unaryValueOp);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isConstant(unaryValueOp.getArg())) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					Value value = strategy.evaluate(unaryValueOp, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					unaryValueOp.replaceWith(new ValueConstant(value));</b>
+<b class="nc">&nbsp;				} catch (ValueExprEvaluationException e) {</b>
+&nbsp;					// TODO: incompatible values types(?), remove the affected part
+&nbsp;					// of the query tree
+<b class="nc">&nbsp;					logger.debug(&quot;Failed to evaluate UnaryValueOperator with a constant argument&quot;, e);</b>
+<b class="nc">&nbsp;				} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Query evaluation exception caught&quot;, e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(FunctionCall functionCall) {
+<b class="nc">&nbsp;			super.meet(functionCall);</b>
+&nbsp;
+<b class="nc">&nbsp;			List&lt;ValueExpr&gt; args = functionCall.getArgs();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (args.isEmpty()) {</b>
+&nbsp;				/*
+&nbsp;				 * SPARQL has two types of zero-arg function. One are proper &#39;constant&#39; functions like NOW() which
+&nbsp;				 * generate a single value for the entire query and which can be safely optimized to a constant. Other
+&nbsp;				 * functions, like RAND(), UUID() and STRUUID(), are a special case: they are expected to yield a new
+&nbsp;				 * value on every call, and can therefore not be replaced by a constant.
+&nbsp;				 */
+<b class="nc">&nbsp;				if (!isConstantZeroArgFunction(functionCall)) {</b>
+&nbsp;					return;
+&nbsp;				}
+&nbsp;			} else {
+<b class="nc">&nbsp;				for (ValueExpr arg : args) {</b>
+<b class="nc">&nbsp;					if (!isConstant(arg)) {</b>
+&nbsp;						return;
+&nbsp;					}
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;
+&nbsp;			// All arguments are constant
+&nbsp;
+&nbsp;			try {
+<b class="nc">&nbsp;				Value value = strategy.evaluate(functionCall, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;				functionCall.replaceWith(new ValueConstant(value));</b>
+<b class="nc">&nbsp;			} catch (ValueExprEvaluationException e) {</b>
+&nbsp;				// TODO: incompatible values types(?), remove the affected part of
+&nbsp;				// the query tree
+<b class="nc">&nbsp;				logger.debug(&quot;Failed to evaluate BinaryValueOperator with two constant arguments&quot;, e);</b>
+<b class="nc">&nbsp;			} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Query evaluation exception caught&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Determines if the provided zero-arg function is a function that should return a constant value for the entire
+&nbsp;		 * query execution (e.g NOW()), or if it should generate a new value for every call (e.g. RAND()).
+&nbsp;		 *
+&nbsp;		 * @param functionCall a zero-arg function call.
+&nbsp;		 * @return &lt;code&gt;true&lt;code&gt; iff the provided function returns a constant value for the query execution, &lt;code&gt;false&lt;/code&gt;
+&nbsp;		 *         otherwise.
+&nbsp;		 */
+&nbsp;		private boolean isConstantZeroArgFunction(FunctionCall functionCall) {
+<b class="nc">&nbsp;			Function function = FunctionRegistry.getInstance()</b>
+<b class="nc">&nbsp;					.get(functionCall.getURI())</b>
+<b class="nc">&nbsp;					.orElseThrow(() -&gt; new QueryEvaluationException(</b>
+<b class="nc">&nbsp;							&quot;Unable to find function with the URI: &quot; + functionCall.getURI()));</b>
+&nbsp;
+&nbsp;			// we treat constant functions as the &#39;regular case&#39; and make
+&nbsp;			// exceptions for specific SPARQL built-in functions that require
+&nbsp;			// different treatment.
+<b class="nc">&nbsp;			if (function instanceof Rand || function instanceof UUID || function instanceof STRUUID) {</b>
+<b class="nc">&nbsp;				return false;</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Bound bound) {
+<b class="nc">&nbsp;			super.meet(bound);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (bound.getArg().hasValue()) {</b>
+&nbsp;				// variable is always bound
+<b class="nc">&nbsp;				bound.replaceWith(new ValueConstant(BooleanLiteral.TRUE));</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(If node) {
+<b class="nc">&nbsp;			super.meet(node);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isConstant(node.getCondition())) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					if (strategy.isTrue(node.getCondition(), EmptyBindingSet.getInstance())) {</b>
+<b class="nc">&nbsp;						node.replaceWith(node.getResult());</b>
+&nbsp;					} else {
+<b class="nc">&nbsp;						node.replaceWith(node.getAlternative());</b>
+&nbsp;					}
+<b class="nc">&nbsp;				} catch (ValueExprEvaluationException e) {</b>
+<b class="nc">&nbsp;					logger.debug(&quot;Failed to evaluate UnaryValueOperator with a constant argument&quot;, e);</b>
+<b class="nc">&nbsp;				} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Query evaluation exception caught&quot;, e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Override meetBinaryValueOperator
+&nbsp;		 */
+&nbsp;		@Override
+&nbsp;		public void meet(Regex node) {
+<b class="nc">&nbsp;			super.meetNode(node);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (isConstant(node.getArg()) &amp;&amp; isConstant(node.getPatternArg()) &amp;&amp; isConstant(node.getFlagsArg())) {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					Value value = strategy.evaluate(node, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;					node.replaceWith(new ValueConstant(value));</b>
+<b class="nc">&nbsp;				} catch (ValueExprEvaluationException e) {</b>
+<b class="nc">&nbsp;					logger.debug(&quot;Failed to evaluate BinaryValueOperator with two constant arguments&quot;, e);</b>
+<b class="nc">&nbsp;				} catch (QueryEvaluationException e) {</b>
+<b class="nc">&nbsp;					logger.error(&quot;Query evaluation exception caught&quot;, e);</b>
+<b class="nc">&nbsp;				}</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		private boolean isConstant(ValueExpr expr) {
+<b class="nc">&nbsp;			return expr instanceof ValueConstant || expr instanceof Var &amp;&amp; ((Var) expr).hasValue();</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	protected class VarNameCollector extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+<b class="nc">&nbsp;		final Set&lt;String&gt; varNames = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Var var) {
+<b class="nc">&nbsp;			if (!var.isAnonymous()) {</b>
+<b class="nc">&nbsp;				varNames.add(var.getName());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

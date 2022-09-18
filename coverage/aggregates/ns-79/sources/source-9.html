@@ -1,0 +1,293 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryParserUtil</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.parser</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryParserUtil (org.eclipse.rdf4j.query.parser)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryParserUtil</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    60%
+  </span>
+  <span class="absValue">
+    (6/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    16.7%
+  </span>
+  <span class="absValue">
+    (3/18)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    47.2%
+  </span>
+  <span class="absValue">
+    (17/36)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.parser;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryPrologLexer.Token;
+&nbsp;
+&nbsp;/**
+&nbsp; * Utility class for creating query parsers and parsing queries in various query languages.
+&nbsp; */
+<b class="nc">&nbsp;public class QueryParserUtil {</b>
+&nbsp;
+&nbsp;	public static QueryParser createParser(QueryLanguage ql) throws UnsupportedQueryLanguageException {
+<b class="fc">&nbsp;		QueryParserFactory factory = QueryParserRegistry.getInstance()</b>
+<b class="fc">&nbsp;				.get(ql)</b>
+<b class="fc">&nbsp;				.orElseThrow(</b>
+<b class="nc">&nbsp;						() -&gt; new UnsupportedQueryLanguageException(&quot;No factory available for query language &quot; + ql));</b>
+<b class="fc">&nbsp;		return factory.getParser();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied operation into a query model.
+&nbsp;	 *
+&nbsp;	 * @param ql        The language in which the operation is formulated.
+&nbsp;	 * @param operation The operation.
+&nbsp;	 * @param baseURI   The base URI to resolve any relative URIs that are in the operation against, can be
+&nbsp;	 *                  &lt;var&gt;null&lt;/var&gt; if the operation does not contain any relative URIs.
+&nbsp;	 * @return The model for the parsed operation.
+&nbsp;	 * @throws MalformedQueryException           If the supplied operation was malformed.
+&nbsp;	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
+&nbsp;	 */
+&nbsp;	public static ParsedOperation parseOperation(QueryLanguage ql, String operation, String baseURI)
+&nbsp;			throws MalformedQueryException {
+&nbsp;		ParsedOperation parsedOperation;
+<b class="nc">&nbsp;		QueryParser parser = createParser(ql);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (QueryLanguage.SPARQL.equals(ql)) {</b>
+<b class="nc">&nbsp;			String strippedOperation = removeSPARQLQueryProlog(operation).toUpperCase();</b>
+&nbsp;
+<b class="nc">&nbsp;			if (strippedOperation.startsWith(&quot;SELECT&quot;) || strippedOperation.startsWith(&quot;CONSTRUCT&quot;)</b>
+<b class="nc">&nbsp;					|| strippedOperation.startsWith(&quot;DESCRIBE&quot;) || strippedOperation.startsWith(&quot;ASK&quot;)) {</b>
+<b class="nc">&nbsp;				parsedOperation = parser.parseQuery(operation, baseURI);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				parsedOperation = parser.parseUpdate(operation, baseURI);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} else {</b>
+&nbsp;			// SPARQL is the only QL supported by sesame that has update
+&nbsp;			// operations, so we simply redirect to parseQuery
+<b class="nc">&nbsp;			parsedOperation = parser.parseQuery(operation, baseURI);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return parsedOperation;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied update operation into a query model.
+&nbsp;	 *
+&nbsp;	 * @param ql      The language in which the update operation is formulated.
+&nbsp;	 * @param update  The update operation.
+&nbsp;	 * @param baseURI The base URI to resolve any relative URIs that are in the operation against, can be
+&nbsp;	 *                &lt;var&gt;null&lt;/var&gt; if the update operation does not contain any relative URIs.
+&nbsp;	 * @return The model for the parsed update operation.
+&nbsp;	 * @throws MalformedQueryException           If the supplied update operation was malformed.
+&nbsp;	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
+&nbsp;	 */
+&nbsp;	public static ParsedUpdate parseUpdate(QueryLanguage ql, String update, String baseURI)
+&nbsp;			throws MalformedQueryException, UnsupportedQueryLanguageException {
+<b class="fc">&nbsp;		QueryParser parser = createParser(ql);</b>
+<b class="fc">&nbsp;		return parser.parseUpdate(update, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied query into a query model.
+&nbsp;	 *
+&nbsp;	 * @param ql      The language in which the query is formulated.
+&nbsp;	 * @param query   The query.
+&nbsp;	 * @param baseURI The base URI to resolve any relative URIs that are in the query against, can be &lt;var&gt;null&lt;/var&gt; if
+&nbsp;	 *                the query does not contain any relative URIs.
+&nbsp;	 * @return The query model for the parsed query.
+&nbsp;	 * @throws MalformedQueryException           If the supplied query was malformed.
+&nbsp;	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
+&nbsp;	 */
+&nbsp;	public static ParsedQuery parseQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, UnsupportedQueryLanguageException {
+<b class="fc">&nbsp;		QueryParser parser = createParser(ql);</b>
+<b class="fc">&nbsp;		return parser.parseQuery(query, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied query into a query model.
+&nbsp;	 *
+&nbsp;	 * @param ql    The language in which the query is formulated.
+&nbsp;	 * @param query The query.
+&nbsp;	 * @return The query model for the parsed query.
+&nbsp;	 * @throws IllegalArgumentException          If the supplied query is not a tuple query.
+&nbsp;	 * @throws MalformedQueryException           If the supplied query was malformed.
+&nbsp;	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
+&nbsp;	 */
+&nbsp;	public static ParsedTupleQuery parseTupleQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, UnsupportedQueryLanguageException {
+<b class="fc">&nbsp;		ParsedOperation q = parseQuery(ql, query, baseURI);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (q instanceof ParsedTupleQuery) {</b>
+<b class="fc">&nbsp;			return (ParsedTupleQuery) q;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;query is not a tuple query: &quot; + query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied query into a query model.
+&nbsp;	 *
+&nbsp;	 * @param ql    The language in which the query is formulated.
+&nbsp;	 * @param query The query.
+&nbsp;	 * @return The query model for the parsed query.
+&nbsp;	 * @throws IllegalArgumentException          If the supplied query is not a graph query.
+&nbsp;	 * @throws MalformedQueryException           If the supplied query was malformed.
+&nbsp;	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
+&nbsp;	 */
+&nbsp;	public static ParsedGraphQuery parseGraphQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, UnsupportedQueryLanguageException {
+<b class="fc">&nbsp;		ParsedOperation q = parseQuery(ql, query, baseURI);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (q instanceof ParsedGraphQuery) {</b>
+<b class="fc">&nbsp;			return (ParsedGraphQuery) q;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;query is not a graph query: &quot; + query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Parses the supplied query into a query model.
+&nbsp;	 *
+&nbsp;	 * @param ql    The language in which the query is formulated.
+&nbsp;	 * @param query The query.
+&nbsp;	 * @return The query model for the parsed query.
+&nbsp;	 * @throws IllegalArgumentException          If the supplied query is not a graph query.
+&nbsp;	 * @throws MalformedQueryException           If the supplied query was malformed.
+&nbsp;	 * @throws UnsupportedQueryLanguageException If the specified query language is not supported.
+&nbsp;	 */
+&nbsp;	public static ParsedBooleanQuery parseBooleanQuery(QueryLanguage ql, String query, String baseURI)
+&nbsp;			throws MalformedQueryException, UnsupportedQueryLanguageException {
+<b class="fc">&nbsp;		ParsedOperation q = parseQuery(ql, query, baseURI);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (q instanceof ParsedBooleanQuery) {</b>
+<b class="fc">&nbsp;			return (ParsedBooleanQuery) q;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		throw new IllegalArgumentException(&quot;query is not a boolean query: &quot; + query);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes SPARQL prefix and base declarations, if any, from the supplied SPARQL query string. The supplied query
+&nbsp;	 * string is assumed to be syntactically legal.
+&nbsp;	 *
+&nbsp;	 * @param queryString a syntactically legal SPARQL query string
+&nbsp;	 * @return a substring of queryString, with prefix and base declarations removed.
+&nbsp;	 */
+&nbsp;	public static String removeSPARQLQueryProlog(String queryString) {
+<b class="nc">&nbsp;		final Token t = QueryPrologLexer.getRestOfQueryToken(queryString);</b>
+<b class="nc">&nbsp;		if (t != null) {</b>
+<b class="nc">&nbsp;			return t.getStringValue();</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			return queryString;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

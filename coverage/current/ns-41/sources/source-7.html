@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > SessionManagerDependent</title>
+  <title>Coverage Report > HttpClientDependent</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.http.client</a>
 </div>
 
-<h1>Coverage Summary for Class: SessionManagerDependent (org.eclipse.rdf4j.http.client)</h1>
+<h1>Coverage Summary for Class: HttpClientDependent (org.eclipse.rdf4j.http.client)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">SessionManagerDependent</td>
+  <td class="name">HttpClientDependent</td>
 </tr>
 
 </table>
@@ -50,32 +50,32 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.http.client;
 &nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;
 &nbsp;/**
-&nbsp; * Common interface for objects, such as Repository and RepositoryConnection, that are dependent on
-&nbsp; * {@link HttpClientSessionManager}.
+&nbsp; * Common interface for objects, such as Repository and RepositoryConnection, that are dependent on {@link HttpClient}.
 &nbsp; *
 &nbsp; * @author James Leigh
 &nbsp; */
-&nbsp;public interface SessionManagerDependent {
+&nbsp;public interface HttpClientDependent {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * {@link HttpClientSessionManager} that has been assigned or has been used by this object. The life cycle might not
-&nbsp;	 * be or might be tied to this object, depending on whether {@link HttpClientSessionManager} was passed to or
-&nbsp;	 * created by this object respectively.
+&nbsp;	 * {@link HttpClient} that has been assigned or has been used by this object. The life cycle might not be or might
+&nbsp;	 * be tied to this object, depending on whether {@link HttpClient} was passed to or created by this object
+&nbsp;	 * respectively.
 &nbsp;	 *
-&nbsp;	 * @return a {@link HttpClientSessionManager} instance or null
+&nbsp;	 * @return an {@link HttpClient} instance or null
 &nbsp;	 */
-&nbsp;	HttpClientSessionManager getHttpClientSessionManager();
+&nbsp;	HttpClient getHttpClient();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Assign an {@link HttpClientSessionManager} that this object should use. The life cycle of the given
-&nbsp;	 * {@link HttpClientSessionManager} is independent of this object. Closing or shutting down this object does not
-&nbsp;	 * have any impact on the given client. Callers must ensure that the given client is properly closed elsewhere.
+&nbsp;	 * Assign an {@link HttpClient} that this object should use. The life cycle of the given {@link HttpClient} is
+&nbsp;	 * independent of this object. Closing or shutting down this object does not have any impact on the given client.
+&nbsp;	 * Callers must ensure that the given client is properly closed elsewhere.
 &nbsp;	 *
 &nbsp;	 * @param client
 &nbsp;	 */
-&nbsp;	void setHttpClientSessionManager(HttpClientSessionManager client);
-&nbsp;
+&nbsp;	void setHttpClient(HttpClient client);
 &nbsp;}
 </code>
 </pre>
@@ -100,7 +100,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

@@ -1,0 +1,425 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > LmdbStoreConfig</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.lmdb.config</a>
+</div>
+
+<h1>Coverage Summary for Class: LmdbStoreConfig (org.eclipse.rdf4j.sail.lmdb.config)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">LmdbStoreConfig</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/31)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/113)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.lmdb.config;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.Model;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.ModelException;
+&nbsp;import org.eclipse.rdf4j.model.util.Models;
+&nbsp;import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
+&nbsp;import org.eclipse.rdf4j.sail.config.SailConfigException;
+&nbsp;
+&nbsp;/**
+&nbsp;  */
+&nbsp;public class LmdbStoreConfig extends BaseSailConfig {
+&nbsp;	/**
+&nbsp;	 * The default size of the triple database.
+&nbsp;	 */
+&nbsp;	public static final long TRIPLE_DB_SIZE = 10_485_760; // 10 MiB
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default size of the value database.
+&nbsp;	 */
+&nbsp;	public static final long VALUE_DB_SIZE = 10_485_760; // 10 MiB
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default value cache size.
+&nbsp;	 */
+&nbsp;	public static final int VALUE_CACHE_SIZE = 512;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default value id cache size.
+&nbsp;	 */
+&nbsp;	public static final int VALUE_ID_CACHE_SIZE = 128;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default namespace cache size.
+&nbsp;	 */
+&nbsp;	public static final int NAMESPACE_CACHE_SIZE = 64;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The default namespace id cache size.
+&nbsp;	 */
+&nbsp;	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
+&nbsp;
+&nbsp;	private String tripleIndexes;
+&nbsp;
+<b class="nc">&nbsp;	private long tripleDBSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private long valueDBSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean forceSync = false;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int valueCacheSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int valueIDCacheSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int namespaceCacheSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private int namespaceIDCacheSize = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;	private boolean autoGrow = true;</b>
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	public LmdbStoreConfig() {
+<b class="nc">&nbsp;		super(LmdbStoreFactory.SAIL_TYPE);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig(String tripleIndexes) {
+<b class="nc">&nbsp;		this();</b>
+<b class="nc">&nbsp;		setTripleIndexes(tripleIndexes);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig(String tripleIndexes, boolean forceSync) {
+<b class="nc">&nbsp;		this(tripleIndexes);</b>
+<b class="nc">&nbsp;		setForceSync(forceSync);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	public String getTripleIndexes() {
+<b class="nc">&nbsp;		return tripleIndexes;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setTripleIndexes(String tripleIndexes) {
+<b class="nc">&nbsp;		this.tripleIndexes = tripleIndexes;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setTripleDBSize(long tripleDBSize) {
+<b class="nc">&nbsp;		this.tripleDBSize = tripleDBSize;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getTripleDBSize() {
+<b class="nc">&nbsp;		return tripleDBSize &gt;= 0 ? tripleDBSize : TRIPLE_DB_SIZE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setValueDBSize(long valueDBSize) {
+<b class="nc">&nbsp;		this.valueDBSize = valueDBSize;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public long getValueDBSize() {
+<b class="nc">&nbsp;		return valueDBSize &gt;= 0 ? valueDBSize : VALUE_DB_SIZE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean getForceSync() {
+<b class="nc">&nbsp;		return forceSync;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Flag indicating whether updates should be synced to disk forcefully. This may have a severe impact on write
+&nbsp;	 * performance. By default, this feature is disabled.
+&nbsp;	 */
+&nbsp;	public LmdbStoreConfig setForceSync(boolean forceSync) {
+<b class="nc">&nbsp;		this.forceSync = forceSync;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getValueCacheSize() {
+<b class="nc">&nbsp;		return valueCacheSize &gt;= 0 ? valueCacheSize : VALUE_CACHE_SIZE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setValueCacheSize(int valueCacheSize) {
+<b class="nc">&nbsp;		this.valueCacheSize = valueCacheSize;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getValueIDCacheSize() {
+<b class="nc">&nbsp;		return valueIDCacheSize &gt;= 0 ? valueIDCacheSize : VALUE_ID_CACHE_SIZE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setValueIDCacheSize(int valueIDCacheSize) {
+<b class="nc">&nbsp;		this.valueIDCacheSize = valueIDCacheSize;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getNamespaceCacheSize() {
+<b class="nc">&nbsp;		return namespaceCacheSize &gt;= 0 ? namespaceCacheSize : NAMESPACE_CACHE_SIZE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setNamespaceCacheSize(int namespaceCacheSize) {
+<b class="nc">&nbsp;		this.namespaceCacheSize = namespaceCacheSize;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getNamespaceIDCacheSize() {
+<b class="nc">&nbsp;		return namespaceIDCacheSize &gt;= 0 ? namespaceIDCacheSize : NAMESPACE_ID_CACHE_SIZE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setNamespaceIDCacheSize(int namespaceIDCacheSize) {
+<b class="nc">&nbsp;		this.namespaceIDCacheSize = namespaceIDCacheSize;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean getAutoGrow() {
+<b class="nc">&nbsp;		return autoGrow;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public LmdbStoreConfig setAutoGrow(boolean autoGrow) {
+<b class="nc">&nbsp;		this.autoGrow = autoGrow;</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Resource export(Model m) {
+<b class="nc">&nbsp;		Resource implNode = super.export(m);</b>
+<b class="nc">&nbsp;		ValueFactory vf = SimpleValueFactory.getInstance();</b>
+&nbsp;
+<b class="nc">&nbsp;		m.setNamespace(&quot;ns&quot;, LmdbStoreSchema.NAMESPACE);</b>
+<b class="nc">&nbsp;		if (tripleIndexes != null) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (tripleDBSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.TRIPLE_DB_SIZE, vf.createLiteral(tripleDBSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (valueDBSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.VALUE_DB_SIZE, vf.createLiteral(valueDBSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (forceSync) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.FORCE_SYNC, vf.createLiteral(true));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (valueCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.VALUE_CACHE_SIZE, vf.createLiteral(valueCacheSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (valueIDCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.VALUE_ID_CACHE_SIZE, vf.createLiteral(valueIDCacheSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (namespaceCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.NAMESPACE_CACHE_SIZE, vf.createLiteral(namespaceCacheSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (namespaceIDCacheSize &gt;= 0) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.NAMESPACE_ID_CACHE_SIZE, vf.createLiteral(namespaceIDCacheSize));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		if (!autoGrow) {</b>
+<b class="nc">&nbsp;			m.add(implNode, LmdbStoreSchema.AUTO_GROW, vf.createLiteral(false));</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return implNode;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void parse(Model m, Resource implNode) throws SailConfigException {
+<b class="nc">&nbsp;		super.parse(m, implNode);</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_INDEXES, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; setTripleIndexes(lit.getLabel()));</b>
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_DB_SIZE, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							setTripleDBSize(lit.longValue());</b>
+<b class="nc">&nbsp;						} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;							throw new SailConfigException(</b>
+&nbsp;									&quot;Long value required for &quot; + LmdbStoreSchema.TRIPLE_DB_SIZE
+&nbsp;											+ &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_DB_SIZE, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							setValueDBSize(lit.longValue());</b>
+<b class="nc">&nbsp;						} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;							throw new SailConfigException(</b>
+&nbsp;									&quot;Long value required for &quot; + LmdbStoreSchema.VALUE_DB_SIZE
+&nbsp;											+ &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FORCE_SYNC, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setForceSync(lit.booleanValue());</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Boolean value required for &quot; + LmdbStoreSchema.FORCE_SYNC + &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_CACHE_SIZE, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setValueCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;				} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Integer value required for &quot; + LmdbStoreSchema.VALUE_CACHE_SIZE + &quot; property, found &quot;
+&nbsp;									+ lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.VALUE_ID_CACHE_SIZE, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							setValueIDCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;						} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;							throw new SailConfigException(</b>
+&nbsp;									&quot;Integer value required for &quot; + LmdbStoreSchema.VALUE_ID_CACHE_SIZE
+&nbsp;											+ &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.NAMESPACE_CACHE_SIZE, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							setNamespaceCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;						} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;							throw new SailConfigException(</b>
+&nbsp;									&quot;Integer value required for &quot; + LmdbStoreSchema.NAMESPACE_CACHE_SIZE
+&nbsp;											+ &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.NAMESPACE_ID_CACHE_SIZE, null))</b>
+<b class="nc">&nbsp;					.ifPresent(lit -&gt; {</b>
+&nbsp;						try {
+<b class="nc">&nbsp;							setNamespaceIDCacheSize(lit.intValue());</b>
+<b class="nc">&nbsp;						} catch (NumberFormatException e) {</b>
+<b class="nc">&nbsp;							throw new SailConfigException(</b>
+&nbsp;									&quot;Integer value required for &quot; + LmdbStoreSchema.NAMESPACE_ID_CACHE_SIZE
+&nbsp;											+ &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;						}</b>
+&nbsp;					});
+&nbsp;
+<b class="nc">&nbsp;			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.AUTO_GROW, null)).ifPresent(lit -&gt; {</b>
+&nbsp;				try {
+<b class="nc">&nbsp;					setAutoGrow(lit.booleanValue());</b>
+<b class="nc">&nbsp;				} catch (IllegalArgumentException e) {</b>
+<b class="nc">&nbsp;					throw new SailConfigException(</b>
+&nbsp;							&quot;Boolean value required for &quot; + LmdbStoreSchema.AUTO_GROW + &quot; property, found &quot; + lit);
+<b class="nc">&nbsp;				}</b>
+&nbsp;			});
+<b class="nc">&nbsp;		} catch (ModelException e) {</b>
+<b class="nc">&nbsp;			throw new SailConfigException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

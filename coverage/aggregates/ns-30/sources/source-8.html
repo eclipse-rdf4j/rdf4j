@@ -1,0 +1,578 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.federated</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryManager (org.eclipse.rdf4j.federated)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/42)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/118)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryManager$AtomicBigInteger</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/8)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/23)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/44)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/126)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2019 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.federated;
+&nbsp;
+&nbsp;import java.io.File;
+&nbsp;import java.io.FileInputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Properties;
+&nbsp;import java.util.Scanner;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.concurrent.ConcurrentSkipListSet;
+&nbsp;import java.util.concurrent.atomic.AtomicReference;
+&nbsp;import java.util.regex.MatchResult;
+&nbsp;import java.util.regex.Pattern;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+&nbsp;import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXException;
+&nbsp;import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
+&nbsp;import org.eclipse.rdf4j.federated.repository.FedXRepository;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryInfo;
+&nbsp;import org.eclipse.rdf4j.federated.structures.QueryType;
+&nbsp;import org.eclipse.rdf4j.query.BooleanQuery;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.GraphQuery;
+&nbsp;import org.eclipse.rdf4j.query.MalformedQueryException;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.TupleQuery;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+&nbsp;import org.eclipse.rdf4j.query.impl.SimpleDataset;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedOperation;
+&nbsp;import org.eclipse.rdf4j.query.parser.ParsedQuery;
+&nbsp;import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.slf4j.Logger;
+&nbsp;import org.slf4j.LoggerFactory;
+&nbsp;
+&nbsp;/**
+&nbsp; * QueryManager to manage queries.
+&nbsp; *
+&nbsp; * a) Management of running queries (abort, finish) b) Factory to create queries
+&nbsp; *
+&nbsp; * @author Andreas Schwarte
+&nbsp; */
+<b class="nc">&nbsp;public class QueryManager {</b>
+&nbsp;
+<b class="nc">&nbsp;	private static final Logger log = LoggerFactory.getLogger(QueryManager.class);</b>
+&nbsp;
+&nbsp;	private final AtomicBigInteger nextQueryID;
+<b class="nc">&nbsp;	private final Set&lt;QueryInfo&gt; runningQueries = new ConcurrentSkipListSet&lt;&gt;();</b>
+<b class="nc">&nbsp;	private final Map&lt;String, String&gt; prefixDeclarations = new HashMap&lt;&gt;();</b>
+&nbsp;
+&nbsp;	private FedXRepository repo;
+&nbsp;	private FederationContext federationContext;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The global {@link RepositoryConnection} used by the query manager.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Always access using {@link #getOrCreateConn()}
+&nbsp;	 * &lt;/p&gt;
+&nbsp;	 */
+&nbsp;	private transient RepositoryConnection conn;
+&nbsp;
+<b class="nc">&nbsp;	public QueryManager() {</b>
+&nbsp;
+<b class="nc">&nbsp;		BigInteger lastQueryId = new BigInteger(&quot;0&quot;);</b>
+<b class="nc">&nbsp;		this.nextQueryID = new AtomicBigInteger(lastQueryId);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void init(FedXRepository repo, FederationContext federationContext) {
+&nbsp;
+<b class="nc">&nbsp;		this.federationContext = federationContext;</b>
+<b class="nc">&nbsp;		this.repo = repo;</b>
+&nbsp;
+&nbsp;		// initialize prefix declarations, if any
+<b class="nc">&nbsp;		String prefixFile = federationContext.getConfig().getPrefixDeclarations();</b>
+<b class="nc">&nbsp;		if (prefixFile != null) {</b>
+<b class="nc">&nbsp;			Properties props = new Properties();</b>
+<b class="nc">&nbsp;			try (FileInputStream fin = new FileInputStream(new File(prefixFile))) {</b>
+<b class="nc">&nbsp;				props.load(fin);</b>
+<b class="nc">&nbsp;			} catch (IOException e) {</b>
+<b class="nc">&nbsp;				throw new FedXRuntimeException(&quot;Error loading prefix properties: &quot; + e.getMessage());</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			for (String ns : props.stringPropertyNames()) {</b>
+<b class="nc">&nbsp;				addPrefixDeclaration(ns, props.getProperty(ns)); // register namespace/prefix pair</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private synchronized RepositoryConnection getOrCreateConn() {
+<b class="nc">&nbsp;		if (this.conn == null) {</b>
+<b class="nc">&nbsp;			this.conn = repo.getConnection();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return this.conn;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void shutdown() {
+<b class="nc">&nbsp;		if (conn != null) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				conn.close();</b>
+<b class="nc">&nbsp;			} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;				throw new FedXRuntimeException(e);</b>
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Add the query to the set of running queries, queries are identified via a unique id
+&nbsp;	 *
+&nbsp;	 * @param queryInfo
+&nbsp;	 */
+&nbsp;	public void registerQuery(QueryInfo queryInfo) {
+<b class="nc">&nbsp;		assert runningQueries.contains(queryInfo) : &quot;Duplicate query: query &quot; + queryInfo.getQueryID()</b>
+&nbsp;				+ &quot; is already registered.&quot;;
+<b class="nc">&nbsp;		runningQueries.add(queryInfo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public Set&lt;QueryInfo&gt; getRunningQueries() {
+<b class="nc">&nbsp;		return new HashSet&lt;&gt;(runningQueries);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public int getNumberOfRunningQueries() {
+<b class="nc">&nbsp;		return runningQueries.size();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void abortQuery(QueryInfo queryInfo) {
+<b class="nc">&nbsp;		synchronized (queryInfo) {</b>
+<b class="nc">&nbsp;			if (!runningQueries.contains(queryInfo)) {</b>
+<b class="nc">&nbsp;				return;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			log.info(&quot;Aborting query &quot; + queryInfo.getQueryID());</b>
+<b class="nc">&nbsp;			queryInfo.abort();</b>
+<b class="nc">&nbsp;			runningQueries.remove(queryInfo);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public void finishQuery(QueryInfo queryInfo) {
+<b class="nc">&nbsp;		runningQueries.remove(queryInfo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public boolean isRunning(QueryInfo queryInfo) {
+<b class="nc">&nbsp;		return runningQueries.contains(queryInfo);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Register a prefix declaration to be used during query evaluation. If a known prefix is used in a query, it is
+&nbsp;	 * substituted in the parsing step.
+&nbsp;	 *
+&nbsp;	 * If namespace is null, the corresponding entry is removed.
+&nbsp;	 *
+&nbsp;	 * @param prefix    a common prefix, e.g. rdf
+&nbsp;	 * @param namespace the corresponding namespace, e.g. &quot;http://www.w3.org/1999/02/22-rdf-syntax-ns#&quot;
+&nbsp;	 */
+&nbsp;	public void addPrefixDeclaration(String prefix, String namespace) {
+<b class="nc">&nbsp;		if (namespace == null) {</b>
+<b class="nc">&nbsp;			prefixDeclarations.remove(prefix);</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		prefixDeclarations.put(prefix, namespace);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepare a tuple query which uses the underlying federation to evaluate the query.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * The queryString is modified to use the declared PREFIX declarations, see
+&nbsp;	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+&nbsp;	 *
+&nbsp;	 * @param queryString
+&nbsp;	 * @return the prepared tuple query
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 */
+&nbsp;	public TupleQuery prepareTupleQuery(String queryString) throws MalformedQueryException {
+&nbsp;
+<b class="nc">&nbsp;		Query q = prepareQuery(queryString);</b>
+<b class="nc">&nbsp;		if (!(q instanceof TupleQuery)) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(&quot;Query is not a tuple query: &quot; + q.getClass());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (TupleQuery) q;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepare a tuple query which uses the underlying federation to evaluate the query.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * The queryString is modified to use the declared PREFIX declarations, see
+&nbsp;	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+&nbsp;	 *
+&nbsp;	 * @param queryString
+&nbsp;	 * @return the prepared graph query
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 */
+&nbsp;	public GraphQuery prepareGraphQuery(String queryString) throws MalformedQueryException {
+&nbsp;
+<b class="nc">&nbsp;		Query q = prepareQuery(queryString);</b>
+<b class="nc">&nbsp;		if (!(q instanceof GraphQuery)) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(&quot;Query is not a graph query: &quot; + q.getClass());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (GraphQuery) q;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepare a boolean query which uses the underlying federation to evaluate the query.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * The queryString is modified to use the declared PREFIX declarations, see
+&nbsp;	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+&nbsp;	 *
+&nbsp;	 * @param queryString
+&nbsp;	 * @return the prepared {@link BooleanQuery}
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 */
+&nbsp;	public BooleanQuery prepareBooleanQuery(String queryString) throws MalformedQueryException {
+&nbsp;
+<b class="nc">&nbsp;		Query q = prepareQuery(queryString);</b>
+<b class="nc">&nbsp;		if (!(q instanceof BooleanQuery)) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(&quot;Unexpected query type: &quot; + q.getClass());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return (BooleanQuery) q;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	static Pattern prefixCheck = Pattern.compile(&quot;.*PREFIX .*&quot;, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);</b>
+<b class="nc">&nbsp;	static Pattern prefixPattern = Pattern.compile(&quot;PREFIX[ ]*(\\w*):[ ]*&lt;(\\S*)&gt;&quot;,</b>
+&nbsp;			Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Prepare a {@link Query} which uses the underlying federation to evaluate the SPARQL query.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * The queryString is modified to use the declared PREFIX declarations, see
+&nbsp;	 * {@link FedXConfig#getPrefixDeclarations()} for details.
+&nbsp;	 *
+&nbsp;	 * @param queryString
+&nbsp;	 * @return the prepared {@link Query}
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 */
+&nbsp;	public Query prepareQuery(String queryString) throws MalformedQueryException {
+&nbsp;
+<b class="nc">&nbsp;		if (prefixDeclarations.size() &gt; 0) {</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
+&nbsp;			 * RDF4J throws a MalformedQueryException
+&nbsp;			 */
+<b class="nc">&nbsp;			if (prefixCheck.matcher(queryString).matches()) {</b>
+<b class="nc">&nbsp;				queryString = getPrefixDeclarationsCheck(queryString) + queryString;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				queryString = getPrefixDeclarations() + queryString;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		Query q;
+&nbsp;		try {
+<b class="nc">&nbsp;			q = getOrCreateConn().prepareQuery(QueryLanguage.SPARQL, queryString);</b>
+<b class="nc">&nbsp;		} catch (RepositoryException e) {</b>
+<b class="nc">&nbsp;			throw new FedXRuntimeException(e); // cannot occur</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+&nbsp;		// TODO set query time
+&nbsp;
+<b class="nc">&nbsp;		return q;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Retrieve the query plan for the given query string.
+&nbsp;	 *
+&nbsp;	 * @param queryString
+&nbsp;	 * @return the query plan
+&nbsp;	 * @throws MalformedQueryException
+&nbsp;	 * @throws FedXException
+&nbsp;	 */
+&nbsp;	public String getQueryPlan(String queryString) throws MalformedQueryException, FedXException {
+&nbsp;
+<b class="nc">&nbsp;		if (prefixDeclarations.size() &gt; 0) {</b>
+&nbsp;
+&nbsp;			/*
+&nbsp;			 * we have to check for prefixes in the query to not add duplicate entries. In case duplicates are present
+&nbsp;			 * RDF4J throws a MalformedQueryException
+&nbsp;			 */
+<b class="nc">&nbsp;			if (prefixCheck.matcher(queryString).matches()) {</b>
+<b class="nc">&nbsp;				queryString = getPrefixDeclarationsCheck(queryString) + queryString;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				queryString = getPrefixDeclarations() + queryString;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ParsedOperation query = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryString, null);</b>
+<b class="nc">&nbsp;		if (!(query instanceof ParsedQuery)) {</b>
+<b class="nc">&nbsp;			throw new MalformedQueryException(&quot;Not a ParsedQuery: &quot; + query.getClass());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		Dataset dataset = ((ParsedQuery) query).getDataset();</b>
+<b class="nc">&nbsp;		FederationEvalStrategy strategy = federationContext.createStrategy(dataset);</b>
+&nbsp;		// we use a dummy query info object here
+<b class="nc">&nbsp;		QueryInfo qInfo = new QueryInfo(queryString, null, QueryType.SELECT,</b>
+<b class="nc">&nbsp;				federationContext.getConfig().getEnforceMaxQueryTime(),</b>
+<b class="nc">&nbsp;				federationContext.getConfig().getIncludeInferredDefault(), federationContext, strategy,</b>
+&nbsp;				dataset);
+<b class="nc">&nbsp;		TupleExpr tupleExpr = ((ParsedQuery) query).getTupleExpr();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			FederationEvaluationStatistics evaluationStatistics = new FederationEvaluationStatistics(qInfo,</b>
+&nbsp;					new SimpleDataset());
+<b class="nc">&nbsp;			tupleExpr = strategy.optimize(tupleExpr, evaluationStatistics, EmptyBindingSet.getInstance());</b>
+<b class="nc">&nbsp;			return tupleExpr.toString();</b>
+<b class="nc">&nbsp;		} catch (SailException e) {</b>
+<b class="nc">&nbsp;			throw new FedXException(&quot;Unable to retrieve query plan: &quot; + e.getMessage());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Computes the (incremental) next query identifier. Implementation is thread safe and synchronized.
+&nbsp;	 *
+&nbsp;	 * @return the next query identifier
+&nbsp;	 */
+&nbsp;	public BigInteger getNextQueryId() {
+<b class="nc">&nbsp;		return nextQueryID.incrementAndGet();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the prefix declarations that have to be prepended to the query.
+&nbsp;	 *
+&nbsp;	 * @return the prefix declarations
+&nbsp;	 */
+&nbsp;	protected String getPrefixDeclarations() {
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (String namespace : prefixDeclarations.keySet()) {</b>
+<b class="nc">&nbsp;			sb.append(&quot;PREFIX &quot;)</b>
+<b class="nc">&nbsp;					.append(namespace)</b>
+<b class="nc">&nbsp;					.append(&quot;: &lt;&quot;)</b>
+<b class="nc">&nbsp;					.append(prefixDeclarations.get(namespace))</b>
+<b class="nc">&nbsp;					.append(&quot;&gt;\r\n&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Get the prefix declarations that have to be added while considering prefixes that are already declared in the
+&nbsp;	 * query. The issue here is that duplicate declaration causes exceptions in Sesame
+&nbsp;	 *
+&nbsp;	 * @param queryString
+&nbsp;	 * @return the prefix declarations
+&nbsp;	 */
+&nbsp;	protected String getPrefixDeclarationsCheck(String queryString) {
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; queryPrefixes = findQueryPrefixes(queryString);</b>
+&nbsp;
+<b class="nc">&nbsp;		StringBuilder sb = new StringBuilder();</b>
+<b class="nc">&nbsp;		for (String prefix : prefixDeclarations.keySet()) {</b>
+<b class="nc">&nbsp;			if (queryPrefixes.contains(prefix)) {</b>
+<b class="nc">&nbsp;				continue; // already there, do not add</b>
+&nbsp;			}
+<b class="nc">&nbsp;			sb.append(&quot;PREFIX &quot;)</b>
+<b class="nc">&nbsp;					.append(prefix)</b>
+<b class="nc">&nbsp;					.append(&quot;: &lt;&quot;)</b>
+<b class="nc">&nbsp;					.append(prefixDeclarations.get(prefix))</b>
+<b class="nc">&nbsp;					.append(&quot;&gt;\r\n&quot;);</b>
+<b class="nc">&nbsp;		}</b>
+<b class="nc">&nbsp;		return sb.toString();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Find all prefixes declared in the query
+&nbsp;	 *
+&nbsp;	 * @param queryString
+&nbsp;	 * @return the prefixes
+&nbsp;	 */
+&nbsp;	protected static Set&lt;String&gt; findQueryPrefixes(String queryString) {
+&nbsp;
+<b class="nc">&nbsp;		HashSet&lt;String&gt; res = new HashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		Scanner sc = new Scanner(queryString);</b>
+&nbsp;		while (true) {
+<b class="nc">&nbsp;			while (sc.findInLine(prefixPattern) != null) {</b>
+<b class="nc">&nbsp;				MatchResult m = sc.match();</b>
+<b class="nc">&nbsp;				res.add(m.group(1));</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;			if (!sc.hasNextLine()) {</b>
+<b class="nc">&nbsp;				break;</b>
+&nbsp;			}
+<b class="nc">&nbsp;			sc.nextLine();</b>
+&nbsp;		}
+<b class="nc">&nbsp;		sc.close();</b>
+<b class="nc">&nbsp;		return res;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static class AtomicBigInteger {
+&nbsp;
+<b class="nc">&nbsp;		private final AtomicReference&lt;BigInteger&gt; valueHolder = new AtomicReference&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		public AtomicBigInteger(BigInteger bigInteger) {</b>
+<b class="nc">&nbsp;			valueHolder.set(bigInteger);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public BigInteger incrementAndGet() {
+&nbsp;			for (;;) {
+<b class="nc">&nbsp;				BigInteger current = valueHolder.get();</b>
+<b class="nc">&nbsp;				BigInteger next = current.add(BigInteger.ONE);</b>
+<b class="nc">&nbsp;				if (valueHolder.compareAndSet(current, next)) {</b>
+<b class="nc">&nbsp;					return next;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

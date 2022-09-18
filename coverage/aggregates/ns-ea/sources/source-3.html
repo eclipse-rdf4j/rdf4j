@@ -1,0 +1,306 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > PropertyPathBuilder</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder</a>
+</div>
+
+<h1>Coverage Summary for Class: PropertyPathBuilder (org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">PropertyPathBuilder</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/43)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*
+&nbsp; * ******************************************************************************
+&nbsp; *  * Copyright (c) 2021 Eclipse RDF4J contributors.
+&nbsp; *  *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; *  * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; *  * which accompanies this distribution, and is available at
+&nbsp; *  * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *  ******************************************************************************
+&nbsp; */
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.p;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pAlt;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pGroup;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pOneOrMore;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pSeq;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pZeroOrMore;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.builder.PropertyPaths.pZeroOrOne;
+&nbsp;import static org.eclipse.rdf4j.sparqlbuilder.rdf.Rdf.iri;
+&nbsp;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.function.BiFunction;
+&nbsp;import java.util.function.Consumer;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.GroupedPath;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.InversePath;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath.PropertyPath;
+&nbsp;import org.eclipse.rdf4j.sparqlbuilder.rdf.Iri;
+&nbsp;
+&nbsp;/**
+&nbsp; * @since 4.0.0
+&nbsp; * @author Florian Kleedorfer
+&nbsp; */
+&nbsp;public class PropertyPathBuilder {
+&nbsp;	private PropertyPath head;
+&nbsp;
+<b class="nc">&nbsp;	private PropertyPathBuilder() {</b>
+<b class="nc">&nbsp;		this.head = null;</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	PropertyPathBuilder(Iri predicate) {</b>
+<b class="nc">&nbsp;		this.head = p(predicate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	PropertyPathBuilder(IRI predicate) {
+<b class="nc">&nbsp;		this(iri(predicate));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static PropertyPathBuilder of(Iri predicate) {
+<b class="nc">&nbsp;		return new PropertyPathBuilder(predicate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	public static PropertyPathBuilder of(IRI predicate) {
+<b class="nc">&nbsp;		return new PropertyPathBuilder(predicate);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Build the path.
+&nbsp;	 *
+&nbsp;	 * @return
+&nbsp;	 */
+&nbsp;	public PropertyPath build() {
+<b class="nc">&nbsp;		return head;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Invert whatever comes next (i.e. append &lt;code&gt;^&lt;/code&gt;.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder inv() {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		head = new InversePath(groupIfNotGrouped(head));</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private PropertyPath groupIfNotGrouped(PropertyPath path) {
+<b class="nc">&nbsp;		if (head instanceof GroupedPath) {</b>
+<b class="nc">&nbsp;			return path;</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return new GroupedPath(path);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`/` predicate&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder then(Iri predicate) {
+<b class="nc">&nbsp;		return then(p(predicate));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`/` path&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder then(IRI predicate) {
+<b class="nc">&nbsp;		return then(iri(predicate));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`/` path&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder then(PropertyPath path) {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		head = pSeq(head, path);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`/`&lt;/code&gt; and the product of the &lt;code&gt;subtreeBuilder&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder then(Consumer&lt;EmptyPropertyPathBuilder&gt; subtreeBuilder) {
+<b class="nc">&nbsp;		return withSubtree(subtreeBuilder, PropertyPaths::pSeq);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private PropertyPathBuilder withSubtree(
+&nbsp;			Consumer&lt;EmptyPropertyPathBuilder&gt; subtreeBuilder,
+&nbsp;			BiFunction&lt;PropertyPath, PropertyPath, PropertyPath&gt; assembler) {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		EmptyPropertyPathBuilder b = new EmptyPropertyPathBuilder();</b>
+<b class="nc">&nbsp;		subtreeBuilder.accept(b);</b>
+<b class="nc">&nbsp;		head = assembler.apply(head, b.build());</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`|` predicate&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder or(Iri predicate) {
+<b class="nc">&nbsp;		return or(p(predicate));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`|` path&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder or(IRI predicate) {
+<b class="nc">&nbsp;		return or(iri(predicate));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`|` path&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder or(PropertyPath path) {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		head = pAlt(head, path);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`|`&lt;/code&gt; and the product of the &lt;code&gt;subtreeBuilder&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder or(Consumer&lt;EmptyPropertyPathBuilder&gt; subtreeBuilder) {
+<b class="nc">&nbsp;		return withSubtree(subtreeBuilder, PropertyPaths::pAlt);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`*`&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder zeroOrMore() {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		head = pZeroOrMore(head);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`+`&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;
+&nbsp;	public PropertyPathBuilder oneOrMore() {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		head = pOneOrMore(head);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Append &lt;code&gt;`?`&lt;/code&gt; to the path.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder zeroOrOne() {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		head = pZeroOrOne(head);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Enclose the path with &lt;code&gt;`(` and `)`&lt;/code&gt;.
+&nbsp;	 */
+&nbsp;	public PropertyPathBuilder group() {
+<b class="nc">&nbsp;		Objects.requireNonNull(head);</b>
+<b class="nc">&nbsp;		head = pGroup(head);</b>
+<b class="nc">&nbsp;		return this;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

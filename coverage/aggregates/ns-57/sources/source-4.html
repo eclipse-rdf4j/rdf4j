@@ -1,0 +1,383 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > Model</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model</a>
+</div>
+
+<h1>Coverage Summary for Class: Model (org.eclipse.rdf4j.model)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">Model</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (1/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (1/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    12.5%
+  </span>
+  <span class="absValue">
+    (1/8)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.model;
+&nbsp;
+&nbsp;import java.io.Serializable;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Set;
+&nbsp;import java.util.stream.Collectors;
+&nbsp;
+&nbsp;/**
+&nbsp; * An RDF Model, represented as a {@link java.util.Set} of {@link Statement}s with predictable iteration order.
+&nbsp; * &lt;p&gt;
+&nbsp; * Additional utility functionality for working with {@code Model} objects is available in the
+&nbsp; * {@code org.eclipse.rdf4j.model.util.Models} utility class.
+&nbsp; *
+&nbsp; * @author James Leigh
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public interface Model extends Set&lt;Statement&gt;, Serializable, NamespaceAware {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an unmodifiable view of this model. This method provides &quot;read-only&quot; access to this model. Query
+&nbsp;	 * operations on the returned model &quot;read through&quot; to this model, and attempts to modify the returned model, whether
+&nbsp;	 * direct or via its iterator, result in an {@link UnsupportedOperationException}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 *
+&nbsp;	 * @return an unmodifiable view of the specified set.
+&nbsp;	 */
+&nbsp;	Model unmodifiable();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the prefix for a namespace. This will replace any existing namespace associated to the prefix.
+&nbsp;	 *
+&nbsp;	 * @param prefix The new prefix.
+&nbsp;	 * @param name   The namespace name that the prefix maps to.
+&nbsp;	 * @return The {@link Namespace} object for the given namespace.
+&nbsp;	 */
+&nbsp;	default Namespace setNamespace(String prefix, String name) {
+<b class="nc">&nbsp;		Optional&lt;? extends Namespace&gt; result = getNamespace(prefix);</b>
+<b class="nc">&nbsp;		if (!result.isPresent() || !result.get().getName().equals(name)) {</b>
+<b class="nc">&nbsp;			result = Optional.of(new ModelNamespace(prefix, name));</b>
+<b class="nc">&nbsp;			setNamespace(result.get());</b>
+&nbsp;		}
+<b class="nc">&nbsp;		return result.get();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Sets the prefix for a namespace. This will replace any existing namespace associated to the prefix.
+&nbsp;	 *
+&nbsp;	 * @param namespace A {@link Namespace} object to use in this Model.
+&nbsp;	 */
+&nbsp;	void setNamespace(Namespace namespace);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes a namespace declaration by removing the association between a prefix and a namespace name.
+&nbsp;	 *
+&nbsp;	 * @param prefix The namespace prefix of which the assocation with a namespace name is to be removed.
+&nbsp;	 * @return the previous namespace bound to the prefix or {@link Optional#empty()}
+&nbsp;	 */
+&nbsp;	Optional&lt;Namespace&gt; removeNamespace(String prefix);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Determines if statements with the specified subject, predicate, object and (optionally) context exist in this
+&nbsp;	 * model. The {@code subject}, {@code predicate} and {@code object} parameters can be {@code null} to indicate
+&nbsp;	 * wildcards. The {@code contexts} parameter is a wildcard and accepts zero or more values. If no contexts are
+&nbsp;	 * specified, statements will match disregarding their context. If one or more contexts are specified, statements
+&nbsp;	 * with a context matching one of these will match. Note: to match statements without an associated context, specify
+&nbsp;	 * the value {@code null} and explicitly cast it to type {@code Resource}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Examples: {@code model.contains(s1, null, null)} is true if any statements in this model have subject
+&nbsp;	 * {@code s1},&lt;br&gt;
+&nbsp;	 * {@code model.contains(null, null, null, c1)} is true if any statements in this model have context {@code c1},&lt;br&gt;
+&nbsp;	 * {@code model.contains(null, null, null, (Resource)null)} is true if any statements in this model have no
+&nbsp;	 * associated context,&lt;br&gt;
+&nbsp;	 * {@code model.contains(null, null, null, c1, c2, c3)} is true if any statements in this model have context
+&nbsp;	 * {@code c1}, {@code c2} or {@code c3} .
+&nbsp;	 *
+&nbsp;	 * @param subj     The subject of the statements to match, {@code null} to match statements with any subject.
+&nbsp;	 * @param pred     The predicate of the statements to match, {@code null} to match statements with any predicate.
+&nbsp;	 * @param obj      The object of the statements to match, {@code null} to match statements with any object.
+&nbsp;	 * @param contexts The contexts of the statements to match. If no contexts are specified, statements will match
+&nbsp;	 *                 disregarding their context. If one or more contexts are specified, statements with a context
+&nbsp;	 *                 matching one of these will match.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if statements match the specified pattern.
+&nbsp;	 */
+&nbsp;	boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Adds one or more statements to the model. This method creates a statement for each specified context and adds
+&nbsp;	 * those to the model. If no contexts are specified, a single statement with no associated context is added. If this
+&nbsp;	 * Model is a filtered Model then null (if context empty) values are permitted and will use the corresponding
+&nbsp;	 * filtered values.
+&nbsp;	 *
+&nbsp;	 * @param subj     The statement&#39;s subject.
+&nbsp;	 * @param pred     The statement&#39;s predicate.
+&nbsp;	 * @param obj      The statement&#39;s object.
+&nbsp;	 * @param contexts The contexts to add statements to.
+&nbsp;	 * @throws IllegalArgumentException      If This Model cannot store the given statement, because it is filtered out
+&nbsp;	 *                                       of this view.
+&nbsp;	 * @throws UnsupportedOperationException If this Model cannot accept any statements, because it is filtered to the
+&nbsp;	 *                                       empty set.
+&nbsp;	 */
+&nbsp;	boolean add(Resource subj, IRI pred, Value obj, Resource... contexts);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes statements with the specified context exist in this model.
+&nbsp;	 *
+&nbsp;	 * @param context The context of the statements to remove.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if one or more statements have been removed.
+&nbsp;	 */
+&nbsp;	boolean clear(Resource... context);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Removes statements with the specified subject, predicate, object and (optionally) context exist in this model.
+&nbsp;	 * The {@code subject}, {@code predicate} and {@code object} parameters can be {@code null} to indicate wildcards.
+&nbsp;	 * The {@code contexts} parameter is a wildcard and accepts zero or more values. If no contexts are specified,
+&nbsp;	 * statements will be removed disregarding their context. If one or more contexts are specified, statements with a
+&nbsp;	 * context matching one of these will be removed. Note: to remove statements without an associated context, specify
+&nbsp;	 * the value {@code null} and explicitly cast it to type {@code Resource}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Examples: {@code model.remove(s1, null, null)} removes any statements in this model have subject {@code s1},&lt;br&gt;
+&nbsp;	 * {@code model.remove(null, null, null, c1)} removes any statements in this model have context {@code c1} ,&lt;br&gt;
+&nbsp;	 * {@code model.remove(null, null, null, (Resource)null)} removes any statements in this model have no associated
+&nbsp;	 * context,&lt;br&gt;
+&nbsp;	 * {@code model.remove(null, null, null, c1, c2, c3)} removes any statements in this model have context {@code c1},
+&nbsp;	 * {@code c2} or {@code c3}.
+&nbsp;	 *
+&nbsp;	 * @param subj     The subject of the statements to remove, {@code null} to remove statements with any subject.
+&nbsp;	 * @param pred     The predicate of the statements to remove, {@code null} to remove statements with any predicate.
+&nbsp;	 * @param obj      The object of the statements to remove, {@code null} to remove statements with any object.
+&nbsp;	 * @param contexts The contexts of the statements to remove. If no contexts are specified, statements will be
+&nbsp;	 *                 removed disregarding their context. If one or more contexts are specified, statements with a
+&nbsp;	 *                 context matching one of these will be removed.
+&nbsp;	 * @return &lt;code&gt;true&lt;/code&gt; if one or more statements have been removed.
+&nbsp;	 */
+&nbsp;	boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns an {@link Iterable} over all {@link Statement}s in this Model that match the supplied criteria.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Examples:
+&nbsp;	 * &lt;ul&gt;
+&nbsp;	 * &lt;li&gt;{@code model.getStatements(s1, null, null)} matches all statements that have subject {@code s1}&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;{@code model.getStatements(s1, p1, null)} matches all statements that have subject {@code s1} and predicate
+&nbsp;	 * {@code p1}&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;{@code model.getStatements(null, null, null, c1)} matches all statements that have context {@code c1}&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;{@code model.getStatements(null, null, null, (Resource)null)} matches all statements that have no associated
+&nbsp;	 * context&lt;/li&gt;
+&nbsp;	 * &lt;li&gt;{@code model.getStatements(null, null, null, c1, c2, c3)} matches all statements that have context
+&nbsp;	 * {@code c1}, {@code c2} or {@code c3}&lt;/li&gt;
+&nbsp;	 * &lt;/ul&gt;
+&nbsp;	 *
+&nbsp;	 * @param subject   The subject of the statements to match, {@code null} to match statements with any subject.
+&nbsp;	 * @param predicate The predicate of the statements to match, {@code null} to match statements with any predicate.
+&nbsp;	 * @param object    The object of the statements to match, {@code null} to match statements with any object.
+&nbsp;	 * @param contexts  The contexts of the statements to match. If no contexts are specified, statements will match
+&nbsp;	 *                  disregarding their context. If one or more contexts are specified, statements with a context
+&nbsp;	 *                  matching any one of these will match. To match statements without an associated context, specify
+&nbsp;	 *                  the value {@code null} and explicitly cast it to type {@code Resource}.
+&nbsp;	 * @return an {@link Iterable} over the statements in this Model that match the specified pattern.
+&nbsp;	 *
+&nbsp;	 * @since 3.2.0
+&nbsp;	 *
+&nbsp;	 * @see #filter(Resource, IRI, Value, Resource...)
+&nbsp;	 */
+&nbsp;	default Iterable&lt;Statement&gt; getStatements(Resource subject, IRI predicate, Value object,
+&nbsp;			Resource... contexts) {
+<b class="fc">&nbsp;		return () -&gt; filter(subject, predicate, object, contexts).iterator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a filtered view of the statements with the specified subject, predicate, object and (optionally) context.
+&nbsp;	 * The {@code subject}, {@code predicate} and {@code object} parameters can be {@code null} to indicate wildcards.
+&nbsp;	 * The {@code contexts} parameter is a wildcard and accepts zero or more values. If no contexts are specified,
+&nbsp;	 * statements will match disregarding their context. If one or more contexts are specified, statements with a
+&nbsp;	 * context matching one of these will match. Note: to match statements without an associated context, specify the
+&nbsp;	 * value {@code null} and explicitly cast it to type {@code Resource}.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * The returned model is backed by this Model, so changes to this Model are reflected in the returned model, and
+&nbsp;	 * vice-versa. If this Model is modified while an iteration over the returned model is in progress (except through
+&nbsp;	 * the iterator&#39;s own {@code remove} operation), the results of the iteration are undefined. The model supports
+&nbsp;	 * element removal, which removes the corresponding statement from this Model, via the {@code Iterator.remove},
+&nbsp;	 * {@code Set.remove}, {@code removeAll}, {@code retainAll}, and {@code clear} operations. The statements passed to
+&nbsp;	 * the {@code add} and {@code addAll} operations must match the parameter pattern.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * Examples: {@code model.filter(s1, null, null)} matches all statements that have subject {@code s1},&lt;br&gt;
+&nbsp;	 * {@code model.filter(null, null, null, c1)} matches all statements that have context {@code c1},&lt;br&gt;
+&nbsp;	 * {@code model.filter(null, null, null, (Resource)null)} matches all statements that have no associated
+&nbsp;	 * context,&lt;br&gt;
+&nbsp;	 * {@code model.filter(null, null, null, c1, c2, c3)} matches all statements that have context {@code c1},
+&nbsp;	 * {@code c2} or {@code c3}.
+&nbsp;	 *
+&nbsp;	 * @param subj     The subject of the statements to match, {@code null} to match statements with any subject.
+&nbsp;	 * @param pred     The predicate of the statements to match, {@code null} to match statements with any predicate.
+&nbsp;	 * @param obj      The object of the statements to match, {@code null} to match statements with any object.
+&nbsp;	 * @param contexts The contexts of the statements to match. If no contexts are specified, statements will match
+&nbsp;	 *                 disregarding their context. If one or more contexts are specified, statements with a context
+&nbsp;	 *                 matching one of these will match.
+&nbsp;	 * @return The statements that match the specified pattern.
+&nbsp;	 *
+&nbsp;	 * @see #getStatements(Resource, IRI, Value, Resource...)
+&nbsp;	 */
+&nbsp;	Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link Set} view of the subjects contained in this model. The set is backed by the model, so changes to
+&nbsp;	 * the model are reflected in the set, and vice-versa. If the model is modified while an iteration over the set is
+&nbsp;	 * in progress (except through the iterator&#39;s own {@code remove} operation), the results of the iteration are
+&nbsp;	 * undefined. The set supports element removal, which removes all statements from the model for which that element
+&nbsp;	 * is a subject value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
+&nbsp;	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
+&nbsp;	 * {@code pred} or {@code obj} are null.
+&nbsp;	 *
+&nbsp;	 * @return a set view of the subjects contained in this model
+&nbsp;	 */
+&nbsp;	Set&lt;Resource&gt; subjects();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link Set} view of the predicates contained in this model. The set is backed by the model, so changes
+&nbsp;	 * to the model are reflected in the set, and vice-versa. If the model is modified while an iteration over the set
+&nbsp;	 * is in progress (except through the iterator&#39;s own {@code remove} operation), the results of the iteration are
+&nbsp;	 * undefined. The set supports element removal, which removes all statements from the model for which that element
+&nbsp;	 * is a predicate value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
+&nbsp;	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
+&nbsp;	 * {@code subj} or {@code obj} are null.
+&nbsp;	 *
+&nbsp;	 * @return a set view of the predicates contained in this model
+&nbsp;	 */
+&nbsp;	Set&lt;IRI&gt; predicates();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link Set} view of the objects contained in this model. The set is backed by the model, so changes to
+&nbsp;	 * the model are reflected in the set, and vice-versa. If the model is modified while an iteration over the set is
+&nbsp;	 * in progress (except through the iterator&#39;s own {@code remove} operation), the results of the iteration are
+&nbsp;	 * undefined. The set supports element removal, which removes all statements from the model for which that element
+&nbsp;	 * is an object value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
+&nbsp;	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
+&nbsp;	 * {@code subj} or {@code pred} are null.
+&nbsp;	 *
+&nbsp;	 * @return a set view of the objects contained in this model
+&nbsp;	 */
+&nbsp;	Set&lt;Value&gt; objects();
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Returns a {@link Set} view of the contexts contained in this model. The set is backed by the model, so changes to
+&nbsp;	 * the model are reflected in the set, and vice-versa. If the model is modified while an iteration over the set is
+&nbsp;	 * in progress (except through the iterator&#39;s own {@code remove} operation), the results of the iteration are
+&nbsp;	 * undefined. The set supports element removal, which removes all statements from the model for which that element
+&nbsp;	 * is a context value, via the {@code Iterator.remove}, {@code Set.remove}, {@code removeAll}, {@code retainAll},
+&nbsp;	 * and {@code clear} operations. It does not support the {@code add} or {@code addAll} operations if the parameters
+&nbsp;	 * {@code subj} , {@code pred} or {@code obj} are null.
+&nbsp;	 *
+&nbsp;	 * @return a set view of the contexts contained in this model
+&nbsp;	 */
+&nbsp;	default Set&lt;Resource&gt; contexts() {
+<b class="nc">&nbsp;		Set&lt;Resource&gt; subjects = stream().map(st -&gt; st.getContext()).collect(Collectors.toSet());</b>
+<b class="nc">&nbsp;		return subjects;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

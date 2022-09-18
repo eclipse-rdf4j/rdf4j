@@ -17,6 +17,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.Dataset;
 import org.junit.Before;
@@ -30,7 +32,16 @@ public abstract class OldSPARQL11QueryComplianceTest extends SPARQLQueryComplian
 
 	};
 
-	private static final List<String> excludedSubdirs = List.of("service");
+	private static final List<String> excludedSubdirs = List.of(
+		//			"aggregates",
+//			"bindings",
+//			"bsbm",
+//			"builtin",
+//			"expressions",
+//			"negation",
+//			"property-paths",
+//			"subquery"
+	);
 
 	public OldSPARQL11QueryComplianceTest(String displayName, String testURI, String name, String queryFileURL,
 			String resultFileURL,
@@ -62,8 +73,10 @@ public abstract class OldSPARQL11QueryComplianceTest extends SPARQLQueryComplian
 						.getResource("testcases-sparql-1.1/manifest-evaluation.ttl")
 						.toExternalForm());
 		while (!manifests.isEmpty()) {
+			List<String> excluded = Stream.concat(Stream.of("service"), excludedSubdirs.stream())
+					.collect(Collectors.toList());
 			String pop = manifests.pop();
-			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excludedSubdirs, false);
+			SPARQLQueryTestManifest manifest = new SPARQLQueryTestManifest(pop, excluded, false);
 			tests.addAll(manifest.getTests());
 			manifests.addAll(manifest.getSubManifests());
 		}

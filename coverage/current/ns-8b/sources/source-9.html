@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > DelegatingRepositoryConnection</title>
+  <title>Coverage Report > DelegatingRepository</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository</a>
 </div>
 
-<h1>Coverage Summary for Class: DelegatingRepositoryConnection (org.eclipse.rdf4j.repository)</h1>
+<h1>Coverage Summary for Class: DelegatingRepository (org.eclipse.rdf4j.repository)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">DelegatingRepositoryConnection</td>
+  <td class="name">DelegatingRepository</td>
 </tr>
 
 </table>
@@ -50,11 +50,14 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.repository;
 &nbsp;
-&nbsp;public interface DelegatingRepositoryConnection extends RepositoryConnection {
+&nbsp;/**
+&nbsp; * Main interface for repositories that wrap another repository.
+&nbsp; */
+&nbsp;public interface DelegatingRepository extends Repository {
 &nbsp;
-&nbsp;	RepositoryConnection getDelegate() throws RepositoryException;
+&nbsp;	Repository getDelegate();
 &nbsp;
-&nbsp;	void setDelegate(RepositoryConnection delegate);
+&nbsp;	void setDelegate(Repository delegate);
 &nbsp;}
 </code>
 </pre>
@@ -79,7 +82,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

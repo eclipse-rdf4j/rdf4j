@@ -1,0 +1,356 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > TypeFilteringRepositoryManager</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.repository.manager.util</a>
+</div>
+
+<h1>Coverage Summary for Class: TypeFilteringRepositoryManager (org.eclipse.rdf4j.repository.manager.util)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">TypeFilteringRepositoryManager</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/21)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/38)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/79)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.repository.manager.util;
+&nbsp;
+&nbsp;import java.net.MalformedURLException;
+&nbsp;import java.net.URL;
+&nbsp;import java.util.ArrayList;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.LinkedHashSet;
+&nbsp;import java.util.List;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.apache.http.client.HttpClient;
+&nbsp;import org.eclipse.rdf4j.repository.Repository;
+&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+&nbsp;import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
+&nbsp;import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+&nbsp;
+&nbsp;/**
+&nbsp; * @author Herko ter Horst
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+<b class="nc">&nbsp;public class TypeFilteringRepositoryManager extends RepositoryManager {</b>
+&nbsp;
+&nbsp;	private final String type;
+&nbsp;
+&nbsp;	private final RepositoryManager delegate;
+&nbsp;
+<b class="nc">&nbsp;	public TypeFilteringRepositoryManager(String type, RepositoryManager delegate) {</b>
+<b class="nc">&nbsp;		assert type != null : &quot;type must not be null&quot;;</b>
+<b class="nc">&nbsp;		assert delegate != null : &quot;delegate must not be null&quot;;</b>
+&nbsp;
+<b class="nc">&nbsp;		this.type = type;</b>
+<b class="nc">&nbsp;		this.delegate = delegate;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @see org.eclipse.rdf4j.repository.manager.RepositoryManager#getHttpClient()
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public HttpClient getHttpClient() {
+<b class="nc">&nbsp;		return delegate.getHttpClient();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * @param httpClient
+&nbsp;	 * @see org.eclipse.rdf4j.repository.manager.RepositoryManager#setHttpClient(org.apache.http.client.HttpClient)
+&nbsp;	 */
+&nbsp;	@Override
+&nbsp;	public void setHttpClient(HttpClient httpClient) {
+<b class="nc">&nbsp;		delegate.setHttpClient(httpClient);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void init() throws RepositoryException {
+<b class="nc">&nbsp;		delegate.init();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public URL getLocation() throws MalformedURLException {
+<b class="nc">&nbsp;		return delegate.getLocation();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getNewRepositoryID(String baseName) throws RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		return delegate.getNewRepositoryID(baseName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getRepositoryIDs() throws RepositoryException {
+<b class="nc">&nbsp;		Set&lt;String&gt; result = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String id : delegate.getRepositoryIDs()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (isCorrectType(id)) {</b>
+<b class="nc">&nbsp;					result.add(id);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RepositoryConfigException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasRepositoryConfig(String repositoryID) throws RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		boolean result = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isCorrectType(repositoryID)) {</b>
+<b class="nc">&nbsp;			result = delegate.hasRepositoryConfig(repositoryID);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryConfig getRepositoryConfig(String repositoryID)
+&nbsp;			throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		RepositoryConfig result = delegate.getRepositoryConfig(repositoryID);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (result != null) {</b>
+<b class="nc">&nbsp;			if (!isCorrectType(result)) {</b>
+<b class="nc">&nbsp;				logger.debug(</b>
+&nbsp;						&quot;Surpressing retrieval of repository {}: repository type {} did not match expected type {}&quot;,
+<b class="nc">&nbsp;						new Object[] { result.getID(), result.getRepositoryImplConfig().getType(), type });</b>
+&nbsp;
+<b class="nc">&nbsp;				result = null;</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addRepositoryConfig(RepositoryConfig config) throws RepositoryException, RepositoryConfigException {
+<b class="nc">&nbsp;		if (isCorrectType(config)) {</b>
+<b class="nc">&nbsp;			delegate.addRepositoryConfig(config);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new UnsupportedOperationException(</b>
+&nbsp;					&quot;Only repositories of type &quot; + type + &quot; can be added to this manager.&quot;);
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Repository getRepository(String id) throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		Repository result = null;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (isCorrectType(id)) {</b>
+<b class="nc">&nbsp;			result = delegate.getRepository(id);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Set&lt;String&gt; getInitializedRepositoryIDs() {
+<b class="nc">&nbsp;		Set&lt;String&gt; result = new LinkedHashSet&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String id : delegate.getInitializedRepositoryIDs()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (isCorrectType(id)) {</b>
+<b class="nc">&nbsp;					result.add(id);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RepositoryConfigException | RepositoryException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Failed to verify repository type&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;Repository&gt; getInitializedRepositories() {
+<b class="nc">&nbsp;		List&lt;Repository&gt; result = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (String id : getInitializedRepositoryIDs()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				Repository repository = getRepository(id);</b>
+&nbsp;
+<b class="nc">&nbsp;				if (repository != null) {</b>
+<b class="nc">&nbsp;					result.add(repository);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RepositoryConfigException | RepositoryException e) {</b>
+<b class="nc">&nbsp;				logger.error(&quot;Failed to verify repository type&quot;, e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected Repository createRepository(String id) throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		throw new UnsupportedOperationException(</b>
+&nbsp;				&quot;Repositories cannot be created through this wrapper. This method should not have been called, the delegate should take care of it.&quot;);
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RepositoryInfo&gt; getAllRepositoryInfos() throws RepositoryException {
+<b class="nc">&nbsp;		List&lt;RepositoryInfo&gt; result = new ArrayList&lt;&gt;();</b>
+&nbsp;
+<b class="nc">&nbsp;		for (RepositoryInfo repInfo : delegate.getAllRepositoryInfos()) {</b>
+&nbsp;			try {
+<b class="nc">&nbsp;				if (isCorrectType(repInfo.getId())) {</b>
+<b class="nc">&nbsp;					result.add(repInfo);</b>
+&nbsp;				}
+<b class="nc">&nbsp;			} catch (RepositoryConfigException e) {</b>
+<b class="nc">&nbsp;				throw new RepositoryException(e.getMessage(), e);</b>
+<b class="nc">&nbsp;			}</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RepositoryInfo getRepositoryInfo(String id) throws RepositoryException {
+&nbsp;		try {
+<b class="nc">&nbsp;			if (isCorrectType(id)) {</b>
+<b class="nc">&nbsp;				return delegate.getRepositoryInfo(id);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			return null;</b>
+<b class="nc">&nbsp;		} catch (RepositoryConfigException e) {</b>
+<b class="nc">&nbsp;			throw new RepositoryException(e.getMessage(), e);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void refresh() {
+<b class="nc">&nbsp;		delegate.refresh();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void shutDown() {
+<b class="nc">&nbsp;		delegate.shutDown();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean isCorrectType(String repositoryID) throws RepositoryConfigException, RepositoryException {
+<b class="nc">&nbsp;		return isCorrectType(delegate.getRepositoryConfig(repositoryID));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected boolean isCorrectType(RepositoryConfig repositoryConfig) {
+<b class="nc">&nbsp;		boolean result = false;</b>
+&nbsp;
+<b class="nc">&nbsp;		if (repositoryConfig != null) {</b>
+<b class="nc">&nbsp;			result = repositoryConfig.getRepositoryImplConfig().getType().equals(type);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,464 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > AbstractValueFactory</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.model.base</a>
+</div>
+
+<h1>Coverage Summary for Class: AbstractValueFactory (org.eclipse.rdf4j.model.base)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">AbstractValueFactory</td>
+<td class="coverageStat">
+  <span class="percent">
+    55.6%
+  </span>
+  <span class="absValue">
+    (15/27)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    35.7%
+  </span>
+  <span class="absValue">
+    (5/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    56.3%
+  </span>
+  <span class="absValue">
+    (40/71)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">AbstractValueFactory$GenericStatement</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (5/5)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    100%
+  </span>
+  <span class="absValue">
+    (9/9)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    62.5%
+  </span>
+  <span class="absValue">
+    (20/32)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    35.7%
+  </span>
+  <span class="absValue">
+    (5/14)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    61.2%
+  </span>
+  <span class="absValue">
+    (49/80)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2020 Eclipse RDF4J contributors.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.model.base;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.model.base.AbstractLiteral.reserved;
+&nbsp;
+&nbsp;import java.math.BigDecimal;
+&nbsp;import java.math.BigInteger;
+&nbsp;import java.time.temporal.TemporalAccessor;
+&nbsp;import java.time.temporal.TemporalAmount;
+&nbsp;import java.util.Date;
+&nbsp;import java.util.GregorianCalendar;
+&nbsp;import java.util.Objects;
+&nbsp;import java.util.concurrent.ThreadLocalRandom;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import javax.xml.datatype.XMLGregorianCalendar;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractBNode.GenericBNode;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractIRI.GenericIRI;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.BooleanLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.CalendarLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.DecimalLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.IntegerLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.NumberLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.TaggedLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAccessorLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.TemporalAmountLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractLiteral.TypedLiteral;
+&nbsp;import org.eclipse.rdf4j.model.base.AbstractTriple.GenericTriple;
+&nbsp;
+&nbsp;/**
+&nbsp; * Base class for {@link ValueFactory}, offering common functionality.
+&nbsp; *
+&nbsp; * @author Alessandro Bollini
+&nbsp; * @since 3.5.0
+&nbsp; */
+&nbsp;@SuppressWarnings(&quot;UseOfObsoleteDateTimeApi&quot;)
+<b class="fc">&nbsp;public abstract class AbstractValueFactory implements ValueFactory {</b>
+&nbsp;
+<b class="fc">&nbsp;	private static final Literal TRUE = new BooleanLiteral(true);</b>
+<b class="fc">&nbsp;	private static final Literal FALSE = new BooleanLiteral(false);</b>
+&nbsp;
+<b class="fc">&nbsp;	private final AtomicLong nodeID = new AtomicLong(ThreadLocalRandom.current().nextLong());</b>
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BNode createBNode() {
+<b class="fc">&nbsp;		return new GenericBNode(Long.toHexString(Math.abs(nodeID.getAndIncrement())));</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public BNode createBNode(String nodeID) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(nodeID, &quot;null nodeID&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new GenericBNode(nodeID);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String iri) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(iri, &quot;null iri&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (iri.indexOf(&#39;:&#39;) &lt; 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;missing colon in absolute IRI&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new GenericIRI(iri);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public IRI createIRI(String namespace, String localName) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(namespace, &quot;null namespace&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(localName, &quot;null localName&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (namespace.indexOf(&#39;:&#39;) &lt; 0) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;missing colon in absolute namespace IRI&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		return new GenericIRI(namespace, localName);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(label, &quot;null label&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new TypedLiteral(label);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, IRI datatype) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(label, &quot;null label&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (reserved(datatype)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;reserved datatype &lt;&quot; + datatype + &quot;&gt;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new TypedLiteral(label, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, CoreDatatype datatype) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(label, &quot;Label may not be null&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(datatype, &quot;CoreDatatype may not be null&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (reserved(datatype)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;reserved datatype &lt;&quot; + datatype + &quot;&gt;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new TypedLiteral(label, datatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, IRI datatype, CoreDatatype coreDatatype) {
+<b class="fc">&nbsp;		Objects.requireNonNull(label, &quot;Label may not be null&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(datatype, &quot;Datatype may not be null&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(coreDatatype, &quot;CoreDatatype may not be null&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (reserved(coreDatatype)) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;reserved datatype &lt;&quot; + datatype + &quot;&gt;&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new TypedLiteral(label, datatype, coreDatatype);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(String label, String language) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(label, &quot;null label&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(language, &quot;null language&quot;);</b>
+&nbsp;
+<b class="pc">&nbsp;		if (language.isEmpty()) {</b>
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;empty language tag&quot;);</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		return new TaggedLiteral(label, language);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(boolean value) {
+<b class="nc">&nbsp;		return value ? TRUE : FALSE;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(byte value) {
+<b class="nc">&nbsp;		return new NumberLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(short value) {
+<b class="nc">&nbsp;		return new NumberLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(int value) {
+<b class="nc">&nbsp;		return new NumberLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(long value) {
+<b class="nc">&nbsp;		return new NumberLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(float value) {
+<b class="fc">&nbsp;		return new NumberLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(double value) {
+<b class="fc">&nbsp;		return new NumberLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(BigInteger bigInteger) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(bigInteger, &quot;null bigIntegr&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new IntegerLiteral(bigInteger);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(BigDecimal bigDecimal) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(bigDecimal, &quot;null bigDecimal&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new DecimalLiteral(bigDecimal);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(TemporalAccessor value) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(value, &quot;null value&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new TemporalAccessorLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(TemporalAmount value) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(value, &quot;null value&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new TemporalAmountLiteral(value);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(XMLGregorianCalendar calendar) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(calendar, &quot;null calendar&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new CalendarLiteral(calendar);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Literal createLiteral(Date date) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(date, &quot;null date&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		final GregorianCalendar calendar = new GregorianCalendar();</b>
+&nbsp;
+<b class="nc">&nbsp;		calendar.setTime(date);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new CalendarLiteral(calendar);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Triple createTriple(Resource subject, IRI predicate, Value object) {
+&nbsp;
+<b class="nc">&nbsp;		Objects.requireNonNull(subject, &quot;null subject&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(predicate, &quot;null predicate&quot;);</b>
+<b class="nc">&nbsp;		Objects.requireNonNull(object, &quot;null object&quot;);</b>
+&nbsp;
+<b class="nc">&nbsp;		return new GenericTriple(subject, predicate, object);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Statement createStatement(Resource subject, IRI predicate, Value object) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(subject, &quot;null subject&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(predicate, &quot;null predicate&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(object, &quot;null object&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new GenericStatement(subject, predicate, object, null);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
+&nbsp;
+<b class="fc">&nbsp;		Objects.requireNonNull(subject, &quot;null subject&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(predicate, &quot;null predicate&quot;);</b>
+<b class="fc">&nbsp;		Objects.requireNonNull(object, &quot;null object&quot;);</b>
+&nbsp;
+<b class="fc">&nbsp;		return new GenericStatement(subject, predicate, object, context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	static class GenericStatement extends AbstractStatement {
+&nbsp;
+&nbsp;		private static final long serialVersionUID = -4116676621136121342L;
+&nbsp;
+&nbsp;		private final Resource subject;
+&nbsp;		private final IRI predicate;
+&nbsp;		private final Value object;
+&nbsp;		private final Resource context;
+&nbsp;
+<b class="fc">&nbsp;		GenericStatement(Resource subject, IRI predicate, Value object, Resource context) {</b>
+<b class="fc">&nbsp;			this.subject = subject;</b>
+<b class="fc">&nbsp;			this.predicate = predicate;</b>
+<b class="fc">&nbsp;			this.object = object;</b>
+<b class="fc">&nbsp;			this.context = context;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Resource getSubject() {
+<b class="fc">&nbsp;			return subject;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public IRI getPredicate() {
+<b class="fc">&nbsp;			return predicate;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Value getObject() {
+<b class="fc">&nbsp;			return object;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public Resource getContext() {
+<b class="fc">&nbsp;			return context;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

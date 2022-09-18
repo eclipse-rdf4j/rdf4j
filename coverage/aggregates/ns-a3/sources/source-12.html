@@ -1,0 +1,174 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > DatatypeHandler</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio</a>
+</div>
+
+<h1>Coverage Summary for Class: DatatypeHandler (org.eclipse.rdf4j.rio)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+</tr>
+<tr>
+  <td class="name">DatatypeHandler</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.rio;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.ValueFactory;
+&nbsp;import org.eclipse.rdf4j.model.util.LiteralUtilException;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;
+&nbsp;/**
+&nbsp; * An interface defining methods related to verification and normalization of typed literals and datatype URIs.
+&nbsp; *
+&nbsp; * @author Peter Ansell
+&nbsp; */
+&nbsp;public interface DatatypeHandler {
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifier for datatypes defined in the {@link XSD} vocabulary.
+&nbsp;	 */
+&nbsp;	String XMLSCHEMA = &quot;org.eclipse.rdf4j.rio.datatypes.xmlschema&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifier for datatypes defined in the {@link org.eclipse.rdf4j.model.vocabulary.RDF} vocabulary.
+&nbsp;	 */
+&nbsp;	String RDFDATATYPES = &quot;org.eclipse.rdf4j.rio.datatypes.rdf&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifier for datatypes defined by DBPedia.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://mappings.dbpedia.org/index.php/DBpedia_Datatypes&quot;&gt;DBPedia Datatypes&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	String DBPEDIA = &quot;org.eclipse.rdf4j.rio.datatypes.dbpedia&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifier for datatypes defined in the Virtuoso Geometry vocabulary.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://docs.openlinksw.com/virtuoso/rdfsparqlgeospat.html&quot;&gt;Virtuoso Geospatial&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	String VIRTUOSOGEOMETRY = &quot;org.eclipse.rdf4j.rio.datatypes.virtuosogeometry&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Identifier for datatypes defined in the GeoSPARQL vocabulary.
+&nbsp;	 *
+&nbsp;	 * @see &lt;a href=&quot;http://www.opengeospatial.org/standards/geosparql&quot;&gt;GeoSPARQL&lt;/a&gt;
+&nbsp;	 */
+&nbsp;	String GEOSPARQL = &quot;org.eclipse.rdf4j.rio.datatypes.geosparql&quot;;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks if the given datatype URI is recognized by this datatype handler.
+&nbsp;	 *
+&nbsp;	 * @param datatypeUri The datatype URI to check.
+&nbsp;	 * @return True if the datatype is syntactically valid and could be used with {@link #verifyDatatype(String, IRI)}
+&nbsp;	 *         and {@link #normalizeDatatype(String, IRI, ValueFactory)}.
+&nbsp;	 */
+&nbsp;	boolean isRecognizedDatatype(IRI datatypeUri);
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Verifies that the datatype URI is valid, including a check on the structure of the literal value.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method must only be called after verifying that {@link #isRecognizedDatatype(IRI)} returns true for the
+&nbsp;	 * given datatype URI.
+&nbsp;	 *
+&nbsp;	 * @param literalValue Literal value matching the given datatype URI.
+&nbsp;	 * @param datatypeUri  A datatype URI that matched with {@link #isRecognizedDatatype(IRI)}
+&nbsp;	 * @return True if the datatype URI is recognized by this datatype handler, and it is verified to be syntactically
+&nbsp;	 *         valid.
+&nbsp;	 * @throws LiteralUtilException If the datatype was not recognized.
+&nbsp;	 */
+&nbsp;	boolean verifyDatatype(String literalValue, IRI datatypeUri) throws LiteralUtilException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Normalize both the datatype URI and the literal value if appropriate, and use the given value factory to generate
+&nbsp;	 * a literal matching a literal value and datatype URI.
+&nbsp;	 * &lt;p&gt;
+&nbsp;	 * This method must only be called after verifying that {@link #isRecognizedDatatype(IRI)} returns true for the
+&nbsp;	 * given datatype URI, and {@link #verifyDatatype(String, IRI)} also returns true for the given datatype URI and
+&nbsp;	 * literal value.
+&nbsp;	 *
+&nbsp;	 * @param literalValue Required literal value to use in the normalization process and to provide the value for the
+&nbsp;	 *                     resulting literal.
+&nbsp;	 * @param datatypeUri  The datatype URI which is to be normalized. This URI is available in normalized form from the
+&nbsp;	 *                     result using {@link Literal#getDatatype()}.
+&nbsp;	 * @param valueFactory The {@link ValueFactory} to use to create the result literal.
+&nbsp;	 * @return A {@link Literal} containing the normalized literal value and datatype URI.
+&nbsp;	 * @throws LiteralUtilException If the datatype URI was not recognized or verified, or the literal value could not
+&nbsp;	 *                              be normalized due to an error.
+&nbsp;	 */
+&nbsp;	Literal normalizeDatatype(String literalValue, IRI datatypeUri, ValueFactory valueFactory)
+&nbsp;			throws LiteralUtilException;
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * A unique key for this datatype handler to identify it in the DatatypeHandlerRegistry.
+&nbsp;	 *
+&nbsp;	 * @return A unique string key.
+&nbsp;	 */
+&nbsp;	String getKey();
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

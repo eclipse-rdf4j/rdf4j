@@ -1,0 +1,531 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > BinaryRDFWriter</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.rio.binary</a>
+</div>
+
+<h1>Coverage Summary for Class: BinaryRDFWriter (org.eclipse.rdf4j.rio.binary)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">BinaryRDFWriter</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/22)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/48)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/143)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">BinaryRDFWriter$ValueMeta</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/2)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/24)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/50)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/147)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;
+&nbsp;package org.eclipse.rdf4j.rio.binary;
+&nbsp;
+&nbsp;import static org.eclipse.rdf4j.common.io.IOUtil.writeVarInt;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.BNODE_VALUE;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.COMMENT;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.DATATYPE_LITERAL_VALUE;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.END_OF_DATA;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.FORMAT_V1;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.FORMAT_V2;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.LANG_LITERAL_VALUE;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.MAGIC_NUMBER;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NAMESPACE_DECL;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.NULL_VALUE;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.PLAIN_LITERAL_VALUE;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.STATEMENT;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.TRIPLE_VALUE;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.URI_VALUE;
+&nbsp;import static org.eclipse.rdf4j.rio.binary.BinaryRDFConstants.VALUE_REF;
+&nbsp;
+&nbsp;import java.io.BufferedOutputStream;
+&nbsp;import java.io.DataOutputStream;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.OutputStream;
+&nbsp;import java.nio.charset.Charset;
+&nbsp;import java.nio.charset.StandardCharsets;
+&nbsp;import java.util.ArrayDeque;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.HashMap;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Map;
+&nbsp;import java.util.Optional;
+&nbsp;import java.util.Queue;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.io.ByteSink;
+&nbsp;import org.eclipse.rdf4j.model.BNode;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Literal;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Triple;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.model.vocabulary.XSD;
+&nbsp;import org.eclipse.rdf4j.rio.RDFFormat;
+&nbsp;import org.eclipse.rdf4j.rio.RDFHandlerException;
+&nbsp;import org.eclipse.rdf4j.rio.RDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
+&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
+&nbsp;import org.eclipse.rdf4j.rio.helpers.BinaryRDFWriterSettings;
+&nbsp;
+&nbsp;/**
+&nbsp; * A {@link RDFWriter} for the binary RDF format.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author Frens Jan Rumph
+&nbsp; */
+&nbsp;public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
+&nbsp;
+&nbsp;	private final Queue&lt;Statement&gt; statementQueue;
+&nbsp;
+&nbsp;	private int bufferSize;
+&nbsp;
+&nbsp;	private final Map&lt;Value, ValueMeta&gt; valueMeta;
+&nbsp;
+<b class="nc">&nbsp;	private int nextId = 0;</b>
+&nbsp;
+&nbsp;	private final Queue&lt;Integer&gt; idPool;
+&nbsp;
+&nbsp;	private final DataOutputStream out;
+&nbsp;
+&nbsp;	private int formatVersion;
+&nbsp;	private Charset charset;
+&nbsp;	private boolean recycleIds;
+&nbsp;
+&nbsp;	public BinaryRDFWriter(OutputStream out) {
+<b class="nc">&nbsp;		this(out, 8192);</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	public BinaryRDFWriter(OutputStream out, int bufferSize) {</b>
+<b class="nc">&nbsp;		this.out = new DataOutputStream(new BufferedOutputStream(out));</b>
+<b class="nc">&nbsp;		this.statementQueue = new ArrayDeque&lt;&gt;(bufferSize);</b>
+<b class="nc">&nbsp;		this.valueMeta = new HashMap&lt;&gt;(bufferSize * 3);</b>
+<b class="nc">&nbsp;		this.idPool = new ArrayDeque&lt;&gt;(bufferSize);</b>
+<b class="nc">&nbsp;		this.bufferSize = bufferSize;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public RDFFormat getRDFFormat() {
+<b class="nc">&nbsp;		return RDFFormat.BINARY;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings() {
+<b class="nc">&nbsp;		Set&lt;RioSetting&lt;?&gt;&gt; result = new HashSet&lt;&gt;(super.getSupportedSettings());</b>
+<b class="nc">&nbsp;		result.add(BinaryRDFWriterSettings.VERSION);</b>
+<b class="nc">&nbsp;		result.add(BinaryRDFWriterSettings.BUFFER_SIZE);</b>
+<b class="nc">&nbsp;		result.add(BinaryRDFWriterSettings.CHARSET);</b>
+<b class="nc">&nbsp;		result.add(BinaryRDFWriterSettings.RECYCLE_IDS);</b>
+<b class="nc">&nbsp;		return result;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public OutputStream getOutputStream() {
+<b class="nc">&nbsp;		return out;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		super.startRDF();</b>
+&nbsp;
+<b class="nc">&nbsp;		handleWriterConfig();</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			out.write(MAGIC_NUMBER);</b>
+<b class="nc">&nbsp;			out.writeInt(formatVersion);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (formatVersion != FORMAT_V1) {</b>
+<b class="nc">&nbsp;				byte[] charsetBytes = charset.toString().getBytes(charset);</b>
+<b class="nc">&nbsp;				writeInt(charsetBytes.length);</b>
+<b class="nc">&nbsp;				out.write(charsetBytes);</b>
+&nbsp;			}
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void handleWriterConfig() {
+<b class="nc">&nbsp;		WriterConfig config = getWriterConfig();</b>
+&nbsp;
+<b class="nc">&nbsp;		formatVersion = Math.toIntExact(config.get(BinaryRDFWriterSettings.VERSION));</b>
+<b class="nc">&nbsp;		if (formatVersion == FORMAT_V1) {</b>
+<b class="nc">&nbsp;			charset = StandardCharsets.UTF_16BE;</b>
+<b class="nc">&nbsp;		} else if (formatVersion == FORMAT_V2) {</b>
+<b class="nc">&nbsp;			charset = Charset.forName(config.get(BinaryRDFWriterSettings.CHARSET));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unsupported binary RDF version: &quot; + formatVersion);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		if (config.isSet(BinaryRDFWriterSettings.BUFFER_SIZE)) {</b>
+<b class="nc">&nbsp;			bufferSize = Math.toIntExact(config.get(BinaryRDFWriterSettings.BUFFER_SIZE));</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		recycleIds = config.get(BinaryRDFWriterSettings.RECYCLE_IDS);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endRDF() throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			while (!statementQueue.isEmpty()) {</b>
+<b class="nc">&nbsp;				writeStatement();</b>
+&nbsp;			}
+<b class="nc">&nbsp;			out.writeByte(END_OF_DATA);</b>
+<b class="nc">&nbsp;			out.flush();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleNamespace(String prefix, String uri) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			out.writeByte(NAMESPACE_DECL);</b>
+<b class="nc">&nbsp;			writeString(prefix);</b>
+<b class="nc">&nbsp;			writeString(uri);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void handleComment(String comment) throws RDFHandlerException {
+<b class="nc">&nbsp;		checkWritingStarted();</b>
+&nbsp;		try {
+<b class="nc">&nbsp;			out.writeByte(COMMENT);</b>
+<b class="nc">&nbsp;			writeString(comment);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void consumeStatement(Statement st) {
+<b class="nc">&nbsp;		statementQueue.add(st);</b>
+<b class="nc">&nbsp;		incValueFreq(st.getSubject());</b>
+<b class="nc">&nbsp;		incValueFreq(st.getPredicate());</b>
+<b class="nc">&nbsp;		incValueFreq(st.getObject());</b>
+<b class="nc">&nbsp;		incValueFreq(st.getContext());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (statementQueue.size() &lt; bufferSize) {</b>
+&nbsp;			// postpone statement writing until queue is filled
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+&nbsp;		// Process the first statement from the queue
+&nbsp;		try {
+<b class="nc">&nbsp;			writeStatement();</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/** Writes the first statement from the statement queue */
+&nbsp;	private void writeStatement() throws RDFHandlerException, IOException {
+<b class="nc">&nbsp;		Statement st = statementQueue.remove();</b>
+&nbsp;
+<b class="nc">&nbsp;		out.writeByte(STATEMENT);</b>
+<b class="nc">&nbsp;		writeValueOrId(st.getSubject());</b>
+<b class="nc">&nbsp;		writeValueOrId(st.getPredicate());</b>
+<b class="nc">&nbsp;		writeValueOrId(st.getObject());</b>
+<b class="nc">&nbsp;		writeValueOrId(st.getContext());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void incValueFreq(Value v) {
+<b class="nc">&nbsp;		if (v == null) {</b>
+&nbsp;			return;
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		ValueMeta meta = valueMeta.get(v);</b>
+<b class="nc">&nbsp;		if (meta == null) {</b>
+<b class="nc">&nbsp;			valueMeta.put(v, new ValueMeta(1));</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			meta.frequency++;</b>
+<b class="nc">&nbsp;			if (meta.frequency == 2 &amp;&amp; !meta.hasId()) {</b>
+<b class="nc">&nbsp;				assignId(v, meta);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void assignId(Value v, ValueMeta meta) {
+<b class="nc">&nbsp;		Integer id = idPool.poll();</b>
+<b class="nc">&nbsp;		if (id == null) {</b>
+<b class="nc">&nbsp;			id = nextId++; // get then increment</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		meta.id = id;</b>
+&nbsp;
+&nbsp;		try {
+<b class="nc">&nbsp;			out.writeByte(BinaryRDFConstants.VALUE_DECL);</b>
+<b class="nc">&nbsp;			writeInt(id);</b>
+<b class="nc">&nbsp;			writeValue(v);</b>
+<b class="nc">&nbsp;		} catch (IOException e) {</b>
+<b class="nc">&nbsp;			throw new RDFHandlerException(e);</b>
+<b class="nc">&nbsp;		}</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeValueOrId(Value value) throws RDFHandlerException, IOException {
+<b class="nc">&nbsp;		if (value == null) {</b>
+<b class="nc">&nbsp;			out.writeByte(NULL_VALUE);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			ValueMeta meta = valueMeta.get(value);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (meta.hasId()) {</b>
+<b class="nc">&nbsp;				out.writeByte(VALUE_REF);</b>
+<b class="nc">&nbsp;				writeInt(meta.id);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				writeValue(value);</b>
+&nbsp;			}
+&nbsp;
+<b class="nc">&nbsp;			meta.frequency--;</b>
+&nbsp;
+<b class="nc">&nbsp;			if (meta.frequency == 0) {</b>
+<b class="nc">&nbsp;				if (!meta.hasId()) {</b>
+<b class="nc">&nbsp;					valueMeta.remove(value);</b>
+<b class="nc">&nbsp;				} else if (recycleIds) {</b>
+<b class="nc">&nbsp;					valueMeta.remove(value);</b>
+<b class="nc">&nbsp;					idPool.add(meta.id);</b>
+&nbsp;				}
+&nbsp;				// else keep value and id
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeValue(Value value) throws RDFHandlerException, IOException {
+<b class="nc">&nbsp;		if (value instanceof IRI) {</b>
+<b class="nc">&nbsp;			writeURI((IRI) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof BNode) {</b>
+<b class="nc">&nbsp;			writeBNode((BNode) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Literal) {</b>
+<b class="nc">&nbsp;			writeLiteral((Literal) value);</b>
+<b class="nc">&nbsp;		} else if (value instanceof Triple) {</b>
+<b class="nc">&nbsp;			writeTriple((Triple) value);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			throw new RDFHandlerException(&quot;Unknown Value object type: &quot; + value.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeURI(IRI uri) throws IOException {
+<b class="nc">&nbsp;		out.writeByte(URI_VALUE);</b>
+<b class="nc">&nbsp;		writeString(uri.toString());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeBNode(BNode bnode) throws IOException {
+<b class="nc">&nbsp;		out.writeByte(BNODE_VALUE);</b>
+<b class="nc">&nbsp;		writeString(bnode.getID());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeLiteral(Literal literal) throws IOException {
+<b class="nc">&nbsp;		String label = literal.getLabel();</b>
+<b class="nc">&nbsp;		IRI datatype = literal.getDatatype();</b>
+<b class="nc">&nbsp;		Optional&lt;String&gt; language = literal.getLanguage();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (language.isPresent()) {</b>
+<b class="nc">&nbsp;			out.writeByte(LANG_LITERAL_VALUE);</b>
+<b class="nc">&nbsp;			writeString(label);</b>
+<b class="nc">&nbsp;			writeString(language.get());</b>
+<b class="nc">&nbsp;		} else if (datatype.equals(XSD.STRING)) {</b>
+<b class="nc">&nbsp;			out.writeByte(PLAIN_LITERAL_VALUE);</b>
+<b class="nc">&nbsp;			writeString(label);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			out.writeByte(DATATYPE_LITERAL_VALUE);</b>
+<b class="nc">&nbsp;			writeString(label);</b>
+<b class="nc">&nbsp;			writeString(datatype.toString());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeTriple(Triple triple) throws IOException {
+<b class="nc">&nbsp;		out.writeByte(TRIPLE_VALUE);</b>
+<b class="nc">&nbsp;		writeValue(triple.getSubject());</b>
+<b class="nc">&nbsp;		writeValue(triple.getPredicate());</b>
+<b class="nc">&nbsp;		writeValue(triple.getObject());</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeString(String s) throws IOException {
+<b class="nc">&nbsp;		byte[] bytes = s.getBytes(charset);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (formatVersion == FORMAT_V1) {</b>
+<b class="nc">&nbsp;			writeInt(s.length());</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeInt(bytes.length);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		out.write(bytes);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	private void writeInt(int i) throws IOException {
+<b class="nc">&nbsp;		if (formatVersion == FORMAT_V1) {</b>
+<b class="nc">&nbsp;			out.writeInt(i);</b>
+&nbsp;		} else {
+<b class="nc">&nbsp;			writeVarInt(out, i);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Holds the frequency of a value within the current {@link #statementQueue} as well as an identifier if any has
+&nbsp;	 * been assigned.
+&nbsp;	 */
+&nbsp;	private static class ValueMeta {
+&nbsp;
+&nbsp;		private long frequency;
+<b class="nc">&nbsp;		private int id = -1;</b>
+&nbsp;
+<b class="nc">&nbsp;		public ValueMeta(long frequency) {</b>
+<b class="nc">&nbsp;			this.frequency = frequency;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private boolean hasId() {
+<b class="nc">&nbsp;			return id != -1;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

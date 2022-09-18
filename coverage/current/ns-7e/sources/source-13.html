@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > QueryResultWriter</title>
+  <title>Coverage Report > BooleanQueryResultParser</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
 </div>
 
-<h1>Coverage Summary for Class: QueryResultWriter (org.eclipse.rdf4j.query.resultio)</h1>
+<h1>Coverage Summary for Class: BooleanQueryResultParser (org.eclipse.rdf4j.query.resultio)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">QueryResultWriter</td>
+  <td class="name">BooleanQueryResultParser</td>
 </tr>
 
 </table>
@@ -50,92 +50,31 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query.resultio;
 &nbsp;
-&nbsp;import java.util.Collection;
-&nbsp;
-&nbsp;import org.eclipse.rdf4j.query.QueryResultHandler;
-&nbsp;import org.eclipse.rdf4j.query.QueryResultHandlerException;
-&nbsp;import org.eclipse.rdf4j.rio.RioSetting;
-&nbsp;import org.eclipse.rdf4j.rio.WriterConfig;
+&nbsp;import java.io.IOException;
+&nbsp;import java.io.InputStream;
 &nbsp;
 &nbsp;/**
-&nbsp; * The base interface for writers of query results sets and boolean results.
+&nbsp; * A general interface for boolean query result parsers.
 &nbsp; *
-&nbsp; * @author Peter Ansell
+&nbsp; * @author Arjohn Kampman
 &nbsp; */
-&nbsp;public interface QueryResultWriter extends QueryResultHandler {
+&nbsp;public interface BooleanQueryResultParser extends QueryResultParser {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the query result format that this writer uses.
+&nbsp;	 * Gets the query result format that this parser can parse.
 &nbsp;	 */
-&nbsp;	QueryResultFormat getQueryResultFormat();
+&nbsp;	BooleanQueryResultFormat getBooleanQueryResultFormat();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Handles a namespace prefix declaration. If this is called, it should be called before {@link #startDocument()} to
-&nbsp;	 * ensure that it has a document wide effect.
-&nbsp;	 * &lt;p&gt;
-&nbsp;	 * NOTE: If the format does not support namespaces, it must silently ignore calls to this method.
+&nbsp;	 * Parses the data from the supplied InputStream.
 &nbsp;	 *
-&nbsp;	 * @param prefix The prefix to use for the namespace
-&nbsp;	 * @param uri    The full URI that is to be represented by the prefix.
-&nbsp;	 * @throws QueryResultHandlerException
+&nbsp;	 * @param in The InputStream from which to read the data.
+&nbsp;	 * @throws IOException               If an I/O error occurred while data was read from the InputStream.
+&nbsp;	 * @throws QueryResultParseException If the parser has encountered an unrecoverable parse error.
+&nbsp;	 * @deprecated Use {@link #parseQueryResult(InputStream)} instead.
 &nbsp;	 */
-&nbsp;	void handleNamespace(String prefix, String uri) throws QueryResultHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Indicates the start of the document.
-&nbsp;	 *
-&nbsp;	 * @throws QueryResultHandlerException If there was an error starting the writing of the results.
-&nbsp;	 */
-&nbsp;	void startDocument() throws QueryResultHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Handles a stylesheet URL. If this is called, it must be called after {@link #startDocument} and before
-&nbsp;	 * {@link #startHeader}.
-&nbsp;	 * &lt;p&gt;
-&nbsp;	 * NOTE: If the format does not support stylesheets, it must silently ignore calls to this method.
-&nbsp;	 *
-&nbsp;	 * @param stylesheetUrl The URL of the stylesheet to be used to style the results.
-&nbsp;	 * @throws QueryResultHandlerException If there was an error handling the stylesheet. This error is not thrown in
-&nbsp;	 *                                     cases where stylesheets are not supported.
-&nbsp;	 */
-&nbsp;	void handleStylesheet(String stylesheetUrl) throws QueryResultHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Indicates the start of the header.
-&nbsp;	 *
-&nbsp;	 * @see &lt;a href=&quot;http://www.w3.org/TR/2012/PER-rdf-sparql-XMLres-20121108/#head&quot;&gt;SPARQL Query Results XML Format
-&nbsp;	 *      documentation for head element.&lt;/a&gt;
-&nbsp;	 * @throws QueryResultHandlerException If there was an error writing the start of the header.
-&nbsp;	 */
-&nbsp;	void startHeader() throws QueryResultHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Indicates the end of the header. This must be called after {@link #startHeader} and before any calls to
-&nbsp;	 * {@link #handleSolution}.
-&nbsp;	 *
-&nbsp;	 * @throws QueryResultHandlerException If there was an error writing the end of the header.
-&nbsp;	 */
-&nbsp;	void endHeader() throws QueryResultHandlerException;
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Sets all supplied writer configuration options.
-&nbsp;	 *
-&nbsp;	 * @param config a writer configuration object.
-&nbsp;	 */
-&nbsp;	void setWriterConfig(WriterConfig config);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Retrieves the current writer configuration as a single object.
-&nbsp;	 *
-&nbsp;	 * @return a writer configuration object representing the current configuration of the writer.
-&nbsp;	 */
-&nbsp;	WriterConfig getWriterConfig();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * @return A collection of {@link RioSetting}s that are supported by this {@link QueryResultWriter}.
-&nbsp;	 */
-&nbsp;	Collection&lt;RioSetting&lt;?&gt;&gt; getSupportedSettings();
-&nbsp;
+&nbsp;	@Deprecated
+&nbsp;	boolean parse(InputStream in) throws IOException, QueryResultParseException;
 &nbsp;}
 </code>
 </pre>
@@ -160,7 +99,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

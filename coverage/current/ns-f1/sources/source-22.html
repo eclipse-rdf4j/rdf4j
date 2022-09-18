@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > TransientFunction</title>
+  <title>Coverage Report > InverseMagicProperty</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.spin.function</a>
 </div>
 
-<h1>Coverage Summary for Class: TransientFunction (org.eclipse.rdf4j.spin.function)</h1>
+<h1>Coverage Summary for Class: InverseMagicProperty (org.eclipse.rdf4j.spin.function)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">TransientFunction</td>
+  <td class="name">InverseMagicProperty</td>
 </tr>
 
 </table>
@@ -50,12 +50,15 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.spin.function;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 &nbsp;
 &nbsp;/**
-&nbsp; * Tagging interface for {@link Function}s that have some sort of lifespan.
+&nbsp; * Magic properties are normally treated as {@link TupleFunction}s acting on the subject of a statement. However, there
+&nbsp; * are many cases where it makes more sense to treat a magic property as acting on the object of a statement instead.
+&nbsp; * Any TupleFunction implementing this interface will be given the object of the magic property as the argument and the
+&nbsp; * result will be bound to the subject of the magic property.
 &nbsp; */
-&nbsp;public interface TransientFunction extends Function {
+&nbsp;public interface InverseMagicProperty extends TupleFunction {
 &nbsp;}
 </code>
 </pre>
@@ -80,7 +83,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

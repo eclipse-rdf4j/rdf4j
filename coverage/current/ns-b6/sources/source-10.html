@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > SailChangedEvent</title>
+  <title>Coverage Report > SailConnectionListener</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.sail</a>
 </div>
 
-<h1>Coverage Summary for Class: SailChangedEvent (org.eclipse.rdf4j.sail)</h1>
+<h1>Coverage Summary for Class: SailConnectionListener (org.eclipse.rdf4j.sail)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">SailChangedEvent</td>
+  <td class="name">SailConnectionListener</td>
 </tr>
 
 </table>
@@ -50,31 +50,23 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.sail;
 &nbsp;
-&nbsp;/**
-&nbsp; * Event object that is send to {@link SailChangedListener}s to indicate that the contents of the Sail that sent the
-&nbsp; * event have changed.
-&nbsp; */
-&nbsp;public interface SailChangedEvent {
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;
+&nbsp;public interface SailConnectionListener {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * The Sail object that sent this event.
-&nbsp;	 */
-&nbsp;	Sail getSail();
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Indicates if statements were added to the Sail.
+&nbsp;	 * Notifies the listener that a statement has been added in a transaction that it has registered itself with.
 &nbsp;	 *
-&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if statements were added during a transaction, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param st The statement that was added.
 &nbsp;	 */
-&nbsp;	boolean statementsAdded();
+&nbsp;	void statementAdded(Statement st);
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Indicates if statements were removed from the Sail.
+&nbsp;	 * Notifies the listener that a statement has been removed in a transaction that it has registered itself with.
 &nbsp;	 *
-&nbsp;	 * @return &lt;var&gt;true&lt;/var&gt; if statements were removed during a transaction, &lt;var&gt;false&lt;/var&gt; otherwise.
+&nbsp;	 * @param st The statement that was removed.
 &nbsp;	 */
-&nbsp;	boolean statementsRemoved();
-&nbsp;
+&nbsp;	void statementRemoved(Statement st);
 &nbsp;}
 </code>
 </pre>
@@ -99,7 +91,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

@@ -1,0 +1,513 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > EvaluationStatistics</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: EvaluationStatistics (org.eclipse.rdf4j.query.algebra.evaluation.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">EvaluationStatistics</td>
+<td class="coverageStat">
+  <span class="percent">
+    75%
+  </span>
+  <span class="absValue">
+    (3/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    70%
+  </span>
+  <span class="absValue">
+    (7/10)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    90.9%
+  </span>
+  <span class="absValue">
+    (10/11)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">EvaluationStatistics$CardinalityCalculator</td>
+<td class="coverageStat">
+  <span class="percent">
+    48.5%
+  </span>
+  <span class="absValue">
+    (16/33)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    33.3%
+  </span>
+  <span class="absValue">
+    (10/30)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    44.4%
+  </span>
+  <span class="absValue">
+    (32/72)
+  </span>
+</td>
+  </tr>
+  <tr>
+    <td class="name">EvaluationStatistics$ServiceNodeAnalyzer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/3)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    47.5%
+  </span>
+  <span class="absValue">
+    (19/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    42.5%
+  </span>
+  <span class="absValue">
+    (17/40)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    48.3%
+  </span>
+  <span class="absValue">
+    (42/87)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl;
+&nbsp;
+&nbsp;import java.util.Collection;
+&nbsp;import java.util.UUID;
+&nbsp;import java.util.concurrent.atomic.AtomicLong;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryRoot;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Service;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.StatementPattern;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TripleRef;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Var;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+&nbsp;
+&nbsp;/**
+&nbsp; * Supplies various query model statistics to the query engine/optimizer.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; * @author James Leigh
+&nbsp; */
+<b class="fc">&nbsp;public class EvaluationStatistics {</b>
+&nbsp;
+&nbsp;	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
+<b class="fc">&nbsp;	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace(&quot;-&quot;, &quot;&quot;);</b>
+<b class="fc">&nbsp;	private final static AtomicLong uniqueIdSuffix = new AtomicLong();</b>
+&nbsp;
+&nbsp;	private CardinalityCalculator calculator;
+&nbsp;
+&nbsp;	public double getCardinality(TupleExpr expr) {
+<b class="fc">&nbsp;		if (calculator == null) {</b>
+<b class="fc">&nbsp;			calculator = createCardinalityCalculator();</b>
+<b class="pc">&nbsp;			assert calculator != null;</b>
+&nbsp;		}
+&nbsp;
+<b class="pc">&nbsp;		if (expr instanceof AbstractQueryModelNode &amp;&amp; ((AbstractQueryModelNode) expr).isCardinalitySet()) {</b>
+<b class="fc">&nbsp;			return ((AbstractQueryModelNode) expr).getCardinality();</b>
+&nbsp;		}
+&nbsp;
+<b class="fc">&nbsp;		expr.visit(calculator);</b>
+<b class="fc">&nbsp;		return calculator.getCardinality();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	protected CardinalityCalculator createCardinalityCalculator() {
+<b class="nc">&nbsp;		return new CardinalityCalculator();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*-----------------------------------*
+&nbsp;	 * Inner class CardinalityCalculator *
+&nbsp;	 *-----------------------------------*/
+&nbsp;
+<b class="fc">&nbsp;	protected static class CardinalityCalculator extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;		private static final double VAR_CARDINALITY = 10;
+&nbsp;		private static final double UNBOUND_SERVICE_CARDINALITY = 100000;
+&nbsp;
+&nbsp;		protected double cardinality;
+&nbsp;
+&nbsp;		public double getCardinality() {
+<b class="fc">&nbsp;			return cardinality;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(EmptySet node) {
+&nbsp;			// no binding sets
+<b class="nc">&nbsp;			cardinality = 0.0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(SingletonSet node) {
+&nbsp;			// one empty binding set
+<b class="nc">&nbsp;			cardinality = 1.0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(BindingSetAssignment node) {
+<b class="fc">&nbsp;			cardinality = getCardinalityInternal(node);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(ZeroLengthPath node) {
+<b class="fc">&nbsp;			Var subjVar = node.getSubjectVar();</b>
+<b class="fc">&nbsp;			Var objVar = node.getObjectVar();</b>
+<b class="pc">&nbsp;			if ((subjVar != null &amp;&amp; subjVar.hasValue()) || (objVar != null &amp;&amp; objVar.hasValue())) {</b>
+&nbsp;				// subj = obj
+<b class="nc">&nbsp;				cardinality = 1.0;</b>
+&nbsp;			} else {
+&nbsp;				// actual cardinality = count(union(subjs, objs))
+&nbsp;				// but cost is equivalent to ?s ?p ?o ?c (impl scans all statements)
+&nbsp;				// so due to the lower actual cardinality we value it in preference to a fully unbound statement
+&nbsp;				// pattern.
+<b class="fc">&nbsp;				cardinality = getSubjectCardinality(subjVar) * getObjectCardinality(objVar)</b>
+<b class="fc">&nbsp;						* getContextCardinality(node.getContextVar());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(ArbitraryLengthPath node) {
+<b class="fc">&nbsp;			final Var pathVar = new Var(&quot;_anon_&quot; + uniqueIdPrefix + uniqueIdSuffix.incrementAndGet(), true);</b>
+&nbsp;			// cardinality of ALP is determined based on the cost of a
+&nbsp;			// single ?s ?p ?o ?c pattern where ?p is unbound, compensating for the fact that
+&nbsp;			// the length of the path is unknown but expected to be _at least_ twice that of a normal
+&nbsp;			// statement pattern.
+<b class="fc">&nbsp;			cardinality = 2.0 * getCardinalityInternal(new StatementPattern(node.getSubjectVar().clone(), pathVar,</b>
+<b class="pc">&nbsp;					node.getObjectVar().clone(), node.getContextVar() != null ? node.getContextVar().clone() : null));</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Service node) {
+<b class="nc">&nbsp;			if (!node.getServiceRef().hasValue()) {</b>
+&nbsp;				// the URI is not available, may be computed in the course of the
+&nbsp;				// query
+&nbsp;				// =&gt; use high cost to order the SERVICE node late in the query plan
+<b class="nc">&nbsp;				cardinality = UNBOUND_SERVICE_CARDINALITY;</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				ServiceNodeAnalyzer serviceAnalyzer = new ServiceNodeAnalyzer();</b>
+<b class="nc">&nbsp;				node.visitChildren(serviceAnalyzer);</b>
+<b class="nc">&nbsp;				int count = serviceAnalyzer.getStatementCount();</b>
+&nbsp;
+&nbsp;				// more than one free variable in a single triple pattern
+<b class="nc">&nbsp;				if (count == 1 &amp;&amp; node.getServiceVars().size() &gt; 1) {</b>
+<b class="nc">&nbsp;					cardinality = 100 + node.getServiceVars().size(); // TODO (should</b>
+&nbsp;					// be higher
+&nbsp;					// than other
+&nbsp;					// simple
+&nbsp;					// stmts)
+&nbsp;				} else {
+&nbsp;					// only very selective statements should be better than this
+&nbsp;					// =&gt; evaluate service expressions first
+<b class="nc">&nbsp;					cardinality = 1 + (node.getServiceVars().size() * 0.1);</b>
+&nbsp;				}
+&nbsp;			}
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(StatementPattern sp) {
+<b class="fc">&nbsp;			cardinality = getCardinalityInternal(sp);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(TripleRef tripleRef) {
+<b class="nc">&nbsp;			cardinality = getCardinalityInternal(tripleRef);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private double getCardinalityInternal(StatementPattern node) {
+<b class="pc">&nbsp;			if (!node.isCardinalitySet()) {</b>
+<b class="fc">&nbsp;				node.setCardinality(getCardinality(node));</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return node.getCardinality();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private double getCardinalityInternal(TripleRef node) {
+<b class="nc">&nbsp;			if (!node.isCardinalitySet()) {</b>
+<b class="nc">&nbsp;				node.setCardinality(getCardinality(node));</b>
+&nbsp;			}
+<b class="nc">&nbsp;			return node.getCardinality();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		private double getCardinalityInternal(BindingSetAssignment node) {
+<b class="pc">&nbsp;			if (!node.isCardinalitySet()) {</b>
+<b class="fc">&nbsp;				node.setCardinality(getCardinality(node));</b>
+&nbsp;			}
+<b class="fc">&nbsp;			return node.getCardinality();</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getCardinality(StatementPattern sp) {
+<b class="nc">&nbsp;			return getSubjectCardinality(sp) * getPredicateCardinality(sp) * getObjectCardinality(sp)</b>
+<b class="nc">&nbsp;					* getContextCardinality(sp);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getCardinality(BindingSetAssignment bindingSetAssignment) {
+&nbsp;			// actual cardinality is node.getBindingSets().size() binding sets
+&nbsp;			// but cost is cheap as we don&#39;t need to query the triple store
+&nbsp;			// so effective cardinality is 1 or a very slowly increasing function of node.getBindingSets().size().
+<b class="fc">&nbsp;			return 1.0;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getCardinality(TripleRef tripleRef) {
+<b class="nc">&nbsp;			return getSubjectCardinality(tripleRef.getSubjectVar())</b>
+<b class="nc">&nbsp;					* getPredicateCardinality(tripleRef.getPredicateVar())</b>
+<b class="nc">&nbsp;					* getObjectCardinality(tripleRef.getObjectVar());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Override this if you are able to determine the cardinality based not only on the subjectVar itself but also
+&nbsp;		 * the other vars (e.g. the predicate value might determine a subject subset).
+&nbsp;		 */
+&nbsp;		protected double getSubjectCardinality(StatementPattern sp) {
+<b class="nc">&nbsp;			return getSubjectCardinality(sp.getSubjectVar());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getSubjectCardinality(Var var) {
+<b class="fc">&nbsp;			return getCardinality(VAR_CARDINALITY, var);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Override this if you are able to determine the cardinality based not only on the predicateVar itself but also
+&nbsp;		 * the other vars (e.g. the subject value might determine a predicate subset).
+&nbsp;		 */
+&nbsp;		protected double getPredicateCardinality(StatementPattern sp) {
+<b class="nc">&nbsp;			return getPredicateCardinality(sp.getPredicateVar());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getPredicateCardinality(Var var) {
+<b class="nc">&nbsp;			return getCardinality(VAR_CARDINALITY, var);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Override this if you are able to determine the cardinality based not only on the objectVar itself but also
+&nbsp;		 * the other vars (e.g. the predicate value might determine an object subset).
+&nbsp;		 */
+&nbsp;		protected double getObjectCardinality(StatementPattern sp) {
+<b class="nc">&nbsp;			return getObjectCardinality(sp.getObjectVar());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getObjectCardinality(Var var) {
+<b class="fc">&nbsp;			return getCardinality(VAR_CARDINALITY, var);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		/**
+&nbsp;		 * Override this if you are able to determine the cardinality based not only on the contextVar itself but also
+&nbsp;		 * the other vars (e.g. the subject value might determine a context subset).
+&nbsp;		 */
+&nbsp;		protected double getContextCardinality(StatementPattern sp) {
+<b class="nc">&nbsp;			return getContextCardinality(sp.getContextVar());</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getContextCardinality(Var var) {
+<b class="fc">&nbsp;			return getCardinality(VAR_CARDINALITY, var);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getCardinality(double varCardinality, Var var) {
+<b class="pc">&nbsp;			return (var == null || var.hasValue()) ? 1.0 : varCardinality;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected double getCardinality(double varCardinality, Collection&lt;Var&gt; vars) {
+<b class="nc">&nbsp;			int constantVarCount = countConstantVars(vars);</b>
+<b class="nc">&nbsp;			double unboundVarFactor = vars.size() - constantVarCount;</b>
+<b class="nc">&nbsp;			return Math.pow(varCardinality, unboundVarFactor);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		protected int countConstantVars(Iterable&lt;Var&gt; vars) {
+<b class="nc">&nbsp;			int constantVarCount = 0;</b>
+&nbsp;
+<b class="nc">&nbsp;			for (Var var : vars) {</b>
+<b class="nc">&nbsp;				if (var.hasValue()) {</b>
+<b class="nc">&nbsp;					constantVarCount++;</b>
+&nbsp;				}
+<b class="nc">&nbsp;			}</b>
+&nbsp;
+<b class="nc">&nbsp;			return constantVarCount;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(Join node) {
+<b class="nc">&nbsp;			node.getLeftArg().visit(this);</b>
+<b class="nc">&nbsp;			double leftArgCost = this.cardinality;</b>
+&nbsp;
+<b class="nc">&nbsp;			node.getRightArg().visit(this);</b>
+<b class="nc">&nbsp;			cardinality *= leftArgCost;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(LeftJoin node) {
+<b class="fc">&nbsp;			node.getLeftArg().visit(this);</b>
+<b class="fc">&nbsp;			double leftArgCost = this.cardinality;</b>
+&nbsp;
+<b class="fc">&nbsp;			node.getRightArg().visit(this);</b>
+<b class="fc">&nbsp;			cardinality *= leftArgCost;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetBinaryTupleOperator(BinaryTupleOperator node) {
+<b class="fc">&nbsp;			node.getLeftArg().visit(this);</b>
+<b class="fc">&nbsp;			double leftArgCost = this.cardinality;</b>
+&nbsp;
+<b class="fc">&nbsp;			node.getRightArg().visit(this);</b>
+<b class="fc">&nbsp;			cardinality += leftArgCost;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetUnaryTupleOperator(UnaryTupleOperator node) {
+<b class="fc">&nbsp;			node.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(QueryRoot node) {
+<b class="nc">&nbsp;			node.getArg().visit(this);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetNode(QueryModelNode node) {
+<b class="nc">&nbsp;			throw new IllegalArgumentException(&quot;Unhandled node type: &quot; + node.getClass());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	// count the number of triple patterns
+&nbsp;	private static class ServiceNodeAnalyzer extends AbstractSimpleQueryModelVisitor&lt;RuntimeException&gt; {
+&nbsp;
+<b class="nc">&nbsp;		private int count = 0;</b>
+&nbsp;
+&nbsp;		private ServiceNodeAnalyzer() {
+<b class="nc">&nbsp;			super(true);</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public int getStatementCount() {
+<b class="nc">&nbsp;			return count;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		public void meet(StatementPattern node) throws RuntimeException {
+<b class="nc">&nbsp;			count++;</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

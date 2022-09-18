@@ -1,0 +1,372 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > SailConnectionWrapper</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.sail.helpers</a>
+</div>
+
+<h1>Coverage Summary for Class: SailConnectionWrapper (org.eclipse.rdf4j.sail.helpers)</h1>
+
+<table class="coverageStats">
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Class, %
+</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">SailConnectionWrapper</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/1)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/35)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/39)
+  </span>
+</td>
+</tr>
+
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.sail.helpers;
+&nbsp;
+&nbsp;import java.util.Optional;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+&nbsp;import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+&nbsp;import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+&nbsp;import org.eclipse.rdf4j.model.IRI;
+&nbsp;import org.eclipse.rdf4j.model.Namespace;
+&nbsp;import org.eclipse.rdf4j.model.Resource;
+&nbsp;import org.eclipse.rdf4j.model.Statement;
+&nbsp;import org.eclipse.rdf4j.model.Value;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.Query;
+&nbsp;import org.eclipse.rdf4j.query.QueryEvaluationException;
+&nbsp;import org.eclipse.rdf4j.query.QueryLanguage;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
+&nbsp;import org.eclipse.rdf4j.query.explanation.Explanation;
+&nbsp;import org.eclipse.rdf4j.sail.SailConnection;
+&nbsp;import org.eclipse.rdf4j.sail.SailException;
+&nbsp;import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
+&nbsp;import org.eclipse.rdf4j.sail.UpdateContext;
+&nbsp;import org.eclipse.rdf4j.sail.features.ThreadSafetyAware;
+&nbsp;
+&nbsp;/**
+&nbsp; * An implementation of the SailConnection interface that wraps another SailConnection object and forwards any method
+&nbsp; * calls to the wrapped connection.
+&nbsp; *
+&nbsp; * @author Jeen Broekstra
+&nbsp; */
+&nbsp;public class SailConnectionWrapper
+&nbsp;		implements SailConnection, FederatedServiceResolverClient, ThreadSafetyAware {
+&nbsp;
+&nbsp;	/*-----------*
+&nbsp;	 * Variables *
+&nbsp;	 *-----------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * The wrapped SailConnection.
+&nbsp;	 */
+&nbsp;	private final SailConnection wrappedCon;
+&nbsp;
+&nbsp;	/*--------------*
+&nbsp;	 * Constructors *
+&nbsp;	 *--------------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Creates a new TransactionWrapper object that wraps the supplied connection.
+&nbsp;	 */
+<b class="nc">&nbsp;	public SailConnectionWrapper(SailConnection wrappedCon) {</b>
+<b class="nc">&nbsp;		this.wrappedCon = wrappedCon;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*---------*
+&nbsp;	 * Methods *
+&nbsp;	 *---------*/
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Gets the connection that is wrapped by this object.
+&nbsp;	 *
+&nbsp;	 * @return The SailConnection object that was supplied to the constructor of this class.
+&nbsp;	 */
+&nbsp;	public SailConnection getWrappedConnection() {
+<b class="nc">&nbsp;		return wrappedCon;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
+<b class="nc">&nbsp;		if (wrappedCon instanceof FederatedServiceResolverClient) {</b>
+<b class="nc">&nbsp;			((FederatedServiceResolverClient) wrappedCon).setFederatedServiceResolver(resolver);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isOpen() throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.isOpen();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void close() throws SailException {
+<b class="nc">&nbsp;		wrappedCon.close();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Optional&lt;TupleExpr&gt; prepareQuery(QueryLanguage ql, Query.QueryType type, String query, String baseURI) {
+<b class="nc">&nbsp;		return wrappedCon.prepareQuery(ql, type, query, baseURI);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends BindingSet, QueryEvaluationException&gt; evaluate(TupleExpr tupleExpr,
+&nbsp;			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.evaluate(tupleExpr, dataset, bindings, includeInferred);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Resource, SailException&gt; getContextIDs() throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.getContextIDs();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Statement, SailException&gt; getStatements(Resource subj, IRI pred, Value obj,
+&nbsp;			boolean includeInferred, Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.getStatements(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.hasStatement(subj, pred, obj, includeInferred, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public long size(Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.size(contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	/*
+&nbsp;	 * Not in the API, preserving for binary compatibility. Will be removed in future. Should use {@link
+&nbsp;	 * #size(Resource...)} instead, which is called by this method.
+&nbsp;	 */
+&nbsp;	public long size(Resource context) throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.size(context);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void commit() throws SailException {
+<b class="nc">&nbsp;		wrappedCon.commit();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void rollback() throws SailException {
+<b class="nc">&nbsp;		wrappedCon.rollback();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.addStatement(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.removeStatements(subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void startUpdate(UpdateContext modify) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.startUpdate(modify);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void addStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		wrappedCon.addStatement(modify, subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeStatement(UpdateContext modify, Resource subj, IRI pred, Value obj, Resource... contexts)
+&nbsp;			throws SailException {
+<b class="nc">&nbsp;		wrappedCon.removeStatement(modify, subj, pred, obj, contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void endUpdate(UpdateContext modify) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.endUpdate(modify);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clear(Resource... contexts) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.clear(contexts);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public CloseableIteration&lt;? extends Namespace, SailException&gt; getNamespaces() throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.getNamespaces();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public String getNamespace(String prefix) throws SailException {
+<b class="nc">&nbsp;		return wrappedCon.getNamespace(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setNamespace(String prefix, String name) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.setNamespace(prefix, name);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void removeNamespace(String prefix) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.removeNamespace(prefix);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void clearNamespaces() throws SailException {
+<b class="nc">&nbsp;		wrappedCon.clearNamespaces();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean pendingRemovals() {
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
+&nbsp;			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+<b class="nc">&nbsp;		return wrappedCon.explain(level, tupleExpr, dataset, bindings, includeInferred, timeoutSeconds);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin() throws SailException {
+<b class="nc">&nbsp;		wrappedCon.begin();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void begin(IsolationLevel level) throws SailException {
+<b class="nc">&nbsp;		wrappedCon.begin(level);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void setTransactionSettings(TransactionSetting... settings) {
+<b class="nc">&nbsp;		wrappedCon.setTransactionSettings(settings);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void flush() throws SailException {
+<b class="nc">&nbsp;		wrappedCon.flush();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void prepare() throws SailException {
+<b class="nc">&nbsp;		wrappedCon.prepare();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean isActive() throws UnknownSailTransactionStateException {
+<b class="nc">&nbsp;		return wrappedCon.isActive();</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public boolean supportsConcurrentReads() {
+<b class="nc">&nbsp;		if (wrappedCon instanceof ThreadSafetyAware)</b>
+<b class="nc">&nbsp;			return ((ThreadSafetyAware) wrappedCon).supportsConcurrentReads();</b>
+<b class="nc">&nbsp;		return false;</b>
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

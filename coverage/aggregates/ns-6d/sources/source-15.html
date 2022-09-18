@@ -1,0 +1,436 @@
+
+
+
+<!DOCTYPE html>
+<html id="htmlId">
+<head>
+  <title>Coverage Report > QueryModelNormalizer</title>
+  <style type="text/css">
+    @import "../../css/coverage.css";
+    @import "../../css/idea.min.css";
+  </style>
+  <script type="text/javascript" src="../../js/highlight.min.js"></script>
+  <script type="text/javascript" src="../../js/highlightjs-line-numbers.min.js"></script>
+</head>
+
+<body>
+<div class="content">
+<div class="breadCrumbs">
+Current scope:     <a href="../../index.html">all classes</a>
+    <span class="separator">|</span>
+    <a href="../index.html">org.eclipse.rdf4j.query.algebra.evaluation.impl</a>
+</div>
+
+<h1>Coverage Summary for Class: QueryModelNormalizer (org.eclipse.rdf4j.query.algebra.evaluation.impl)</h1>
+
+<table class="coverageStats">
+
+<tr>
+  <th class="name">Class</th>
+<th class="coverageStat 
+">
+  Method, %
+</th>
+<th class="coverageStat 
+">
+  Branch, %
+</th>
+<th class="coverageStat 
+">
+  Line, %
+</th>
+</tr>
+<tr>
+  <td class="name">QueryModelNormalizer</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/12)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/64)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/113)
+  </span>
+</td>
+</tr>
+  <tr>
+    <td class="name">QueryModelNormalizer$BindingCollector</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/4)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/7)
+  </span>
+</td>
+  </tr>
+<tr>
+  <td class="name"><strong>Total</strong></td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/16)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/68)
+  </span>
+</td>
+<td class="coverageStat">
+  <span class="percent">
+    0%
+  </span>
+  <span class="absValue">
+    (0/120)
+  </span>
+</td>
+</tr>
+</table>
+
+<br/>
+<br/>
+
+
+<pre>
+<code class="sourceCode" id="sourceCode">&nbsp;/*******************************************************************************
+&nbsp; * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+&nbsp; *
+&nbsp; * All rights reserved. This program and the accompanying materials
+&nbsp; * are made available under the terms of the Eclipse Distribution License v1.0
+&nbsp; * which accompanies this distribution, and is available at
+&nbsp; * http://www.eclipse.org/org/documents/edl-v10.php.
+&nbsp; *
+&nbsp; * SPDX-License-Identifier: BSD-3-Clause
+&nbsp; *******************************************************************************/
+&nbsp;package org.eclipse.rdf4j.query.algebra.evaluation.impl;
+&nbsp;
+&nbsp;import java.util.HashSet;
+&nbsp;import java.util.Set;
+&nbsp;
+&nbsp;import org.eclipse.rdf4j.query.BindingSet;
+&nbsp;import org.eclipse.rdf4j.query.Dataset;
+&nbsp;import org.eclipse.rdf4j.query.algebra.And;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Difference;
+&nbsp;import org.eclipse.rdf4j.query.algebra.EmptySet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Filter;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Intersection;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Join;
+&nbsp;import org.eclipse.rdf4j.query.algebra.LeftJoin;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Or;
+&nbsp;import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+&nbsp;import org.eclipse.rdf4j.query.algebra.SingletonSet;
+&nbsp;import org.eclipse.rdf4j.query.algebra.TupleExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+&nbsp;import org.eclipse.rdf4j.query.algebra.Union;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueConstant;
+&nbsp;import org.eclipse.rdf4j.query.algebra.ValueExpr;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+&nbsp;import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+&nbsp;import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+&nbsp;
+&nbsp;/**
+&nbsp; * A query optimizer that (partially) normalizes query models to a canonical form. Note: this implementation does not
+&nbsp; * yet cover all query node types.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
+&nbsp; */
+&nbsp;@Deprecated(forRemoval = true, since = &quot;4.1.0&quot;)
+&nbsp;public class QueryModelNormalizer extends AbstractQueryModelVisitor&lt;RuntimeException&gt; implements QueryOptimizer {
+&nbsp;
+<b class="nc">&nbsp;	public QueryModelNormalizer() {</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+<b class="nc">&nbsp;		tupleExpr.visit(this);</b>
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Join join) {
+<b class="nc">&nbsp;		super.meet(join);</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr leftArg = join.getLeftArg();</b>
+<b class="nc">&nbsp;		TupleExpr rightArg = join.getRightArg();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			join.replaceWith(new EmptySet());</b>
+<b class="nc">&nbsp;		} else if (leftArg instanceof SingletonSet) {</b>
+<b class="nc">&nbsp;			join.replaceWith(rightArg);</b>
+<b class="nc">&nbsp;		} else if (rightArg instanceof SingletonSet) {</b>
+<b class="nc">&nbsp;			join.replaceWith(leftArg);</b>
+<b class="nc">&nbsp;		} else if (leftArg instanceof Union) {</b>
+&nbsp;			// sort unions above joins
+<b class="nc">&nbsp;			Union union = (Union) leftArg;</b>
+<b class="nc">&nbsp;			Join leftJoin = new Join(union.getLeftArg(), rightArg.clone());</b>
+<b class="nc">&nbsp;			Join rightJoin = new Join(union.getRightArg(), rightArg.clone());</b>
+<b class="nc">&nbsp;			Union newUnion = new Union(leftJoin, rightJoin);</b>
+<b class="nc">&nbsp;			newUnion.setVariableScopeChange(union.isVariableScopeChange());</b>
+<b class="nc">&nbsp;			join.replaceWith(newUnion);</b>
+<b class="nc">&nbsp;			newUnion.visit(this);</b>
+<b class="nc">&nbsp;		} else if (rightArg instanceof Union) {</b>
+&nbsp;			// sort unions above joins
+<b class="nc">&nbsp;			Union union = (Union) rightArg;</b>
+<b class="nc">&nbsp;			Join leftJoin = new Join(leftArg.clone(), union.getLeftArg());</b>
+<b class="nc">&nbsp;			Join rightJoin = new Join(leftArg.clone(), union.getRightArg());</b>
+<b class="nc">&nbsp;			Union newUnion = new Union(leftJoin, rightJoin);</b>
+<b class="nc">&nbsp;			newUnion.setVariableScopeChange(union.isVariableScopeChange());</b>
+<b class="nc">&nbsp;			join.replaceWith(newUnion);</b>
+<b class="nc">&nbsp;			newUnion.visit(this);</b>
+<b class="nc">&nbsp;		} else if (leftArg instanceof LeftJoin &amp;&amp; isWellDesigned(((LeftJoin) leftArg))) {</b>
+&nbsp;			// sort left join above normal joins
+<b class="nc">&nbsp;			LeftJoin leftJoin = (LeftJoin) leftArg;</b>
+<b class="nc">&nbsp;			join.replaceWith(leftJoin);</b>
+<b class="nc">&nbsp;			join.setLeftArg(leftJoin.getLeftArg());</b>
+<b class="nc">&nbsp;			leftJoin.setLeftArg(join);</b>
+<b class="nc">&nbsp;			leftJoin.visit(this);</b>
+<b class="nc">&nbsp;		} else if (rightArg instanceof LeftJoin &amp;&amp; isWellDesigned(((LeftJoin) rightArg))) {</b>
+&nbsp;			// sort left join above normal joins
+<b class="nc">&nbsp;			LeftJoin leftJoin = (LeftJoin) rightArg;</b>
+<b class="nc">&nbsp;			join.replaceWith(leftJoin);</b>
+<b class="nc">&nbsp;			join.setRightArg(leftJoin.getLeftArg());</b>
+<b class="nc">&nbsp;			leftJoin.setLeftArg(join);</b>
+<b class="nc">&nbsp;			leftJoin.visit(this);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(LeftJoin leftJoin) {
+<b class="nc">&nbsp;		super.meet(leftJoin);</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr leftArg = leftJoin.getLeftArg();</b>
+<b class="nc">&nbsp;		TupleExpr rightArg = leftJoin.getRightArg();</b>
+<b class="nc">&nbsp;		ValueExpr condition = leftJoin.getCondition();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (leftArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			leftJoin.replaceWith(leftArg);</b>
+<b class="nc">&nbsp;		} else if (rightArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			leftJoin.replaceWith(leftArg);</b>
+<b class="nc">&nbsp;		} else if (rightArg instanceof SingletonSet) {</b>
+<b class="nc">&nbsp;			leftJoin.replaceWith(leftArg);</b>
+<b class="nc">&nbsp;		} else if (condition instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;			boolean conditionValue = QueryEvaluationUtility</b>
+<b class="nc">&nbsp;					.getEffectiveBooleanValue(((ValueConstant) condition).getValue())</b>
+<b class="nc">&nbsp;					.orElse(false);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!conditionValue) {</b>
+&nbsp;				// Constraint is always false
+<b class="nc">&nbsp;				leftJoin.replaceWith(leftArg);</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				leftJoin.setCondition(null);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Union union) {
+<b class="nc">&nbsp;		super.meet(union);</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr leftArg = union.getLeftArg();</b>
+<b class="nc">&nbsp;		TupleExpr rightArg = union.getRightArg();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (leftArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			union.replaceWith(rightArg);</b>
+<b class="nc">&nbsp;		} else if (rightArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			union.replaceWith(leftArg);</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Difference difference) {
+<b class="nc">&nbsp;		super.meet(difference);</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr leftArg = difference.getLeftArg();</b>
+<b class="nc">&nbsp;		TupleExpr rightArg = difference.getRightArg();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (leftArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			difference.replaceWith(leftArg);</b>
+<b class="nc">&nbsp;		} else if (rightArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			difference.replaceWith(leftArg);</b>
+<b class="nc">&nbsp;		} else if (leftArg instanceof SingletonSet &amp;&amp; rightArg instanceof SingletonSet) {</b>
+<b class="nc">&nbsp;			difference.replaceWith(new EmptySet());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Intersection intersection) {
+<b class="nc">&nbsp;		super.meet(intersection);</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr leftArg = intersection.getLeftArg();</b>
+<b class="nc">&nbsp;		TupleExpr rightArg = intersection.getRightArg();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			intersection.replaceWith(new EmptySet());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	protected void meetUnaryTupleOperator(UnaryTupleOperator node) {
+<b class="nc">&nbsp;		super.meetUnaryTupleOperator(node);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (node.getArg() instanceof EmptySet) {</b>
+<b class="nc">&nbsp;			node.replaceWith(node.getArg());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Filter node) {
+<b class="nc">&nbsp;		super.meet(node);</b>
+&nbsp;
+<b class="nc">&nbsp;		TupleExpr arg = node.getArg();</b>
+<b class="nc">&nbsp;		ValueExpr condition = node.getCondition();</b>
+&nbsp;
+<b class="nc">&nbsp;		if (arg instanceof EmptySet) {</b>
+&nbsp;			// see #meetUnaryTupleOperator
+<b class="nc">&nbsp;		} else if (condition instanceof ValueConstant) {</b>
+<b class="nc">&nbsp;			boolean conditionValue = QueryEvaluationUtility</b>
+<b class="nc">&nbsp;					.getEffectiveBooleanValue(((ValueConstant) condition).getValue())</b>
+<b class="nc">&nbsp;					.orElse(false);</b>
+&nbsp;
+<b class="nc">&nbsp;			if (!conditionValue) {</b>
+&nbsp;				// Constraint is always false
+<b class="nc">&nbsp;				node.replaceWith(new EmptySet());</b>
+&nbsp;			} else {
+<b class="nc">&nbsp;				node.replaceWith(arg);</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(Or or) {
+<b class="nc">&nbsp;		super.meet(or);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (or.getLeftArg().equals(or.getRightArg())) {</b>
+<b class="nc">&nbsp;			or.replaceWith(or.getLeftArg());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	@Override
+&nbsp;	public void meet(And and) {
+<b class="nc">&nbsp;		super.meet(and);</b>
+&nbsp;
+<b class="nc">&nbsp;		if (and.getLeftArg().equals(and.getRightArg())) {</b>
+<b class="nc">&nbsp;			and.replaceWith(and.getLeftArg());</b>
+&nbsp;		}
+&nbsp;	}
+&nbsp;
+&nbsp;	/**
+&nbsp;	 * Checks whether the left join is &quot;well designed&quot; as defined in section 4.2 of &quot;Semantics and Complexity of
+&nbsp;	 * SPARQL&quot;, 2006, Jorge Pérez et al.
+&nbsp;	 */
+&nbsp;	private boolean isWellDesigned(LeftJoin leftJoin) {
+<b class="nc">&nbsp;		VarNameCollector optionalVarCollector = new VarNameCollector();</b>
+<b class="nc">&nbsp;		leftJoin.getRightArg().visit(optionalVarCollector);</b>
+<b class="nc">&nbsp;		if (leftJoin.hasCondition()) {</b>
+<b class="nc">&nbsp;			leftJoin.getCondition().visit(optionalVarCollector);</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		Set&lt;String&gt; problemVars = optionalVarCollector.getVarNames();</b>
+<b class="nc">&nbsp;		problemVars.removeAll(leftJoin.getLeftArg().getBindingNames());</b>
+&nbsp;
+<b class="nc">&nbsp;		if (problemVars.isEmpty()) {</b>
+<b class="nc">&nbsp;			return true;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		// If any of the problematic variables are bound in the parent
+&nbsp;		// expression then the left join is not well designed
+<b class="nc">&nbsp;		BindingCollector bindingCollector = new BindingCollector();</b>
+<b class="nc">&nbsp;		QueryModelNode node = leftJoin;</b>
+&nbsp;		QueryModelNode parent;
+<b class="nc">&nbsp;		while ((parent = node.getParentNode()) != null) {</b>
+<b class="nc">&nbsp;			bindingCollector.setNodeToIgnore(node);</b>
+<b class="nc">&nbsp;			parent.visitChildren(bindingCollector);</b>
+<b class="nc">&nbsp;			node = parent;</b>
+&nbsp;		}
+&nbsp;
+<b class="nc">&nbsp;		problemVars.retainAll(bindingCollector.getBindingNames());</b>
+&nbsp;
+<b class="nc">&nbsp;		return problemVars.isEmpty();</b>
+&nbsp;	}
+&nbsp;
+<b class="nc">&nbsp;	private static class BindingCollector extends AbstractQueryModelVisitor&lt;RuntimeException&gt; {</b>
+&nbsp;
+&nbsp;		private QueryModelNode nodeToIgnore;
+&nbsp;
+<b class="nc">&nbsp;		private final Set&lt;String&gt; bindingNames = new HashSet&lt;&gt;();</b>
+&nbsp;
+&nbsp;		public void setNodeToIgnore(QueryModelNode node) {
+<b class="nc">&nbsp;			this.nodeToIgnore = node;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		public Set&lt;String&gt; getBindingNames() {
+<b class="nc">&nbsp;			return bindingNames;</b>
+&nbsp;		}
+&nbsp;
+&nbsp;		@Override
+&nbsp;		protected void meetNode(QueryModelNode node) {
+<b class="nc">&nbsp;			if (node instanceof TupleExpr &amp;&amp; node != nodeToIgnore) {</b>
+<b class="nc">&nbsp;				TupleExpr tupleExpr = (TupleExpr) node;</b>
+<b class="nc">&nbsp;				bindingNames.addAll(tupleExpr.getBindingNames());</b>
+&nbsp;			}
+&nbsp;		}
+&nbsp;	}
+&nbsp;}
+</code>
+</pre>
+</div>
+
+<script type="text/javascript">
+(function() {
+    var msie = false, msie9 = false;
+    /*@cc_on
+      msie = true;
+      @if (@_jscript_version >= 9)
+        msie9 = true;
+      @end
+    @*/
+
+    if (!msie || msie && msie9) {
+      hljs.highlightAll()
+      hljs.initLineNumbersOnLoad();
+    }
+})();
+</script>
+
+<div class="footer">
+    
+    <div style="float:right;">generated on 2022-09-18 08:58</div>
+</div>
+</body>
+</html>

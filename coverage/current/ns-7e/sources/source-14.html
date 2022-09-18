@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > TupleQueryResultParser</title>
+  <title>Coverage Report > TupleQueryResultWriterFactory</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.query.resultio</a>
 </div>
 
-<h1>Coverage Summary for Class: TupleQueryResultParser (org.eclipse.rdf4j.query.resultio)</h1>
+<h1>Coverage Summary for Class: TupleQueryResultWriterFactory (org.eclipse.rdf4j.query.resultio)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">TupleQueryResultParser</td>
+  <td class="name">TupleQueryResultWriterFactory</td>
 </tr>
 
 </table>
@@ -50,42 +50,26 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.query.resultio;
 &nbsp;
-&nbsp;import java.io.IOException;
-&nbsp;import java.io.InputStream;
-&nbsp;
-&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandler;
-&nbsp;import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+&nbsp;import java.io.OutputStream;
 &nbsp;
 &nbsp;/**
-&nbsp; * A general interface for tuple query result parsers.
+&nbsp; * Returns {@link TupleQueryResultWriter}s for a specific tuple query result format.
+&nbsp; *
+&nbsp; * @author Arjohn Kampman
 &nbsp; */
-&nbsp;public interface TupleQueryResultParser extends QueryResultParser {
+&nbsp;public interface TupleQueryResultWriterFactory {
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Gets the query result format that this parser can parse.
+&nbsp;	 * Returns the tuple query result format for this factory.
 &nbsp;	 */
 &nbsp;	TupleQueryResultFormat getTupleQueryResultFormat();
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Sets the TupleQueryResultHandler that will handle the parsed query result data.
+&nbsp;	 * Returns a TupleQueryResultWriter instance that will write to the supplied output stream.
 &nbsp;	 *
-&nbsp;	 * @deprecated Use {@link #setQueryResultHandler(org.eclipse.rdf4j.query.QueryResultHandler)} instead.
+&nbsp;	 * @param out The OutputStream to write the result to.
 &nbsp;	 */
-&nbsp;	@Deprecated
-&nbsp;	void setTupleQueryResultHandler(TupleQueryResultHandler handler);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Parses the data from the supplied InputStream.
-&nbsp;	 *
-&nbsp;	 * @param in The InputStream from which to read the data.
-&nbsp;	 * @throws IOException                      If an I/O error occurred while data was read from the InputStream.
-&nbsp;	 * @throws QueryResultParseException        If the parser has encountered an unrecoverable parse error.
-&nbsp;	 * @throws TupleQueryResultHandlerException If the configured query result handler has encountered an unrecoverable
-&nbsp;	 *                                          error.
-&nbsp;	 * @deprecated Use {@link #parseQueryResult(InputStream)} instead.
-&nbsp;	 */
-&nbsp;	@Deprecated
-&nbsp;	void parse(InputStream in) throws IOException, QueryResultParseException, TupleQueryResultHandlerException;
+&nbsp;	TupleQueryResultWriter getWriter(OutputStream out);
 &nbsp;}
 </code>
 </pre>
@@ -110,7 +94,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>

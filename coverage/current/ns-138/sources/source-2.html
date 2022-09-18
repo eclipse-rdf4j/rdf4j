@@ -4,7 +4,7 @@
 <!DOCTYPE html>
 <html id="htmlId">
 <head>
-  <title>Coverage Report > NotifyingRepository</title>
+  <title>Coverage Report > NotifyingRepositoryConnection</title>
   <style type="text/css">
     @import "../../css/coverage.css";
     @import "../../css/idea.min.css";
@@ -21,14 +21,14 @@ Current scope:     <a href="../../index.html">all classes</a>
     <a href="../index.html">org.eclipse.rdf4j.repository.event</a>
 </div>
 
-<h1>Coverage Summary for Class: NotifyingRepository (org.eclipse.rdf4j.repository.event)</h1>
+<h1>Coverage Summary for Class: NotifyingRepositoryConnection (org.eclipse.rdf4j.repository.event)</h1>
 
 <table class="coverageStats">
 <tr>
   <th class="name">Class</th>
 </tr>
 <tr>
-  <td class="name">NotifyingRepository</td>
+  <td class="name">NotifyingRepositoryConnection</td>
 </tr>
 
 </table>
@@ -50,60 +50,23 @@ Current scope:     <a href="../../index.html">all classes</a>
 &nbsp; *******************************************************************************/
 &nbsp;package org.eclipse.rdf4j.repository.event;
 &nbsp;
-&nbsp;import org.eclipse.rdf4j.repository.Repository;
 &nbsp;import org.eclipse.rdf4j.repository.RepositoryConnection;
-&nbsp;import org.eclipse.rdf4j.repository.RepositoryException;
 &nbsp;
 &nbsp;/**
 &nbsp; * @author Herko ter Horst
 &nbsp; */
-&nbsp;public interface NotifyingRepository extends Repository {
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Registers a &lt;var&gt;RepositoryListener&lt;/var&gt; that will receive notifications of operations that are performed on
-&nbsp;	 * this repository.
-&nbsp;	 */
-&nbsp;	void addRepositoryListener(RepositoryListener listener);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Removes a registered &lt;var&gt;RepositoryListener&lt;/var&gt; from this repository.
-&nbsp;	 */
-&nbsp;	void removeRepositoryListener(RepositoryListener listener);
+&nbsp;public interface NotifyingRepositoryConnection extends RepositoryConnection {
 &nbsp;
 &nbsp;	/**
 &nbsp;	 * Registers a &lt;var&gt;RepositoryConnectionListener&lt;/var&gt; that will receive notifications of operations that are
-&nbsp;	 * performed on any&lt; connections that are created by this repository.
+&nbsp;	 * performed on this connection.
 &nbsp;	 */
 &nbsp;	void addRepositoryConnectionListener(RepositoryConnectionListener listener);
 &nbsp;
 &nbsp;	/**
-&nbsp;	 * Removes a registered &lt;var&gt;RepositoryConnectionListener&lt;/var&gt; from this repository.
+&nbsp;	 * Removes a registered &lt;var&gt;RepositoryConnectionListener&lt;/var&gt; from this connection.
 &nbsp;	 */
 &nbsp;	void removeRepositoryConnectionListener(RepositoryConnectionListener listener);
-&nbsp;
-&nbsp;	/**
-&nbsp;	 * Opens a connection to this repository that can be used for querying and updating the contents of the repository.
-&nbsp;	 * Created connections need to be closed to make sure that any resources they keep hold of are released. The best
-&nbsp;	 * way to do this is to use a try-finally-block as follows:
-&nbsp;	 *
-&nbsp;	 * &lt;pre&gt;
-&nbsp;	 * Connection con = repository.getConnection();
-&nbsp;	 * try {
-&nbsp;	 * 	// perform operations on the connection
-&nbsp;	 * } finally {
-&nbsp;	 * 	con.close();
-&nbsp;	 * }
-&nbsp;	 * &lt;/pre&gt;
-&nbsp;	 *
-&nbsp;	 * Note that {@link RepositoryConnection} is not guaranteed to be thread-safe! The recommended pattern for
-&nbsp;	 * repository access in a multithreaded application is to share the Repository object between threads, but have each
-&nbsp;	 * thread create and use its own {@link RepositoryConnection}s.
-&nbsp;	 *
-&nbsp;	 * @return A connection that allows operations on this repository.
-&nbsp;	 * @throws RepositoryException If something went wrong during the creation of the Connection.
-&nbsp;	 */
-&nbsp;	@Override
-&nbsp;	NotifyingRepositoryConnection getConnection() throws RepositoryException;
 &nbsp;
 &nbsp;}
 </code>
@@ -129,7 +92,7 @@ Current scope:     <a href="../../index.html">all classes</a>
 
 <div class="footer">
     
-    <div style="float:right;">generated on 2022-09-18 08:20</div>
+    <div style="float:right;">generated on 2022-09-18 08:56</div>
 </div>
 </body>
 </html>
