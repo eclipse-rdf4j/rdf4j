@@ -85,6 +85,7 @@ public abstract class EvaluationStrategyTest {
 		strictRepo = createRepo(strictStoreConfig, "test-strict");
 
 		BaseSailConfig standardStoreConfig = getBaseSailConfig();
+		standardStoreConfig.setDefaultQueryEvaluationMode(QueryEvaluationMode.STANDARD);
 		standardRepo = createRepo(standardStoreConfig, "test-standard");
 	}
 
