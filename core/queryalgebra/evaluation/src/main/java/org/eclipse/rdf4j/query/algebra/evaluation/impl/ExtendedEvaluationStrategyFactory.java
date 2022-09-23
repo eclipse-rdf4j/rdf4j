@@ -16,7 +16,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 
-@Deprecated(since = "4.1.0", forRemoval = true)
+/**
+ * 
+ * @deprecated since 4.3.0 - use {@link StandardEvaluationStrategyFactory} instead.
+ */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
 		implements FederatedServiceResolverClient {
 
