@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -29,15 +27,15 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  *
  * @author Arjohn Kampman
  * @author James Leigh
+ * 
+ * @deprecated since 4.1.0. Use
+ *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer} instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
+public class DisjunctiveConstraintOptimizer extends
+		org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer implements QueryOptimizer {
 
-	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new OrSameTermOptimizer());
-	}
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class OrSameTermOptimizer extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override

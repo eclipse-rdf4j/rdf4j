@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -20,18 +18,15 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * @author Arjohn Kampman
+ * 
+ * @deprecated since 4.1.0. Use
+ *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer} instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class IterativeEvaluationOptimizer implements QueryOptimizer {
+public class IterativeEvaluationOptimizer extends
+		org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer implements QueryOptimizer {
 
-	public IterativeEvaluationOptimizer() {
-	}
-
-	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new IEOVisitor());
-	}
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class IEOVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override

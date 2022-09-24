@@ -36,32 +36,29 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
  *
  * @author Arjohn Kampman
  * @author James Leigh
+ * @deprecated since 4.1.0. Use {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer} instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class QueryJoinOptimizer implements QueryOptimizer {
-
-	protected final EvaluationStatistics statistics;
+public class QueryJoinOptimizer extends org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer
+		implements QueryOptimizer {
 
 	public QueryJoinOptimizer() {
-		this(new EvaluationStatistics());
+		this(null);
 	}
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
-		this.statistics = statistics;
+		this(statistics, false);
 	}
 
-	/**
-	 * Applies generally applicable optimizations: path expressions are sorted from more to less specific.
-	 *
-	 * @param tupleExpr
-	 */
-	@Override
+	public QueryJoinOptimizer(EvaluationStatistics statistics, boolean trackResultSize) {
+		super(statistics, trackResultSize);
+	}
+
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor());
+		super.optimize(tupleExpr, dataset, bindings);
 	}
 
 	/**
-	 *
 	 * @deprecated This class is protected for historic reasons only, and will be made private in a future major
 	 *             release.
 	 */
@@ -155,7 +152,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// order all other join arguments based on available statistics
 					while (!joinArgs.isEmpty()) {
 						TupleExpr tupleExpr = selectNextTupleExpr(joinArgs, cardinalityMap, varsMap, varFreqMap,
-								boundVars);
+								boundVars
+						);
 
 						joinArgs.remove(tupleExpr);
 						orderedJoinArgs.add(tupleExpr);
@@ -403,15 +401,18 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * selects the tuple expression with highest number of bound variables, preferring variables that have been
 		 * bound in other tuple expressions over variables with a fixed value.
 		 */
-		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+		protected TupleExpr selectNextTupleExpr(
+				List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars
+		) {
 			TupleExpr result = null;
 			double lowestCost = Double.POSITIVE_INFINITY;
 
 			for (TupleExpr tupleExpr : expressions) {
 				// Calculate a score for this tuple expression
 				double cost = getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap,
-						boundVars);
+						boundVars
+				);
 
 				if (cost < lowestCost || result == null) {
 					// More specific path expression found
@@ -426,13 +427,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Deprecated
-		protected double getTupleExprCardinality(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+		protected double getTupleExprCardinality(
+				TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars
+		) {
 			return getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap, boundVars);
 		}
 
-		protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars) {
+		protected double getTupleExprCost(
+				TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap, Set<String> boundVars
+		) {
 
 			double cost = cardinalityMap.get(tupleExpr);
 
@@ -540,4 +545,5 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 		return count;
 	}
+
 }

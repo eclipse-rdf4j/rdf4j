@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
@@ -19,7 +17,6 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -28,15 +25,15 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * Moves the Order node above the Projection when variables are projected.
  *
  * @author James Leigh
+ * 
+ * @deprecated since 4.1.0. Use {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer}
+ *             instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class OrderLimitOptimizer implements QueryOptimizer {
+public class OrderLimitOptimizer extends org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer
+		implements QueryOptimizer {
 
-	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new OrderOptimizer());
-	}
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class OrderOptimizer extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private boolean variablesProjected = true;

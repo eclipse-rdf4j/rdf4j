@@ -13,8 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -22,21 +20,23 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Splits conjunctive constraints into seperate constraints.
  *
  * @author Arjohn Kampman
+ * 
+ * @deprecated since 4.1.0. Use
+ *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer}
+ *             instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class ConjunctiveConstraintSplitter implements QueryOptimizer {
+public class ConjunctiveConstraintSplitter
+		extends org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer
+		implements QueryOptimizer {
 
-	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new ConstraintVisitor(tupleExpr));
-	}
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class ConstraintVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		protected final TupleExpr tupleExpr;

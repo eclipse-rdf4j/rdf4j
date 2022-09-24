@@ -12,8 +12,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Set;
 
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -33,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Optimizes a query model by pushing {@link Filter}s as far down in the model tree as possible.
@@ -72,21 +70,14 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
  *
  * @author Arjohn Kampman
  * @author Jerven Bolleman
+ * 
+ * @deprecated since 4.1.0. Use {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer} instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class FilterOptimizer implements QueryOptimizer {
+public class FilterOptimizer extends org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer
+		implements QueryOptimizer {
 
-	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new DeMergeFilterFinder());
-		tupleExpr.visit(new FilterFinder(tupleExpr));
-		tupleExpr.visit(new MergeFilterFinder());
-	}
-
-	/*--------------------------*
-	 * Inner class FilterFinder *
-	 *--------------------------*/
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class FilterFinder extends AbstractQueryModelVisitor<RuntimeException> {
 
 		protected final TupleExpr tupleExpr;
@@ -102,10 +93,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	/*-----------------------------*
-	 * Inner class FilterRelocator *
-	 *-----------------------------*/
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class FilterRelocator extends AbstractQueryModelVisitor<RuntimeException> {
 
 		public static void relocate(Filter filter) {
@@ -251,10 +239,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	/*--------------------------*
-	 * Inner class MergeFilterFinder *
-	 *--------------------------*/
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class MergeFilterFinder extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override
@@ -273,10 +258,7 @@ public class FilterOptimizer implements QueryOptimizer {
 		}
 	}
 
-	/*--------------------------*
-	 * Inner class DeMergeFilterFinder *
-	 *--------------------------*/
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class DeMergeFilterFinder extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override
@@ -295,4 +277,5 @@ public class FilterOptimizer implements QueryOptimizer {
 			}
 		}
 	}
+
 }

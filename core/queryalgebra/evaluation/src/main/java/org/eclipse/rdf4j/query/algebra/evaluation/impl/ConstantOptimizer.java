@@ -17,22 +17,15 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Bound;
-import org.eclipse.rdf4j.query.algebra.Extension;
-import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Or;
-import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Regex;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -55,52 +48,25 @@ import org.slf4j.LoggerFactory;
  *
  * @author James Leigh
  * @author Arjohn Kampman
+ * 
+ * @deprecated since 4.1.0. Use {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer} instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class ConstantOptimizer implements QueryOptimizer {
+public class ConstantOptimizer extends org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer
+		implements QueryOptimizer {
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected final EvaluationStrategy strategy;
 
 	public ConstantOptimizer(EvaluationStrategy strategy) {
-		this.strategy = strategy;
+		super(strategy);
+		this.strategy = null;
 	}
 
-	/**
-	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
-	 */
-	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		ConstantVisitor visitor = new ConstantVisitor();
-		tupleExpr.visit(visitor);
-		Set<String> varsBefore = visitor.varNames;
-
-		VarNameCollector varCollector = new VarNameCollector();
-		tupleExpr.visit(varCollector);
-		Set<String> varsAfter = varCollector.varNames;
-
-		if (varsAfter.size() < varsBefore.size()) {
-			varsBefore.removeAll(varsAfter);
-			for (ProjectionElemList projElems : visitor.projElemLists) {
-				for (ProjectionElem projElem : projElems.getElements()) {
-					String name = projElem.getName();
-					if (varsBefore.contains(name)) {
-						UnaryTupleOperator proj = (UnaryTupleOperator) projElems.getParentNode();
-						Extension ext = new Extension(proj.getArg());
-						proj.setArg(ext);
-						Var lostVar = new Var(name);
-						Value value = bindings.getValue(name);
-						if (value != null) {
-							lostVar.setValue(value);
-						}
-						ext.addElement(new ExtensionElem(lostVar, name));
-					}
-				}
-			}
-		}
-	}
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected class ConstantVisitor extends VarNameCollector {
 
 		final List<ProjectionElemList> projElemLists = new ArrayList<>();
@@ -326,6 +292,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		}
 	}
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected class VarNameCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
 		final Set<String> varNames = new HashSet<>();

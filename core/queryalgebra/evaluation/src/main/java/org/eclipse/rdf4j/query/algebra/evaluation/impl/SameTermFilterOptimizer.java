@@ -16,8 +16,6 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -40,18 +38,15 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  *
  * @author Arjohn Kampman
  * @author James Leigh
+ * 
+ * @deprecated since 4.1.0. Use {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer}
+ *             instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")
-public class SameTermFilterOptimizer implements QueryOptimizer {
+public class SameTermFilterOptimizer
+		extends org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer implements QueryOptimizer {
 
-	/**
-	 * Applies generally applicable optimizations to the supplied query: variable assignments are inlined.
-	 */
-	@Override
-	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new SameTermFilterVisitor());
-	}
-
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class SameTermFilterVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		@Override
@@ -167,6 +162,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class VarRenamer extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final Var oldVar;
@@ -193,6 +189,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class BindingSetAssignmentCollector extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final List<BindingSetAssignment> assignments = new ArrayList<>();
@@ -207,6 +204,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 	}
 
+	@Deprecated(forRemoval = true, since = "4.1.0")
 	protected static class VarBinder extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private final String varName;
