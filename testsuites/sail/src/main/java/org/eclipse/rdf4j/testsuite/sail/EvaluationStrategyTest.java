@@ -124,6 +124,30 @@ public abstract class EvaluationStrategyTest {
 		}
 	}
 
+	@Test
+	public void testQueryEvaluationMode_Override() {
+		try (RepositoryConnection conn = strictRepo.getConnection()) {
+			conn.add(s1, RDFS.LABEL, gYearLit);
+			conn.add(s2, RDFS.LABEL, gYearMonthLit);
+
+			String query = "SELECT * WHERE { ?s rdfs:label ?l . FILTER(?l >= \"2008\"^^xsd:gYear) }";
+
+			{
+				conn.begin(QueryEvaluationMode.STANDARD);
+				List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+				conn.commit();
+				assertThat(result).hasSize(2);
+			}
+
+			{
+				List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+				// evaluation should be back to strict mode outside of the previous transaction
+				assertThat(result).hasSize(1);
+			}
+
+		}
+	}
+
 	/**
 	 * Gets a configuration object for the base Sail that should be tested.
 	 *

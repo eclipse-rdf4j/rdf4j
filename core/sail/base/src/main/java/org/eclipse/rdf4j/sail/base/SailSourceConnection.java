@@ -145,11 +145,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	// Track the time used when evaluating a query, used by explain(...)
 	private boolean trackTime;
-	private QueryEvaluationMode queryEvaluationMode;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
+	// current query evaluation mode
+	private QueryEvaluationMode queryEvaluationMode;
 
 	/**
 	 * Creates a new {@link SailConnection}, using the given {@link SailStore} to manage the state.
@@ -183,10 +181,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				: null;
 		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	/**
 	 * Returns the {@link FederatedServiceResolver} being used.
@@ -484,6 +478,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		explicitOnlyBranch = null;
 		inferredOnlyBranch = null;
 		includeInferredBranch = null;
+
+		queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 		try {
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.flush();
@@ -510,6 +506,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			includeInferredBranch = null;
 			explicitOnlyBranch = null;
 			inferredOnlyBranch = null;
+
+			queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+
 			try {
 				if (datasets.containsKey(null)) {
 					toCloseDataset = datasets.remove(null);
@@ -556,6 +555,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				}
 			}
 		}
+
 	}
 
 	@Override
