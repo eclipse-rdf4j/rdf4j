@@ -1106,7 +1106,7 @@ abstract public class AbstractShaclTest {
 		// FIXME we should be able to set this directly on the ShaclSail (and let it delegate to its base sail), but no
 		// decision has been made yet on where the setter for this sits (I'm not sure we want it at the level of the
 		// Sail interface).
-		memoryStore.setDefaultQueryEvaluationMode(QueryEvaluationMode.MINIMAL_COMPLIANT);
+		memoryStore.setDefaultQueryEvaluationMode(QueryEvaluationMode.STRICT);
 
 		ShaclSail shaclSail = new ShaclSail(memoryStore);
 		SailRepository repository = new SailRepository(shaclSail);

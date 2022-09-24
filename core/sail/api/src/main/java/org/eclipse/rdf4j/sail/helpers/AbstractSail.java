@@ -50,9 +50,9 @@ public abstract class AbstractSail implements Sail {
 	private IsolationLevel defaultIsolationLevel = IsolationLevels.READ_COMMITTED;
 
 	/**
-	 * default SPARQL query evaluation mode, set to {@link QueryEvaluationMode#MINIMAL_COMPLIANT}
+	 * default SPARQL query evaluation mode, set to {@link QueryEvaluationMode#STRICT}
 	 */
-	private QueryEvaluationMode defaultQueryEvaluationMode = QueryEvaluationMode.MINIMAL_COMPLIANT;
+	private QueryEvaluationMode defaultQueryEvaluationMode = QueryEvaluationMode.STRICT;
 
 	/**
 	 * list of supported isolation levels. By default set to include {@link IsolationLevels#READ_UNCOMMITTED} and

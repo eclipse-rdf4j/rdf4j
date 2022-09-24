@@ -17,7 +17,7 @@ public enum QueryEvaluationMode implements TransactionSetting {
 	/**
 	 * Strict minimally-compliant mode with respect to SPARQL 1.1 recommendation.
 	 */
-	MINIMAL_COMPLIANT,
+	STRICT,
 
 	/**
 	 * Standard mode extends minimal compliance with various practical operator behavioral extensions, in a way that is

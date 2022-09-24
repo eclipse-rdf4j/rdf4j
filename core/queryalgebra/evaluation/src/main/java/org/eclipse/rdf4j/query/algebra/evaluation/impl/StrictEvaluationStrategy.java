@@ -60,7 +60,7 @@ public class StrictEvaluationStrategy extends StandardEvaluationStrategy {
 			TupleFunctionRegistry tupleFunctionRegistry) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics, trackResultSize,
 				tupleFunctionRegistry);
-		this.setQueryEvaluationMode(QueryEvaluationMode.MINIMAL_COMPLIANT);
+		this.setQueryEvaluationMode(QueryEvaluationMode.STRICT);
 	}
 
 }

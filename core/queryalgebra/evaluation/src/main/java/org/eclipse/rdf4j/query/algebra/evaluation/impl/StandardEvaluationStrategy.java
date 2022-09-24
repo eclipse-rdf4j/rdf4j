@@ -1825,12 +1825,12 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		Value leftVal = evaluate(node.getLeftArg(), bindings);
 		Value rightVal = evaluate(node.getRightArg(), bindings);
 
-		boolean strict = QueryEvaluationMode.MINIMAL_COMPLIANT == getQueryEvaluationMode();
+		boolean strict = QueryEvaluationMode.STRICT == getQueryEvaluationMode();
 		return BooleanLiteral.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict));
 	}
 
 	protected QueryValueEvaluationStep prepare(Compare node, QueryEvaluationContext context) {
-		boolean strict = QueryEvaluationMode.MINIMAL_COMPLIANT == getQueryEvaluationMode();
+		boolean strict = QueryEvaluationMode.STRICT == getQueryEvaluationMode();
 		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
 				.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict)), context);
 	}
@@ -1849,7 +1849,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 			QueryEvaluationMode queryEvaluationMode) {
 		if (leftVal instanceof Literal && rightVal instanceof Literal) {
 			switch (queryEvaluationMode) {
-			case MINIMAL_COMPLIANT:
+			case STRICT:
 				return MathUtil.compute((Literal) leftVal, (Literal) rightVal, node.getOperator());
 			case STANDARD:
 			default:

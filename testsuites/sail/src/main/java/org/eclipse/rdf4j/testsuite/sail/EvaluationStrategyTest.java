@@ -80,7 +80,7 @@ public abstract class EvaluationStrategyTest {
 		manager = RepositoryProvider.getRepositoryManager(tempDir);
 
 		BaseSailConfig strictStoreConfig = getBaseSailConfig();
-		strictStoreConfig.setDefaultQueryEvaluationMode(QueryEvaluationMode.MINIMAL_COMPLIANT);
+		strictStoreConfig.setDefaultQueryEvaluationMode(QueryEvaluationMode.STRICT);
 
 		strictRepo = createRepo(strictStoreConfig, "test-strict");
 
