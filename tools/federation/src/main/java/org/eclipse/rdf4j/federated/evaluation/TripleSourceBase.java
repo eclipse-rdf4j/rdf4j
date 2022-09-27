@@ -88,6 +88,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				}
 				return;
 			case CONSTRUCT:
+			case DESCRIBE:
 				monitorRemoteRequest();
 				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
 				applyBindings(gQuery, queryBindings);
