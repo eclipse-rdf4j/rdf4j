@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
  * comparison and mathematical operators to the minimally-conforming {@link StrictEvaluationStrategy}.
  *
  * @author Jeen Broekstra
- * @deprecated since 4.3.0. Use {@link StandardEvaluationStrategy} instead.
+ * @deprecated since 4.3.0. Use {@link DefaultEvaluationStrategy} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ExtendedEvaluationStrategy extends TupleFunctionEvaluationStrategy {

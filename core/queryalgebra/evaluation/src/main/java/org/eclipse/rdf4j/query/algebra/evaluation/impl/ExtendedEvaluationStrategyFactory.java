@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 
 /**
  * 
- * @deprecated since 4.3.0 - use {@link StandardEvaluationStrategyFactory} instead.
+ * @deprecated since 4.3.0 - use {@link DefaultEvaluationStrategyFactory} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
 public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory

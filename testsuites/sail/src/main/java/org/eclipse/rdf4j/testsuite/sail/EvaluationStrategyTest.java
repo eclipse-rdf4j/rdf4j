@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StandardEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -41,7 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Test cases for behavior of {@link StandardEvaluationStrategy} and {@link QueryEvaluationMode} on base Sail
+ * Test cases for behavior of {@link DefaultEvaluationStrategy} and {@link QueryEvaluationMode} on base Sail
  * implementations.
  *
  * @author Jeen Broekstra

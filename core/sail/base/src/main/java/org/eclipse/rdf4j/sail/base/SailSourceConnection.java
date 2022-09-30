@@ -38,8 +38,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StandardEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StandardEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
@@ -154,11 +154,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 *
 	 * @param sail
 	 * @param store
-	 * @param resolver the FederatedServiceResolver to use with the {@link StandardEvaluationStrategy default
+	 * @param resolver the FederatedServiceResolver to use with the {@link DefaultEvaluationStrategy default
 	 *                 EvaluationStrategy}.
 	 */
 	protected SailSourceConnection(AbstractSail sail, SailStore store, FederatedServiceResolver resolver) {
-		this(sail, store, new StandardEvaluationStrategyFactory(resolver));
+		this(sail, store, new DefaultEvaluationStrategyFactory(resolver));
 	}
 
 	/**
@@ -176,8 +176,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		this.evalStratFactory = evalStratFactory;
 		// FIXME the getFederatedServiceResolver method should be moved up to the FederatedServiceResolverClient
 		// interface
-		this.federatedServiceResolver = (evalStratFactory instanceof StandardEvaluationStrategyFactory)
-				? ((StandardEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
+		this.federatedServiceResolver = (evalStratFactory instanceof DefaultEvaluationStrategyFactory)
+				? ((DefaultEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
 				: null;
 		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 	}

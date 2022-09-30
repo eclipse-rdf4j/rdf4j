@@ -160,8 +160,11 @@ import org.eclipse.rdf4j.util.UUIDable;
 import com.google.common.base.Stopwatch;
 
 /**
- * Standard SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given {@link TripleSource},
- * optionally using the given {@link Dataset}.
+ * Default SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given {@link TripleSource},
+ * optionally using the given {@link Dataset}. The behaviour of this strategy can be modified by setting the
+ * {@link #setQueryEvaluationMode(QueryEvaluationMode) QueryEvaluationMode}, which determines if the SPARQL query is
+ * evaluated using {@link QueryEvaluationMode#STRICT strict} compliance or {@link QueryEvaluationMode#STANDARD standard}
+ * compliance.
  *
  * @author Jeen Broekstra
  * @author James Leigh
@@ -169,7 +172,7 @@ import com.google.common.base.Stopwatch;
  * @author David Huynh
  * @author Andreas Schwarte
  */
-public class StandardEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient, UUIDable {
+public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedServiceResolverClient, UUIDable {
 
 	protected final TripleSource tripleSource;
 
@@ -245,29 +248,29 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		};
 	}
 
-	public StandardEvaluationStrategy(TripleSource tripleSource, FederatedServiceResolver serviceResolver) {
+	public DefaultEvaluationStrategy(TripleSource tripleSource, FederatedServiceResolver serviceResolver) {
 		this(tripleSource, null, serviceResolver);
 	}
 
-	public StandardEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+	public DefaultEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver) {
 		this(tripleSource, dataset, serviceResolver, 0, new EvaluationStatistics());
 	}
 
-	public StandardEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+	public DefaultEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
 			EvaluationStatistics evaluationStatistics) {
 		this(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics, false);
 	}
 
-	public StandardEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+	public DefaultEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
 			EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
 		this(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics, trackResultSize,
 				TupleFunctionRegistry.getInstance());
 	}
 
-	public StandardEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+	public DefaultEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
 			EvaluationStatistics evaluationStatistics, boolean trackResultSize,
 			TupleFunctionRegistry tupleFunctionRegistry) {
@@ -463,7 +466,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-				return new PathIteration(StandardEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
+				return new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
 						contextVar, minLength, bindings);
 			}
 		};
@@ -520,7 +523,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		return new QueryEvaluationStep() {
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
-				return new GroupIterator(StandardEvaluationStrategy.this, node, bindings, iterationCacheSyncThreshold,
+				return new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, iterationCacheSyncThreshold,
 						context);
 			}
 		};
@@ -619,7 +622,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new FilterIterator(node, arg.evaluate(bs), ves, StandardEvaluationStrategy.this);
+				return new FilterIterator(node, arg.evaluate(bs), ves, DefaultEvaluationStrategy.this);
 			}
 		};
 	}
@@ -649,7 +652,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 			// TODO fix the sharing of the now element to be safe
-			StandardEvaluationStrategy.this.sharedValueOfNow = null;
+			DefaultEvaluationStrategy.this.sharedValueOfNow = null;
 			return arg.evaluate(bs);
 		}
 	}
@@ -661,7 +664,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 
 			@Override
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
-				return new DescribeIteration(child.evaluate(bs), StandardEvaluationStrategy.this,
+				return new DescribeIteration(child.evaluate(bs), DefaultEvaluationStrategy.this,
 						node.getBindingNames(),
 						bs);
 			}
@@ -677,7 +680,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 			public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bindings) {
 				final CloseableIteration<BindingSet, QueryEvaluationException> evaluate = child.evaluate(bindings);
 				return new DistinctIteration<BindingSet, QueryEvaluationException>(evaluate,
-						StandardEvaluationStrategy.this::makeSet);
+						DefaultEvaluationStrategy.this::makeSet);
 			}
 		};
 
@@ -715,7 +718,7 @@ public class StandardEvaluationStrategy implements EvaluationStrategy, Federated
 					argValues[i] = argEpresions[i].evaluate(bindings);
 				}
 
-				return StandardEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings,
+				return DefaultEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings,
 						tripleSource.getValueFactory(), argValues);
 			}
 		};

@@ -17,15 +17,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 
-public class StandardEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
+public class DefaultEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
 		implements EvaluationStrategyFactory, FederatedServiceResolverClient {
 
 	private FederatedServiceResolver serviceResolver;
 
-	public StandardEvaluationStrategyFactory() {
+	public DefaultEvaluationStrategyFactory() {
 	}
 
-	public StandardEvaluationStrategyFactory(FederatedServiceResolver resolver) {
+	public DefaultEvaluationStrategyFactory(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 	}
 
@@ -41,7 +41,7 @@ public class StandardEvaluationStrategyFactory extends AbstractEvaluationStrateg
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		StandardEvaluationStrategy strategy = new StandardEvaluationStrategy(tripleSource, dataset, serviceResolver,
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, dataset, serviceResolver,
 				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
 		return strategy;

@@ -28,10 +28,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
  * @author Andreas Schwarte
  * @see ExtendedEvaluationStrategy
  * 
- * @deprecated since 4.3.0. Use {@link StandardEvaluationStrategy} instead.
+ * @deprecated since 4.3.0. Use {@link DefaultEvaluationStrategy} instead.
  */
 @Deprecated(since = "4.3.0", forRemoval = true)
-public class StrictEvaluationStrategy extends StandardEvaluationStrategy {
+public class StrictEvaluationStrategy extends DefaultEvaluationStrategy {
 	public StrictEvaluationStrategy(TripleSource tripleSource, FederatedServiceResolver serviceResolver) {
 		this(tripleSource, null, serviceResolver);
 	}
