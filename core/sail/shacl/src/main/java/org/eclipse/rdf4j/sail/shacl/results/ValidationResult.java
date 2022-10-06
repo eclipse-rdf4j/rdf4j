@@ -23,6 +23,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -137,6 +138,9 @@ public class ValidationResult {
 
 		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
 		model.add(getId(), SHACL.RESULT_SEVERITY, severity.getIri());
+		for (Literal message : shape.getMessage()) {
+			model.add(getId(), SHACL.RESULT_MESSAGE, message);
+		}
 
 		// TODO: Figure out how sh:detail should work!
 //		if (detail != null) {
