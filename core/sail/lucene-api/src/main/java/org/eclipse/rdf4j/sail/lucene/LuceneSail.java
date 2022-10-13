@@ -320,6 +320,12 @@ public class LuceneSail extends NotifyingSailWrapper {
 	public static final String ANALYZER_CLASS_KEY = "analyzer";
 
 	/**
+	 * Set this key as sail parameter to configure the Lucene analyzer class implementation used for query analysis. In
+	 * most cases this should be set to the same value as {@link #ANALYZER_CLASS_KEY}
+	 */
+	public static final String QUERY_ANALYZER_CLASS_KEY = "queryAnalyzer";
+
+	/**
 	 * Set this key as sail parameter to configure {@link org.apache.lucene.search.similarities.Similarity} class
 	 * implementation to use for text analysis.
 	 */
