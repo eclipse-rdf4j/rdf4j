@@ -102,8 +102,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	 *--------------*/
 
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
-			QueryEvaluationContext context)
-			throws QueryEvaluationException {
+			QueryEvaluationContext context) throws QueryEvaluationException {
 		this(strategy, group, parentBindings, 0, context);
 	}
 
@@ -117,8 +116,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		if (this.iterationCacheSyncThreshold > 0) {
 			try {
-				this.db = DBMaker
-						.newFileDB(File.createTempFile("group-eval", null))
+				this.db = DBMaker.newFileDB(File.createTempFile("group-eval", null))
 						.deleteFilesAfterClose()
 						.closeOnJvmShutdown()
 						.make();
@@ -320,7 +318,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 						setBinding.accept(value, bs);
 					}
 				} catch (ValueExprEvaluationException ex) {
-					// There was a type error when calculating the value of the aggregate. We silently ignore the error,
+					// There was a type error when calculating the value of the aggregate. We
+					// silently ignore the error,
 					// resulting in no result value being bound.
 				}
 			};
@@ -387,7 +386,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 	private void emptySolutionSpecialCase(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates,
 			Map<Key, Entry> entries) {
-		// no solutions, but if we are not explicitly grouping and aggregates are present,
+		// no solutions, but if we are not explicitly grouping and aggregates are
+		// present,
 		// we still need to process them to produce a zero-result.
 		if (group.getGroupBindingNames().isEmpty()) {
 			if (group.getGroupElements().isEmpty()) {
@@ -423,7 +423,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			Function<BindingSet, Value> getValue = context.getValue(groupBindingNames.iterator().next());
 			return (bs) -> {
 				Value value = getValue.apply(bs);
-				return value != null ? value.hashCode() : 0;
+				return value != null ? value.hashCode() : 1;
 			};
 		} else {
 
@@ -434,11 +434,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			}
 
 			return (bs) -> {
-				int nextHash = 0;
+				final int prime = 31;
+				int nextHash = 1;
 				for (Function<BindingSet, Value> getValue : getValues) {
 					Value value = getValue.apply(bs);
 					if (value != null) {
-						nextHash ^= value.hashCode();
+						nextHash = prime * nextHash + value.hashCode();
 					}
 				}
 				return nextHash;
@@ -461,11 +462,12 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		public Key(BindingSet bindingSet) {
 			this.bindingSet = bindingSet;
-			int nextHash = 0;
+			int nextHash = 1;
+			final int prime = 31;
 			for (String name : group.getGroupBindingNames()) {
 				Value value = bindingSet.getValue(name);
 				if (value != null) {
-					nextHash ^= value.hashCode();
+					nextHash = prime * nextHash + value.hashCode();
 				}
 			}
 			this.hash = nextHash;
@@ -512,8 +514,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		private final List<AggregateCollector> collectors;
 		private final List<Predicate<?>> predicates;
 
-		public Entry(BindingSet prototype, List<AggregateCollector> collectors,
-				List<Predicate<?>> predicates)
+		public Entry(BindingSet prototype, List<AggregateCollector> collectors, List<Predicate<?>> predicates)
 				throws QueryEvaluationException {
 			this.prototype = prototype;
 			this.collectors = collectors;
@@ -562,8 +563,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private static final Predicate<Value> ALWAYS_TRUE_VALUE = (t) -> true;
 	private static final LongFunction<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = (l) -> ALWAYS_TRUE_VALUE;
 
-	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge)
-			throws QueryEvaluationException {
+	private AggregatePredicateCollectorSupplier<?, ?> create(GroupElem ge) throws QueryEvaluationException {
 		AggregateOperator operator = ge.getOperator();
 
 		if (operator instanceof Count) {
@@ -571,84 +571,45 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate();
 				LongFunction<Predicate<BindingSet>> predicate = operator.isDistinct() ? DistinctBindingSets::new
 						: (l) -> ALWAYS_TRUE_BINDING_SET;
-				return new AggregatePredicateCollectorSupplier<>(
-						wildCardCountAggregate,
-						predicate,
-						CountCollector::new,
-						ge.getName()
-				);
+				return new AggregatePredicateCollectorSupplier<>(wildCardCountAggregate, predicate, CountCollector::new,
+						ge.getName());
 			} else {
 				CountAggregate agg = new CountAggregate((Count) operator);
 				LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 						: ALWAYS_TRUE_VALUE_SUPPLIER;
-				return new AggregatePredicateCollectorSupplier<>(
-						agg,
-						predicate,
-						CountCollector::new,
-						ge.getName()
-				);
+				return new AggregatePredicateCollectorSupplier<>(agg, predicate, CountCollector::new, ge.getName());
 			}
 		} else if (operator instanceof Min) {
 			MinAggregate agg = new MinAggregate((Min) operator);
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(
-					agg,
-					predicate,
-					ValueCollector::new,
-					ge.getName()
-			);
+			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Max) {
 			MaxAggregate agg = new MaxAggregate((Max) operator);
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(
-					agg,
-					predicate,
-					ValueCollector::new,
-					ge.getName()
-			);
+			return new AggregatePredicateCollectorSupplier<>(agg, predicate, ValueCollector::new, ge.getName());
 		} else if (operator instanceof Sum) {
 
 			SumAggregate agg = new SumAggregate((Sum) operator);
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(
-					agg,
-					predicate,
-					IntegerCollector::new,
-					ge.getName()
-			);
+			return new AggregatePredicateCollectorSupplier<>(agg, predicate, IntegerCollector::new, ge.getName());
 		} else if (operator instanceof Avg) {
 			AvgAggregate agg = new AvgAggregate((Avg) operator);
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(
-					agg,
-					predicate,
-					AvgCollector::new,
-					ge.getName()
-			);
+			return new AggregatePredicateCollectorSupplier<>(agg, predicate, AvgCollector::new, ge.getName());
 		} else if (operator instanceof Sample) {
 			SampleAggregate agg = new SampleAggregate((Sample) operator);
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(
-					agg,
-					predicate,
-					SampleCollector::new,
-					ge.getName()
-			);
+			return new AggregatePredicateCollectorSupplier<>(agg, predicate, SampleCollector::new, ge.getName());
 		} else if (operator instanceof GroupConcat) {
 			ConcatAggregate agg = new ConcatAggregate((GroupConcat) operator);
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
 					: ALWAYS_TRUE_VALUE_SUPPLIER;
-			return new AggregatePredicateCollectorSupplier<>(
-					agg,
-					predicate,
-					StringBuilderCollector::new,
-					ge.getName()
-			);
+			return new AggregatePredicateCollectorSupplier<>(agg, predicate, StringBuilderCollector::new, ge.getName());
 		} else if (operator instanceof AggregateFunctionCall) {
 			var aggOperator = (AggregateFunctionCall) operator;
 			LongFunction<Predicate<Value>> predicate = operator.isDistinct() ? DistinctValues::new
@@ -658,10 +619,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 			var function = factory.orElseThrow(
 					() -> new QueryEvaluationException("Unknown aggregate function '" + aggOperator.getIRI() + "'"))
 					.buildFunction(new QueryStepEvaluator(strategy.precompile(aggOperator.getArg(), context)));
-			return new AggregatePredicateCollectorSupplier<>(
-					function,
-					predicate,
-					() -> factory.get().getCollector(),
+			return new AggregatePredicateCollectorSupplier<>(function, predicate, () -> factory.get().getCollector(),
 					ge.getName());
 
 		}
@@ -978,8 +936,7 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 		private String separator = " ";
 
-		public ConcatAggregate(GroupConcat groupConcatOp)
-				throws QueryEvaluationException {
+		public ConcatAggregate(GroupConcat groupConcatOp) throws QueryEvaluationException {
 			super(new QueryStepEvaluator(strategy.precompile(groupConcatOp.getArg(), context)));
 			ValueExpr separatorExpr = groupConcatOp.getSeparator();
 			if (separatorExpr != null) {
