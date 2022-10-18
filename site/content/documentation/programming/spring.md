@@ -29,7 +29,12 @@ To configure the application to access an existing repository, set the following
 ```properties
  rdf4j.spring.repository.remote.manager-url=http://localhost:7200
  rdf4j.spring.repository.remote.name=myrepo
+
+ # Optional with username and password
+ rdf4j.spring.repository.remote.username=admin
+ rdf4j.spring.repository.remote.password=1234
 ```
+
 To use an in-memory repository (for example, for unit tests), use
 ```properties
 rdf4j.spring.repository.inmemory.enabled=true
