@@ -137,7 +137,7 @@ public class PropertyShape extends Shape {
 		}
 
 		if (!getPath().isSupported()) {
-			logger.error("Unsupported path detected. Shape ignored!\n{}", this);
+			logger.error("Unsupported SHACL feature detected: {}. Shape ignored!\n{}", path, this);
 			return ValidationQuery.Deactivated.getInstance();
 		}
 
@@ -183,36 +183,11 @@ public class PropertyShape extends Shape {
 		}
 
 		if (!getPath().isSupported()) {
-			logger.error("Unsupported path detected. Shape ignored!\n{}", this);
+			logger.error("Unsupported SHACL feature detected: {}. Shape ignored!\n{}", path, this);
 			return EmptyNode.getInstance();
 		}
 
 		PlanNode union = EmptyNode.getInstance();
-
-//		if (negatePlan) {
-//			assert overrideTargetNode == null : "Negated property shape with override target is not supported at the moment!";
-//
-//			PlanNode ret = EmptyNode.getInstance();
-//
-//			for (ConstraintComponent constraintComponent : constraintComponents) {
-//				PlanNode planNode = constraintComponent.generateTransactionalValidationPlan(connectionsGroup,
-//						logValidationPlans, () -> getAllLocalTargetsPlan(connectionsGroup, negatePlan), negateChildren,
-//						false, Scope.propertyShape);
-//
-//				PlanNode allTargetsPlan = getAllLocalTargetsPlan(connectionsGroup, negatePlan);
-//
-//				Unique invalid = Unique.getInstance(planNode);
-//
-//				PlanNode discardedLeft = new InnerJoin(allTargetsPlan, invalid)
-//						.getDiscardedLeft(BufferedPlanNode.class);
-//
-//				ret = UnionNode.getInstance(ret, discardedLeft);
-//
-//			}
-//
-//			return ret;
-//
-//		}
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
 
@@ -286,7 +261,7 @@ public class PropertyShape extends Shape {
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		if (!getPath().isSupported()) {
-			logger.error("Unsupported path detected. Shape ignored!\n{}", this);
+			logger.error("Unsupported SHACL feature detected: {}. Shape ignored!\n{}", path, this);
 			return false;
 		}
 
