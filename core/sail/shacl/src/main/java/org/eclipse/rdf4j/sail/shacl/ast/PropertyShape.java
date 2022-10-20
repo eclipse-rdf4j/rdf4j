@@ -136,6 +136,11 @@ public class PropertyShape extends Shape {
 			return ValidationQuery.Deactivated.getInstance();
 		}
 
+		if (!getPath().isSupported()) {
+			logger.error("Unsupported path detected. Shape ignored!\n{}", this);
+			return ValidationQuery.Deactivated.getInstance();
+		}
+
 		ValidationQuery validationQuery = constraintComponents.stream()
 				.map(c -> {
 					ValidationQuery validationQuery1 = c.generateSparqlValidationQuery(connectionsGroup,
@@ -177,6 +182,11 @@ public class PropertyShape extends Shape {
 			return EmptyNode.getInstance();
 		}
 
+		if (!getPath().isSupported()) {
+			logger.error("Unsupported path detected. Shape ignored!\n{}", this);
+			return EmptyNode.getInstance();
+		}
+
 		PlanNode union = EmptyNode.getInstance();
 
 //		if (negatePlan) {
@@ -205,10 +215,6 @@ public class PropertyShape extends Shape {
 //		}
 
 		for (ConstraintComponent constraintComponent : constraintComponents) {
-			if (!getPath().isSupported()) {
-				logger.error("Unsupported path detected. Shape ignored!\n" + this);
-				continue;
-			}
 
 			PlanNode validationPlanNode = constraintComponent
 					.generateTransactionalValidationPlan(connectionsGroup, validationSettings, overrideTargetNode,
@@ -274,6 +280,17 @@ public class PropertyShape extends Shape {
 
 	public Path getPath() {
 		return path;
+	}
+
+	@Override
+	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
+		if (!getPath().isSupported()) {
+			logger.error("Unsupported path detected. Shape ignored!\n{}", this);
+			return false;
+		}
+
+		return super.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider);
 	}
 
 	@Override
