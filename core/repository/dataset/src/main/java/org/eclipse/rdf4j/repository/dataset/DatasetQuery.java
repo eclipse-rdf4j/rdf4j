@@ -102,4 +102,28 @@ abstract class DatasetQuery implements Query {
 	public Explanation explain(Explanation.Level level) {
 		throw new UnsupportedOperationException();
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		DatasetQuery that = (DatasetQuery) o;
+
+		if (!con.equals(that.con)) {
+			return false;
+		}
+		return sailQuery.equals(that.sailQuery);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = con.hashCode();
+		result = 31 * result + sailQuery.hashCode();
+		return result;
+	}
 }

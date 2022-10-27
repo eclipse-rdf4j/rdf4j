@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
 
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
@@ -52,7 +53,6 @@ import org.slf4j.LoggerFactory;
  * A test suite that runs SPARQL syntax tests.
  *
  * @author Jeen Broekstra
- *
  */
 public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
@@ -185,6 +185,14 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 
 		try {
 			ParsedOperation operation = parseOperation(query, queryFileURL);
+
+			assertThatNoException().isThrownBy(() -> {
+				int hashCode = operation.hashCode();
+				if (hashCode == System.identityHashCode(operation)) {
+					throw new UnsupportedOperationException("hashCode() result is the same as  the identityHashCode in "
+							+ operation.getClass().getName());
+				}
+			});
 
 			if (!positiveTest) {
 				boolean dataBlockUpdate = false;
