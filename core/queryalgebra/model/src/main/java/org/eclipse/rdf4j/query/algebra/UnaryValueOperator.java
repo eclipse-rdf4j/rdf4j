@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 /**
  * An abstract superclass for unary value operators which, by definition, has one argument.
  */
@@ -82,25 +84,29 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	}
 
 	@Override
-	public boolean equals(Object other) {
-		if (other instanceof UnaryValueOperator) {
-			UnaryValueOperator o = (UnaryValueOperator) other;
-			return (arg == null && o.getArg() == null) || (arg != null && arg.equals(o.getArg()));
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof UnaryValueOperator)) {
+			return false;
 		}
 
-		return false;
+		UnaryValueOperator that = (UnaryValueOperator) o;
+
+		return Objects.equals(arg, that.arg);
 	}
 
 	@Override
 	public int hashCode() {
-		return arg.hashCode();
+		return arg != null ? arg.hashCode() : 97;
 	}
 
 	@Override
 	public UnaryValueOperator clone() {
 		UnaryValueOperator clone = (UnaryValueOperator) super.clone();
-		if (getArg() != null) {
-			clone.setArg(getArg().clone());
+		if (arg != null) {
+			clone.setArg(arg.clone());
 		}
 		return clone;
 	}
