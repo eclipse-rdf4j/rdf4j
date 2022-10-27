@@ -333,8 +333,7 @@ abstract public class AbstractShaclTest {
 	private static Stream<TestCase> findTestCases(String testCase, ExpectedResult baseCase) {
 		String shacl;
 
-		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-				.getResourceAsStream(testCase + "/shacl.trig")) {
+		try (InputStream resourceAsStream = getResourceAsStream(testCase + "/shacl.trig")) {
 			assert Objects.nonNull(resourceAsStream) : "Could not find: " + testCase + "/shacl.trig";
 			shacl = IOUtils.toString(resourceAsStream, StandardCharsets.UTF_8);
 
@@ -347,7 +346,7 @@ abstract public class AbstractShaclTest {
 			return Stream.empty();
 		}
 
-		return Arrays.stream(new File(resource.getFile()).list())
+		return Arrays.stream(Objects.requireNonNull(new File(resource.getFile()).list()))
 				.filter(s -> !s.startsWith("."))
 				.sorted()
 				.map(caseName -> {
@@ -443,8 +442,6 @@ abstract public class AbstractShaclTest {
 
 			}
 
-			Model validationReportActual = new LinkedHashModel();
-
 			for (File queryFile : testCase.getQueries()) {
 				try {
 					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
@@ -466,8 +463,6 @@ abstract public class AbstractShaclTest {
 
 						exception = true;
 						logger.debug(sailException.getMessage());
-						validationReportActual = ((ShaclSailValidationException) sailException.getCause())
-								.validationReportAsModel();
 						printResults(sailException);
 					}
 				} catch (IOException e) {
@@ -506,17 +501,18 @@ abstract public class AbstractShaclTest {
 
 	private static void testValidationReport(String dataPath, Model validationReportActual) {
 		try {
-			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-					.getResourceAsStream(dataPath + "report.ttl");
+			InputStream resourceAsStream = getResourceAsStream(dataPath + "report.ttl");
 			if (resourceAsStream == null) {
-				logger.error(dataPath + "report.ttl did not exist. Creating an empty file!");
+				logger.warn(dataPath + "report.ttl did not exist, attempting to create an empty file!");
 
 				String file = Objects.requireNonNull(AbstractShaclTest.class.getClassLoader()
 						.getResource(dataPath))
 						.getFile()
 						.replace("/target/test-classes/", "/src/test/resources/");
 				boolean newFile = new File(file + "report.ttl").createNewFile();
-
+				if (!newFile) {
+					logger.error(dataPath + "report.ttl did not exist and could not create an empty file!");
+				}
 			}
 			Model validationReportExpected = getModel(resourceAsStream);
 
@@ -531,6 +527,10 @@ abstract public class AbstractShaclTest {
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	private static InputStream getResourceAsStream(String dataPath) {
+		return AbstractShaclTest.class.getClassLoader().getResourceAsStream(dataPath);
 	}
 
 	private static void writeActualModelToExpectedModelForDevPurposes(String dataPath, Model report)
@@ -631,8 +631,7 @@ abstract public class AbstractShaclTest {
 		org.apache.jena.rdf.model.Model data = JenaUtil.createMemoryModel();
 
 		if (testCase.hasInitialData()) {
-			try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-					.getResourceAsStream(testCase.getInitialData())) {
+			try (InputStream resourceAsStream = getResourceAsStream(testCase.getInitialData())) {
 				data.read(resourceAsStream, "", org.apache.jena.util.FileUtils.langTurtle);
 			} catch (IOException e) {
 				throw new IllegalStateException(e);
@@ -668,8 +667,7 @@ abstract public class AbstractShaclTest {
 						RDFFormat.TRIG);
 
 				try {
-					InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-							.getResourceAsStream(testCase.getTestCasePath() + "report.ttl");
+					InputStream resourceAsStream = getResourceAsStream(testCase.getTestCasePath() + "report.ttl");
 
 					Model validationReportActual = getModel(resourceAsStream);
 
@@ -717,8 +715,7 @@ abstract public class AbstractShaclTest {
 
 	private static void checkShapesConformToW3cShaclRecommendation(org.apache.jena.rdf.model.Model shacl) {
 		org.apache.jena.rdf.model.Model w3cShacl = JenaUtil.createMemoryModel();
-		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-				.getResourceAsStream("w3cshacl.ttl")) {
+		try (InputStream resourceAsStream = getResourceAsStream("w3cshacl.ttl")) {
 			w3cShacl.read(resourceAsStream, "", org.apache.jena.util.FileUtils.langTurtle);
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
@@ -870,7 +867,7 @@ abstract public class AbstractShaclTest {
 		try {
 			System.out.println("### " + filename + " ###");
 			String s = IOUtils.toString(
-					Objects.requireNonNull(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename)),
+					Objects.requireNonNull(getResourceAsStream(filename)),
 					StandardCharsets.UTF_8);
 
 			s = removeLeadingPrefixStatements(s);
@@ -883,29 +880,30 @@ abstract public class AbstractShaclTest {
 	}
 
 	private static String removeLeadingPrefixStatements(String s) {
-		String[] split = s.split("\n");
-		s = "";
+		String[] splitByNewLine = s.split("\n");
+
 		boolean skippingPrefixes = true;
 
-		for (String s1 : split) {
+		StringBuilder stringBuilder = new StringBuilder();
+		for (String line : splitByNewLine) {
 			if (skippingPrefixes) {
-				if (!(s1.trim().equals("") ||
-						s1.trim().toLowerCase().startsWith("@prefix") ||
-						s1.trim().toLowerCase().startsWith("@base") ||
-						s1.trim().toLowerCase().startsWith("prefix"))) {
+				if (!(line.trim().equals("") ||
+						line.trim().toLowerCase().startsWith("@prefix") ||
+						line.trim().toLowerCase().startsWith("@base") ||
+						line.trim().toLowerCase().startsWith("prefix"))) {
 					skippingPrefixes = false;
 				}
 			}
 
 			if (!skippingPrefixes) {
-				s += s1 + "\n";
+				stringBuilder.append(line).append("\n");
 			}
 
 		}
-		return s;
+		return stringBuilder.toString();
 	}
 
-	void runTestCaseSingleTransaction(TestCase testCase, IsolationLevel isolationLevel) {
+	void runTestCaseSingleTransaction(TestCase testCase) {
 
 		SailRepository shaclRepository = getShaclSail(testCase, true);
 
@@ -915,7 +913,7 @@ abstract public class AbstractShaclTest {
 			Model validationReportActual = new LinkedHashModel();
 
 			try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-				shaclSailConnection.begin(isolationLevel);
+				shaclSailConnection.begin(IsolationLevels.NONE);
 
 				for (File queryFile : testCase.getQueries()) {
 					try {
@@ -1028,7 +1026,6 @@ abstract public class AbstractShaclTest {
 					.getDataAndRelease();
 
 			Model actual = new DynamicModelFactory().createEmptyModel();
-			HashSet<Resource> dedupe = new HashSet<>();
 			shapes.forEach(shape -> shape.toModel(actual));
 
 			Model expected = new LinkedHashModel(testCase.getShacl());
@@ -1093,8 +1090,8 @@ abstract public class AbstractShaclTest {
 	}
 
 	private void printResults(RepositoryException sailException) {
-		ValidationReport validationReport = ((ShaclSailValidationException) sailException.getCause())
-				.getValidationReport();
+		var shaclSailValidationException = (ShaclSailValidationException) sailException.getCause();
+		ValidationReport validationReport = shaclSailValidationException.getValidationReport();
 		printResults(validationReport);
 	}
 
@@ -1157,27 +1154,6 @@ abstract public class AbstractShaclTest {
 			shaclSailLogger.setLevel(shaclSailLoggerLevel);
 
 		}
-	}
-
-	/**
-	 * Sort and output testCasePaths
-	 *
-	 * @param args
-	 */
-	public static void main(String[] args) {
-
-		System.out.println("\n\tprivate static final List<String> testCasePaths = Stream.of(");
-		String testCasesString = testCasePaths
-				.stream()
-				.map(a -> "\t\t\"" + a + "\"")
-				.reduce((a, b) -> a + ",\n" + b)
-				.orElse("");
-
-		System.out.println(testCasesString);
-		System.out.println("\t)\n" +
-				"\t\t.distinct()\n" +
-				"\t\t.sorted()\n" +
-				"\t\t.collect(Collectors.toList());");
 	}
 
 	enum ExpectedResult {
