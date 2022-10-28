@@ -15,6 +15,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -50,7 +51,7 @@ public class ServiceJoinConversionIteration
 			Binding b = bIter.next();
 			String name = b.getName();
 			if (name.equals("__rowIdx")) {
-				bIndex = Integer.parseInt(b.getValue().stringValue());
+				bIndex = ((Literal) b.getValue()).intValue();
 				continue;
 			}
 			res.addBinding(b.getName(), b.getValue());

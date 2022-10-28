@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
@@ -330,8 +331,9 @@ public class RepositoryFederatedService implements FederatedService {
 			return new EmptyIteration<>();
 		}
 
-		// projection vars
-		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
+		// projection vars, we preserve order in case this was DISTINCT or reduced
+		// and we add the ROW_IDX_VAR later.
+		Set<String> projectionVars = new LinkedHashSet<>(service.getServiceVars());
 		projectionVars.removeAll(allBindings.get(0).getBindingNames());
 
 		// below we need to take care for SILENT services
@@ -605,8 +607,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 		int rowIdx = 0;
 		for (BindingSet b : bindings) {
-			sb.append(" (");
-			sb.append("\"").append(rowIdx++).append("\" "); // identification of
+			sb.append(" (").append(rowIdx++); // identification of
 			// the row for post
 			// processing
 			for (String bName : relevantBindingNames) {

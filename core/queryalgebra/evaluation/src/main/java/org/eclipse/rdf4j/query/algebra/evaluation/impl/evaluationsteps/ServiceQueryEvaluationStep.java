@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -55,7 +56,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 			// create a copy of the free variables, and remove those for which
 			// bindings are available (we can set them as constraints!)
-			Set<String> freeVars = new HashSet<>(service.getServiceVars());
+			Set<String> freeVars = new LinkedHashSet<>(service.getServiceVars());
 			freeVars.removeAll(bindings.getBindingNames());
 
 			// Get bindings from values pre-bound into variables.
