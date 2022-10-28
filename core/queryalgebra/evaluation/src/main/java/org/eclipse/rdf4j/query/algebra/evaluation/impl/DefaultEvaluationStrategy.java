@@ -300,6 +300,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		return serviceResolver;
+	}
+
+	@Override
 	public FederatedService getService(String serviceUrl) throws QueryEvaluationException {
 		return serviceResolver.getService(serviceUrl);
 	}

@@ -174,10 +174,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		this.store = store;
 		this.defaultIsolationLevel = sail.getDefaultIsolationLevel();
 		this.evalStratFactory = evalStratFactory;
-		// FIXME the getFederatedServiceResolver method should be moved up to the FederatedServiceResolverClient
-		// interface
-		this.federatedServiceResolver = (evalStratFactory instanceof DefaultEvaluationStrategyFactory)
-				? ((DefaultEvaluationStrategyFactory) evalStratFactory).getFederatedServiceResolver()
+
+		this.federatedServiceResolver = (evalStratFactory instanceof FederatedServiceResolverClient)
+				? ((FederatedServiceResolverClient) evalStratFactory).getFederatedServiceResolver()
 				: null;
 		this.queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 	}
@@ -187,6 +186,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 *
 	 * @return null if a custom {@link EvaluationStrategyFactory} is being used.
 	 */
+	@Override
 	public FederatedServiceResolver getFederatedServiceResolver() {
 		return federatedServiceResolver;
 	}

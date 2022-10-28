@@ -157,4 +157,9 @@ public class FedXRepositoryWrapper extends RepositoryWrapper
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 	}
+
+	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		return serviceResolver;
+	}
 }

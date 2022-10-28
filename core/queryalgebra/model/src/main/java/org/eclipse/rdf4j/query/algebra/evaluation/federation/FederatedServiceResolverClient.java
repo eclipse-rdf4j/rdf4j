@@ -24,4 +24,11 @@ public interface FederatedServiceResolverClient {
 	 * @param resolver The resolver to use.
 	 */
 	void setFederatedServiceResolver(FederatedServiceResolver resolver);
+
+	/**
+	 * Gets the {@link FederatedServiceResolver} used by this client.
+	 *
+	 * @param resolver The resolver used by this client. May be <code>null</code>.
+	 */
+	FederatedServiceResolver getFederatedServiceResolver();
 }
