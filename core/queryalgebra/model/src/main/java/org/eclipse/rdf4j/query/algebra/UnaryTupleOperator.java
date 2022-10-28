@@ -17,18 +17,10 @@ import java.util.Set;
  */
 public abstract class UnaryTupleOperator extends AbstractQueryModelNode implements TupleExpr {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	/**
 	 * The operator's argument.
 	 */
 	protected TupleExpr arg;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	protected UnaryTupleOperator() {
 	}
@@ -41,10 +33,6 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	protected UnaryTupleOperator(TupleExpr arg) {
 		setArg(arg);
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	/**
 	 * Gets the argument of this unary tuple operator.

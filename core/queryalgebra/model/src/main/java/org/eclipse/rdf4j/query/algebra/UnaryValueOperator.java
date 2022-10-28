@@ -13,26 +13,16 @@ package org.eclipse.rdf4j.query.algebra;
 import java.util.Objects;
 
 /**
- * An abstract superclass for unary value operators which, by definition, has one argument.
+ * An abstract superclass for unary value operators which, by definition, has one argument. In special cases the
+ * argument can be null, for instance to represent the argument * in COUNT(*).
  */
 public abstract class UnaryValueOperator extends AbstractQueryModelNode implements ValueExpr {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 
 	/**
 	 * The operator's argument.
 	 */
 	protected ValueExpr arg;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	/**
-	 * Creates a new empty unary value operator.
-	 */
 	protected UnaryValueOperator() {
 	}
 
@@ -44,10 +34,6 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	protected UnaryValueOperator(ValueExpr arg) {
 		setArg(arg);
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	/**
 	 * Gets the argument of this unary value operator.
@@ -78,6 +64,7 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		assert current != null;
 		if (arg == current) {
 			setArg((ValueExpr) replacement);
 		}
