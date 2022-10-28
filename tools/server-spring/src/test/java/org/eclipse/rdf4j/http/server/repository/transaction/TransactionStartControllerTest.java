@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.assertj.core.api.Assertions.fail;
+import static org.eclipse.rdf4j.common.transaction.IsolationLevels.READ_COMMITTED;
 import static org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -130,6 +131,23 @@ class TransactionStartControllerTest {
 		// Act
 		controller.handleRequest(request, response);
 		verify(tx).begin(SNAPSHOT);
+	}
+
+	@Test
+	void createTransactionLocation_withIsolationOldPath() throws Exception {
+		TransactionStartController controller = spy(TransactionStartController.class);
+		Transaction tx = mock(Transaction.class);
+		// Arrange
+		controller.setExternalUrl(null);
+
+		request.addParameter("isolation-level", "http://www.openrdf.org/schema/sesame#READ_COMMITTED");
+		Repository repository = RepositoryInterceptor.getRepository(request);
+
+		when(controller.createTransaction(repository)).thenReturn(tx);
+		when(tx.getID()).thenReturn(UUID.randomUUID());
+		// Act
+		controller.handleRequest(request, response);
+		verify(tx).begin(READ_COMMITTED);
 	}
 
 	@Test
