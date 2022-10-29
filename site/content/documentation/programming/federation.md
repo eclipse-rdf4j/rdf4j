@@ -4,8 +4,6 @@ weight: 7
 toc: true
 autonumbering: true
 ---
-(new in RDF4J 3.1)
-
 FedX provides transparent federation of multiple SPARQL endpoints under a single virtual endpoint.
 <!--more-->
 As an example, a knowledge graph such as Wikidata can be queried in a federation with endpoints that are linked to Wikidata as an integration hub. In a federated SPARQL query in FedX, one no longer needs to explicitly address specific endpoints using SERVICE clauses. Instead, FedX automatically selects relevant sources, sends statement patterns to these sources for evaluation, and joins the individual results. FedX seamlessly integrates into RDF4J using the Repository API and can be used as a drop-in component in existing applications including the RDF4J Workbench.
