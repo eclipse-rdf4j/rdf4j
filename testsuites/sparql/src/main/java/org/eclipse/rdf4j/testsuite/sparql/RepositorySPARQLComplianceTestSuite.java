@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.BuiltinFunctionTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ConstructTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
@@ -76,7 +77,7 @@ import org.junit.runners.Suite.SuiteClasses;
 @SuiteClasses({ AggregateTest.class, ArbitraryLengthPathTest.class, BasicTest.class, BindTest.class,
 		BuiltinFunctionTest.class, ConstructTest.class, DefaultGraphTest.class, DescribeTest.class, GroupByTest.class,
 		InTest.class, OptionalTest.class, PropertyPathTest.class, SubselectTest.class, UnionTest.class,
-		ValuesTest.class, OrderByTest.class })
+		ValuesTest.class, OrderByTest.class, ExistsTest.class })
 @Experimental
 public abstract class RepositorySPARQLComplianceTestSuite {
 	@BeforeClass
