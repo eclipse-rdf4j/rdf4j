@@ -58,6 +58,7 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 		}
 	}
 
+	@Deprecated(forRemoval = true, since = "4.2.1")
 	public static boolean isPartOfSubQuery(QueryModelNode node) {
 		if (node instanceof SubQueryValueOperator) {
 			return true;
