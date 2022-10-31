@@ -11,10 +11,10 @@
 package org.eclipse.rdf4j.query.parser;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
@@ -30,7 +30,7 @@ public class ParsedUpdate extends ParsedOperation {
 	 * Variables *
 	 *-----------*/
 
-	private Map<String, String> namespaces;
+	private final Map<String, String> namespaces;
 
 	private final List<UpdateExpr> updateExprs = new ArrayList<>();
 
@@ -46,15 +46,17 @@ public class ParsedUpdate extends ParsedOperation {
 	 */
 	public ParsedUpdate() {
 		super();
+		this.namespaces = Map.of();
 	}
 
 	public ParsedUpdate(String sourceString) {
 		super(sourceString);
+		this.namespaces = Map.of();
 	}
 
 	public ParsedUpdate(String sourceString, Map<String, String> namespaces) {
 		super(sourceString);
-		this.namespaces = namespaces;
+		this.namespaces = Objects.requireNonNull(namespaces);
 	}
 
 	/**
@@ -66,7 +68,7 @@ public class ParsedUpdate extends ParsedOperation {
 	 */
 	public ParsedUpdate(Map<String, String> namespaces) {
 		super();
-		this.namespaces = namespaces;
+		this.namespaces = Objects.requireNonNull(namespaces);
 	}
 
 	/*---------*
@@ -74,11 +76,7 @@ public class ParsedUpdate extends ParsedOperation {
 	 *---------*/
 
 	public Map<String, String> getNamespaces() {
-		if (namespaces != null) {
-			return namespaces;
-		} else {
-			return Collections.emptyMap();
-		}
+		return namespaces;
 	}
 
 	public void addUpdateExpr(UpdateExpr updateExpr) {
@@ -113,5 +111,35 @@ public class ParsedUpdate extends ParsedOperation {
 			stringBuilder.append("; ");
 		}
 		return stringBuilder.toString();
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		ParsedUpdate that = (ParsedUpdate) o;
+
+		if (!namespaces.equals(that.namespaces)) {
+			return false;
+		}
+		if (!updateExprs.equals(that.updateExprs)) {
+			return false;
+		}
+		return datasetMapping.equals(that.datasetMapping);
+	}
+
+	@Override
+	public int hashCode() {
+		assert updateExprs.stream().noneMatch(expr -> expr.hashCode() == System.identityHashCode(expr));
+
+		int result = namespaces.hashCode();
+		result = 31 * result + updateExprs.hashCode();
+		result = 31 * result + datasetMapping.hashCode();
+		return result;
 	}
 }

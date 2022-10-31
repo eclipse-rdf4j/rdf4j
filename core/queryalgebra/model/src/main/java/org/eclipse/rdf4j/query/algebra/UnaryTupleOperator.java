@@ -17,18 +17,10 @@ import java.util.Set;
  */
 public abstract class UnaryTupleOperator extends AbstractQueryModelNode implements TupleExpr {
 
-	/*-----------*
-	 * Variables *
-	 *-----------*/
-
 	/**
 	 * The operator's argument.
 	 */
 	protected TupleExpr arg;
-
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
 
 	protected UnaryTupleOperator() {
 	}
@@ -41,10 +33,6 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	protected UnaryTupleOperator(TupleExpr arg) {
 		setArg(arg);
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	/**
 	 * Gets the argument of this unary tuple operator.
@@ -90,13 +78,17 @@ public abstract class UnaryTupleOperator extends AbstractQueryModelNode implemen
 	}
 
 	@Override
-	public boolean equals(Object other) {
-		if (other instanceof UnaryTupleOperator) {
-			UnaryTupleOperator o = (UnaryTupleOperator) other;
-			return arg.equals(o.getArg());
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof UnaryTupleOperator)) {
+			return false;
 		}
 
-		return false;
+		UnaryTupleOperator that = (UnaryTupleOperator) o;
+
+		return arg.equals(that.arg);
 	}
 
 	@Override
