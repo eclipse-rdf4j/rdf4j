@@ -341,7 +341,7 @@ abstract public class AbstractShaclTest {
 		}
 
 		String[] testCases = Objects.requireNonNull(new File(resource.getFile()).list(),
-			"Could not find test cases for: " + resource);
+				"Could not find test cases for: " + resource);
 
 		return Arrays.stream(testCases)
 				.filter(s -> !s.startsWith("."))
