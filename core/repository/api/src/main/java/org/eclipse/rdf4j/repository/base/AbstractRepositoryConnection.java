@@ -15,13 +15,17 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.NamespaceAware;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -366,10 +370,23 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		boolean localTransaction = startLocalTransaction();
+		Set<Namespace> newNamespaces = new HashSet<>();
+
 		try {
 			for (Statement st : statements) {
+				if (st instanceof NamespaceAware) {
+					newNamespaces.addAll(((NamespaceAware) st).getNamespaces());
+				}
 				addWithoutCommit(st, contexts);
 			}
+
+			for (Namespace newNamespace : newNamespaces) {
+				String nsPrefix = newNamespace.getPrefix();
+				if (getNamespace(nsPrefix) == null) {
+					setNamespace(nsPrefix, newNamespace.getName());
+				}
+			}
+
 			conditionalCommit(localTransaction);
 		} catch (RuntimeException e) {
 			conditionalRollback(localTransaction);
@@ -407,7 +424,17 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 		Objects.requireNonNull(contexts,
 				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
+
 		addWithoutCommit(st, contexts);
+
+		if (st instanceof NamespaceAware) {
+			for (Namespace newNamespace : ((NamespaceAware) st).getNamespaces()) {
+				String nsPrefix = newNamespace.getPrefix();
+				if (getNamespace(nsPrefix) == null) {
+					setNamespace(nsPrefix, newNamespace.getName());
+				}
+			}
+		}
 
 		conditionalCommit(localTransaction);
 	}
@@ -489,6 +516,10 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	public void clear(Resource... contexts) throws RepositoryException {
 		remove(null, null, null, contexts);
 	}
+
+	public abstract String getNamespace(String prefix) throws RepositoryException;
+
+	public abstract void setNamespace(String prefix, String name) throws RepositoryException;
 
 	protected void addWithoutCommit(Statement st, Resource... contexts) throws RepositoryException {
 		if (contexts.length == 0 && st.getContext() != null) {
