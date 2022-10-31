@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.DescribeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ExistsTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.GroupByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest;
@@ -77,16 +78,16 @@ import org.junit.runners.Suite.SuiteClasses;
 @SuiteClasses({ AggregateTest.class, ArbitraryLengthPathTest.class, BasicTest.class, BindTest.class,
 		BuiltinFunctionTest.class, ConstructTest.class, DefaultGraphTest.class, DescribeTest.class, GroupByTest.class,
 		InTest.class, OptionalTest.class, PropertyPathTest.class, SubselectTest.class, UnionTest.class,
-		ValuesTest.class, OrderByTest.class, ExistsTest.class })
+		ValuesTest.class, OrderByTest.class, ExistsTest.class, MinusTest.class })
 @Experimental
 public abstract class RepositorySPARQLComplianceTestSuite {
 	@BeforeClass
-	public static void setUpClass() throws Exception {
+	public static void setUpClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 	}
 
 	@AfterClass
-	public static void tearDownClass() throws Exception {
+	public static void tearDownClass() {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
