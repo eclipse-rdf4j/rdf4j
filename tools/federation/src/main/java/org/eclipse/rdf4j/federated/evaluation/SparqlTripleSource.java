@@ -194,16 +194,21 @@ public class SparqlTripleSource extends TripleSourceBase {
 			monitorRemoteRequest();
 			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
 					queryInfo.getIncludeInferred(), contexts);
-
-			resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
-				@Override
-				protected QueryEvaluationException convert(Exception ex) {
-					if (ex instanceof QueryEvaluationException) {
-						return (QueryEvaluationException) ex;
+			try {
+				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
+					@Override
+					protected QueryEvaluationException convert(Exception ex) {
+						if (ex instanceof QueryEvaluationException) {
+							return (QueryEvaluationException) ex;
+						}
+						return new QueryEvaluationException(ex);
 					}
-					return new QueryEvaluationException(ex);
-				}
-			});
+				});
+			} catch (Throwable t) {
+				repoResult.close();
+				throw t;
+			}
+
 		});
 	}
 

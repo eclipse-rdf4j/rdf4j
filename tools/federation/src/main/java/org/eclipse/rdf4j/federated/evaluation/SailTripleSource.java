@@ -46,7 +46,6 @@ import org.slf4j.LoggerFactory;
  * A triple source to be used on any repository.
  *
  * @author Andreas Schwarte
- *
  */
 public class SailTripleSource extends TripleSourceBase {
 
@@ -112,17 +111,22 @@ public class SailTripleSource extends TripleSourceBase {
 
 			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
 					queryInfo.getIncludeInferred(), contexts);
+			try {
+// XXX implementation remark and TODO taken from Sesame
+				// The same variable might have been used multiple times in this
+				// StatementPattern, verify value equality in those cases.
 
-			// XXX implementation remark and TODO taken from Sesame
-			// The same variable might have been used multiple times in this
-			// StatementPattern, verify value equality in those cases.
+				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
+					@Override
+					protected QueryEvaluationException convert(Exception arg0) {
+						return new QueryEvaluationException(arg0);
+					}
+				});
+			} catch (Throwable t) {
+				repoResult.close();
+				throw t;
+			}
 
-			resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
-				@Override
-				protected QueryEvaluationException convert(Exception arg0) {
-					return new QueryEvaluationException(arg0);
-				}
-			});
 		});
 	}
 
@@ -178,31 +182,40 @@ public class SailTripleSource extends TripleSourceBase {
 		 */
 		return withConnection((conn, resultHolder) -> {
 
-			CloseableIteration<BindingSet, QueryEvaluationException> res;
 			SailConnection sailConn = ((SailRepositoryConnection) conn).getSailConnection();
 
+			PrecompiledQueryNode precompiledQueryNode = null;
 			try {
-
 				// optimization attempt: use precompiled query
-				PrecompiledQueryNode precompiledQueryNode = new PrecompiledQueryNode(preparedQuery);
-				res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(precompiledQueryNode,
-						null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
-
+				precompiledQueryNode = new PrecompiledQueryNode(preparedQuery);
 			} catch (Exception e) {
-				log.warn(
-						"Precompiled query optimization for native store could not be applied: " + e.getMessage());
+				log.warn("Precompiled query optimization for native store could not be applied: " + e.getMessage());
 				log.debug("Details:", e);
-
-				// fallback: attempt the original tuple expression
-				res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery,
-						null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
 			}
 
-			if (bindings.size() > 0) {
-				res = new InsertBindingsIteration(res, bindings);
+			CloseableIteration<BindingSet, QueryEvaluationException> res = null;
+			try {
+				if (precompiledQueryNode != null) {
+					res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(
+							precompiledQueryNode, null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
+				} else {
+					// fallback: attempt the original tuple expression
+					res = (CloseableIteration<BindingSet, QueryEvaluationException>) sailConn.evaluate(preparedQuery,
+							null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
+				}
+
+				if (bindings.size() > 0) {
+					res = new InsertBindingsIteration(res, bindings);
+				}
+
+				resultHolder.set(res);
+			} catch (Throwable t) {
+				if (res != null) {
+					res.close();
+				}
+				throw t;
 			}
 
-			resultHolder.set(res);
 		});
 	}
 }
