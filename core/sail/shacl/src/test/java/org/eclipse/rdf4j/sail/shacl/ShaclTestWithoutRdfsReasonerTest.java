@@ -25,7 +25,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * @author Håvard Ottestad
  */
 @Tag("slow")
-public class ShaclTestWithoutRdfsReasoner extends AbstractShaclTest {
+public class ShaclTestWithoutRdfsReasonerTest extends AbstractShaclTest {
 
 	@ParameterizedTest
 	@MethodSource("testsToRunWithIsolationLevel")
@@ -50,7 +50,7 @@ public class ShaclTestWithoutRdfsReasoner extends AbstractShaclTest {
 		return testCase.getTestCasePath().contains("/subclass");
 	}
 
-	SailRepository getShaclSail(TestCase testCase, boolean loadInitialData) {
+	SailRepository getShaclSail(TestCase testCase) {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository repository = new SailRepository(shaclSail);
@@ -70,7 +70,7 @@ public class ShaclTestWithoutRdfsReasoner extends AbstractShaclTest {
 
 		try {
 			Utils.loadShapeData(repository, testCase.getShacl());
-			if (loadInitialData && testCase.hasInitialData()) {
+			if (testCase.hasInitialData()) {
 				Utils.loadInitialData(repository, testCase.getInitialData());
 			}
 		} catch (Exception e) {

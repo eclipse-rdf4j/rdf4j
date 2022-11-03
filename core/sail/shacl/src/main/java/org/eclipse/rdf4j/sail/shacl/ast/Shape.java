@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.DynamicModel;
 import org.eclipse.rdf4j.model.impl.LinkedHashModelFactory;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
@@ -193,6 +194,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		if (deactivated) {
 			modelBuilder.add(SHACL.DEACTIVATED, deactivated);
+		}
+
+		for (Literal literal : message) {
+			modelBuilder.add(SHACL.MESSAGE, literal);
 		}
 
 		target.forEach(t -> {
@@ -459,6 +464,10 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 				.reduce(ValidationApproach::reduceCompatible)
 				.orElse(ValidationApproach.MOST_COMPATIBLE);
 
+	}
+
+	public List<Literal> getMessage() {
+		return message;
 	}
 
 	public static class Factory {

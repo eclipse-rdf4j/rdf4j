@@ -25,7 +25,8 @@ ex:PersonShape
     sh:targetClass ex:Person ;
     sh:property [
         sh:path ex:age ;
-        sh:datatype xsd:integer ;
+        sh:datatype xsd:int ;
+        sh:message "A person's age must be a number (xsd:int)." ;
     ] .
 ```
 
@@ -108,6 +109,7 @@ As of writing this documentation the following features are supported.
 - `sh:targetNode`
 - `sh:targetSubjectsOf`
 - `sh:targetObjectsOf`
+- `sh:message`
 - `sh:path`
 - `sh:inversePath`
 - `sh:property`
@@ -135,7 +137,7 @@ As of writing this documentation the following features are supported.
 - `sh:qualifiedMaxCount`
 - `sh:qualifiedMinCount`
 - `sh:qualifiedValueShape`
-- 'sh:shapesGraph'
+- `sh:shapesGraph`
 - `dash:hasValueIn`
 - `sh:target` for use with DASH targets
 - `rsx:targetShape`
@@ -180,10 +182,16 @@ The `validationReportModel` follows the report format specified by the W3C SHACL
     sh:result [
         a sh:ValidationResult ;
         sh:value "eighteen";
-        sh:focusNode <http://example.com/ns#pete> ;
-        sh:resultPath <http://example.com/ns#age> ;
+        sh:focusNode ex:pete ;
+        sh:resultPath ex:age ;
         sh:sourceConstraintComponent sh:DatatypeConstraintComponent ;
-        sh:sourceShape <http://example.com/ns#PersonShapeAgeProperty> ;
+        sh:resultSeverity sh:Violation;
+        sh:resultMessage "A person's age must be a number (xsd:int).";
+        sh:sourceShape [ a sh:PropertyShape;
+            sh:message "A persons age must be a number (xsd:int).";
+            sh:path ex:age;
+            sh:datatype xsd:int
+        ]
     ] .
 ```
 
@@ -252,7 +260,7 @@ ex:PersonShape
     sh:targetClass ex:Person ;
     sh:property [
         sh:path ex:age ;
-        sh:datatype xsd:integer ;
+        sh:datatype xsd:int ;
     ] .
 ```
 
@@ -306,35 +314,35 @@ SailRepository sailRepository = new SailRepository(shaclSail);
 
 try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-	connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+    connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
 
-//	You can enable parallel validation and the intermediate cache for better performance if you have sufficient memory 
-//	connection.begin(
-//		IsolationLevels.NONE, 
-//		ShaclSail.TransactionSettings.ValidationApproach.Bulk, 
-//		ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled, 
-//		ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation
-//	);	
-	
-	// load shapes
-	try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
-		connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-	}
+//    You can enable parallel validation and the intermediate cache for better performance if you have sufficient memory 
+//    connection.begin(
+//        IsolationLevels.NONE, 
+//        ShaclSail.TransactionSettings.ValidationApproach.Bulk, 
+//        ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled, 
+//        ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation
+//    );    
+    
+    // load shapes
+    try (InputStream inputStream = new FileInputStream("shacl.ttl")) {
+        connection.add(inputStream, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+    }
 
-	// load data
-	try (InputStream inputStream = new BufferedInputStream(new FileInputStream("data.ttl"))) {
-		connection.add(inputStream, "", RDFFormat.TURTLE);
-	}
+    // load data
+    try (InputStream inputStream = new BufferedInputStream(new FileInputStream("data.ttl"))) {
+        connection.add(inputStream, "", RDFFormat.TURTLE);
+    }
 
-	// commit transaction and catch any exception
-	try {
-		connection.commit();
-	} catch (RepositoryException e){
-		if(e.getCause() instanceof ValidationException){
-			Model model = ((ValidationException) e.getCause()).validationReportAsModel();
-			Rio.write(model, System.out, RDFFormat.TURTLE);
-		}
-	}
+    // commit transaction and catch any exception
+    try {
+        connection.commit();
+    } catch (RepositoryException e){
+        if(e.getCause() instanceof ValidationException){
+            Model model = ((ValidationException) e.getCause()).validationReportAsModel();
+            Rio.write(model, System.out, RDFFormat.TURTLE);
+        }
+    }
 
 }
 
@@ -393,7 +401,7 @@ ex:shapesGraph2 {
     ex:PersonShape       
         sh:property [
             sh:path ex:age ;
-            sh:datatype xsd:integer ;
+            sh:datatype xsd:int ;
         ] .
 
     rdf4j:nil sh:shapesGraph ex:shapesGraph1, ex:shapesGraph2.         
@@ -462,7 +470,7 @@ First step to debugging and understanding an unexpected violation is to enable `
 
 Validation plans are logged as Graphviz DOT. Validations plans are a form of query plan.
 
-Here is the validation plan for the example above: [Link](https://dreampuf.github.io/GraphvizOnline/#digraph%20%20%7B%0Alabelloc%3Dt%3B%0Afontsize%3D30%3B%0Alabel%3D%22DatatypePropertyShape%22%3B%0A1866229258%20%5Blabel%3D%22Base%20sail%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1555990397%20%5Blabel%3D%22Added%20statements%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1544078442%20%5Blabel%3D%22Removed%20statements%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1337866219%20%5Blabel%3D%22Previous%20state%20connection%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1291367132%20%5Blabel%3D%22DirectTupleFromFilter%22%5D%3B%0A1887699190%20%5Blabel%3D%22DatatypeFilter%7Bdatatype%3Dhttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23integer%7D%22%5D%3B%0A1479140596%20-%3E%201887699190%0A1887699190%20-%3E%201291367132%20%5Blabel%3D%22false%20values%22%5D%0A1479140596%20%5Blabel%3D%22UnionNode%22%5D%3B%0A1108889615%20-%3E%201479140596%0A1108889615%20%5Blabel%3D%22UnionNode%22%5D%3B%0A1275028674%20-%3E%201108889615%0A455888635%20%5Blabel%3D%22BufferedSplitter%22%5D%3B%0A204805934%20-%3E%20455888635%0A204805934%20%5Blabel%3D%22TrimTuple%7BnewLength%3D1%7D%22%5D%3B%0A204322447%20-%3E%20204805934%0A204322447%20%5Blabel%3D%22Select%7Bquery%3D%E2%80%99select%20*%20where%20%7B%20BIND(rdf%3Atype%20as%20%3Fb)%20%5Cn%20BIND(%3Chttp%3A%2F%2Fexample.com%2Fns%23Person%3E%20as%20%3Fc)%20%5Cn%20%3Fa%20%3Fb%20%3Fc.%7D%20order%20by%20%3Fa'%7D%22%5D%3B%0A1555990397%20-%3E%20204322447%0A1275028674%20%5Blabel%3D%22InnerJoin%22%5D%3B%0A455888635%20-%3E%201275028674%20%5Blabel%3D%22left%22%5D%3B%0A1019484860%20-%3E%201275028674%20%5Blabel%3D%22right%22%5D%3B%0A1019484860%20%5Blabel%3D%22DirectTupleFromFilter%22%5D%3B%0A1164365897%20%5Blabel%3D%22DatatypeFilter%7Bdatatype%3Dhttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23integer%7D%22%5D%3B%0A1640899500%20-%3E%201164365897%0A1164365897%20-%3E%201019484860%20%5Blabel%3D%22false%20values%22%5D%0A1640899500%20%5Blabel%3D%22Select%7Bquery%3D%E2%80%99select%20*%20where%20%7B%20%3Fa%20%3Chttp%3A%2F%2Fexample.com%2Fns%23age%3E%20%3Fc.%20%7D%20order%20by%20%3Fa'%7D%22%5D%3B%0A1555990397%20-%3E%201640899500%0A1275028674%20-%3E%203565780%20%5Blabel%3D%22discardedRight%22%5D%3B%0A473666452%20-%3E%201108889615%0A473666452%20%5Blabel%3D%22ExternalTypeFilterNode%7BfilterOnType%3Dhttp%3A%2F%2Fexample.com%2Fns%23Person%7D%22%5D%3B%0A3565780%20-%3E%20473666452%0A1337866219%20-%3E%20473666452%20%5Blabel%3D%22filter%20source%22%5D%0A3565780%20%5Blabel%3D%22BufferedTupleFromFilter%22%5D%3B%0A1865219266%20-%3E%201479140596%0A1865219266%20%5Blabel%3D%22BulkedExternalInnerJoin%7Bpredicate%3Dnull%2C%20query%3D'%3Fa%20%3Chttp%3A%2F%2Fexample.com%2Fns%23age%3E%20%3Fc.%20'%7D%22%5D%3B%0A455888635%20-%3E%201865219266%20%5Blabel%3D%22left%22%5D%0A1337866219%20-%3E%201865219266%20%5Blabel%3D%22right%22%5D%0A%7D%0A8)
+Here is the validation plan for the example above: [Link](https://dreampuf.github.io/GraphvizOnline/#digraph%20%20%7B%0Alabelloc%3Dt%3B%0Afontsize%3D30%3B%0Alabel%3D%22DatatypePropertyShape%22%3B%0A1866229258%20%5Blabel%3D%22Base%20sail%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1555990397%20%5Blabel%3D%22Added%20statements%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1544078442%20%5Blabel%3D%22Removed%20statements%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1337866219%20%5Blabel%3D%22Previous%20state%20connection%22%20nodeShape%3Dpentagon%20fillcolor%3Dlightblue%20style%3Dfilled%5D%3B%0A1291367132%20%5Blabel%3D%22DirectTupleFromFilter%22%5D%3B%0A1887699190%20%5Blabel%3D%22DatatypeFilter%7Bdatatype%3Dhttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23int%7D%22%5D%3B%0A1479140596%20-%3E%201887699190%0A1887699190%20-%3E%201291367132%20%5Blabel%3D%22false%20values%22%5D%0A1479140596%20%5Blabel%3D%22UnionNode%22%5D%3B%0A1108889615%20-%3E%201479140596%0A1108889615%20%5Blabel%3D%22UnionNode%22%5D%3B%0A1275028674%20-%3E%201108889615%0A455888635%20%5Blabel%3D%22BufferedSplitter%22%5D%3B%0A204805934%20-%3E%20455888635%0A204805934%20%5Blabel%3D%22TrimTuple%7BnewLength%3D1%7D%22%5D%3B%0A204322447%20-%3E%20204805934%0A204322447%20%5Blabel%3D%22Select%7Bquery%3D%E2%80%99select%20*%20where%20%7B%20BIND(rdf%3Atype%20as%20%3Fb)%20%5Cn%20BIND(%3Chttp%3A%2F%2Fexample.com%2Fns%23Person%3E%20as%20%3Fc)%20%5Cn%20%3Fa%20%3Fb%20%3Fc.%7D%20order%20by%20%3Fa'%7D%22%5D%3B%0A1555990397%20-%3E%20204322447%0A1275028674%20%5Blabel%3D%22InnerJoin%22%5D%3B%0A455888635%20-%3E%201275028674%20%5Blabel%3D%22left%22%5D%3B%0A1019484860%20-%3E%201275028674%20%5Blabel%3D%22right%22%5D%3B%0A1019484860%20%5Blabel%3D%22DirectTupleFromFilter%22%5D%3B%0A1164365897%20%5Blabel%3D%22DatatypeFilter%7Bdatatype%3Dhttp%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema%23int%7D%22%5D%3B%0A1640899500%20-%3E%201164365897%0A1164365897%20-%3E%201019484860%20%5Blabel%3D%22false%20values%22%5D%0A1640899500%20%5Blabel%3D%22Select%7Bquery%3D%E2%80%99select%20*%20where%20%7B%20%3Fa%20%3Chttp%3A%2F%2Fexample.com%2Fns%23age%3E%20%3Fc.%20%7D%20order%20by%20%3Fa'%7D%22%5D%3B%0A1555990397%20-%3E%201640899500%0A1275028674%20-%3E%203565780%20%5Blabel%3D%22discardedRight%22%5D%3B%0A473666452%20-%3E%201108889615%0A473666452%20%5Blabel%3D%22ExternalTypeFilterNode%7BfilterOnType%3Dhttp%3A%2F%2Fexample.com%2Fns%23Person%7D%22%5D%3B%0A3565780%20-%3E%20473666452%0A1337866219%20-%3E%20473666452%20%5Blabel%3D%22filter%20source%22%5D%0A3565780%20%5Blabel%3D%22BufferedTupleFromFilter%22%5D%3B%0A1865219266%20-%3E%201479140596%0A1865219266%20%5Blabel%3D%22BulkedExternalInnerJoin%7Bpredicate%3Dnull%2C%20query%3D'%3Fa%20%3Chttp%3A%2F%2Fexample.com%2Fns%23age%3E%20%3Fc.%20'%7D%22%5D%3B%0A455888635%20-%3E%201865219266%20%5Blabel%3D%22left%22%5D%0A1337866219%20-%3E%201865219266%20%5Blabel%3D%22right%22%5D%0A%7D%0A8)
 
 The structure of this log and its contents may change in the future, without warning.
 
@@ -503,8 +511,8 @@ Following on from the example above:
 
 
     1. [main] INFO  SHACL not valid. The following experimental debug results were produced:
-    2. 	NodeShape: http://example.com/ns#PersonShape
-    3. 		Tuple{line=[http://example.com/ns#pete, "eighteen"], propertyShapes= DatatypePropertyShape <_:node1d285h2ktx1>} -cause->  [ Tuple{line=[http://example.com/ns#pete, http://www.w3.org/1999/02/22-rdf-syntax-ns#type, http://example.com/ns#Person]} ]
+    2.     NodeShape: http://example.com/ns#PersonShape
+    3.         Tuple{line=[http://example.com/ns#pete, "eighteen"], propertyShapes= DatatypePropertyShape <_:node1d285h2ktx1>} -cause->  [ Tuple{line=[http://example.com/ns#pete, http://www.w3.org/1999/02/22-rdf-syntax-ns#type, http://example.com/ns#Person]} ]
 
 
 Line 2 shows the shape that triggered this violation. Line 3 shows the ultimate tuple produced and which PropertyShape produced the exception followed by a cause listing other tuples that caused the violation. In this case the existing type statement.
@@ -516,6 +524,7 @@ The structure of this log and its contents may change in the future, without war
 ```java
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import org.eclipse.rdf4j.common.exception.ValidationException;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -523,9 +532,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
-import org.eclipse.rdf4j.sail.shacl.ValidationException;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
 import org.slf4j.LoggerFactory;
 
@@ -538,12 +548,11 @@ public class ShaclSampleCode {
 
         ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 
-        //Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
-        //root.setLevel(Level.INFO);
+//        Logger root = (Logger) LoggerFactory.getLogger(ShaclSail.class.getName());
+//        root.setLevel(Level.INFO);
+//
+//        shaclSail.setPerformanceLogging(true);
 
-        //shaclSail.setLogValidationPlans(true);
-        //shaclSail.setGlobalLogValidationExecution(true);
-        //shaclSail.setLogValidationViolations(true);
 
         SailRepository sailRepository = new SailRepository(shaclSail);
         sailRepository.init();
@@ -562,13 +571,23 @@ public class ShaclSampleCode {
                     "ex:PersonShape",
                     "  a sh:NodeShape  ;",
                     "  sh:targetClass foaf:Person ;",
-                    "  sh:property ex:PersonShapeProperty .",
+                    "  sh:property ex:PersonAgeIntShape, ex:PersonMustHaveAge, ex:PersonCanNotHaveMultipleAge  .",
 
-                    "ex:PersonShapeProperty ",
+                    "ex:PersonAgeIntShape ",
                     "  sh:path foaf:age ;",
-                    "  sh:datatype xsd:int ;",
-                    "  sh:maxCount 1 ;",
-                    "  sh:minCount 1 ."
+                    "  sh:message \"A person's age must be a number (xsd:int).\" ;",
+                    "  sh:datatype xsd:int .",
+
+                    "ex:PersonMustHaveAge ",
+                    "  sh:path foaf:age ;",
+                    "  sh:message \"A must have an age.\" ;",
+                    "  sh:minCount 1 .",
+
+                    "ex:PersonCanNotHaveMultipleAge ",
+                    "  sh:path foaf:age ;",
+                    "  sh:message \"A person can only have one age.\" ;",
+                    "  sh:maxCount 1 ."
+
                 ));
 
             connection.add(shaclRules, "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
@@ -595,7 +614,12 @@ public class ShaclSampleCode {
                 if (cause instanceof ValidationException) {
                     Model validationReportModel = ((ValidationException) cause).validationReportAsModel();
 
-                    Rio.write(validationReportModel, System.out, RDFFormat.TURTLE);
+                    WriterConfig writerConfig = new WriterConfig()
+                        .set(BasicWriterSettings.INLINE_BLANK_NODES, true)
+                        .set(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL, true)
+                        .set(BasicWriterSettings.PRETTY_PRINT, true);
+
+                    Rio.write(validationReportModel, System.out, RDFFormat.TURTLE, writerConfig);
                 }
                 throw exception;
             }
