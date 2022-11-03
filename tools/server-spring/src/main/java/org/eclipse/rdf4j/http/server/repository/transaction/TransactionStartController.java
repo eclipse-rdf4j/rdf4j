@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -81,10 +82,10 @@ public class TransactionStartController extends AbstractController {
 		ArrayList<TransactionSetting> transactionSettings = new ArrayList<>();
 		final String isolationLevelString = request.getParameter(Protocol.ISOLATION_LEVEL_PARAM_NAME);
 		if (isolationLevelString != null) {
-
+			final String isolationLevelConverted = isolationLevelString.replace(SESAME.NAMESPACE, "");
 			for (IsolationLevel standardLevel : IsolationLevels.values()) {
-				if (standardLevel.getValue().equals(isolationLevelString)) {
-					transactionSettings.add(IsolationLevels.valueOf(isolationLevelString));
+				if (standardLevel.getValue().equals(isolationLevelConverted)) {
+					transactionSettings.add(IsolationLevels.valueOf(isolationLevelConverted));
 					break;
 				}
 			}

@@ -124,4 +124,23 @@ public abstract class AbstractParserUpdate extends AbstractUpdate {
 
 		return mergedDataset;
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		AbstractParserUpdate that = (AbstractParserUpdate) o;
+
+		return parsedUpdate.equals(that.parsedUpdate);
+	}
+
+	@Override
+	public int hashCode() {
+		return parsedUpdate.hashCode();
+	}
 }

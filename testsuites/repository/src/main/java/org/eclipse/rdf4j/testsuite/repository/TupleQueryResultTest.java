@@ -16,9 +16,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.ref.Reference;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -56,6 +62,8 @@ public abstract class TupleQueryResultTest {
 
 	private final Random random = new Random(43252333);
 
+	private List<WeakReference<TupleQueryResult>> unclosedQueryResults;
+
 	@BeforeEach
 	public void setUp() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
@@ -64,6 +72,8 @@ public abstract class TupleQueryResultTest {
 
 		buildQueries();
 		addData();
+		unclosedQueryResults = new ArrayList<>();
+
 	}
 
 	@AfterEach
@@ -249,8 +259,10 @@ public abstract class TupleQueryResultTest {
 	}
 
 	@Test
-	public void testNotClosingResultWithoutDebug() {
+	public void testNotClosingResultWithoutDebug() throws InterruptedException {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+
+		StopWatch stopWatch = StopWatch.createStarted();
 
 		con.begin();
 		con.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
@@ -259,6 +271,14 @@ public abstract class TupleQueryResultTest {
 		for (int i = 0; i < 100; i++) {
 			try (RepositoryConnection repCon = rep.getConnection()) {
 				evaluateQueryWithoutClosing(repCon);
+				System.gc();
+				Thread.sleep(1);
+				while (unclosedQueryResults.stream().map(Reference::get).anyMatch(Objects::nonNull)) {
+					System.gc();
+					Thread.sleep(100);
+					assertTrue(stopWatch.getTime(TimeUnit.SECONDS) < 60, "Test timed out after 60 seconds");
+
+				}
 			}
 		}
 
@@ -271,6 +291,7 @@ public abstract class TupleQueryResultTest {
 		// see if open results hangs test
 		// DO NOT CLOSE THIS
 		TupleQueryResult evaluate = tupleQuery.evaluate();
+		unclosedQueryResults.add(new WeakReference<>(evaluate));
 		Assertions.assertNotNull(evaluate);
 	}
 

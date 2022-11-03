@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -58,10 +59,10 @@ public class Filter extends UnaryTupleOperator {
 	@Override
 	public Set<String> getBindingNames() {
 		Set<String> result = getArg().getBindingNames();
-		if (condition instanceof SubQueryValueOperator) {
+		if (condition instanceof Exists) {
 			result = Stream
 					.concat(result.stream(),
-							((SubQueryValueOperator) condition).getSubQuery().getBindingNames().stream())
+							((Exists) condition).getSubQuery().getBindingNames().stream())
 					.collect(Collectors.toSet());
 		}
 		return result;

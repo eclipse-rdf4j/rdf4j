@@ -10,27 +10,19 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra;
 
+import java.util.Objects;
+
 /**
- * An abstract superclass for unary value operators which, by definition, has one argument.
+ * An abstract superclass for unary value operators which, by definition, has one argument. In special cases the
+ * argument can be null, for instance to represent the argument * in COUNT(*).
  */
 public abstract class UnaryValueOperator extends AbstractQueryModelNode implements ValueExpr {
-
-	/*-----------*
-	 * Variables *
-	 *-----------*/
 
 	/**
 	 * The operator's argument.
 	 */
 	protected ValueExpr arg;
 
-	/*--------------*
-	 * Constructors *
-	 *--------------*/
-
-	/**
-	 * Creates a new empty unary value operator.
-	 */
 	protected UnaryValueOperator() {
 	}
 
@@ -42,10 +34,6 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 	protected UnaryValueOperator(ValueExpr arg) {
 		setArg(arg);
 	}
-
-	/*---------*
-	 * Methods *
-	 *---------*/
 
 	/**
 	 * Gets the argument of this unary value operator.
@@ -76,31 +64,36 @@ public abstract class UnaryValueOperator extends AbstractQueryModelNode implemen
 
 	@Override
 	public void replaceChildNode(QueryModelNode current, QueryModelNode replacement) {
+		assert current != null;
 		if (arg == current) {
 			setArg((ValueExpr) replacement);
 		}
 	}
 
 	@Override
-	public boolean equals(Object other) {
-		if (other instanceof UnaryValueOperator) {
-			UnaryValueOperator o = (UnaryValueOperator) other;
-			return (arg == null && o.getArg() == null) || (arg != null && arg.equals(o.getArg()));
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (!(o instanceof UnaryValueOperator)) {
+			return false;
 		}
 
-		return false;
+		UnaryValueOperator that = (UnaryValueOperator) o;
+
+		return Objects.equals(arg, that.arg);
 	}
 
 	@Override
 	public int hashCode() {
-		return arg.hashCode();
+		return arg != null ? arg.hashCode() : 97;
 	}
 
 	@Override
 	public UnaryValueOperator clone() {
 		UnaryValueOperator clone = (UnaryValueOperator) super.clone();
-		if (getArg() != null) {
-			clone.setArg(getArg().clone());
+		if (arg != null) {
+			clone.setArg(arg.clone());
 		}
 		return clone;
 	}

@@ -138,27 +138,32 @@ public abstract class TripleSourceBase implements TripleSource {
 			// evaluate the query
 			monitorRemoteRequest();
 			CloseableIteration<BindingSet, QueryEvaluationException> res = query.evaluate();
-			resultHolder.set(res);
+			try {
+				resultHolder.set(res);
 
-			// apply filter and/or insert original bindings
-			if (filterExpr != null) {
-				if (bindings.size() > 0) {
-					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
-							queryInfo.getStrategy());
-				} else {
-					res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
+				// apply filter and/or insert original bindings
+				if (filterExpr != null) {
+					if (bindings.size() > 0) {
+						res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
+								queryInfo.getStrategy());
+					} else {
+						res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
+					}
+					if (!res.hasNext()) {
+						Iterations.closeCloseable(res);
+						conn.close();
+						resultHolder.set(new EmptyIteration<>());
+						return;
+					}
+				} else if (bindings.size() > 0) {
+					res = new InsertBindingsIteration(res, bindings);
 				}
-				if (!res.hasNext()) {
-					Iterations.closeCloseable(res);
-					conn.close();
-					resultHolder.set(new EmptyIteration<>());
-					return;
-				}
-			} else if (bindings.size() > 0) {
-				res = new InsertBindingsIteration(res, bindings);
+
+				resultHolder.set(new ConsumingIteration(res, federationContext.getConfig().getConsumingIterationMax()));
+			} catch (Throwable t) {
+				res.close();
+				throw t;
 			}
-
-			resultHolder.set(new ConsumingIteration(res, federationContext.getConfig().getConsumingIterationMax()));
 
 		});
 	}
@@ -254,9 +259,12 @@ public abstract class TripleSourceBase implements TripleSource {
 			return closeConn(conn, res);
 
 		} catch (Throwable t) {
-			// handle all other exception case
-			Iterations.closeCloseable(resultHolder.get());
-			conn.close();
+			try {
+				// handle all other exception case
+				Iterations.closeCloseable(resultHolder.get());
+			} finally {
+				conn.close();
+			}
 			throw ExceptionUtil.traceExceptionSource(endpoint, t, "");
 		}
 	}
@@ -276,9 +284,8 @@ public abstract class TripleSourceBase implements TripleSource {
 	 *
 	 * </pre>
 	 *
-	 * @author Andreas Schwarte
-	 *
 	 * @param <T>
+	 * @author Andreas Schwarte
 	 * @see TripleSourceBase#withConnection(ConnectionOperation)
 	 */
 	protected interface ConnectionOperation<T> {
@@ -289,9 +296,8 @@ public abstract class TripleSourceBase implements TripleSource {
 	 * Holder for a result iteration to be used with {@link TripleSourceBase#withConnection(ConnectionOperation)}. Note
 	 * that the result holder should also be set with temporary results to properly allow error handling.
 	 *
-	 * @author Andreas Schwarte
-	 *
 	 * @param <T>
+	 * @author Andreas Schwarte
 	 */
 	protected static class ResultHolder<T> implements Supplier<CloseableIteration<T, QueryEvaluationException>> {
 

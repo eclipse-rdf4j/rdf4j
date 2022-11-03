@@ -12,8 +12,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 
-/**
- */
+@Deprecated(forRemoval = true, since = "4.2.1")
 public class CompareAll extends CompareSubQueryValueOperator {
 
 	/*-----------*
