@@ -517,18 +517,12 @@ public class StrictEvaluationStrategy implements EvaluationStrategy, FederatedSe
 	}
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
-
-		if (FilterIterator.isPartOfSubQuery(node)) {
-			context = new FilterIterator.RetainedVariableFilteredQueryEvaluationContext(node, context);
-		}
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		QueryValueEvaluationStep ves;
 		try {
 			ves = precompile(node.getCondition(), context);
 		} catch (QueryEvaluationException e) {
-			// If we have a failed compilation we always return false.
-			// Which means empty. so let's short circuit that.
-//			ves = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
+			// If we have a failed compilation we always return false. Which means empty.
 			return QueryEvaluationStep.EMPTY;
 		}
 		// if the query evaluation is constant it is either FILTER(true) or FILTER(false)
