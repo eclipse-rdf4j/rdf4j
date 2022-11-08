@@ -10,93 +10,184 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
-import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
-import com.google.common.collect.Lists;
-
 /**
- * A specialized {@link CloseableIteration} that consumes part (or the entire input iteration if it fits into the
- * buffer) and keeps data for further processing in memory. If the buffer is full, the remaining items will be read from
- * the iteration lazily.
- *
+ * A specialized {@link CloseableIteration} that prefetches a certain number of results in a batch like manner.
+ * <p>
  * This implementation can be used to avoid blocking behavior in HTTP connection streams, i.e. to process results in
  * memory and close the underlying HTTP stream.
  *
  * @author Andreas Schwarte
- *
  */
 public class ConsumingIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
 
-	private final List<BindingSet> consumed = Lists.newArrayList();
-
 	private final CloseableIteration<BindingSet, QueryEvaluationException> innerIter;
+	private final int max;
+	private final ConcurrentLinkedQueue<BindingSet> prefetched = new ConcurrentLinkedQueue<>();
+
+	private CompletableFuture<Integer> future;
+
+	private Status initialized = Status.uninitialized;
 
 	/**
-	 * The index of the next element that will be returned by a call to {@link #next()}.
+	 * @param innerIter iteration to be consumed
+	 * @param max       the maximum number of results to be consumed.
 	 */
-	private int currentIndex = 0;
+	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> innerIter, int max) {
+		this.innerIter = innerIter;
+		this.max = max;
+	}
 
-	/**
-	 * @param iter iteration to be consumed
-	 * @param max  the number of results to be consumed.
-	 * @throws QueryEvaluationException
-	 */
-	public ConsumingIteration(CloseableIteration<BindingSet, QueryEvaluationException> iter, int max)
-			throws QueryEvaluationException {
+	private void initialize() {
+		switch (initialized) {
 
-		innerIter = iter;
+		case uninitialized:
+			initialized = Status.retrievedFirstElement;
+			if (innerIter.hasNext()) {
+				prefetched.add(innerIter.next());
+			} else {
+				throw new NoSuchElementException();
+			}
+			break;
 
-		boolean completed = false;
-		try {
-			while (consumed.size() < max && iter.hasNext()) {
-				consumed.add(iter.next());
+		case retrievedFirstElement:
+			initialized = Status.fullyInitialized;
+			prefetch();
+			break;
+		}
+	}
+
+	private void prefetch() {
+		waitForBackgroundFetching();
+
+		if (prefetched.isEmpty()) {
+			if (innerIter.hasNext()) {
+				prefetched.add(innerIter.next());
+			} else {
+				throw new NoSuchElementException();
 			}
-			if (!iter.hasNext()) {
-				iter.close();
-			}
-			completed = true;
-		} finally {
-			if (!completed) {
-				iter.close();
-			}
+
+			assert future == null;
+
+			future = CompletableFuture.supplyAsync(() -> {
+				int i = 0;
+				try {
+					for (; i < max + 1 && innerIter.hasNext(); i++) {
+						if (Thread.currentThread().isInterrupted()) {
+							throw new QueryEvaluationException("ConsumingIteration was interrupted");
+						}
+						prefetched.add(innerIter.next());
+					}
+
+					if (!innerIter.hasNext()) {
+						innerIter.close();
+					}
+				} catch (Throwable t) {
+					innerIter.close();
+					throw t;
+				}
+
+				return i;
+			});
 		}
 
 	}
 
-	@Override
-	public boolean hasNext() throws QueryEvaluationException {
-		return currentIndex < consumed.size() || innerIter.hasNext();
+	private void waitForBackgroundFetching() {
+		while (future != null && prefetched.isEmpty()) {
+			try {
+				Integer integer = future.get(10, TimeUnit.MILLISECONDS);
+				future = null;
+				assert integer != 0 || prefetched.isEmpty();
+			} catch (InterruptedException e) {
+				future.cancel(true);
+				Thread.currentThread().interrupt();
+				throw new QueryEvaluationException(e);
+			} catch (ExecutionException e) {
+				Throwable cause = e.getCause();
+				if (cause instanceof RuntimeException) {
+					throw ((RuntimeException) cause);
+				}
+				if (cause instanceof Error) {
+					throw ((Error) cause);
+				}
+				throw new QueryEvaluationException(cause);
+			} catch (TimeoutException ignored) {
+				if (Thread.currentThread().isInterrupted()) {
+					future.cancel(true);
+					throw new QueryEvaluationException("ConsumingIteration was interrupted");
+				}
+			}
+		}
 	}
 
 	@Override
-	public BindingSet next() throws QueryEvaluationException {
-		if (hasNext()) {
-			// try to read from the consumed items
-			if (currentIndex < consumed.size()) {
-				BindingSet result = consumed.get(currentIndex);
-				currentIndex++;
-				return result;
-			}
-			return innerIter.next();
+	public boolean hasNext() {
+		if (!prefetched.isEmpty()) {
+			return true;
+		}
+
+		waitForBackgroundFetching();
+
+		if (!prefetched.isEmpty() || innerIter.hasNext()) {
+			return true;
+		} else {
+			innerIter.close();
+			return false;
+		}
+	}
+
+	@Override
+	public BindingSet next() {
+		if (initialized != Status.fullyInitialized) {
+			initialize();
+		} else if (prefetched.isEmpty()) {
+			prefetch();
+		}
+
+		if (!prefetched.isEmpty()) {
+			return prefetched.remove();
 		}
 
 		throw new NoSuchElementException();
 	}
 
 	@Override
-	public void remove() throws QueryEvaluationException {
-		throw new UnsupportedOperationException("not supported");
-
+	public void remove() {
+		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public void close() throws QueryEvaluationException {
-		innerIter.close();
+	public void close() {
+		try {
+			if (future != null) {
+				future.cancel(true);
+			}
+		} catch (Throwable ignored) {
+			// when cancelling the background fetching we don't really care if there is an exception
+		} finally {
+			try {
+				innerIter.close();
+			} finally {
+				prefetched.clear();
+			}
+		}
+
 	}
 
+	private enum Status {
+		uninitialized,
+		retrievedFirstElement,
+		fullyInitialized;
+	}
 }
