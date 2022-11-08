@@ -54,18 +54,6 @@ if ! command -v xmllint &> /dev/null; then
     exit 1;
 fi
 
-# check Java version
-if  !  mvn -v | grep -q "Java version: 1.8."; then
-  echo "";
-  echo "Java 1.8 expected but not detected";
-  read -rp "Continue (y/n)?" choice
-  case "${choice}" in
-      y|Y ) echo "";;
-      n|N ) exit;;
-      * ) echo "unknown response, exiting"; exit;;
-  esac
-fi
-
 # check that we are on main or develop
 if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
   if  ! git status --porcelain --branch | grep -q "## develop...origin/develop"; then
@@ -190,15 +178,14 @@ read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
 git checkout "${MVN_VERSION_RELEASE}"
 mvn clean
-mvn compile -P quick
-mvn install -DskipTests -B
-mvn package -Passembly -DskipTests -B
+mvn package -Passembly -DskipTests
 
 git checkout main
 RELEASE_NOTES_BRANCH="${MVN_VERSION_RELEASE}-release-notes"
 git checkout -b "${RELEASE_NOTES_BRANCH}"
 
 tar -cvzf "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" -C target/site/apidocs .
+cp -f "site/static/javadoc/${MVN_VERSION_RELEASE}.tgz" "site/static/javadoc/latest.tgz"
 git add --all
 git commit -s -a -m "javadocs for ${MVN_VERSION_RELEASE}"
 git push --set-upstream origin "${RELEASE_NOTES_BRANCH}"
