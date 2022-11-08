@@ -54,8 +54,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.collect.Lists;
-
 public abstract class FedXBaseTest {
 
 	public static Logger log;
@@ -399,7 +397,7 @@ public abstract class FedXBaseTest {
 	public static class SimpleTupleQueryResultBuilder {
 
 		private final List<String> bindingNames;
-		private final List<BindingSet> bindings = Lists.newArrayList();
+		private final List<BindingSet> bindings = new ArrayList<>();
 
 		private SimpleTupleQueryResultBuilder(List<String> bindingNames) {
 			this.bindingNames = bindingNames;

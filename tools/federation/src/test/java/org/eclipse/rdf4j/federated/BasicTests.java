@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -34,62 +33,61 @@ import org.eclipse.rdf4j.repository.util.Repositories;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 public class BasicTests extends SPARQLBaseTest {
 
 	@Test
 	public void test1() throws Exception {
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query01.rq", "/tests/basic/query01.srx", false, true);
 	}
 
 	@Test
 	public void test2() throws Exception {
 		/* test a basic Construct query retrieving all triples */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query02.rq", "/tests/basic/query02.ttl", false, true);
 	}
 
 	@Test
 	public void testBooleanTrueSingleSource() throws Exception {
 		/* test a basic boolean query (result true) */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query03.rq", "/tests/basic/query03.srx", false, true);
 	}
 
 	@Test
 	public void testBooleanTrueMultipleSource() throws Exception {
 		/* test a basic boolean query (result true) */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query03a.rq", "/tests/basic/query03.srx", false, true);
 	}
 
 	@Test
 	public void testBooleanFalse() throws Exception {
 		/* test a basic boolean query (result false) */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query04.rq", "/tests/basic/query04.srx", false, true);
 	}
 
 	@Test
 	public void testSingleSourceSelect() throws Exception {
 		/* test a single source select query */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_singleSource01.rq", "/tests/basic/query_singleSource01.srx", false, true);
 	}
 
 	@Test
 	public void testSingleSourceConstruct() throws Exception {
 		/* test a single source construct */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_singleSource02.rq", "/tests/basic/query_singleSource02.ttl", false, true);
 	}
 
 	@Test
 	public void testGetStatements() throws Exception {
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		Set<Statement> res = getStatements(null, null, null);
 		compareGraphs(res, readExpectedGraphQueryResult("/tests/basic/query02.ttl"));
 	}
@@ -97,28 +95,28 @@ public class BasicTests extends SPARQLBaseTest {
 	@Test
 	public void testValuesClause() throws Exception {
 		/* test query with values clause */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_values.rq", "/tests/basic/query_values.srx", false, true);
 	}
 
 	@Test
 	public void testQuotes() throws Exception {
 		/* test query with new line in literal */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
 		execute("/tests/basic/query_quotes.rq", "/tests/basic/query_quotes.srx", false, true);
 	}
 
 	@Test
 	public void testQuotesDatatype() throws Exception {
 		/* test query with new line in triple quotes and datatype */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint3.ttl"));
 		execute("/tests/basic/query_quotes_datatype.rq", "/tests/basic/query_quotes_datatype.srx", false, true);
 	}
 
 	@Test
 	public void testLanguageTag() throws Exception {
 		/* test query with a language tag */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint4.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint4.ttl"));
 		execute("/tests/basic/query_lang.rq", "/tests/basic/query_lang.srx", false, true);
 	}
 
@@ -126,7 +124,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testBindClause() throws Exception {
 
 		/* test query with bind clause */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_bind.rq", "/tests/basic/query_bind.srx", false, true);
 	}
 
@@ -134,7 +132,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testFederationSubSetQuery() throws Exception {
 		String ns1 = "http://namespace1.org/";
 		String ns2 = "http://namespace2.org/";
-		List<Endpoint> endpoints = prepareTest(Arrays.asList("/tests/data/data1.ttl", "/tests/data/data2.ttl",
+		List<Endpoint> endpoints = prepareTest(List.of("/tests/data/data1.ttl", "/tests/data/data2.ttl",
 				"/tests/data/data3.ttl",
 				"/tests/data/data4.ttl"));
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
@@ -187,7 +185,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 		final QueryManager qm = federationContext().getQueryManager();
 
-		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
+		prepareTest(List.of("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
 
 		String queryString = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\r\n" +
@@ -212,7 +210,7 @@ public class BasicTests extends SPARQLBaseTest {
 
 		final QueryManager qm = federationContext().getQueryManager();
 
-		prepareTest(Arrays.asList("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
+		prepareTest(List.of("/tests/medium/data1.ttl", "/tests/medium/data2.ttl", "/tests/medium/data3.ttl",
 				"/tests/medium/data4.ttl"));
 
 		String queryString = readQueryString("/tests/basic/query_limit01.rq");
@@ -235,24 +233,24 @@ public class BasicTests extends SPARQLBaseTest {
 	@Test
 	public void testBeginTransaction() throws Exception {
 
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		Assertions.assertEquals(
 				1, Repositories
 						.tupleQueryNoTransaction(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
-								it -> QueryResults.asList(it))
+								QueryResults::asList)
 						.size());
 
 		Assertions.assertEquals(1,
 				Repositories.tupleQuery(fedxRule.repository, "SELECT ?person WHERE { ?person ?p 'Alan' }",
-						it -> QueryResults.asList(it)).size());
+						QueryResults::asList).size());
 	}
 
 	@Test
 	public void testSingleSource_SetBinding() throws Exception {
 
 		/* test a single source select query where we set a binding */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 
@@ -276,7 +274,7 @@ public class BasicTests extends SPARQLBaseTest {
 			// BOOLEAN query
 			BooleanQuery bq = conn.prepareBooleanQuery("ASK { ?person <http://xmlns.com/foaf/0.1/name> ?name }");
 			bq.setBinding("name", l("non-existing-name"));
-			Assertions.assertEquals(false, bq.evaluate());
+			Assertions.assertFalse(bq.evaluate());
 
 		}
 
@@ -286,7 +284,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testPassThroughHandler_MultiSourceQuery() throws Exception {
 
 		/* test query with custom RDF handler */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 
@@ -336,7 +334,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testPassThroughHandler_SingleSourceQuery() throws Exception {
 
 		/* test query with custom RDF handler */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 
@@ -382,7 +380,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testPassThroughHandler_EmptyResult() throws Exception {
 
 		/* test query with custom RDF handler */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 
@@ -403,7 +401,7 @@ public class BasicTests extends SPARQLBaseTest {
 					}
 					started.set(true);
 
-					Assertions.assertEquals(Lists.newArrayList("person", "interest"), bindingNames);
+					Assertions.assertEquals(List.of("person", "interest"), bindingNames);
 				}
 
 				@Override
@@ -420,7 +418,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testPassThroughHandler_emptySingleSourceQuery() throws Exception {
 
 		/* test query with custom RDF handler */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 
 		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
 
@@ -465,7 +463,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testDescribe_SingleResource() throws Exception {
 
 		/* test DESCRIBE query for a single resource (data in two members) */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1.ttl", false, true);
 	}
 
@@ -473,7 +471,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testDescribe_MultipleResources() throws Exception {
 
 		/* test DESCRIBE query for multiple resources (data in two members) */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_describe2.rq", "/tests/basic/query_describe2.ttl", false, true);
 	}
 
@@ -481,7 +479,7 @@ public class BasicTests extends SPARQLBaseTest {
 	public void testDescribe_SingleSource() throws Exception {
 
 		/* test DESCRIBE query for a single resource (one federation member to simulate single source) */
-		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl"));
+		prepareTest(List.of("/tests/basic/data01endpoint1.ttl"));
 		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1_singleSource.ttl", false, true);
 	}
 }

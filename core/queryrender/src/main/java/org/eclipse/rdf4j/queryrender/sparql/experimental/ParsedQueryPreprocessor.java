@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.experimental;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Stack;

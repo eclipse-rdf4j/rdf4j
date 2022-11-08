@@ -40,8 +40,6 @@ import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.collect.Lists;
-
 public class LuceneFuzzinessPrefixTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String NAMESPACE = "http://example.org/";

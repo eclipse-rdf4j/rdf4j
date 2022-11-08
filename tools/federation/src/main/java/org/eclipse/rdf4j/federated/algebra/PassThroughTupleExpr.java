@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -20,8 +21,6 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-
-import com.google.common.collect.Lists;
 
 /**
  * Marker {@link TupleExpr} that is used from {@link FedXTupleQuery#evaluate(TupleQueryResultHandler)} to allow for
@@ -99,7 +98,7 @@ public class PassThroughTupleExpr extends AbstractQueryModelNode implements FedX
 
 	@Override
 	public List<String> getFreeVars() {
-		return Lists.newArrayList(QueryAlgebraUtil.getFreeVars(parsedQuery));
+		return new ArrayList<>(QueryAlgebraUtil.getFreeVars(parsedQuery));
 	}
 
 	@Override

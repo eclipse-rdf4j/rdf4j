@@ -476,7 +476,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	@Override
 	public void meet(BNodeGenerator node) throws RuntimeException {
-		writeAsFunction("BNODE", Lists.newArrayList());
+		writeAsFunction("BNODE", new ArrayList<>());
 	}
 
 	@Override

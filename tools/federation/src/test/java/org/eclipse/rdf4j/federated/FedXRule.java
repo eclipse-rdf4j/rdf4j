@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Consumer;
@@ -27,7 +28,7 @@ public class FedXRule implements BeforeEachCallback, AfterEachCallback {
 	protected FedXRepository repository;
 
 	// settings that get applied in the actual config
-	protected List<Consumer<FedXConfig>> configurations = Lists.newArrayList();
+	protected List<Consumer<FedXConfig>> configurations = new ArrayList<>();
 
 	public FedXRule() {
 	}

@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.algebra;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -19,8 +20,6 @@ import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-
-import com.google.common.collect.Lists;
 
 /**
  * An {@link ArbitraryLengthPath} node which can be evaluated at a single node.
@@ -51,7 +50,7 @@ public class ExclusiveArbitraryLengthPath extends ArbitraryLengthPath
 		if (this.getPathExpression() instanceof StatementTupleExpr) {
 			return ((StatementTupleExpr) this.getPathExpression()).getFreeVars();
 		}
-		List<String> freeVars = Lists.newArrayList();
+		List<String> freeVars = new ArrayList<>();
 		if (!getSubjectVar().hasValue()) {
 			freeVars.add(getSubjectVar().getName());
 		}

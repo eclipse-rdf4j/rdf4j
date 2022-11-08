@@ -85,8 +85,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	/**
-	 * Test method for
-	 * {@link org.eclipse.rdf4j.repository.subject.LocalRepositoryManager#getRepository(java.lang.String)} .
+	 * Test method for {@link LocalRepositoryManager#getRepository(java.lang.String)} .
 	 *
 	 * @throws RepositoryException       if a problem occurs accessing the repository
 	 * @throws RepositoryConfigException if a problem occurs accessing the repository
@@ -159,7 +158,7 @@ public class LocalRepositoryManagerIntegrationTest extends RepositoryManagerInte
 	}
 
 	/**
-	 * Test method for {@link RepositoryManager.isSafeToRemove(String)}.
+	 * Test method for {@link RepositoryManager#isSafeToRemove(String)}.
 	 *
 	 * @throws RepositoryException       if a problem occurs during execution
 	 * @throws RepositoryConfigException if a problem occurs during execution

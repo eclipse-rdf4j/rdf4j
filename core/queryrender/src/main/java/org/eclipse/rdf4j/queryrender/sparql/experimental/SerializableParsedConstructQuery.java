@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.experimental;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -19,8 +20,6 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
-
-import com.google.common.collect.Lists;
 
 /**
  * The SerializableParsedTupleQuery class is an intermediate structure holding main parts of a query or a subquery:
@@ -45,7 +44,7 @@ class SerializableParsedConstructQuery extends AbstractSerializableParsedQuery {
 	 * @return list of projected variable names
 	 */
 	public List<String> getProjectionResultVars() {
-		List<String> res = Lists.newArrayList();
+		List<String> res = new ArrayList<>();
 		for (ProjectionElemList proj : projection.getProjections()) {
 			for (ProjectionElem elem : proj.getElements()) {
 				res.add(elem.getProjectionAlias().orElse(elem.getName()));

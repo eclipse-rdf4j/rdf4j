@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.federation;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -38,8 +40,6 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-
-import com.google.common.collect.Lists;
 
 /**
  * Integration tests for {@link RepositoryFederatedService}
@@ -84,196 +84,196 @@ public class RepositoryFederatedServiceIntegrationTest {
 	@Test
 	public void test() throws Exception {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
 
 		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { ?s ?p ?var  } }";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1")));
 	}
 
 	@Test
-	public void test2() throws Exception {
+	public void test2() {
 
-		addData(serviceRepo, Lists.newArrayList(
-				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(
+				vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { ?s ?p ?var  } }";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1"), literal("val2")));
 	}
 
 	@Test
-	public void test3() throws Exception {
+	public void test3() {
 
-		addData(serviceRepo, Lists.newArrayList(
-				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(
+				vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 1000  } } order by ?var";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1"), literal("val2")));
 	}
 
 	@Test
-	public void test3a() throws Exception {
+	public void test3a() {
 
-		addData(serviceRepo, Lists.newArrayList(
-				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(
+				vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		String query = "SELECT ?s ?var WHERE { VALUES ?var { 'val1' 'val2' } . OPTIONAL { SERVICE <urn:dummy> { SELECT ?s ?var { ?s ?p ?var . FILTER (?var='val2') } LIMIT 1  } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
-		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		assertResultEquals(res, "s", Lists.newArrayList(null, (iri("s2"))));
+		assertResultEquals(res, "var", List.of(literal("val1"), literal("val2")));
+		assertResultEquals(res, "s", Arrays.asList(null, (iri("s2"))));
 	}
 
 	@Test
-	public void test4() throws Exception {
+	public void test4() {
 
-		addData(serviceRepo, Lists.newArrayList(
-				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(
+				vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { ?s ?p ?var } . SERVICE <urn:dummy> {  ?s ?p ?var  } } order by ?var";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2"), l("val3")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1"), literal("val2"), literal("val3")));
 	}
 
 	@Test
-	public void test4a() throws Exception {
+	public void test4a() {
 
-		addData(serviceRepo, Lists.newArrayList(
-				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(
+				vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		// Note: here we apply a workaround and explicitly project "?__rowIdx"
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var ?__rowIdx { ?s ?p ?var } LIMIT 3  } } order by ?var";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2"), l("val3")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1"), literal("val2"), literal("val3")));
 	}
 
 	@Test
-	public void test4b() throws Exception {
+	public void test4b() {
 
-		addData(serviceRepo, Lists.newArrayList(
-				vf.createStatement(iri("s1"), RDFS.LABEL, l("val1")),
-				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
-				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(
+				vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1")),
+				vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2")),
+				vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var { ?s ?p ?var } LIMIT 3  } } order by ?var";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2"), l("val3")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1"), literal("val2"), literal("val3")));
 	}
 
 	@Test
-	public void test5() throws Exception {
+	public void test5() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
 
 		String query = "SELECT ?var ?output WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { BIND(CONCAT(?var, '_processed') AS ?output) } }";
 
 		List<BindingSet> res = evaluateQuery(query);
-		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		assertResultEquals(res, "output", Lists.newArrayList(l("val1_processed"), l("val2_processed")));
+		assertResultEquals(res, "var", List.of(literal("val1"), literal("val2")));
+		assertResultEquals(res, "output", List.of(literal("val1_processed"), literal("val2_processed")));
 	}
 
 	@Test
-	public void test5a() throws Exception {
+	public void test5a() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2"))));
 
 		// Note: here we apply a workaround and explicitly project "?__rowIdx"
 		String query = "SELECT ?var ?output WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 }  . SERVICE <urn:dummy> { SELECT (CONCAT(?var, '_processed') AS ?output) ?__rowIdx WHERE { } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
-		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		assertResultEquals(res, "output", Lists.newArrayList(l("val1_processed"), l("val2_processed")));
+		assertResultEquals(res, "var", List.of(literal("val1"), literal("val2")));
+		assertResultEquals(res, "output", List.of(literal("val1_processed"), literal("val2_processed")));
 	}
 
 	@Test
-	public void test5b() throws Exception {
+	public void test5b() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2"))));
 
 		String query = "SELECT ?var ?output WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 }  . SERVICE <urn:dummy> { SELECT (CONCAT(?var, '_processed') AS ?output) WHERE { } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
-		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		assertResultEquals(res, "output", Lists.newArrayList(l("val1_processed"), l("val2_processed")));
+		assertResultEquals(res, "var", List.of(literal("val1"), literal("val2")));
+		assertResultEquals(res, "output", List.of(literal("val1_processed"), literal("val2_processed")));
 	}
 
 	@Test
-	public void test6() throws Exception {
+	public void test6() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		String query = "SELECT ?var ?cnt WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 2 }  . SERVICE <urn:dummy> { SELECT ?var ?cnt ?__rowIdx WHERE { SELECT (COUNT(?s2) AS ?cnt) WHERE { ?s2 ?p2 ?var  } } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
 		Assert.assertEquals(2, res.size());
 		BindingSet b1 = res.get(0);
-		Assert.assertEquals(l("val1"), b1.getValue("var"));
+		Assert.assertEquals(literal("val1"), b1.getValue("var"));
 		Assert.assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
 	}
 
 	@Test
-	public void test6b() throws Exception {
+	public void test6b() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s2"), RDFS.LABEL, literal("val2"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s3"), RDFS.LABEL, literal("val3"))));
 
 		String query = "SELECT ?var ?cnt WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 1 }  . SERVICE <urn:dummy> { SELECT ?var ?cnt ?__rowIdx WHERE { SELECT (COUNT(?s2) AS ?cnt) WHERE { ?s2 ?p2 ?var  } } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
 		Assert.assertEquals(1, res.size());
 		BindingSet b1 = res.get(0);
-		Assert.assertEquals(l("val1"), b1.getValue("var"));
+		Assert.assertEquals(literal("val1"), b1.getValue("var"));
 		Assert.assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
 	}
 
 	@Test
-	public void test7_CrossProduct() throws Exception {
+	public void test7_CrossProduct() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("serviceVal"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("serviceVal"))));
 
 		String query = "SELECT ?var ?o WHERE { VALUES ?var { 'val1' 'val2' } . SERVICE <urn:dummy> { ?s ?p ?o  } }";
 
 		List<BindingSet> res = evaluateQuery(query);
-		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		assertResultEquals(res, "o", Lists.newArrayList(l("serviceVal"), l("serviceVal")));
+		assertResultEquals(res, "var", List.of(literal("val1"), literal("val2")));
+		assertResultEquals(res, "o", List.of(literal("serviceVal"), literal("serviceVal")));
 	}
 
 	@Test
-	public void test8_subSelectAll() throws Exception {
+	public void test8_subSelectAll() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
 
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } } } . SERVICE <urn:dummy> { SELECT * WHERE { ?s ?p ?var }  } }";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1")));
 	}
 
 	@Test
-	public void test8a_subSelectAll() throws Exception {
+	public void test8a_subSelectAll() {
 
-		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
+		addData(serviceRepo, List.of(vf.createStatement(iri("s1"), RDFS.LABEL, literal("val1"))));
 
 		// query has multiple whitespaces "SELECT *", thus does not insert "?__rowIdx" and goes into fallback evaluation
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } } } . SERVICE <urn:dummy> { SELECT   * WHERE { ?s ?p ?var }  } }";
 
-		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1")));
+		assertResultEquals(evaluateQuery(query), "var", List.of(literal("val1")));
 	}
 
 	@Test
@@ -286,9 +286,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 		 */
 
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
-		List<Value> values = Lists.newArrayList();
+		List<Value> values = new ArrayList<>();
 		for (int i = 0; i < 10; i++) {
-			values.add(l("value" + i));
+			values.add(literal("value" + i));
 		}
 		addData(serviceRepo,
 				values.stream()
@@ -313,16 +313,16 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void test10_consumePartially() throws Exception {
+	public void test10_consumePartially() {
 
 		/*
 		 * The purpose of this test is validate that connections are closed properly, even if a result is consume only
 		 * partially. If it wasn't working we would see a hanging junit testing waiting for connections to close
 		 */
 
-		List<Value> values = Lists.newArrayList();
+		List<Value> values = new ArrayList<>();
 		for (int i = 0; i < 10; i++) {
-			values.add(l("value" + i));
+			values.add(literal("value" + i));
 		}
 		addData(serviceRepo,
 				values.stream()
@@ -358,7 +358,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 		return vf.createIRI("http://example.org/resource/", localName);
 	}
 
-	private Literal l(String literal) {
+	private Literal literal(String literal) {
 		return vf.createLiteral(literal);
 	}
 

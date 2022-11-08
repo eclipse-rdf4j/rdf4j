@@ -28,7 +28,6 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 public class HashJoinTest {
@@ -51,7 +50,7 @@ public class HashJoinTest {
 				Collections.emptyList());
 		List<BindingSet> joinResult = Iterations.asList(joinResultIter);
 
-		Assertions.assertEquals(Lists.newArrayList(
+		Assertions.assertEquals(List.of(
 				bindingSet(binding("x", irid("p1"))),
 				bindingSet(binding("x", irid("p2")))),
 				joinResult);

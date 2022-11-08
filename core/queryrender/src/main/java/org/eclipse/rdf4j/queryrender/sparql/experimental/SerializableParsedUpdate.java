@@ -10,13 +10,12 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.queryrender.sparql.experimental;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
-
-import com.google.common.collect.Lists;
 
 /**
  * The SerializableParsedTupleQuery class is an intermediate structure holding main parts of a query or a subquery:
@@ -46,7 +45,7 @@ class SerializableParsedUpdate extends AbstractSerializableParsedQuery {
 	 * @return list of projected variable names
 	 */
 	public List<String> getProjectionResultVars() {
-		List<String> res = Lists.newArrayList();
+		List<String> res = new ArrayList<>();
 
 		if (updateExpr instanceof Modify) {
 			Modify modify = (Modify) updateExpr;

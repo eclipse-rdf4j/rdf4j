@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.performance;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,6 @@ import org.eclipse.rdf4j.federated.generator.ResultGenerator;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
 /**
@@ -82,7 +82,7 @@ public class FedXPerformanceTest extends SPARQLBaseTest {
 		}
 
 		final int maxRuns = 10;
-		List<Run> runs = Lists.newArrayList();
+		List<Run> runs = new ArrayList<>();
 		for (int i = 1; i <= maxRuns; i++) {
 			System.out.println("Run " + i);
 			long runStart = System.currentTimeMillis();

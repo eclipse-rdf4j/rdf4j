@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -30,8 +31,6 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
-
-import com.google.common.collect.Lists;
 
 /**
  * Specialized {@link DescribeIteration} for evaluation of DESCRIBE queries in the federation. ‚
@@ -54,7 +53,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 		this.queryInfo = queryInfo;
 
 		// initialize StatementSources for all federation members
-		allSources = Lists.newArrayList();
+		allSources = new ArrayList<>();
 		for (Endpoint member : queryInfo.getFederationContext().getFederation().getMembers()) {
 			allSources.add(new StatementSource(member.getId(), StatementSourceType.REMOTE));
 		}

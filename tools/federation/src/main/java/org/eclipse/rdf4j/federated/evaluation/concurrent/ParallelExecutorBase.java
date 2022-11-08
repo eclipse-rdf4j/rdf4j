@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
-import java.lang.ref.WeakReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;

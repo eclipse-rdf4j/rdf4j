@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
 /**
  * @author Herko ter Horst
  */
-public class HTTPMemServer {
+public class HTTPMemServer implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(HTTPMemServer.class);
 
@@ -104,6 +104,11 @@ public class HTTPMemServer {
 		} catch (IOException e) {
 			throw new RepositoryConfigException(e);
 		}
+	}
+
+	@Override
+	public void close() throws Exception {
+		stop();
 	}
 
 	static class PropertiesReader {
