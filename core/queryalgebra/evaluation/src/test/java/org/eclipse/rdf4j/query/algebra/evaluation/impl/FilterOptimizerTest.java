@@ -98,6 +98,15 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		testOptimizer(expected, query);
 	}
 
+	@Test
+	public void testNestedFilter() {
+		String expectedQuery = "SELECT * WHERE {?s ?p ?o . ?o ?r ?z. ?z ?k ?m. FILTER( NOT EXISTS {{?o ?p2 ?v1. FILTER(?v1 < 4) }\n {?o ?p2 ?v2. FILTER(?v2 > 0 && ?v2 < 4)}\n ?o ?p2 ?v3.} && NOT EXISTS {?o ?p2 []}) }";
+
+		String query = "SELECT * WHERE {?s ?p ?o . ?o ?r ?z. FILTER NOT EXISTS {?o ?p2 []}\n ?z ?k ?m. FILTER NOT EXISTS {?o ?p2 ?v1, ?v2, ?v3. FILTER(?v2 < 4) FILTER(?v1 < 4) FILTER(?v2 > 0)} }";
+
+		testOptimizer(expectedQuery, query);
+	}
+
 	void testOptimizer(String expectedQuery, String actualQuery)
 			throws MalformedQueryException, UnsupportedQueryLanguageException {
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
