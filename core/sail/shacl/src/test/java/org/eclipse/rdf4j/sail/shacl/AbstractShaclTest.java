@@ -105,25 +105,26 @@ abstract public class AbstractShaclTest {
 			"test-cases/class/complexTargetShape",
 			"test-cases/class/complexTargetShape2",
 			"test-cases/class/multipleClass",
+			"test-cases/class/nestedNode",
 			"test-cases/class/not",
 			"test-cases/class/not2",
 			"test-cases/class/notAnd",
 			"test-cases/class/notNotSimple",
 			"test-cases/class/simple",
+			"test-cases/class/simpleNested",
 			"test-cases/class/simpleTargetShape",
-//		"test-cases/class/sparqlTarget",
-//		"test-cases/class/sparqlTargetNot",
 			"test-cases/class/subclass",
 			"test-cases/class/targetNode",
 			"test-cases/class/validateTarget",
 			"test-cases/class/validateTargetNot",
 			"test-cases/complex/dcat",
 			"test-cases/complex/foaf",
-			"test-cases/complex/targetShapeAndQualifiedShape",
 			"test-cases/complex/mms",
-//		"test-cases/complex/sparqlTarget",
+			"test-cases/complex/targetShapeAndQualifiedShape",
 			"test-cases/datatype/allObjects",
 			"test-cases/datatype/not",
+			"test-cases/datatype/notNestedPropertyShape",
+			"test-cases/datatype/notNestedPropertyShape2",
 			"test-cases/datatype/notNodeShape",
 			"test-cases/datatype/notNodeShapeAnd",
 			"test-cases/datatype/notNodeShapeTargetShape",
@@ -138,7 +139,6 @@ abstract public class AbstractShaclTest {
 			"test-cases/datatype/simpleNested2",
 			"test-cases/datatype/simpleNode",
 			"test-cases/datatype/simpleNodeNested",
-//		"test-cases/datatype/sparqlTarget",
 			"test-cases/datatype/targetNode",
 			"test-cases/datatype/targetNode2",
 			"test-cases/datatype/targetNodeLang",
@@ -152,28 +152,50 @@ abstract public class AbstractShaclTest {
 			"test-cases/functionalProperty/multipleFunctionalOr",
 			"test-cases/functionalProperty/singleFunctional",
 			"test-cases/hasValue/and",
+			"test-cases/hasValue/and2",
 			"test-cases/hasValue/not",
 			"test-cases/hasValue/not2",
+			"test-cases/hasValue/or",
+			"test-cases/hasValue/simple",
+			"test-cases/hasValue/targetNode",
+			"test-cases/hasValue/targetNode2",
+			"test-cases/hasValue/targetShapeAnd",
+			"test-cases/hasValue/targetShapeAnd2",
+			"test-cases/hasValue/targetShapeAnd3",
+			"test-cases/hasValue/targetShapeAndOr",
+			"test-cases/hasValue/targetShapeAndOr2",
+			"test-cases/hasValue/targetShapeAndOr3",
+			"test-cases/hasValue/targetShapeOr",
+			"test-cases/hasValueIn/and",
 			"test-cases/hasValueIn/and",
 			"test-cases/hasValueIn/not",
+			"test-cases/hasValueIn/not",
 			"test-cases/hasValueIn/not2",
+			"test-cases/hasValueIn/not2",
+			"test-cases/hasValueIn/or",
+			"test-cases/hasValueIn/simple",
 			"test-cases/hasValueIn/simple",
 			"test-cases/hasValueIn/targetNode",
+			"test-cases/hasValueIn/targetNode",
 			"test-cases/hasValueIn/targetNode2",
+			"test-cases/hasValueIn/targetNode2",
+			"test-cases/hasValueIn/targetNode2",
+			"test-cases/hasValueIn/targetShapeOr",
 			"test-cases/implicitTargetClass/simple",
 			"test-cases/implicitTargetClass/simpleDefaultGraph",
 			"test-cases/in/notAnd",
 			"test-cases/in/notOr",
 			"test-cases/in/simple",
 			"test-cases/languageIn/simple",
-			"test-cases/maxCount/not",
+			"test-cases/languageIn/subtags",
+			"test-cases/languageIn/subtags2",
 			"test-cases/maxCount/nested",
 			"test-cases/maxCount/nestedCombination",
+			"test-cases/maxCount/not",
 			"test-cases/maxCount/not2",
 			"test-cases/maxCount/notNot",
 			"test-cases/maxCount/simple",
 			"test-cases/maxCount/simpleInversePath",
-//		"test-cases/maxCount/sparqlTarget",
 			"test-cases/maxCount/targetNode",
 			"test-cases/maxCount/zeroAndNegative",
 			"test-cases/maxExclusive/simple",
@@ -205,7 +227,6 @@ abstract public class AbstractShaclTest {
 			"test-cases/or/datatypeNodeShape",
 			"test-cases/or/datatypeTargetNode",
 			"test-cases/or/implicitAnd",
-//		"test-cases/or/implicitAndSparqlTarget",
 			"test-cases/or/inheritance",
 			"test-cases/or/inheritance-deep",
 			"test-cases/or/inheritanceNodeShape",
@@ -219,47 +240,28 @@ abstract public class AbstractShaclTest {
 			"test-cases/pattern/multiple",
 			"test-cases/pattern/simple",
 			"test-cases/propertyShapeWithTarget/simple",
-			"test-cases/uniqueLang/not",
-			"test-cases/uniqueLang/simple",
-			"test-cases/datatype/notNestedPropertyShape",
-			"test-cases/datatype/notNestedPropertyShape2",
-			"test-cases/hasValue/simple",
-			"test-cases/hasValue/and2",
-			"test-cases/hasValue/targetNode",
-			"test-cases/hasValue/targetNode2",
-			"test-cases/hasValueIn/simple",
-			"test-cases/hasValueIn/and",
-			"test-cases/hasValueIn/not",
-			"test-cases/hasValueIn/not2",
-			"test-cases/hasValueIn/targetNode",
-			"test-cases/hasValueIn/targetNode2",
-			"test-cases/languageIn/subtags",
-			"test-cases/languageIn/subtags2",
-			"test-cases/hasValueIn/targetNode2",
-			"test-cases/hasValue/or",
-			"test-cases/hasValue/targetShapeOr",
-			"test-cases/hasValue/targetShapeAnd",
-			"test-cases/hasValue/targetShapeAnd2",
-			"test-cases/hasValue/targetShapeAnd3",
-			"test-cases/hasValue/targetShapeAndOr",
-			"test-cases/hasValue/targetShapeAndOr2",
-			"test-cases/hasValue/targetShapeAndOr3",
-			"test-cases/hasValueIn/targetShapeOr",
-			"test-cases/hasValueIn/or",
-			"test-cases/class/simpleNested",
-			"test-cases/class/nestedNode",
-			"test-cases/qualifiedShape/minCountSimple",
+			"test-cases/qualifiedShape/complex",
 			"test-cases/qualifiedShape/maxCountSimple",
+			"test-cases/qualifiedShape/minCountSimple",
 			"test-cases/uniqueLang/complex",
-			"test-cases/qualifiedShape/complex"
+			"test-cases/uniqueLang/not",
+			"test-cases/uniqueLang/simple"
+//			"test-cases/class/sparqlTarget",
+//			"test-cases/class/sparqlTargetNot",
+//			"test-cases/complex/sparqlTarget",
+//			"test-cases/datatype/sparqlTarget",
+//			"test-cases/maxCount/sparqlTarget",
+//			"test-cases/or/implicitAndSparqlTarget",
 	)
 			.distinct()
 			.sorted()
 			.collect(Collectors.toList());
+
 	public static final Set<IRI> SHAPE_GRAPHS = Set.of(RDF4J.SHACL_SHAPE_GRAPH, RDF4J.NIL,
 			Values.iri("http://example.com/ns#shapesGraph1"));
 
 	boolean fullLogging = false;
+
 	static List<TestCase> testCases = getTestsToRun();
 	static List<Arguments> testsToRun = getTestsToRunWithoutIsolationLevel(testCases);
 	static List<Arguments> testsToRunWithIsolationLevel = getTestsToRunWithIsolationLevel(testCases);
@@ -332,27 +334,21 @@ abstract public class AbstractShaclTest {
 	}
 
 	private static Stream<TestCase> findTestCases(String testCase, ExpectedResult baseCase) {
-		String shacl;
-
-		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-				.getResourceAsStream(testCase + "/shacl.trig")) {
-			assert Objects.nonNull(resourceAsStream) : "Could not find: " + testCase + "/shacl.trig";
-			shacl = IOUtils.toString(resourceAsStream, StandardCharsets.UTF_8);
-
-		} catch (IOException e) {
-			throw new IllegalStateException(e);
-		}
+		String shacl = readShaclFile(testCase);
 
 		URL resource = AbstractShaclTest.class.getClassLoader().getResource(testCase + "/" + baseCase + "/");
 		if (resource == null) {
 			return Stream.empty();
 		}
 
-		return Arrays.stream(new File(resource.getFile()).list())
+		String[] testCases = Objects.requireNonNull(new File(resource.getFile()).list(),
+				"Could not find test cases for: " + resource);
+
+		return Arrays.stream(testCases)
 				.filter(s -> !s.startsWith("."))
 				.sorted()
-				.map(caseName -> {
-					String fullTestCasePath = testCase + "/" + baseCase + "/" + caseName;
+				.map(caseName -> testCase + "/" + baseCase + "/" + caseName)
+				.map(fullTestCasePath -> {
 					URL fullTestCase = AbstractShaclTest.class.getClassLoader().getResource(fullTestCasePath);
 					if (fullTestCase != null) {
 						File[] files = new File(fullTestCase.getFile()).listFiles();
@@ -371,6 +367,16 @@ abstract public class AbstractShaclTest {
 					return null;
 				})
 				.filter(Objects::nonNull);
+	}
+
+	private static String readShaclFile(String testCase) {
+		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
+				.getResourceAsStream(testCase + "/shacl.trig")) {
+			assert Objects.nonNull(resourceAsStream) : "Could not find: " + testCase + "/shacl.trig";
+			return IOUtils.toString(resourceAsStream, StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new IllegalStateException(e);
+		}
 	}
 
 	private static List<Arguments> getTestsToRunWithIsolationLevel(List<TestCase> testCases) {
@@ -410,7 +416,7 @@ abstract public class AbstractShaclTest {
 
 		printTestCase(testCase);
 
-		SailRepository shaclRepository = getShaclSail(testCase, true);
+		SailRepository shaclRepository = getShaclSail(testCase);
 
 		boolean containsShapesGraphStatements = testCase.getShacl().contains(null, SHACL.SHAPES_GRAPH, null);
 		boolean onlyContainsRdf4jShapesGraph = testCase.getShacl().contexts().equals(Set.of(RDF4J.SHACL_SHAPE_GRAPH));
@@ -444,8 +450,6 @@ abstract public class AbstractShaclTest {
 
 			}
 
-			Model validationReportActual = new LinkedHashModel();
-
 			for (File queryFile : testCase.getQueries()) {
 				try {
 					String query = FileUtils.readFileToString(queryFile, StandardCharsets.UTF_8);
@@ -467,8 +471,6 @@ abstract public class AbstractShaclTest {
 
 						exception = true;
 						logger.debug(sailException.getMessage());
-						validationReportActual = ((ShaclSailValidationException) sailException.getCause())
-								.validationReportAsModel();
 						printResults(sailException);
 					}
 				} catch (IOException e) {
@@ -507,17 +509,18 @@ abstract public class AbstractShaclTest {
 
 	private static void testValidationReport(String dataPath, Model validationReportActual) {
 		try {
-			InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-					.getResourceAsStream(dataPath + "report.ttl");
+			InputStream resourceAsStream = getResourceAsStream(dataPath + "report.ttl");
 			if (resourceAsStream == null) {
-				logger.error(dataPath + "report.ttl did not exist. Creating an empty file!");
+				logger.warn(dataPath + "report.ttl did not exist, attempting to create an empty file!");
 
 				String file = Objects.requireNonNull(AbstractShaclTest.class.getClassLoader()
 						.getResource(dataPath))
 						.getFile()
 						.replace("/target/test-classes/", "/src/test/resources/");
 				boolean newFile = new File(file + "report.ttl").createNewFile();
-
+				if (!newFile) {
+					logger.error(dataPath + "report.ttl did not exist and could not create an empty file!");
+				}
 			}
 			Model validationReportExpected = getModel(resourceAsStream);
 
@@ -532,6 +535,10 @@ abstract public class AbstractShaclTest {
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	private static InputStream getResourceAsStream(String dataPath) {
+		return AbstractShaclTest.class.getClassLoader().getResourceAsStream(dataPath);
 	}
 
 	private static void writeActualModelToExpectedModelForDevPurposes(String dataPath, Model report)
@@ -632,8 +639,7 @@ abstract public class AbstractShaclTest {
 		org.apache.jena.rdf.model.Model data = JenaUtil.createMemoryModel();
 
 		if (testCase.hasInitialData()) {
-			try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-					.getResourceAsStream(testCase.getInitialData())) {
+			try (InputStream resourceAsStream = getResourceAsStream(testCase.getInitialData())) {
 				data.read(resourceAsStream, "", org.apache.jena.util.FileUtils.langTurtle);
 			} catch (IOException e) {
 				throw new IllegalStateException(e);
@@ -669,8 +675,7 @@ abstract public class AbstractShaclTest {
 						RDFFormat.TRIG);
 
 				try {
-					InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-							.getResourceAsStream(testCase.getTestCasePath() + "report.ttl");
+					InputStream resourceAsStream = getResourceAsStream(testCase.getTestCasePath() + "report.ttl");
 
 					Model validationReportActual = getModel(resourceAsStream);
 
@@ -718,8 +723,7 @@ abstract public class AbstractShaclTest {
 
 	private static void checkShapesConformToW3cShaclRecommendation(org.apache.jena.rdf.model.Model shacl) {
 		org.apache.jena.rdf.model.Model w3cShacl = JenaUtil.createMemoryModel();
-		try (InputStream resourceAsStream = AbstractShaclTest.class.getClassLoader()
-				.getResourceAsStream("w3cshacl.ttl")) {
+		try (InputStream resourceAsStream = getResourceAsStream("w3cshacl.ttl")) {
 			w3cShacl.read(resourceAsStream, "", org.apache.jena.util.FileUtils.langTurtle);
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
@@ -871,7 +875,7 @@ abstract public class AbstractShaclTest {
 		try {
 			System.out.println("### " + filename + " ###");
 			String s = IOUtils.toString(
-					Objects.requireNonNull(AbstractShaclTest.class.getClassLoader().getResourceAsStream(filename)),
+					Objects.requireNonNull(getResourceAsStream(filename)),
 					StandardCharsets.UTF_8);
 
 			s = removeLeadingPrefixStatements(s);
@@ -884,31 +888,32 @@ abstract public class AbstractShaclTest {
 	}
 
 	private static String removeLeadingPrefixStatements(String s) {
-		String[] split = s.split("\n");
-		s = "";
+		String[] splitByNewLine = s.split("\n");
+
 		boolean skippingPrefixes = true;
 
-		for (String s1 : split) {
+		StringBuilder stringBuilder = new StringBuilder();
+		for (String line : splitByNewLine) {
 			if (skippingPrefixes) {
-				if (!(s1.trim().equals("") ||
-						s1.trim().toLowerCase().startsWith("@prefix") ||
-						s1.trim().toLowerCase().startsWith("@base") ||
-						s1.trim().toLowerCase().startsWith("prefix"))) {
+				if (!(line.trim().equals("") ||
+						line.trim().toLowerCase().startsWith("@prefix") ||
+						line.trim().toLowerCase().startsWith("@base") ||
+						line.trim().toLowerCase().startsWith("prefix"))) {
 					skippingPrefixes = false;
 				}
 			}
 
 			if (!skippingPrefixes) {
-				s += s1 + "\n";
+				stringBuilder.append(line).append("\n");
 			}
 
 		}
-		return s;
+		return stringBuilder.toString();
 	}
 
-	void runTestCaseSingleTransaction(TestCase testCase, IsolationLevel isolationLevel) {
+	void runTestCaseSingleTransaction(TestCase testCase) {
 
-		SailRepository shaclRepository = getShaclSail(testCase, true);
+		SailRepository shaclRepository = getShaclSail(testCase);
 
 		try {
 			boolean exception = false;
@@ -916,7 +921,7 @@ abstract public class AbstractShaclTest {
 			Model validationReportActual = new LinkedHashModel();
 
 			try (SailRepositoryConnection shaclSailConnection = shaclRepository.getConnection()) {
-				shaclSailConnection.begin(isolationLevel);
+				shaclSailConnection.begin(IsolationLevels.NONE);
 
 				for (File queryFile : testCase.getQueries()) {
 					try {
@@ -965,7 +970,7 @@ abstract public class AbstractShaclTest {
 
 	void runTestCaseRevalidate(TestCase testCase, IsolationLevel isolationLevel) {
 
-		SailRepository shaclRepository = getShaclSail(testCase, true);
+		SailRepository shaclRepository = getShaclSail(testCase);
 		try {
 
 			ValidationReport report = new ValidationReport(true);
@@ -1023,14 +1028,13 @@ abstract public class AbstractShaclTest {
 			return;
 		}
 
-		SailRepository shaclRepository = getShaclSail(testCase, true);
+		SailRepository shaclRepository = getShaclSail(testCase);
 		try {
 
 			List<ContextWithShapes> shapes = ((ShaclSail) shaclRepository.getSail()).getCachedShapes()
 					.getDataAndRelease();
 
 			Model actual = new DynamicModelFactory().createEmptyModel();
-			HashSet<Resource> dedupe = new HashSet<>();
 			shapes.forEach(shape -> shape.toModel(actual));
 
 			Model expected = new LinkedHashModel(testCase.getShacl());
@@ -1095,12 +1099,12 @@ abstract public class AbstractShaclTest {
 	}
 
 	private void printResults(RepositoryException sailException) {
-		ValidationReport validationReport = ((ShaclSailValidationException) sailException.getCause())
-				.getValidationReport();
+		var shaclSailValidationException = (ShaclSailValidationException) sailException.getCause();
+		ValidationReport validationReport = shaclSailValidationException.getValidationReport();
 		printResults(validationReport);
 	}
 
-	SailRepository getShaclSail(TestCase testCase, boolean loadInitialData) {
+	SailRepository getShaclSail(TestCase testCase) {
 		MemoryStore memoryStore = new MemoryStore();
 		// Use strict evaluation for SHACL test suite
 		// FIXME we should be able to set this directly on the ShaclSail (and let it delegate to its base sail), but no
@@ -1126,11 +1130,14 @@ abstract public class AbstractShaclTest {
 
 		try {
 			Utils.loadShapeData(repository, testCase.getShacl());
-			if (loadInitialData && testCase.hasInitialData()) {
+			if (testCase.hasInitialData()) {
 				Utils.loadInitialData(repository, testCase.getInitialData());
 			}
 		} catch (Exception e) {
 			repository.shutDown();
+			if (e instanceof RuntimeException) {
+				throw ((RuntimeException) e);
+			}
 			throw new RuntimeException(e);
 		}
 
@@ -1165,27 +1172,6 @@ abstract public class AbstractShaclTest {
 			shaclSailLogger.setLevel(shaclSailLoggerLevel);
 
 		}
-	}
-
-	/**
-	 * Sort and output testCasePaths
-	 *
-	 * @param args
-	 */
-	public static void main(String[] args) {
-
-		System.out.println("\n\tprivate static final List<String> testCasePaths = Stream.of(");
-		String testCasesString = testCasePaths
-				.stream()
-				.map(a -> "\t\t\"" + a + "\"")
-				.reduce((a, b) -> a + ",\n" + b)
-				.orElse("");
-
-		System.out.println(testCasesString);
-		System.out.println("\t)\n" +
-				"\t\t.distinct()\n" +
-				"\t\t.sorted()\n" +
-				"\t\t.collect(Collectors.toList());");
 	}
 
 	enum ExpectedResult {

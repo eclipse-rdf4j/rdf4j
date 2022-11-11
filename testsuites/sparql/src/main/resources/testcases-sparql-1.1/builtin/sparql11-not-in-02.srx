@@ -16,13 +16,5 @@
 		  <literal datatype="http://www.w3.org/2001/XMLSchema#integer">41</literal>
 		</binding>
 	 </result>
-	 	 <result>
-		<binding name="book">
-		  <uri>http://example.org/book4</uri>
-		</binding>
-		<binding name="discount">
-		  <literal datatype="http://www.w3.org/2001/XMLSchema#string">no discount</literal>
-		</binding>
-	 </result>
   </results>
 </sparql>

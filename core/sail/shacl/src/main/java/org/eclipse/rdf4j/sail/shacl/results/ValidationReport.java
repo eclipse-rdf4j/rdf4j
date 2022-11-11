@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.model.vocabulary.SHACL;
 @Deprecated
 public class ValidationReport {
 
+	private static final DynamicModelFactory DYNAMIC_MODEL_FACTORY = new DynamicModelFactory();
+
 	protected Resource id = null;
 
 	protected boolean conforms = true;
@@ -72,7 +74,7 @@ public class ValidationReport {
 	}
 
 	public Model asModel() {
-		return asModel(new DynamicModelFactory().createEmptyModel());
+		return asModel(DYNAMIC_MODEL_FACTORY.createEmptyModel());
 	}
 
 	public final Resource getId() {

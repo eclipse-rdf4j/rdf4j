@@ -13,6 +13,7 @@
   sh:result [ a sh:ValidationResult;
       rsx:shapesGraph rdf4j:SHACLShapeGraph;
       sh:focusNode ex:steve;
+      sh:resultMessage "This is a contradiction!";
       sh:resultSeverity sh:Violation;
       sh:sourceConstraintComponent sh:HasValueConstraintComponent;
       sh:sourceShape ex:PersonShape
@@ -20,4 +21,5 @@
 
 ex:PersonShape a sh:NodeShape;
   sh:hasValue ex:peter;
+  sh:message "This is a contradiction!";
   sh:targetNode ex:steve .

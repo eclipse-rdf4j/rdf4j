@@ -79,4 +79,23 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		AbstractParserQuery that = (AbstractParserQuery) o;
+
+		return parsedQuery.equals(that.parsedQuery);
+	}
+
+	@Override
+	public int hashCode() {
+		return parsedQuery.hashCode();
+	}
 }

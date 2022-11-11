@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest;
 
+import static org.assertj.core.api.Assertions.assertThatNoException;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -56,7 +58,6 @@ import org.slf4j.LoggerFactory;
  * A test suite that runs the W3C Approved SPARQL 1.1 update compliance tests.
  *
  * @author Jeen Broekstra
- *
  * @see <a href="https://www.w3.org/2009/sparql/docs/tests/">sparql docs tests</a>
  */
 @RunWith(Parameterized.class)
@@ -359,6 +360,15 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			con.begin();
 
 			Update update = con.prepareUpdate(QueryLanguage.SPARQL, updateString, requestFile);
+
+			assertThatNoException().isThrownBy(() -> {
+				int hashCode = update.hashCode();
+				if (hashCode == System.identityHashCode(update)) {
+					throw new UnsupportedOperationException(
+							"hashCode() result is the same as  the identityHashCode in " + update.getClass().getName());
+				}
+			});
+
 			update.setDataset(dataset);
 			update.execute();
 

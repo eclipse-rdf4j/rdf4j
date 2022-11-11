@@ -224,36 +224,50 @@ Once a minor release is published the `develop` minor version should be incremen
 version and any approved features that are scheduled for this next minor
 version should be merged into `develop` branch.
 
-## Optional: publishing docker images
+## Optional: publish a docker image
 
-Occasionally a docker server/workbench image could be built
-and pushed to `https:/hub.docker.com/eclipse/rdf4j-workbench`,
-which is part of the Eclipse organizational account.
+The docker images on hub.docker.com are stored as part of the Eclipse organizational account. 
+
 Since this account is managed separately by the Eclipse Foundation,
 only a limited number of committers will be granted access by the EMO.
 
-The Dockerfiles are stored in `rdf4j-tools/assembly/src/main/dist/docker`,
-and currently there are two supported architectures: `amd64` (Intel/AMD x86-64) and `arm64v8`.
+### Method 1: using the build script and docker push
 
-Note that docker does not support building cross-architecture out of the box,
-so either two systems or some additional software (e.g. QEMU) will be needed. See also
-https://www.ecliptik.com/Cross-Building-and-Running-Multi-Arch-Docker-Images.
+Build the SDK ZIP file and docker image using the `docker/build.sh` script.
+Both the Workbench and the server will be part of the same image.
+
+Log into hub.docker.com:
+
+`docker login --username=yourhubusername`
+
+Push the image:
+
+`docker push eclipse/rdf4j-workbench:VERSION_TAG`
+ 
+`VERSION_TAG` is the version (tag) you want to push, e.g. `4.3.0`
+
+Note that hub.docker.com does not update the `latest` tag automatically,
+the newly created image has also to be tagged `latest` and pushed to hub.docker.com.
 
 
-Go to the previously mentioned docker directory and build the image(s):
+### Method 2: multi-platform docker image using buildx
 
-    docker build --build-arg VERSION=2.5.0 --file Dockerfile.amd64 \
-                 --tag eclipse/rdf4j-workbench:amd64-2.5.0-testing .
+Since the base image being used is available for multiple architectures,
+it is quite easy to build a [multi-platform image](https://docs.docker.com/build/building/multi-platform/).
+Currently the Workbench/Server image is made available for 64-bit AMD/Intel and ARM v8.
 
-Verify the image by running it:
+Check if [Docker Buildx](https://docs.docker.com/build/buildx/install/) is installed on your system.
 
-    docker run -p 8080:8080 eclipse/rdf4j-workbench:amd64-2.5.0-testing
+Build the SDK ZIP file using the `docker/build.sh` script mentioned above,
+or download the SDK from https://rdf4j.org/download/ and store the ZIP as `ignore/rdf4j.zip`.
 
-After a fews seconds, the workbench should be avaible on `http://localhost:8080/rdf4j-workbench`.
-Check the RDF4J version in System / Information.
+Log into hub.docker.com:
 
-Log in on `hub.docker.com`, and push the image:
+`docker login --username=yourhubusername`
 
-    docker login
-    docker push eclipse/rdf4j-workbench:amd64-2.5.0-testing
+Build and push the image (note the `.` at the end of the command):
+
+`docker buildx build --push --platform linux/arm64/v8,linux/amd64 --tag eclipse/rdf4j-workbench:VERSION_TAG .`
+
+`VERSION_TAG` is the version (tag) you want to push, e.g. `4.3.0`
 

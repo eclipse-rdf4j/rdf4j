@@ -4,19 +4,14 @@
 		<variable name="y" />
 	</head>
 	<results>
+        <result>
+            <binding name="y">
+                <uri>http://example.org/a</uri>
+            </binding>
+        </result>
 		<result>
 			<binding name="y">
 				<uri>http://example.org/b</uri>
-			</binding>
-		</result>
-		<result>
-			<binding name="y">
-				<uri>http://example.org/a</uri>
-			</binding>
-		</result>
-		<result>
-			<binding name="y">
-				<uri>http://example.org/a</uri>
 			</binding>
 		</result>
 	</results>

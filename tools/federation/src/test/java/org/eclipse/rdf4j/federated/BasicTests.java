@@ -476,4 +476,12 @@ public class BasicTests extends SPARQLBaseTest {
 		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl", "/tests/basic/data01endpoint2.ttl"));
 		execute("/tests/basic/query_describe2.rq", "/tests/basic/query_describe2.ttl", false, true);
 	}
+
+	@Test
+	public void testDescribe_SingleSource() throws Exception {
+
+		/* test DESCRIBE query for a single resource (one federation member to simulate single source) */
+		prepareTest(Arrays.asList("/tests/basic/data01endpoint1.ttl"));
+		execute("/tests/basic/query_describe1.rq", "/tests/basic/query_describe1_singleSource.ttl", false, true);
+	}
 }
