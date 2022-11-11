@@ -66,7 +66,7 @@ public class OrderComparatorTest {
 		@Override
 		public Value evaluate(ValueExpr expr, BindingSet bindings)
 				throws ValueExprEvaluationException, QueryEvaluationException {
-			return null;
+			throw new UnsupportedOperationException();
 		}
 
 		@Override
@@ -89,13 +89,12 @@ public class OrderComparatorTest {
 		@Override
 		public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
 			// TODO Auto-generated method stub
-
+			throw new UnsupportedOperationException();
 		}
 
 		@Override
 		public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
-			// TODO Auto-generated method stub
-			return null;
+			throw new UnsupportedOperationException();
 		}
 
 		@Override
@@ -105,8 +104,7 @@ public class OrderComparatorTest {
 
 		@Override
 		public void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
-			// TODO Auto-generated method stub
-
+			throw new UnsupportedOperationException();
 		}
 	}
 

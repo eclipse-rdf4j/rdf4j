@@ -91,7 +91,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 					.ifPresent(factoryClassName -> {
 						setEvaluationStrategyFactoryClassName(factoryClassName.stringValue());
 					});
-		} catch (ModelException e) {
+		} catch (IllegalArgumentException | ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
 	}
