@@ -15,6 +15,6 @@
       rep:repositoryType "openrdf:SailRepository" ;
       sr:sailImpl [
          sail:sailType "rdf4j:LmdbStore" ;
-         sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
+         sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
       ]
    ].

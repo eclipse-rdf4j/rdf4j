@@ -1,5 +1,5 @@
 #
-# Sesame configuration template for a main-memory repository with
+# RDF4J configuration template for a main-memory repository with
 # a custom graph query inference rule.
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
@@ -21,19 +21,19 @@
          sail:sailType "openrdf:CustomGraphQueryInferencer" ;
          cgqi:queryLanguage "{%Query Language|SPARQL%}" ;
          cgqi:ruleQuery [
-         	a sp:Construct ;
-         	sp:text '''{%Rule query|insert rule query here%}'''
+             a sp:Construct ;
+             sp:text '''{%Rule query|insert rule query here%}'''
          ];
          cgqi:matcherQuery [
-         	a sp:Construct ;
-         	sp:text '''{%Matcher query (optional)|%}'''
+             a sp:Construct ;
+             sp:text '''{%Matcher query (optional)|%}'''
          ];
          sail:delegate [
             sail:sailType "openrdf:MemoryStore" ;
-	    sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+        sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
             ms:persist {%Persist|true|false%} ;
             ms:syncDelay {%Sync delay|0%};
-            sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
+            sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
          ]
       ]
    ].

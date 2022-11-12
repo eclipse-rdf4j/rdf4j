@@ -84,6 +84,14 @@ public class SailWrapper implements StackableSail, FederatedServiceResolverClien
 	}
 
 	@Override
+	public FederatedServiceResolver getFederatedServiceResolver() {
+		if (baseSail instanceof FederatedServiceResolverClient) {
+			return ((FederatedServiceResolverClient) baseSail).getFederatedServiceResolver();
+		}
+		return null;
+	}
+
+	@Override
 	public File getDataDir() {
 		return baseSail.getDataDir();
 	}

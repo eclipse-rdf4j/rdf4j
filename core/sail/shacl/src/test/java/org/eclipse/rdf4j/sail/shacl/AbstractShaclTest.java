@@ -44,6 +44,7 @@ import org.apache.jena.riot.RDFLanguages;
 import org.apache.jena.update.UpdateAction;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -992,6 +993,7 @@ abstract public class AbstractShaclTest {
 				shaclSailConnection.commit();
 
 				shaclSailConnection.begin(ValidationApproach.Bulk);
+//				shaclSailConnection.begin(ValidationApproach.Bulk, QueryEvaluationMode.MINIMAL_COMPLIANT);
 
 				try {
 					shaclSailConnection.commit();
@@ -1103,8 +1105,14 @@ abstract public class AbstractShaclTest {
 	}
 
 	SailRepository getShaclSail(TestCase testCase) {
+		MemoryStore memoryStore = new MemoryStore();
+		// Use strict evaluation for SHACL test suite
+		// FIXME we should be able to set this directly on the ShaclSail (and let it delegate to its base sail), but no
+		// decision has been made yet on where the setter for this sits (I'm not sure we want it at the level of the
+		// Sail interface).
+		memoryStore.setDefaultQueryEvaluationMode(QueryEvaluationMode.STRICT);
 
-		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		ShaclSail shaclSail = new ShaclSail(memoryStore);
 		SailRepository repository = new SailRepository(shaclSail);
 
 		shaclSail.setLogValidationPlans(fullLogging);

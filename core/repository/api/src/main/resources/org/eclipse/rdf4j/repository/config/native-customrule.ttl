@@ -1,5 +1,5 @@
 #
-# Sesame configuration template for a native RDF repository with
+# RDF4J configuration template for a native RDF repository with
 # a custom graph query inference rule.
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
@@ -13,26 +13,26 @@
 
 
 [] a rep:Repository ;
-   rep:repositoryID "{%Repository ID|native-customrule%}" ;
-   rdfs:label "{%Repository title|Native store with custom graph query inferencing rule%}" ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SailRepository" ;
-      sr:sailImpl [
-         sail:sailType "openrdf:CustomGraphQueryInferencer" ;
-         cgqi:queryLanguage "{%Query Language|SPARQL%}" ;
-         cgqi:ruleQuery [
-         	a sp:Construct ;
-         	sp:text '''{%Rule query|insert rule query here%}'''
-         ];
-         cgqi:matcherQuery [
-         	a sp:Construct ;
-         	sp:text '''{%Matcher query (optional)|%}'''
-         ];
-         sail:delegate [
-            sail:sailType "openrdf:NativeStore" ;
-	    sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
-            ns:tripleIndexes "{%Triple indexes|spoc,posc%}";
-            sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
-         ]
-      ]
-   ].
+    rep:repositoryID "{%Repository ID|native-customrule%}" ;
+    rdfs:label "{%Repository title|Native store with custom graph query inferencing rule%}" ;
+    rep:repositoryImpl [
+        rep:repositoryType "openrdf:SailRepository" ;
+        sr:sailImpl [
+            sail:sailType "openrdf:CustomGraphQueryInferencer" ;
+            cgqi:queryLanguage "{%Query Language|SPARQL%}" ;
+            cgqi:ruleQuery [
+                a sp:Construct ;
+                sp:text '''{%Rule query|insert rule query here%}'''
+            ];
+            cgqi:matcherQuery [
+                a sp:Construct ;
+                sp:text '''{%Matcher query (optional)|%}'''
+            ];
+            sail:delegate [
+                sail:sailType "openrdf:NativeStore" ;
+                sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+                ns:tripleIndexes "{%Triple indexes|spoc,posc%}";
+                sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
+            ]
+        ]
+    ].

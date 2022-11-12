@@ -1,5 +1,5 @@
 #
-# Sesame configuration template for a main-memory repository
+# RDF4J configuration template for a main-memory repository
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix rep: <http://www.openrdf.org/config/repository#>.
@@ -15,9 +15,9 @@
       rep:repositoryType "openrdf:SailRepository" ;
       sr:sailImpl [
          sail:sailType "openrdf:MemoryStore" ;
-	 sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
+         sail:iterationCacheSyncThreshold "{%Query Iteration Cache sync threshold|10000%}";
          ms:persist {%Persist|true|false%} ;
          ms:syncDelay {%Sync delay|0%} ;
-         sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
+         sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
       ]
    ].

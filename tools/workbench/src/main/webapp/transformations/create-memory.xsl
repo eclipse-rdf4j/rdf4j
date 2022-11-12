@@ -77,14 +77,14 @@
 							<xsl:value-of select="$repository-evaluation-mode.label" />
 						</th>
 						<td>
-							<select id="evalStratFactory" name="EvaluationStrategyFactory">
+							<select id="queryEvalMode" name="Query Evaluation Mode">
 								<option selected="selected"
-									value="org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory">
-									Strict
+									value="STRICT">
+									strict
 								</option>
 								<option
-									value="org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategyFactory">
-									Extended
+									value="STANDARD">
+									standard
 								</option>
 							</select>
 						</td>

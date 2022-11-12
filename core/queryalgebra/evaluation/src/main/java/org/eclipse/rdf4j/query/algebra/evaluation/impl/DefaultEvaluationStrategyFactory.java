@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2016 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -12,24 +12,20 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 
-/**
- * 
- * @deprecated since 4.3.0 - use {@link DefaultEvaluationStrategyFactory} instead.
- */
-@Deprecated(since = "4.3.0", forRemoval = true)
-public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
-		implements FederatedServiceResolverClient {
+public class DefaultEvaluationStrategyFactory extends AbstractEvaluationStrategyFactory
+		implements EvaluationStrategyFactory, FederatedServiceResolverClient {
 
 	private FederatedServiceResolver serviceResolver;
 
-	public ExtendedEvaluationStrategyFactory() {
+	public DefaultEvaluationStrategyFactory() {
 	}
 
-	public ExtendedEvaluationStrategyFactory(FederatedServiceResolver resolver) {
+	public DefaultEvaluationStrategyFactory(FederatedServiceResolver resolver) {
 		this.serviceResolver = resolver;
 	}
 
@@ -45,8 +41,10 @@ public class ExtendedEvaluationStrategyFactory extends AbstractEvaluationStrateg
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		return new ExtendedEvaluationStrategy(tripleSource, dataset, serviceResolver, getQuerySolutionCacheThreshold(),
-				evaluationStatistics);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, dataset, serviceResolver,
+				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
+		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
+		return strategy;
 	}
 
 }

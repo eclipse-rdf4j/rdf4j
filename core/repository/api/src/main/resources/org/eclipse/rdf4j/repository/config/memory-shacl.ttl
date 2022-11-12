@@ -1,5 +1,5 @@
 #
-# Sesame configuration template for a main-memory repository with SHACL
+# RDF4J configuration template for a main-memory repository with SHACL
 #
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix rep: <http://www.openrdf.org/config/repository#>.
@@ -10,18 +10,18 @@
 
 
 [] a rep:Repository ;
-   rep:repositoryID "{%Repository ID|memory-rdfs%}" ;
-   rdfs:label "{%Repository title|Memory store with SHACL%}" ;
-   rep:repositoryImpl [
-      rep:repositoryType "openrdf:SailRepository" ;
-      sr:sailImpl [
-         sail:sailType "rdf4j:ShaclSail" ;
-         sail:delegate [
-            sail:sailType "openrdf:MemoryStore" ;
-	        sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
-            ms:persist {%Persist|true|false%} ;
-            ms:syncDelay {%Sync delay|0%};
-            sb:evaluationStrategyFactory "{%EvaluationStrategyFactory|org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory%}"
-         ]
-      ]
-   ].
+    rep:repositoryID "{%Repository ID|memory-rdfs%}" ;
+    rdfs:label "{%Repository title|Memory store with SHACL%}" ;
+    rep:repositoryImpl [
+        rep:repositoryType "openrdf:SailRepository" ;
+        sr:sailImpl [
+            sail:sailType "rdf4j:ShaclSail" ;
+            sail:delegate [
+                sail:sailType "openrdf:MemoryStore" ;
+                sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
+                ms:persist {%Persist|true|false%} ;
+                ms:syncDelay {%Sync delay|0%};
+                sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
+            ]
+        ]
+    ].
