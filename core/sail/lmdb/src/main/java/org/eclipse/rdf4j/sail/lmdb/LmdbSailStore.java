@@ -349,7 +349,7 @@ class LmdbSailStore implements SailStore {
 			for (Resource context : contexts) {
 				if (context == null) {
 					contextIDList.add(0L);
-				} else {
+				} else if (!context.isTriple()) {
 					long contextID = valueStore.getId(context);
 
 					if (contextID != LmdbValue.UNKNOWN_ID) {
