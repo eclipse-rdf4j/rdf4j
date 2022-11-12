@@ -15,6 +15,6 @@
       rep:repositoryType "openrdf:SailRepository" ;
       sr:sailImpl [
          sail:sailType "rdf4j:LmdbStore" ;
-         sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|strict|standard%}"
+         sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
       ]
    ].

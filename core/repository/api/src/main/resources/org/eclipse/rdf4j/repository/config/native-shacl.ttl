@@ -21,7 +21,7 @@
                 sail:sailType "openrdf:NativeStore" ;
                 sail:iterationCacheSyncThreshold "{%Query Iteration Cache size|10000%}";
                 ns:tripleIndexes "{%Triple indexes|spoc,posc%}";
-                sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|strict|standard%}"
+                sb:defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
             ]
         ]
     ].

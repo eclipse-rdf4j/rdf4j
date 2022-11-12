@@ -14,7 +14,6 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.NAMESPACE;
 
-import java.util.Locale;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
@@ -85,7 +84,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		try {
 			Models.objectLiteral(graph.getStatements(implNode, BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE, null))
 					.ifPresent(qem -> setDefaultQueryEvaluationMode(
-							QueryEvaluationMode.valueOf(qem.stringValue().toUpperCase(Locale.ROOT))));
+							QueryEvaluationMode.valueOf(qem.stringValue())));
 
 			Models.objectLiteral(graph.getStatements(implNode, EVALUATION_STRATEGY_FACTORY, null))
 					.ifPresent(factoryClassName -> {

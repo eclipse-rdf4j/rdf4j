@@ -63,11 +63,11 @@
 						<td>
 							<select id="queryEvalMode" name="Query Evaluation Mode">
 								<option selected="selected"
-									value="strict">
+									value="STRICT">
 									strict
 								</option>
 								<option
-									value="standard">
+									value="STANDARD">
 									standard
 								</option>
 							</select>
