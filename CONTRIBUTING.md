@@ -53,7 +53,7 @@ Once the legalities are out of the way you can dig in. Here's how:
 7. Commit your changes into the branch. Make sure the commit author name and e-mail correspond to what you used to sign the ECA. Use meaningful commit messages. Reference the issue number in the commit message (for example "GH-276: added null check").
 8. Push your changes to your branch in your forked repository.
 9. Optionally [squash your commits](https://rdf4j.org/documentation/developer/squashing) to clean up the commit history.
-10. Use GitHub to submit a pull request (PR) for your contribution back to `main` in the central RDF4J repository.  Once you have submitted your PR, do not use your branch for any other development (unless asked to do so by the reviewers of your PR). 
+10. Use GitHub to submit a pull request (PR) for your contribution back to the central RDF4J repository. Once you have submitted your PR, do not use your branch for any other development (unless asked to do so by the reviewers of your PR). 
 
 Once you've put up a PR, we will review your contribution, possibly make some suggestions for improvements, and once everything is complete it will be merged into the `main` branch (if it's a bug fix to be included in the next maintenance release) or into the `develop` branch (if it's a feature or improvement to be included in the next minor or major release).
 
@@ -66,6 +66,7 @@ Eclipse RDF4J follows the [Eclipse Coding Conventions for Java](https://wiki.ecl
 - We use a line width of 120 characters.
 - We use Unix line endings (LF).
 - We require curly braces for every control statement body (e.g. if-else), even if it is a single line.
+- We use a single tab as the indentation in all XML files (including the `pom.xml` files). 
 - We use the following header comment on every Java file:
 
 ```
@@ -97,8 +98,6 @@ For import statements, the following conventions hold:
 - we apply a fixed ordering for import statements, following Eclipse conventions. Import statements are ordered in groups separated by a single empty line, in the following order: static imports, java.\*, javax.\*, org.\*, com.\*, everything else.
 
 There are various ways to apply these conventions to your code, depending on which editor/IDE you use.
-
-We use a single tab as the indentation in all XML files (including the `pom.xml` files). 
 
 ### Eclipse IDE users
 
