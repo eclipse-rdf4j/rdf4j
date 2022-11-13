@@ -110,15 +110,14 @@ public class FilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			if (filter.getParentNode() instanceof Filter && filter.getParentNode().getParentNode() != null) {
+			if (filter.getArg() instanceof Filter && filter.getParentNode() != null) {
 
-				Filter parentFilter = (Filter) filter.getParentNode();
-				QueryModelNode grandParent = parentFilter.getParentNode();
-				And merge = new And(filter.getCondition().clone(), parentFilter.getCondition().clone());
+				Filter childFilter = (Filter) filter.getArg();
+				QueryModelNode parent = filter.getParentNode();
+				And merge = new And(childFilter.getCondition().clone(), filter.getCondition().clone());
 
-				Filter newFilter = new Filter(filter.getArg().clone(), merge);
-				grandParent.replaceChildNode(parentFilter, newFilter);
-				meet(newFilter);
+				Filter newFilter = new Filter(childFilter.getArg().clone(), merge);
+				parent.replaceChildNode(filter, newFilter);
 			}
 		}
 	}
