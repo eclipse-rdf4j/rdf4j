@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.lucene.analysis.Analyzer;
@@ -108,6 +109,7 @@ import org.locationtech.spatial4j.shape.Shape;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Sets;
@@ -186,6 +188,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	public LuceneIndex(Directory directory, Analyzer analyzer, Similarity similarity) throws IOException {
 		this.directory = directory;
 		this.analyzer = analyzer;
+		this.queryAnalyzer = analyzer;
 		this.similarity = similarity;
 		this.geoStrategyMapper = createSpatialStrategyMapper(Collections.<String, String>emptyMap());
 
@@ -198,6 +201,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		super.initialize(parameters);
 		this.directory = createDirectory(parameters);
 		this.analyzer = createAnalyzer(parameters);
+		this.queryAnalyzer = createQueryAnalyzer(parameters);
 		this.similarity = createSimilarity(parameters);
 		// slightly hacky cast to cope with the fact that Properties is
 		// Map<Object,Object>
@@ -226,11 +230,22 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	protected Analyzer createAnalyzer(Properties parameters) throws Exception {
+		return createAnalyzerWithFallback(parameters, LuceneSail.ANALYZER_CLASS_KEY, StandardAnalyzer::new);
+	}
+
+	protected Analyzer createQueryAnalyzer(Properties parameters) throws Exception {
+		return createAnalyzerWithFallback(parameters, LuceneSail.QUERY_ANALYZER_CLASS_KEY, StandardAnalyzer::new);
+	}
+
+	private Analyzer createAnalyzerWithFallback(Properties parameters, String parameterKey, Supplier<Analyzer> fallback)
+			throws Exception {
 		Analyzer a;
-		if (parameters.containsKey(LuceneSail.ANALYZER_CLASS_KEY)) {
-			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY)).newInstance();
+		if (parameters.containsKey(parameterKey)) {
+			a = (Analyzer) Class.forName(parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY))
+					.getDeclaredConstructor()
+					.newInstance();
 		} else {
-			a = new StandardAnalyzer();
+			a = fallback.get();
 		}
 		return a;
 	}
@@ -246,8 +261,6 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	private void postInit() throws IOException {
-		this.queryAnalyzer = new StandardAnalyzer();
-
 		// do some initialization for new indices
 		if (!DirectoryReader.indexExists(directory)) {
 			logger.debug("creating new Lucene index in directory {}", directory);
@@ -277,6 +290,11 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	}
 
 	public Analyzer getAnalyzer() {
+		return analyzer;
+	}
+
+	@VisibleForTesting
+	Analyzer getQueryAnalyzer() {
 		return analyzer;
 	}
 

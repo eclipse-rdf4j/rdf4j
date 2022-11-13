@@ -174,7 +174,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 
 	private String analyzer;
 
-	private final String queryAnalyzer = "standard";
+	private String queryAnalyzer = DEFAULT_ANALYZER;
 
 	private Function<? super String, ? extends SpatialContext> geoContextMapper;
 
@@ -200,6 +200,7 @@ public class ElasticsearchIndex extends AbstractSearchIndex {
 		indexName = parameters.getProperty(INDEX_NAME_KEY, DEFAULT_INDEX_NAME);
 		documentType = parameters.getProperty(DOCUMENT_TYPE_KEY, DEFAULT_DOCUMENT_TYPE);
 		analyzer = parameters.getProperty(LuceneSail.ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
+		queryAnalyzer = parameters.getProperty(LuceneSail.QUERY_ANALYZER_CLASS_KEY, DEFAULT_ANALYZER);
 		// slightly hacky cast to cope with the fact that Properties is
 		// Map<Object,Object>
 		// even though it is effectively Map<String,String>
