@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -123,7 +124,7 @@ public abstract class RDFStarSupportTest {
 		try {
 			testCon.add(RDF.ALT, RDF.TYPE, RDF.ALT, rdfStarTriple);
 			Assertions.fail("RDF-star triple value should not be allowed by store as context identifier");
-		} catch (UnsupportedOperationException e) {
+		} catch (RepositoryException e) {
 			// fall through, expected behavior
 			testCon.rollback();
 		}
