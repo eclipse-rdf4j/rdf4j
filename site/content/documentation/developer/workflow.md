@@ -14,17 +14,16 @@ Some of this information is targeted specifically at the project lead(s), other 
 RDF4J strives to apply [Semantic Versioning](http://www.semver.org/) principles to its development:
 
 1. We use a `MAJOR.MINOR.PATCH` versioning template.
-2. A *PATCH* release (2.2.1, 2.2.2, etc.) is a release that contains only bug fixes that are backwards compatible.
-3. A *MINOR* release (2.0.0, 2.1.0, 2.2.0, etc.) is a release that can contain improvements and new features but makes no backward-incompatible changes to existing functionality.
-4. A *MAJOR* release (1.0.0, 2.0.0, 3.0.0, etc) is a release that can contain changes to the public API that are not backward compatible.
+2. A *PATCH* release (2.2.1, 2.2.2, etc.) is a release that contains only bug fixes that are binary compatible and source compatible.
+3. A *MINOR* release (2.0.0, 2.1.0, 2.2.0, etc.) is a release that can contain improvements and new features but makes no binary-incompatible changes to existing functionality.
+4. A *MAJOR* release (1.0.0, 2.0.0, 3.0.0, etc) is a release that can contain changes to the public API that are not compatible.
 
-It is currently not fully specified what the boundaries of the RDF4J public API are. Until this is resolved (see [issue #619](https://github.com/eclipse/rdf4j/issues/619)), we allow changes to public or protected methods/classes/interfaces in *minor* releases under the following conditions:
+We allow changes to public or protected methods/classes/interfaces in *minor* releases under the following conditions:
 
 1. any renamed _interface_ is declared an extension of the old interface. The old interface is marked deprecated with Javadoc containing a reference to the new name;
 2. any renamed _class_ is declared a superclass of the old class. The old class is marked deprecated with Javadoc containing a reference to the new name;
 3. any renamed _member_ is added next to the old member name. The old member is declared deprecated with Javadoc containing a reference to the new name.
-
-These conditions are to ensure that existing user code will continue to work when upgrading to the new release. If there is any doubt about a change being backwards-compatible, it can not be made part of a minor release.
+4. any class, interface or method that is annotated with `@Experimental` or `@InternalUseOnly` is not considered part of the public API, and may be changed in a minor release.
 
 For patch releases we never allow changes in the public API, unless the change is specifically to fix a bug that aligns the actual behavior of the code with the publicly documented behavior.
 
@@ -68,44 +67,7 @@ achieve a clean but accurate history. Read more about our strategy and the
 motivation for it in this article: [RDF4J merge
 strategy](/documentation/developer/merge-strategy/).
 
-### Patch Requests
-
-If the change is a bug fix, contains no new features, and does not change any public or protected APIs:
-
-1. Create an issue in our [issue tracker](https://github.com/eclipse/rdf4j/issues) if it doesn't exist yet.
-1. Create an issue branch by branching off from the `main` branch, using `GH-<issuenumber>-short-description` as the branch name convention.
-2. Make the necessary changes and verify the codebase.
-3. Optionally [squash your commits](../squashing) to clean up your branch.
-3. Create a Pull Request that targets the `main` branch.
-4. Peers and project committers now have a chance to review the PR and make suggestions.
-5. Any modifications can be made to the _issue_ branch as recommended.
-6. Once any necessary changes have been made, project committers can mark the PR as approved.
-7. Project committers should then determine what patch release this fix will be included in by updating the milestone label of both the PR and the issue.
-8. Once a Pull Request is approved and scheduled, it can be merged into the `main` branch.
-9. After a PR has been merged into the `main` branch, the `main` branch should
-then be merged into the `develop` branch by the project committer that merged the PR, any conflicts (such as due to new features) should be resolved.
-
-### Feature Requests
-
-Pull Requests that add a self-contained new feature to the public API follow
-the same steps as a Patch Request but should target the `develop` branch.
-Only PRs that have been scheduled for the next minor release
-should be merged into the `develop` branch.
-
-Project committers that are contributing to a branch should periodically
-pull changes from the `develop` branch (by either rebasing or merging) to minimize conflicts later on.
-Once a feature is complete a PR should be created using the feature branch and target the `develop` branch.
-Then follow similar steps to a patch request to schedule and merge into `develop`.
-
-Minor and major releases require a formal [release
-review](https://www.eclipse.org/projects/handbook/#release-review), and because
-this is the case, they need to be planned well in advance, and the project lead
-needs to manage what can go into each release, and prepare necessary
-documentation (both technical and legal) for review. For this reason approved
-Pull Requests may stay open (not scheduled or merged) for some time until a
-release plan that incorporates these changes and any required documentation is
-in place.  The comment section in the PR can be used to keep everyone informed
-of the progress.
+For step-by-step instructions on how to create contributions, see the [contributor guidelines](https://github.com/eclipse/rdf4j/blob/main/CONTRIBUTING.md).
 
 ## Further reading
 

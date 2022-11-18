@@ -175,15 +175,15 @@ upload, it will also automatically invoke synchronization with the Central
 Repository.  Note that after successful completion, the artifacts may not be
 available on the Central Repository for several hours.
 
-## Minor and Major releases
+## Eclipse release reviews
 
-Minor and major releases require a formal [release review](https://www.eclipse.org/projects/handbook/#release-review), and because this is the case, they need to be planned well in advance, and the project lead needs to manage what can go into each release, and prepare necessary documentation (both technical and legal) for review.
+At least once a year, the Eclipse Foundation requires a formal [release review](https://www.eclipse.org/projects/handbook/#release-review). We typically try to use a major or minor release for such a review.
 
-We plan each release about 8 weeks in advance. At this stage, the final feature set is not etched in stone but a number of priority features/improvements is identified (via discussion on the mailinglist and/or via issue tracker comments and PRs) and scheduled. A first draft of a release plan is created by the project lead on the [Eclipse RDF4J project site](https://projects.eclipse.org/projects/technology.rdf4j), and the necessary milestones are created in the [issue tracker](https://github.com/eclipse/rdf4j/issues).
+We plan a reviewed release about 8 weeks in advance. At this stage, the final feature set is not etched in stone but a number of priority features/improvements is identified (via discussion on the mailinglist and/or via issue tracker comments and PRs) and scheduled. A first draft of a release plan is created by the project lead on the [Eclipse RDF4J project site](https://projects.eclipse.org/projects/technology.rdf4j), and the necessary milestones are created in the [issue tracker](https://github.com/eclipse/rdf4j/issues).
 
 ### Review planning and application
 
-A release can only be done once its review is successfully concluded. Eclipse release review are announced in regular cycles, and always complete on the first or third Wednesday of each month. For this reason, we schedule our releases to happen on a first or third Thursday.
+Eclipse release review are announced in regular cycles, and always complete on the first or third Wednesday of each month. For this reason, we schedule our reviewed releases to happen on a first or third Thursday.
 
 A release review runs for a week. Although mostly a formality, it does need some careful preparation and planning. It needs to be formally applied for, and this application in turn requires that several pieces of documentation are in order:
 
@@ -212,16 +212,13 @@ For more detailed information about the release review process, see the [Eclipse
 ### Branching minor releases
 
 Prior to a minor release, the `develop` branch is merged into the `main` branch
-(along with the `develop` branch's version) to facilitate release review.
-This will increment the `main` version to the latest major/minor SNAPSHOT version.
-After the review is complete the steps to create a minor release are the same as the patch release steps.
+(along with the `develop` branch's version). This will increment the `main` version to the latest major/minor SNAPSHOT version. 
 
 IMPORTANT: It is important that only features and fixes that have already been scheduled
 for release (via PR milestone labels) be merged into the `develop` branch, so
 that there is no confusion as to what will be included in the next minor release.
 
-Once a minor release is published the `develop` minor version should be incremented to the next SNAPSHOT
-version and any approved features that are scheduled for this next minor
+Once a minor release is published the `develop` minor version should be incremented to the next SNAPSHOT version and any approved features that are scheduled for this next minor
 version should be merged into `develop` branch.
 
 ## Optional: publish a docker image
@@ -248,7 +245,6 @@ Push the image:
 
 Note that hub.docker.com does not update the `latest` tag automatically,
 the newly created image has also to be tagged `latest` and pushed to hub.docker.com.
-
 
 ### Method 2: multi-platform docker image using buildx
 
