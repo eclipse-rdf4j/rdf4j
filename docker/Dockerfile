@@ -1,7 +1,7 @@
 # Temp to reduce image size
 FROM ubuntu:jammy AS temp
 
-RUN apt update && apt install unzip
+RUN apt-get update && apt-get install unzip
 
 COPY ignore/rdf4j.zip /tmp/rdf4j.zip
 
@@ -23,7 +23,7 @@ RUN	rm -rf /usr/local/tomcat/webapps/* && \
 	chown -R tomcat /var/rdf4j /usr/local/tomcat && \
 	chmod a+x /usr/local/tomcat /usr/local/tomcat/bin /usr/local/tomcat/bin/catalina.sh
 
-COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /usr/local/tomcat/webapps
+COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /usr/local/tomcat/webapps/
 
 COPY web.xml /usr/local/tomcat/conf/web.xml
 
