@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.testsuite.sail;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -27,9 +28,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Triple;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -460,6 +463,33 @@ public abstract class RDFStoreTest {
 
 		Assert.assertEquals("Repository should contain 0 statements matching (_, _, type)", 0,
 				countQueryResults("select * where {?S ?P rdf:type}"));
+	}
+
+	/**
+	 * @see https://github.com/eclipse/rdf4j/issues/4248
+	 */
+	@Test
+	public void testAddTripleContext() {
+
+		con.begin();
+		con.addStatement(painter, RDF.TYPE, RDFS.CLASS);
+		con.commit();
+
+		Triple tripleContext = Values.triple(guernica, RDF.TYPE, painting);
+
+		con.begin();
+		assertThatExceptionOfType(SailException.class)
+				.isThrownBy(() -> con.addStatement(picasso, paints, guernica, tripleContext))
+				.withMessageStartingWith("context argument can not be of type Triple: ");
+		con.commit();
+
+		con.begin();
+		con.addStatement(picasso, paints, guernica, context1);
+		con.commit();
+
+		assertThat(con.hasStatement(picasso, paints, guernica, true, tripleContext)).isFalse();
+		assertThat(con.hasStatement(painter, RDF.TYPE, RDFS.CLASS, true)).isTrue();
+		assertThat(con.hasStatement(picasso, paints, guernica, true, context1)).isTrue();
 	}
 
 	@Test
