@@ -131,7 +131,7 @@ public class NamespaceController extends AbstractController {
 		}
 
 		if (!isValidPrefix(prefix)) {
-			throw new ClientHTTPException(SC_BAD_REQUEST, "Prefix not alphanumeric");
+			throw new ClientHTTPException(SC_BAD_REQUEST, "Prefix not valid");
 		}
 
 		if (!isValidNamespaceIri(namespace)) {

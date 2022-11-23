@@ -71,7 +71,7 @@ class NamespaceControllerTest {
 
 		// Act & Assert
 		assertThatThrownBy(() -> controller.handleRequest(request, response)).isInstanceOf(ClientHTTPException.class)
-				.hasMessageContaining("Prefix not alphanumeric");
+				.hasMessageContaining("Prefix not valid");
 	}
 
 	@ParameterizedTest
