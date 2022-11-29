@@ -46,7 +46,7 @@ class NamespaceControllerTest {
 
 	@ParameterizedTest
 	@EmptySource
-	@ValueSource(strings = { "a", "1", "rdf", "rdf4j", "22" })
+	@ValueSource(strings = { "a", "rdf", "rdf4j", "wn-6", "t_1", "t_", "a2", "a.3" })
 	void addNamespace_prefix_ok(String prefix) throws Exception {
 		// Arrange
 		request.setRequestURI("/repositories/" + REPO_ID + "/namespaces/" + prefix);
@@ -62,7 +62,7 @@ class NamespaceControllerTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "  ", "\t", "\n", "-", "rdf 4j", "rdf-4j" })
+	@ValueSource(strings = { "  ", "\t", "\n", "-", "rdf 4j", "_", "_t", "2a", "a+a", "a*a", "a@a" })
 	void addNamespace_prefix_invalid(String prefix) {
 		// Arrange
 		request.setRequestURI("/repositories/" + REPO_ID + "/namespaces/" + prefix);
@@ -71,7 +71,7 @@ class NamespaceControllerTest {
 
 		// Act & Assert
 		assertThatThrownBy(() -> controller.handleRequest(request, response)).isInstanceOf(ClientHTTPException.class)
-				.hasMessageContaining("Prefix not alphanumeric");
+				.hasMessageContaining("Prefix not valid");
 	}
 
 	@ParameterizedTest
