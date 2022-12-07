@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
+import java.util.function.Supplier;
+
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
@@ -21,6 +24,7 @@ public class DefaultEvaluationStrategyFactory extends AbstractEvaluationStrategy
 		implements EvaluationStrategyFactory, FederatedServiceResolverClient {
 
 	private FederatedServiceResolver serviceResolver;
+	private Supplier<CollectionFactory> collectionFactorySupplier;
 
 	public DefaultEvaluationStrategyFactory() {
 	}
@@ -39,11 +43,17 @@ public class DefaultEvaluationStrategyFactory extends AbstractEvaluationStrategy
 	}
 
 	@Override
+	public void setCollectionFactory(Supplier<CollectionFactory> collectionFactory) {
+		this.collectionFactorySupplier = collectionFactory;
+	}
+
+	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, dataset, serviceResolver,
 				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
+		strategy.setCollectionFactory(collectionFactorySupplier);
 		return strategy;
 	}
 
