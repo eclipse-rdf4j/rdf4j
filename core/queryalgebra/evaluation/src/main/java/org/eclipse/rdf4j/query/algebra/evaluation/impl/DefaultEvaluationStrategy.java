@@ -16,7 +16,10 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -200,6 +203,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private final TupleFunctionRegistry tupleFuncRegistry;
 
 	private QueryEvaluationMode queryEvaluationMode;
+
+	private Supplier<CollectionFactory> collectionFactory = DefaultCollectionFactory::new;
 
 	static CloseableIteration<BindingSet, QueryEvaluationException> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
@@ -435,7 +440,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 			return ret;
 		} else {
-			return EvaluationStrategy.super.precompile(expr, context);
+			return EvaluationStrategy.super.precompile(expr);
 		}
 	}
 
@@ -572,7 +577,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		return new QueryRootQueryEvaluationStep(arg);
+		return new QueryRootQueryEvaluationStep(arg, context);
 	}
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
@@ -649,16 +654,42 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private final class QueryRootQueryEvaluationStep implements QueryEvaluationStep {
 		private final QueryEvaluationStep arg;
+		private final QueryEvaluationContext context;
 
-		private QueryRootQueryEvaluationStep(QueryEvaluationStep arg) {
+		private QueryRootQueryEvaluationStep(QueryEvaluationStep arg, QueryEvaluationContext context) {
 			this.arg = arg;
+			this.context = context;
 		}
 
 		@Override
 		public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(BindingSet bs) {
 			// TODO fix the sharing of the now element to be safe
 			DefaultEvaluationStrategy.this.sharedValueOfNow = null;
-			return arg.evaluate(bs);
+			CloseableIteration<BindingSet, QueryEvaluationException> evaluate = arg.evaluate(bs);
+			CloseableIteration<BindingSet, QueryEvaluationException> closeContext = new CloseableIteration<BindingSet, QueryEvaluationException>() {
+
+				@Override
+				public boolean hasNext() throws QueryEvaluationException {
+					return evaluate.hasNext();
+				}
+
+				@Override
+				public BindingSet next() throws QueryEvaluationException {
+					return evaluate.next();
+				}
+
+				@Override
+				public void remove() throws QueryEvaluationException {
+					evaluate.remove();
+
+				}
+
+				@Override
+				public void close() throws QueryEvaluationException {
+					evaluate.close();
+				}
+			};
+			return evaluate;
 		}
 	}
 
@@ -729,11 +760,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		};
 	}
 
+	@Deprecated
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(DescribeOperator operator,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(operator).evaluate(bindings);
 	}
 
+	@Deprecated
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(StatementPattern statementPattern,
 			final BindingSet bindings) throws QueryEvaluationException {
 		return precompile(statementPattern).evaluate(bindings);
@@ -749,6 +782,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
+	@Deprecated
 	public CloseableIteration<BindingSet, QueryEvaluationException> evaluate(UnaryTupleOperator expr,
 			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Projection) {
@@ -2295,5 +2329,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	public void setQueryEvaluationMode(QueryEvaluationMode queryEvaluationMode) {
 		this.queryEvaluationMode = Objects.requireNonNull(queryEvaluationMode);
+	}
+
+	@Override
+	public Supplier<CollectionFactory> getCollectionFactory() {
+		return collectionFactory;
+	}
+
+	@Override
+	public void setCollectionFactory(Supplier<CollectionFactory> cf) {
+		this.collectionFactory = cf;
 	}
 }
