@@ -12,7 +12,10 @@ package org.eclipse.rdf4j.sail;
 
 import java.io.File;
 import java.util.List;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.ValueFactory;
 
@@ -96,4 +99,12 @@ public interface Sail {
 	 */
 	IsolationLevel getDefaultIsolationLevel();
 
+	/**
+	 * Gets a CollectionFactory that may be optimized for this store and may or may not use disk or other resources.
+	 *
+	 * @return a CollectionFactory
+	 */
+	default Supplier<CollectionFactory> getCollectionFactory() {
+		return DefaultCollectionFactory::new;
+	}
 }
