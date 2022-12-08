@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+docker pull tomcat:8.5-jre11-temurin
+
 # current working directory
 CURRENT=$(pwd)
 cd ..
