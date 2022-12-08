@@ -19,8 +19,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 import org.apache.commons.io.FileUtils;
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
 import org.eclipse.rdf4j.common.io.MavenUtil;
@@ -497,5 +500,10 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		} else {
 			return false; // no upgrade needed
 		}
+	}
+
+	@Override
+	public Supplier<CollectionFactory> getCollectionFactory() {
+		return () -> new MapDbCollectionFactory(getIterationCacheSyncThreshold());
 	}
 }

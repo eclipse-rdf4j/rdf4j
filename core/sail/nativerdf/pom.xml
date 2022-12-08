@@ -32,6 +32,11 @@
 		</dependency>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-collection-factory-mapdb</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-model</artifactId>
 			<version>${project.version}</version>
 		</dependency>
