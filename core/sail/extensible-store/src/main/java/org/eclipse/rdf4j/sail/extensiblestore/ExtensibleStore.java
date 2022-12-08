@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.sail.extensiblestore;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.collection.factory.mapdb.MapDbCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -173,4 +176,8 @@ public abstract class ExtensibleStore<T extends DataStructureInterface, N extend
 		EAGER
 	}
 
+	@Override
+	public Supplier<CollectionFactory> getCollectionFactory() {
+		return () -> new MapDbCollectionFactory(getIterationCacheSyncThreshold());
+	}
 }
