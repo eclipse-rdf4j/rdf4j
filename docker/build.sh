@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-docker pull tomcat:8.5-jre11-temurin
-
 # current working directory
 CURRENT=$(pwd)
 cd ..
@@ -24,6 +22,7 @@ MVN_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='versi
 echo "Building with Maven"
 mvn clean
 mvn -T 2C formatter:format impsort:sort && mvn xml-format:xml-format
+mvn -T 2C compile  -P-use-sonatype-snapshots package -DskipTests -Dmaven.javadoc.skip=true -Dformatter.skip=true -Dimpsort.skip=true -Dxml-format.skip=true  -Djapicmp.skip -Denforcer.skip=true -Dbuildnumber.plugin.phase=none -Ddefault-jar.phase=none -Danimal.sniffer.skip=true
 mvn -Passembly,-use-sonatype-snapshots package -DskipTests -Dmaven.javadoc.skip=true -Dformatter.skip=true -Dimpsort.skip=true -Dxml-format.skip=true  -Djapicmp.skip -Denforcer.skip=true -Dbuildnumber.plugin.phase=none -Danimal.sniffer.skip=true
 
 # find .zip file
@@ -37,7 +36,7 @@ cd "$CURRENT"
 
 # build
 echo "Building docker image"
-docker-compose build
+docker-compose build --pull --no-cache
 
 docker tag docker_rdf4j:latest eclipse/rdf4j-workbench:${MVN_VERSION}
 
