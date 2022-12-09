@@ -46,7 +46,6 @@ public interface Sail {
 	 * method is called. Please consult the specific Sail implementation for information about the relevant parameters.
 	 *
 	 * @throws SailException If the Sail could not be initialized.
-	 *
 	 * @since 2.5
 	 */
 	void init() throws SailException;

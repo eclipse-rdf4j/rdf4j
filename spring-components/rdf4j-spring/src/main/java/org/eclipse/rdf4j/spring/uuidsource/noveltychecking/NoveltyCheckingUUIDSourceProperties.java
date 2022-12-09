@@ -14,8 +14,8 @@ package org.eclipse.rdf4j.spring.uuidsource.noveltychecking;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @ConfigurationProperties(prefix = "rdf4j.spring.uuidsource.noveltychecking")
 public class NoveltyCheckingUUIDSourceProperties {

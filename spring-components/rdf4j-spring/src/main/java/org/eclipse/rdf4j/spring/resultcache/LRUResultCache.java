@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * @param <T>
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class LRUResultCache<T> implements ResultCache<Integer, T> {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());

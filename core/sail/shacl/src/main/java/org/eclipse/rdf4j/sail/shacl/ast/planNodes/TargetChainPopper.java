@@ -22,10 +22,9 @@ import org.eclipse.rdf4j.sail.SailException;
 
 /**
  * Pops the last target off of the target chain and into the value.
- *
+ * <p>
  * This is useful when a plan node operates on the values, but tuple with only targets is supplied and we want to
  * validate the last target.
- *
  *
  * @author Håvard Ottestad
  */

@@ -87,7 +87,6 @@ import org.slf4j.LoggerFactory;
  * IDs. Each ID represent an RDF value that is stored in a {@link ValueStore}. The four IDs refer to the statement's
  * subject, predicate, object and context. The ID <tt>0</tt> is used to represent the "null" context and doesn't map to
  * an actual RDF value.
- *
  */
 @SuppressWarnings("deprecation")
 class TripleStore implements Closeable {

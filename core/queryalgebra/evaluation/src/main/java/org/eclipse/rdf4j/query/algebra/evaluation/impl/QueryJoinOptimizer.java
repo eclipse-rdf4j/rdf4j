@@ -61,7 +61,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	}
 
 	/**
-	 *
 	 * @deprecated This class is protected for historic reasons only, and will be made private in a future major
 	 *             release.
 	 */
@@ -271,7 +270,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * <pre>
 		 *   [f] [a b c] [e f] [a d] [b e]
 		 * </pre>
-		 *
+		 * <p>
 		 * should result in:
 		 *
 		 * <pre>

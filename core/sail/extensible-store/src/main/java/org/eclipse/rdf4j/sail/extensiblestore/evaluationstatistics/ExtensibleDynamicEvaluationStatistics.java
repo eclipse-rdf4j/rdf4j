@@ -63,7 +63,6 @@ import net.agkn.hll.HLL;
  * cardinalities this class needs to be monitored by calling the staleness(...) method. This will automatically be done
  * every 60 seconds by the ExtensibleSailStore.
  * </p>
- *
  */
 @Experimental
 public class ExtensibleDynamicEvaluationStatistics extends ExtensibleEvaluationStatistics implements DynamicStatistics {

@@ -19,8 +19,8 @@ import org.springframework.core.io.Resource;
 /**
  * Inserts data from the specified TTL file into the repository at startup.
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class InitialDataInserter {
 	DataInserter dataInserter;

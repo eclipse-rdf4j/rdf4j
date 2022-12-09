@@ -19,7 +19,6 @@ import org.junit.BeforeClass;
 
 /**
  * @author jeen
- *
  */
 public class HTTPRepositoryOptimisticIsolationTest extends OptimisticIsolationTest {
 

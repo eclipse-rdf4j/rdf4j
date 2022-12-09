@@ -19,10 +19,14 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  */
 public class BaseSailSchema {
 
-	/** The BaseSail schema namespace (<var>http://www.openrdf.org/config/sail/base#</var>). */
+	/**
+	 * The BaseSail schema namespace (<var>http://www.openrdf.org/config/sail/base#</var>).
+	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/base#";
 
-	/** <var>http://www.openrdf.org/config/sail/base#evaluationStrategyFactory</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/base#evaluationStrategyFactory</var>
+	 */
 	public final static IRI EVALUATION_STRATEGY_FACTORY;
 
 	static {

@@ -21,7 +21,6 @@ import org.junit.jupiter.api.Test;
 
 /**
  * @author Jeen Broekstra
- *
  */
 public class ProjectionElemListTest {
 

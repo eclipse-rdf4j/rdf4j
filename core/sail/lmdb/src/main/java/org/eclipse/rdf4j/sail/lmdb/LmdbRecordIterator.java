@@ -34,7 +34,6 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * A record iterator that wraps a native LMDB iterator.
- *
  */
 class LmdbRecordIterator implements RecordIterator {
 	private final Pool pool;

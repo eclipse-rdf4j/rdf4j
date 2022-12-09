@@ -32,15 +32,13 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
  * </p>
  *
  * @author Arjohn Kampman
- *
+ * @implSpec In order to ensure interoperability of concrete classes implementing this interface,
+ *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
+ *           specs.
  * @see <a href="http://www.w3.org/TR/rdf11-concepts/#section-Graph-Literal">RDF-1.1 Concepts and Abstract Syntax</a>
  * @see <a href="https://www.w3.org/TR/rdf11-concepts/#xsd-datatypes">RDF 1.1 Concepts and Abstract Syntax - &sect;5.1
  *      The XML Schema Built-in Datatypes</a>
  * @see <a href="https://www.w3.org/TR/xmlschema11-2">XML Schema Definition Language (XSD) 1.1 Part 2: Datatypes</a>
- *
- * @implSpec In order to ensure interoperability of concrete classes implementing this interface,
- *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
- *           specs.
  */
 public interface Literal extends Value {
 
@@ -181,14 +179,8 @@ public interface Literal extends Value {
 	 * </p>
 	 *
 	 * @return the temporal accessor value of this literal
-	 *
 	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAccessor} value
-	 *
-	 * @since 3.5.0
 	 * @author Alessandro Bollini
-	 *
-	 * @see <a href="https://docs.oracle.com/javase/tutorial/datetime/">The Java™ Tutorials – Trail: Date Time</a>
-	 *
 	 * @apiNote the <a href="https://www.w3.org/TR/xmlschema11-2/#dateTimeStamp">xsd:dateTimeStamp</a> datatype
 	 *          (supported by calendar-based {@linkplain #calendarValue() value accessor} and
 	 *          {@linkplain ValueFactory#createLiteral(XMLGregorianCalendar) factory methods}) was specified by
@@ -197,10 +189,11 @@ public interface Literal extends Value {
 	 *          Datatypes Second Edition</a>: it is not included among temporal datatypes automatically assigned by
 	 *          {@link ValueFactory#createLiteral(TemporalAmount)} in order to provide better interoperability with the
 	 *          latter version of the standard.
-	 *
 	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
 	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
 	 *           expected to override it.
+	 * @see <a href="https://docs.oracle.com/javase/tutorial/datetime/">The Java™ Tutorials – Trail: Date Time</a>
+	 * @since 3.5.0
 	 */
 	default TemporalAccessor temporalAccessorValue() throws DateTimeException {
 		throw new UnsupportedOperationException();
@@ -232,14 +225,8 @@ public interface Literal extends Value {
 	 * </p>
 	 *
 	 * @return the temporal amount value of this literal
-	 *
 	 * @throws DateTimeException if this literal cannot be represented by a {@link TemporalAmount} value
-	 *
-	 * @since 3.5.0
 	 * @author Alessandro Bollini
-	 *
-	 * @see <a href="https://docs.oracle.com/javase/tutorial/datetime/">The Java™ Tutorials – Trail: Date Time</a>
-	 *
 	 * @apiNote <a href="https://www.w3.org/TR/xmlschema11-2/#yearMonthDuration">xsd:yearMonthDuration</a> and
 	 *          <a href="https://www.w3.org/TR/xmlschema11-2/#dayTimeDuration">xsd:xsd:dayTimeDuration</a> datatypes
 	 *          (supported by calendar-based {@linkplain #calendarValue() value accessor} and
@@ -252,10 +239,11 @@ public interface Literal extends Value {
 	 *          <a href="https://www.w3.org/TR/sparql11-query/#func-timezone">SPARQL 1.1 Query Language §17.4.5.8
 	 *          timezone</a> is not compromised, as the legacy {@code xsd:dayTimeDuration} return datatype is defined as
 	 *          a restriction of the {@code xds:duration} datatype.
-	 *
 	 * @implSpec The default method implementation throws an {@link UnsupportedOperationException} and is only supplied
 	 *           as a stop-gap measure for backward compatibility: concrete classes implementing this interface are
 	 *           expected to override it.
+	 * @see <a href="https://docs.oracle.com/javase/tutorial/datetime/">The Java™ Tutorials – Trail: Date Time</a>
+	 * @since 3.5.0
 	 */
 	default TemporalAmount temporalAmountValue() throws DateTimeException {
 		throw new UnsupportedOperationException();
@@ -280,7 +268,6 @@ public interface Literal extends Value {
 	 *
 	 * @return The CoreDatatype or {@link CoreDatatype#NONE)} if the datatype matches none of the core datatypes. This
 	 *         method will not return null.
-	 *
 	 * @implNote This method may not return null. Returning {@link CoreDatatype#NONE)} is only permitted if the datatype
 	 *           does not match any of the core datatypes. A literal with a language tag must return
 	 *           {@link CoreDatatype.RDF#LANGSTRING)}. A literal without a specified datatype must return
@@ -292,7 +279,6 @@ public interface Literal extends Value {
 	 * Compares this literal to another object.
 	 *
 	 * @param other the object to compare this literal to
-	 *
 	 * @return {@code true}, if the other object is an instance of {@code Literal} and if their {@linkplain #getLabel()
 	 *         labels}, {@linkplain #getLanguage() language tags} and {@linkplain #getDatatype() datatypes} are equal
 	 */
@@ -303,7 +289,6 @@ public interface Literal extends Value {
 	 * Computes the hash code of this literal.
 	 *
 	 * @return a hash code for this literal computed as {@link #getLabel()}{@code .hashCode()}
-	 *
 	 * @implNote {@linkplain #getLanguage() language} and {@linkplain #getDatatype() datatype} are deliberately not
 	 *           considered in the computation (see issue
 	 *           <a href="https://github.com/eclipse/rdf4j/issues/665">#655</a>)

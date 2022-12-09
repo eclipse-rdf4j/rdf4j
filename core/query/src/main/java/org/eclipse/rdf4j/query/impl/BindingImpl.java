@@ -13,8 +13,8 @@ package org.eclipse.rdf4j.query.impl;
 import org.eclipse.rdf4j.model.Value;
 
 /**
- * @deprecated since 2.0. Use {@link SimpleBinding} instead.
  * @author Jeen Broekstra
+ * @deprecated since 2.0. Use {@link SimpleBinding} instead.
  */
 @Deprecated
 public class BindingImpl extends SimpleBinding {

@@ -90,10 +90,11 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	private static Consumer<MutableBindingSet> andThen(Consumer<MutableBindingSet> consumer,
 			Consumer<MutableBindingSet> next) {
-		if (consumer == null)
+		if (consumer == null) {
 			return next;
-		else
+		} else {
 			return consumer.andThen(next);
+		}
 	}
 
 	@Override

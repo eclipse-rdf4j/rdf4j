@@ -435,7 +435,6 @@ public interface SailConnection extends AutoCloseable {
 	 * partial support for this method in RDF4J and and UnsupportedOperationException where support is lacking.
 	 * </p>
 	 *
-	 *
 	 * @param level           the explanation level, eg. OPTIMIZED
 	 * @param tupleExpr       The tuple expression to evaluate. Mutable.
 	 * @param dataset         The dataset to use for evaluating the query, <var>null</var> to use the Sail's default

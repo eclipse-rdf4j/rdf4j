@@ -30,8 +30,8 @@ import org.eclipse.rdf4j.spring.util.QueryResultUtils;
 import org.springframework.stereotype.Component;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Component
 public class ArtistDao extends SimpleRDF4JCRUDDao<Artist, IRI> {

@@ -35,7 +35,6 @@ public class RdfPredicateObjectListCollection extends QueryElementCollection<Rdf
 	 *
 	 * @param predicate the predicate of the predicate-object list to add
 	 * @param objects   the object or objects to add
-	 *
 	 * @return this instance
 	 */
 	public RdfPredicateObjectListCollection andHas(RdfPredicate predicate, RdfObject... objects) {
@@ -61,7 +60,6 @@ public class RdfPredicateObjectListCollection extends QueryElementCollection<Rdf
 	 *
 	 * @param predicate the predicate of the predicate-object list to add
 	 * @param objects   the object or objects to add
-	 *
 	 * @return this instance
 	 */
 	public RdfPredicateObjectListCollection andHas(IRI predicate, RdfObject... objects) {

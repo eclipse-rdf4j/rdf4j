@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.PerformanceHin
  * Factory class for producing instances of {@link PerformanceHint} from string values.
  *
  * @author Håvard Ottestad
- *
  */
 public class PerformanceHintFactory implements TransactionSettingFactory {
 

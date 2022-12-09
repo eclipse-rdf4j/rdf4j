@@ -28,7 +28,9 @@ public class ProxyRepositorySchema {
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
 
-	/** <var>http://www.openrdf.org/config/repository/proxy#proxiedID</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/proxy#proxiedID</var>
+	 */
 	public final static IRI PROXIED_ID;
 
 	static {

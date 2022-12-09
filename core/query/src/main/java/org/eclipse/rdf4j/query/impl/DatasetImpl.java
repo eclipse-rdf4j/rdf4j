@@ -11,8 +11,8 @@
 package org.eclipse.rdf4j.query.impl;
 
 /**
- * @deprecated since 2.0. Use {@link SimpleDataset} instead.
  * @author Jeen Broekstra
+ * @deprecated since 2.0. Use {@link SimpleDataset} instead.
  */
 @Deprecated
 public class DatasetImpl extends SimpleDataset {

@@ -30,7 +30,6 @@ public abstract class NamespaceTest {
 	 *
 	 * @param prefix the prefix of the namespace
 	 * @param name   the name IRI of the namespace
-	 *
 	 * @return a new instance of the concrete namespace class under test
 	 */
 	protected abstract Namespace namespace(String prefix, String name);

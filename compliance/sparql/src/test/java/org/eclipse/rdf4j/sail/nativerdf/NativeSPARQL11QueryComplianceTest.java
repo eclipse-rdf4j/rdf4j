@@ -20,7 +20,6 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * @author jeen
- *
  */
 public class NativeSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest {
 

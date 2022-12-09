@@ -78,10 +78,14 @@ public class LocalRepositoryManager extends RepositoryManager {
 	 */
 	private final File baseDir;
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private volatile SharedHttpClientSessionManager client;
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private volatile SPARQLServiceResolver serviceResolver;
 
 	/**

@@ -34,7 +34,6 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	 * Specify the query's projection to be distinct
 	 *
 	 * @return this
-	 *
 	 * @see Projection#distinct()
 	 */
 	public SubSelect distinct() {
@@ -46,7 +45,6 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	 *
 	 * @param isDistinct if this query's projection should be distinct
 	 * @return this
-	 *
 	 * @see Projection#distinct(boolean)
 	 */
 	public SubSelect distinct(boolean isDistinct) {
@@ -62,7 +60,6 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	 * {@link #select(Projectable...)} when printing
 	 *
 	 * @return this
-	 *
 	 * @see Projection#all()
 	 */
 	public SubSelect all() {
@@ -77,7 +74,6 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	 *
 	 * @param selectAll if all in-scope expressions should be selected
 	 * @return this
-	 *
 	 * @see Projection#all(boolean)
 	 */
 	public SubSelect all(boolean selectAll) {
@@ -94,7 +90,6 @@ public class SubSelect extends Query<SubSelect> implements GraphPattern {
 	 *
 	 * @param projectables expressions to add
 	 * @return this
-	 *
 	 * @see Projection#select(Projectable...)
 	 */
 	public SubSelect select(Projectable... projectables) {

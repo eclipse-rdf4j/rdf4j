@@ -55,10 +55,14 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 
 	private final Logger logger = LoggerFactory.getLogger(SharedHttpClientSessionManager.class);
 
-	/** independent life cycle */
+	/**
+	 * independent life cycle
+	 */
 	private volatile HttpClient httpClient;
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private volatile CloseableHttpClient dependentClient;
 
 	private final ExecutorService executor;
@@ -77,7 +81,7 @@ public class SharedHttpClientSessionManager implements HttpClientSessionManager,
 	 * Retry handler: closes stale connections and suggests to simply retry the HTTP request once. Just closing the
 	 * stale connection is enough: the connection will be reopened elsewhere. This seems to be necessary for Jetty
 	 * 9.4.24+.
-	 *
+	 * <p>
 	 * Other HTTP issues are considered to be more severe, so these requests are not retried.
 	 */
 	private static class RetryHandlerStale implements HttpRequestRetryHandler {

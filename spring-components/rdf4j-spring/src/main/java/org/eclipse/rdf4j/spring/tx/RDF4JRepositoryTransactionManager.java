@@ -27,9 +27,9 @@ import org.springframework.transaction.support.AbstractPlatformTransactionManage
 import org.springframework.transaction.support.DefaultTransactionStatus;
 
 /**
- * @since 4.0.0
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class RDF4JRepositoryTransactionManager extends AbstractPlatformTransactionManager {
 

@@ -166,10 +166,8 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                  matching any one of these will match. To match statements without an associated context, specify
 	 *                  the value {@code null} and explicitly cast it to type {@code Resource}.
 	 * @return an {@link Iterable} over the statements in this Model that match the specified pattern.
-	 *
-	 * @since 3.2.0
-	 *
 	 * @see #filter(Resource, IRI, Value, Resource...)
+	 * @since 3.2.0
 	 */
 	default Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object,
 			Resource... contexts) {
@@ -205,7 +203,6 @@ public interface Model extends Set<Statement>, Serializable, NamespaceAware {
 	 *                 disregarding their context. If one or more contexts are specified, statements with a context
 	 *                 matching one of these will match.
 	 * @return The statements that match the specified pattern.
-	 *
 	 * @see #getStatements(Resource, IRI, Value, Resource...)
 	 */
 	Model filter(Resource subj, IRI pred, Value obj, Resource... contexts);

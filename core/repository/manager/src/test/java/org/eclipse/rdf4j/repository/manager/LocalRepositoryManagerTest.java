@@ -26,7 +26,7 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * Unit tests for {@link LocalRepositoryManager}.
- *
+ * <p>
  * Note a lot of the functionality for the local manager can only be tested by integrating with other RDF4J modules -
  * more comprehensive tests are therefore located in LocalRepositoryManagerIntegationTest in the
  * rdfj4-repository-compliance module.

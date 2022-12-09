@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.testsuite.query.parser.sparql.manifest.SPARQL12QueryCom
  * SPARQL Query tests using testcases from the SPARQL 1.2 Working Group
  *
  * @author Jeen Broekstra
- *
  */
 public class SPARQL12QueryTest extends SPARQL12QueryComplianceTest {
 

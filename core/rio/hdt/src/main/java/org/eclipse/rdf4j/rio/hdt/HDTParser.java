@@ -35,17 +35,17 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
 
 /**
  * RDF parser for HDT v1.0 files. This parser is not thread-safe, therefore its public methods are synchronized.
- *
+ * <p>
  * Unfortunately the draft specification is not entirely clear and probably slightly out of date, since the open source
  * reference implementation HDT-It seems to implement a slightly different version. This parser tries to be compatible
  * with HDT-It 1.0.
- *
+ * <p>
  * The most important parts are the Dictionaries containing the actual values (S, P, O part of a triple), and the
  * Triples containing the numeric references to construct the triples.
- *
+ * <p>
  * Since objects in one triple are often subjects in another triple, these "shared" parts are stored in a shared
  * Dictionary, which may significantly reduce the file size.
- *
+ * <p>
  * File structure:
  *
  * <pre>
@@ -61,7 +61,6 @@ import org.eclipse.rdf4j.rio.helpers.AbstractRDFParser;
  * </pre>
  *
  * @author Bart Hanssens
- *
  * @see <a href="http://www.rdfhdt.org/hdt-binary-format/">HDT draft (2015)</a>
  * @see <a href="https://www.w3.org/Submission/2011/03/">W3C Member Submission (2011)</a>
  */

@@ -49,10 +49,10 @@ import org.eclipse.rdf4j.rio.RDFFormat;
  * based on RDF4J, it is recommended to use {@link org.eclipse.rdf4j.repository.sparql.SPARQLRepository
  * SPARQLRepository} instead.
  *
- * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
  * @author Jeen Broekstra
  * @author Herko ter Horst
+ * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  */
 public class HTTPRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
 
@@ -65,7 +65,9 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	 */
 	private volatile HttpClientSessionManager sessionManager;
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private volatile SharedHttpClientSessionManager dependentSessionManager;
 
 	private String username;

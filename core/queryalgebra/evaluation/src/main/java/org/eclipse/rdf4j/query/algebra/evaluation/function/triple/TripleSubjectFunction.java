@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * Function returning the subject component of RDF-star Triple reused the IRI of rdf:subject as name
  *
  * @author damyan.ognyanov
- *
  */
 public class TripleSubjectFunction implements Function {
 	@Override

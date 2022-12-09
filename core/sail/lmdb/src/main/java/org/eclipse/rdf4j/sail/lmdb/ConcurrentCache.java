@@ -18,7 +18,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * <code>CLEANUP_INTERVAL</code> invocations of the protected method <code>cleanUp</code>. <code>cleanUp</code> method
  * is called every time by <code>put</code> The maximum size is maintained approximately. Cleanup is not done if size is
  * less than <code>capacity + CLEANUP_INTERVAL / 2</code>.
- *
  */
 public class ConcurrentCache<K, V> {
 

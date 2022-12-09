@@ -28,7 +28,6 @@ public abstract class BNodeTest {
 	 * Creates a test blank node instance.
 	 *
 	 * @param id the id of the blank node
-	 *
 	 * @return a new instance of the concrete blank node class under test
 	 */
 	protected abstract BNode bnode(String id);

@@ -22,14 +22,14 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
  * HDT DictionarySection Plain Front Coding.
- *
+ * <p>
  * This part starts with a byte indicating the type of the dictionary section, followed by the VByte-encoded number of
  * strings, the VByte-encoded buffer size and the VByte-encoded buffer length.
- *
+ * <p>
  * Then the 8-bit CRC.
- *
+ * <p>
  * Followed by an array and one or more buffers, and the 32-bit CRC calculated over the index and the buffers.
- *
+ * <p>
  * Structure:
  *
  * <pre>
@@ -37,12 +37,12 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
  * | type | totalStrings | stringsBlock | array | CRC8 | index | buffer |...| CRC32 |
  * +------+--------------+--------------+-------+------+-------+--------+...+-------+
  * </pre>
- *
+ * <p>
  * Each buffer starts with a full string, followed by a maximum of <code>stringsBlock</code> - 1 pair of a VByte-encoded
  * number of characters this string has in common with the _previous_ string, and the (different) suffix.
- *
+ * <p>
  * E.g. <code>abcdef 2 gh 3 ij</code> will result in <code>abcde, abgh, abgij</code>.
- *
+ * <p>
  * Buffer structure:
  *
  * <pre>

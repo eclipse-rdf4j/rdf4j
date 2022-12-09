@@ -130,20 +130,19 @@ public class GraphComparisonsTest {
 
 	/**
 	 * Graph from example 4.9 in http://aidanhogan.com/docs/rdf-canonicalisation.pdf
-	 *
 	 */
 	private Model buildExample49Model() {
 		// @formatter:off
 		Model example49 = new ModelBuilder(new LinkedHashModel())
-				.subject(a).add(p, b).add(p, d)
-				.subject(b).add(q, e)
-				.subject(c).add(p, b).add(p, f)
-				.subject(d).add(q, e)
-				.subject(f).add(q, e)
-				.subject(g).add(p, d).add(p, h)
-				.subject(h).add(q, e)
-				.subject(i).add(p, f).add(p, h)
-				.build();
+			.subject(a).add(p, b).add(p, d)
+			.subject(b).add(q, e)
+			.subject(c).add(p, b).add(p, f)
+			.subject(d).add(q, e)
+			.subject(f).add(q, e)
+			.subject(g).add(p, d).add(p, h)
+			.subject(h).add(q, e)
+			.subject(i).add(p, f).add(p, h)
+			.build();
 		// @formatter:on
 
 		return example49;
@@ -155,15 +154,15 @@ public class GraphComparisonsTest {
 	private Model buildExample49ModelIsomorphic() {
 		// @formatter:off
 		Model example49 = new ModelBuilder(new LinkedHashModel())
-				.subject(bnode("other-i")).add(p, bnode("other-f")).add(p, bnode("other-h"))
-				.subject(bnode("other-a")).add(p, bnode("other-b")).add(p, bnode("other-d"))
-				.subject(bnode("other-b")).add(q, bnode("other-e"))
-				.subject(bnode("other-c")).add(p, bnode("other-b")).add(p, bnode("other-f"))
-				.subject(bnode("other-f")).add(q, bnode("other-e"))
-				.subject(bnode("other-d")).add(q, bnode("other-e"))
-				.subject(bnode("other-g")).add(p, bnode("other-d")).add(p, bnode("other-h"))
-				.subject(bnode("other-h")).add(q, bnode("other-e"))
-				.build();
+			.subject(bnode("other-i")).add(p, bnode("other-f")).add(p, bnode("other-h"))
+			.subject(bnode("other-a")).add(p, bnode("other-b")).add(p, bnode("other-d"))
+			.subject(bnode("other-b")).add(q, bnode("other-e"))
+			.subject(bnode("other-c")).add(p, bnode("other-b")).add(p, bnode("other-f"))
+			.subject(bnode("other-f")).add(q, bnode("other-e"))
+			.subject(bnode("other-d")).add(q, bnode("other-e"))
+			.subject(bnode("other-g")).add(p, bnode("other-d")).add(p, bnode("other-h"))
+			.subject(bnode("other-h")).add(q, bnode("other-e"))
+			.build();
 		// @formatter:on
 		return example49;
 	}

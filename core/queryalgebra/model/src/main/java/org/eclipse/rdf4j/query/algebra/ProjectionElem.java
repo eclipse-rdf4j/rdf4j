@@ -74,7 +74,6 @@ public class ProjectionElem extends AbstractQueryModelNode {
 
 	/**
 	 * Get the name of the projection element (typically the name of the variable in the select expressions)
-	 *
 	 */
 	public String getName() {
 		return name;

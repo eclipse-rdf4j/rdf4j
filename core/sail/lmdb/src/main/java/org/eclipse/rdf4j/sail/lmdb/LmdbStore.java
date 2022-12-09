@@ -82,10 +82,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	private EvaluationStrategyFactory evalStratFactory;
 
-	/** independent life cycle */
+	/**
+	 * independent life cycle
+	 */
 	private FederatedServiceResolver serviceResolver;
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private SPARQLServiceResolver dependentServiceResolver;
 
 	/**
@@ -200,7 +204,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/**
 	 * Initializes this LmdbStore.
 	 *
-	 * @exception SailException If this LmdbStore could not be initialized using the parameters that have been set.
+	 * @throws SailException If this LmdbStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
 	protected void initializeInternal() throws SailException {

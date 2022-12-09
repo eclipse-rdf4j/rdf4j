@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFa
 import org.eclipse.rdf4j.spring.util.RepositoryConnectionWrappingUtils;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class LoggingRepositoryConnectionFactory extends DelegatingRepositoryConnectionFactory {
 

@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimi
 
 /**
  * @author jeen
- *
  */
 public class SameTermFilterOptimizerTest extends QueryOptimizerTest {
 

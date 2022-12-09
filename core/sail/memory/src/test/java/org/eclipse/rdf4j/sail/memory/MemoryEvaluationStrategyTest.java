@@ -16,7 +16,6 @@ import org.eclipse.rdf4j.testsuite.sail.EvaluationStrategyTest;
 
 /**
  * @author jeen
- *
  */
 public class MemoryEvaluationStrategyTest extends EvaluationStrategyTest {
 

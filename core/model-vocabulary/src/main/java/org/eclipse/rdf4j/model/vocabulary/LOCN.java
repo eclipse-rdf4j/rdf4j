@@ -1,8 +1,14 @@
-/**
- * Copyright (c) 2018 Eclipse RDF4J contributors, and others. All rights reserved. This program and the accompanying
- * materials are made available under the terms of the Eclipse Distribution License v1.0 which accompanies this
- * distribution, and is available at http://www.eclipse.org/org/documents/edl-v10.php.
- */
+/*******************************************************************************
+ * Copyright (c) 2018 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ ******************************************************************************/
+
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -11,9 +17,8 @@ import org.eclipse.rdf4j.model.Namespace;
 /**
  * Constants for the ISA Programme Location Core Vocabulary.
  *
- * @see <a href="https://www.w3.org/ns/locn">ISA Programme Location Core Vocabulary</a>
- *
  * @author Bart Hanssens
+ * @see <a href="https://www.w3.org/ns/locn">ISA Programme Location Core Vocabulary</a>
  */
 public class LOCN {
 	/**

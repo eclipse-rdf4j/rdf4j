@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 import java.io.OutputStream;
 
 /**
- *
  * @deprecated since 3.4.0 - moved to {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVWriter}.
  */
 @Deprecated

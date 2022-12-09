@@ -19,7 +19,7 @@ public interface Value extends Serializable {
 
 	/**
 	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
-	 *
+	 * <p>
 	 * For implementers: This default implementation is overridden in the repsective sub-interface.
 	 *
 	 * @return true if instance of {@link BNode}
@@ -30,7 +30,7 @@ public interface Value extends Serializable {
 
 	/**
 	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
-	 *
+	 * <p>
 	 * For implementers: This default implementation is overridden in the repsective sub-interface.
 	 *
 	 * @return true if instance of {@link IRI}
@@ -41,7 +41,7 @@ public interface Value extends Serializable {
 
 	/**
 	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
-	 *
+	 * <p>
 	 * For implementers: This default implementation is overridden in the repsective sub-interface.
 	 *
 	 * @return true if instance of {@link Resource}
@@ -52,7 +52,7 @@ public interface Value extends Serializable {
 
 	/**
 	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
-	 *
+	 * <p>
 	 * For implementers: This default implementation is overridden in the repsective sub-interface.
 	 *
 	 * @return true if instance of {@link Literal}
@@ -63,7 +63,7 @@ public interface Value extends Serializable {
 
 	/**
 	 * Check if the object is an instance of the given type. Typically 2x than using instanceof.
-	 *
+	 * <p>
 	 * For implementers: This default implementation is overridden in the repsective sub-interface.
 	 *
 	 * @return true if instance of {@link Triple}

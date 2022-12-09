@@ -34,21 +34,21 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 
 /**
  * Utilities for working with RDF Containers and converting to/from Java {@link Collection} classes.
- * <P>
+ * <p>
  * RDF Containers are represented using 3 different types of structures:
- *
+ * <p>
  * 1. {@link RDF#BAG} : A Bag (a resource having type rdf:Bag) represents a group of resources or literals, possibly
  * including duplicate members, where there is no significance in the order of the members.
- *
+ * <p>
  * 2. {@link RDF#SEQ} : A Sequence or Seq (a resource having type rdf:Seq) represents a group of resources or literals,
  * possibly including duplicate members, where the order of the members is significant.
- *
+ * <p>
  * 3. {@link RDF#ALT} : An Alternative or Alt (a resource having type rdf:Alt) represents a group of resources or
  * literals that are alternatives (typically for a single value of a property).
- *
+ * <p>
  * So, in each of the above types, the container starts with a first resource node, via the rdf:_1 relation. Similarly,
  * the next member is connected via the rdf:_2 relation and so on.
- *
+ * <p>
  * For eg. Bag containing three literal values "A", "B", and "C" looks like this as an RDF Container:
  *
  * <pre>
@@ -60,7 +60,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
  *     |
  *     +---rdf:_3--> "C"
  * </pre>
- *
  *
  * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
  */
@@ -214,7 +213,6 @@ public class RDFContainers {
 	 * @throws LiteralUtilException if one of the supplied values can not be converted to a Literal.
 	 * @see <a href="https://www.w3.org/TR/rdf-schema/#ch_container">RDF Schema 1.1 section on Collection vocabulary</a>
 	 * @see Literals#createLiteralOrFail(ValueFactory, Object)
-	 *
 	 * @since 3.3.0
 	 */
 	public static void consumeContainer(IRI containerType, Iterable<?> values, Resource container,

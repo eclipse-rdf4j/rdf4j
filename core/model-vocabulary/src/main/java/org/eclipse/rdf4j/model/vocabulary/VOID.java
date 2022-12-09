@@ -1,11 +1,14 @@
-/**
- * Copyright (c) 2015 Eclipse RDF4J contributors, and others.
+/*******************************************************************************
+ * Copyright (c) 2015 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/org/documents/edl-v10.php.
- */
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ ******************************************************************************/
+
 package org.eclipse.rdf4j.model.vocabulary;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -14,9 +17,8 @@ import org.eclipse.rdf4j.model.Namespace;
 /**
  * Constants for the W3C Vocabulary of Interlinked Datasets.
  *
- * @see <a href="https://www.w3.org/TR/void/">Vocabulary of Interlinked Datasets</a>
- *
  * @author Bart Hanssens
+ * @see <a href="https://www.w3.org/TR/void/">Vocabulary of Interlinked Datasets</a>
  */
 public class VOID {
 

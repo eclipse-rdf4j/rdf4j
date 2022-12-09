@@ -145,7 +145,7 @@ public class SPARQLResultsTSVMappingStrategy extends SPARQLResultsXSVMappingStra
 	 *
 	 * @param s An encoded Turtle string.
 	 * @return The unencoded string.
-	 * @exception IllegalArgumentException If the supplied string is not a correctly encoded Turtle string.
+	 * @throws IllegalArgumentException If the supplied string is not a correctly encoded Turtle string.
 	 **/
 	protected static String decodeString(String s) {
 		int backSlashIdx = s.indexOf('\\');

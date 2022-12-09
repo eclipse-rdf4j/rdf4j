@@ -35,7 +35,6 @@ public class Stats {
 	}
 
 	/**
-	 *
 	 * @return true if statements were effectively added in this transaction
 	 */
 	public boolean hasAdded() {
@@ -43,7 +42,6 @@ public class Stats {
 	}
 
 	/**
-	 *
 	 * @return true if statements were effectively removed in this transaction
 	 */
 	public boolean hasRemoved() {
@@ -51,7 +49,6 @@ public class Stats {
 	}
 
 	/**
-	 *
 	 * @return true if the sail was empty before this transaction started
 	 */
 	public boolean wasEmptyBeforeTransaction() {
@@ -63,7 +60,6 @@ public class Stats {
 	}
 
 	/**
-	 *
 	 * @return true if the entire sail is empty, even with the current transaction
 	 */
 	public boolean isEmptyIncludingCurrentTransaction() {

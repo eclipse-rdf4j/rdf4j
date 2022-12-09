@@ -54,7 +54,7 @@ public class ExtensibleDynamicEvaluationStatisticsLowMemBenchmark {
 	public static void main(String[] args) throws RunnerException {
 		Options opt = new OptionsBuilder()
 				.include("ExtensibleDynamicEvaluationStatisticsLowMemBenchmark") // adapt to control which benchmark
-																					// tests to
+				// tests to
 				// run
 				.forks(1)
 				.build();

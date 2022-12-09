@@ -30,10 +30,10 @@ import org.eclipse.rdf4j.rio.RDFHandlerException;
  * GraphQuery implementation specific to the HTTP protocol. Methods in this class may throw the specific
  * RepositoryException subclass UnautorizedException, the semantics of which is defined by the HTTP protocol.
  *
- * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
  * @author Herko ter Horst
  * @author Andreas Schwarte
+ * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  */
 public class HTTPGraphQuery extends AbstractHTTPQuery implements GraphQuery {
 

@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 /**
+ *
  */
 public class ConstantOptimizerTest extends QueryOptimizerTest {
 

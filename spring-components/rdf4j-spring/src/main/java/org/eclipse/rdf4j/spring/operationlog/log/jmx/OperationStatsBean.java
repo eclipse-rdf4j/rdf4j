@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.spring.operationlog.log.OperationExecutionStats;
 import org.eclipse.rdf4j.spring.operationlog.log.OperationExecutionStatsConsumer;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class OperationStatsBean implements OperationStatsMXBean, OperationExecutionStatsConsumer {
 

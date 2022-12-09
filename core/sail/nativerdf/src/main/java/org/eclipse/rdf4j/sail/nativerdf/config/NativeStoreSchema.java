@@ -23,25 +23,39 @@ import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
  */
 public class NativeStoreSchema {
 
-	/** The NativeStore schema namespace (<var>http://www.openrdf.org/config/sail/native#</var>). */
+	/**
+	 * The NativeStore schema namespace (<var>http://www.openrdf.org/config/sail/native#</var>).
+	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/native#";
 
-	/** <var>http://www.openrdf.org/config/sail/native#tripleIndexes</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/native#tripleIndexes</var>
+	 */
 	public final static IRI TRIPLE_INDEXES;
 
-	/** <var>http://www.openrdf.org/config/sail/native#forceSync</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/native#forceSync</var>
+	 */
 	public final static IRI FORCE_SYNC;
 
-	/** <var>http://www.openrdf.org/config/sail/native#valueCacheSize</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/native#valueCacheSize</var>
+	 */
 	public final static IRI VALUE_CACHE_SIZE;
 
-	/** <var>http://www.openrdf.org/config/sail/native#valueIDCacheSize</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/native#valueIDCacheSize</var>
+	 */
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
-	/** <var>http://www.openrdf.org/config/sail/native#namespaceCacheSize</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/native#namespaceCacheSize</var>
+	 */
 	public final static IRI NAMESPACE_CACHE_SIZE;
 
-	/** <var>http://www.openrdf.org/config/sail/native#namespaceIDCacheSize</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/native#namespaceIDCacheSize</var>
+	 */
 	public final static IRI NAMESPACE_ID_CACHE_SIZE;
 
 	static {

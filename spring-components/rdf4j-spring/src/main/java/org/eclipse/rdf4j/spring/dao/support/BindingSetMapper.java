@@ -18,9 +18,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 /**
  * Maps a query solution to an instance.
  *
- * @since 4.0.0
- * @author Florian Kleedorfer
  * @param <T>
+ * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface BindingSetMapper<T> extends Function<BindingSet, T> {
 

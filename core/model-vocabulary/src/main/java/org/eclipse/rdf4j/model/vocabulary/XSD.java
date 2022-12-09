@@ -29,7 +29,9 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
  */
 public class XSD {
 
-	/** The XML Schema namespace (<var>http://www.w3.org/2001/XMLSchema#</var>). */
+	/**
+	 * The XML Schema namespace (<var>http://www.w3.org/2001/XMLSchema#</var>).
+	 */
 	public final static String NAMESPACE = CoreDatatype.XSD.NAMESPACE;
 
 	/**
@@ -342,7 +344,6 @@ public class XSD {
 		 * and/or times.
 		 *
 		 * @return true if it is a calendar type
-		 *
 		 * @see XMLGregorianCalendar
 		 */
 		public boolean isCalendarDatatype() {
@@ -354,7 +355,6 @@ public class XSD {
 		 * These are the datatypes that represents durations.
 		 *
 		 * @return true if it is a duration type
-		 *
 		 * @see Duration
 		 */
 		public boolean isDurationDatatype() {
@@ -396,8 +396,9 @@ public class XSD {
 		}
 
 		public static Optional<Datatype> from(CoreDatatype.XSD datatype) {
-			if (datatype == null)
+			if (datatype == null) {
 				return Optional.empty();
+			}
 			return reverseLookupXSDDatatype.getOrDefault(datatype, Optional.empty());
 		}
 

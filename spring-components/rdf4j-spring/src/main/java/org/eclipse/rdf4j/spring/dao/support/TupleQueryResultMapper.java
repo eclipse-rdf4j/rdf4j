@@ -16,8 +16,8 @@ import java.util.function.Function;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface TupleQueryResultMapper<T> extends Function<TupleQueryResult, T> {
 }

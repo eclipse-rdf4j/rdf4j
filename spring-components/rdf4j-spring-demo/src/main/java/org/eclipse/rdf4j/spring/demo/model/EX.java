@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.util.Values;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class EX {
 	private static final Namespace base = new SimpleNamespace("ex", "http://example.org/");

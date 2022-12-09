@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.repository.sparql.federation;
 
-import java.lang.ref.WeakReference;
-
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -82,7 +80,7 @@ public abstract class JoinExecutorBase<T> extends LookAheadIteration<T, QueryEva
 	/**
 	 * Implementations must implement this method to handle bindings. Use the following as a template <code>
 	 * while (!closed && leftIter.hasNext()) {
-	 * 		// your code
+	 * // your code
 	 * }
 	 * </code> and add results to rightQueue. Note that addResult() is implemented synchronized and thus thread safe. In
 	 * case you can guarantee sequential access, it is also possible to directly access rightQueue

@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  *
  * @author Arjohn Kampman
  * @author Peter Ansell
- *
  * @See {@link Values}
  */
 public class Literals {

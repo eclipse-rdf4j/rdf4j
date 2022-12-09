@@ -138,7 +138,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * will always be success.
 	 * <p>
 	 * Stores that do not record empty graphs will always return success. </blockquote>
-	 *
+	 * <p>
 	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
 	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
 	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API
@@ -165,7 +165,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * will always be success.
 	 * <p>
 	 * Stores that do not record empty graphs will always return success. </blockquote>
-	 *
+	 * <p>
 	 * Note that in most SPARQL endpoint implementations not recording empty graphs is the default behavior, and setting
 	 * this flag to <code>true</code> will have no effect. Setting this flag will have no effect on any other errors or
 	 * other API or SPARQL operations: <strong>only</strong> the behavior of the {@link #clear(Resource...)} API

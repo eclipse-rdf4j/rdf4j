@@ -38,7 +38,6 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 	 * Specify which graph to load form
 	 *
 	 * @param from the IRI identifying the graph to load triples from
-	 *
 	 * @return this LoadQuery instance
 	 */
 	public LoadQuery from(Iri from) {
@@ -51,7 +50,6 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 	 * Specify which graph to load form
 	 *
 	 * @param from the IRI identifying the graph to load triples from
-	 *
 	 * @return this LoadQuery instance
 	 */
 	public LoadQuery from(IRI from) {
@@ -62,7 +60,6 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 	 * Specify which graph to load into, if not the default graph
 	 *
 	 * @param to the IRI identifying the graph to load into
-	 *
 	 * @return this LoadQuery instance
 	 */
 	public LoadQuery to(Iri to) {
@@ -75,7 +72,6 @@ public class LoadQuery extends GraphManagementQuery<LoadQuery> {
 	 * Specify which graph to load into, if not the default graph
 	 *
 	 * @param to the IRI identifying the graph to load into
-	 *
 	 * @return this LoadQuery instance
 	 */
 	public LoadQuery to(IRI to) {

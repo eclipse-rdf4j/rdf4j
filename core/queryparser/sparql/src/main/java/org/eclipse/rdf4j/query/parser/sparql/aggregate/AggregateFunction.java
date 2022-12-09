@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 /**
- *
  * @param <T>
  * @param <D>
  */

@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * {@link TupleExpr} to a more optimal query execution plan.
  *
  * @author Jeen Broekstra
- *
  */
 public interface QueryOptimizerPipeline {
 

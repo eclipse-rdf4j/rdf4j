@@ -52,8 +52,9 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 		if (iter instanceof EmptyIteration) {
 			lock.release();
 			return iter;
-		} else
+		} else {
 			return new LockingIteration<>(lock, iter);
+		}
 	}
 
 	@Override

@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.junit.Test;
 
 /**
- *
  * @author Bart Hanssens
  */
 public class SfWithinTest extends GeometricRelationFunctionTest {

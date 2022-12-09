@@ -246,7 +246,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	/**
 	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
 	 * support for rsx:targetShape.
-	 *
+	 * <p>
 	 * EXPERIMENTAL!
 	 *
 	 * @return true if enabled
@@ -259,7 +259,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	/**
 	 * Support for Eclipse RDF4J SHACL Extensions (http://rdf4j.org/shacl-extensions#). Enabling this currently enables
 	 * support for rsx:targetShape.
-	 *
+	 * <p>
 	 * EXPERIMENTAL!
 	 *
 	 * @param eclipseRdf4jShaclExtensions true to enable (default: false)
@@ -272,7 +272,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	/**
 	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
 	 * support for dash:hasValueIn, dash:AllObjectsTarget and dash:AllSubjectsTarget.
-	 *
+	 * <p>
 	 * EXPERIMENTAL!
 	 *
 	 * @return true if enabled
@@ -285,7 +285,7 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	/**
 	 * Support for DASH Data Shapes Vocabulary Unofficial Draft (http://datashapes.org/dash). Currently this enables
 	 * support for dash:hasValueIn, dash:AllObjectsTarget and and dash:AllSubjectsTarget.
-	 *
+	 * <p>
 	 * EXPERIMENTAL!
 	 *
 	 * @param dashDataShapes true to enable (default: false)
@@ -319,7 +319,6 @@ abstract class ShaclSailBaseConfiguration extends NotifyingSailWrapper {
 	}
 
 	/**
-	 *
 	 * @return the effective limit per constraint with an upper bound of the total limit
 	 */
 	public long getEffectiveValidationResultsLimitPerConstraint() {

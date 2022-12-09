@@ -30,9 +30,9 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * TupleQuery specific to the HTTP protocol. Methods in this class may throw the specific RepositoryException subclass
  * UnautorizedException, the semantics of which is defined by the HTTP protocol.
  *
- * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  * @author Arjohn Kampman
  * @author Herko ter Horst
+ * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  */
 public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 

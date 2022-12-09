@@ -38,7 +38,7 @@ import org.springframework.context.annotation.Import;
  * 	&#64ComponentScan(basePackages = "com.example.myapp.*")
  *  	public class TestConfig {
  * 			// application-specific configuration
- *   	}
+ *    }
  * </pre>
  *
  * @author Florian Kleedorfer

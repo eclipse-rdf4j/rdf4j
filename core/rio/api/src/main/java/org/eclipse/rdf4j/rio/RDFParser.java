@@ -85,7 +85,6 @@ public interface RDFParser {
 	 *
 	 * @param setting The setting to change.
 	 * @param value   The value to change.
-	 *
 	 * @return Either a copy of this parser, if it is immutable, or this object, to allow chaining of method calls.
 	 */
 	<T> RDFParser set(RioSetting<T> setting, T value);
@@ -99,11 +98,9 @@ public interface RDFParser {
 	 * Parses the data from the supplied InputStream.
 	 *
 	 * @param in The InputStream from which to read the data.
-	 *
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
-	 *
 	 * @since 3.5.0
 	 */
 	default void parse(InputStream in) throws IOException, RDFParseException, RDFHandlerException {
@@ -120,7 +117,6 @@ public interface RDFParser {
 	 *                Note that if the data contains an embedded base URI, that embedded base URI will overrule the
 	 *                value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section 5.1
 	 *                for details).
-	 *
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
@@ -131,11 +127,9 @@ public interface RDFParser {
 	 * Parses the data from the supplied Reader.
 	 *
 	 * @param reader The Reader from which to read the data.
-	 *
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.
-	 *
 	 * @since 3.5.0
 	 */
 	default void parse(Reader reader) throws IOException, RDFParseException, RDFHandlerException {
@@ -152,7 +146,6 @@ public interface RDFParser {
 	 *                Note that if the data contains an embedded base URI, that embedded base URI will overrule the
 	 *                value supplied here (see <a href="https://www.ietf.org/rfc/rfc3986.txt">RFC 3986</a> section 5.1
 	 *                for details).
-	 *
 	 * @throws IOException         If an I/O error occurred while data was read from the InputStream.
 	 * @throws RDFParseException   If the parser has found an unrecoverable parse error.
 	 * @throws RDFHandlerException If the configured statement handler has encountered an unrecoverable error.

@@ -22,7 +22,6 @@ import java.util.UUID;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iterator.CloseableIterationIterator;
 import org.eclipse.rdf4j.model.IRI;
@@ -44,7 +43,6 @@ import org.eclipse.rdf4j.sail.SailException;
  * Not thread-safe.
  *
  * @author Mark
- *
  * @apiNote this feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */

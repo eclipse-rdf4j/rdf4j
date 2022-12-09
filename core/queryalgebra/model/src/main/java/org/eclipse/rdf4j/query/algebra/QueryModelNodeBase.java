@@ -11,8 +11,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * @deprecated since 2.0. Use {@link AbstractQueryModelNode} instead.
  * @author Jeen Broekstra
+ * @deprecated since 2.0. Use {@link AbstractQueryModelNode} instead.
  */
 @Deprecated
 public abstract class QueryModelNodeBase extends AbstractQueryModelNode {

@@ -39,8 +39,8 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 /**
  * TupleQueryResultWriter for the SPARQL TSV (Tab-Separated Values) format.
  *
- * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#tsv">SPARQL 1.1 Query Results TSV Format</a>
  * @author Jeen Broekstra
+ * @see <a href="http://www.w3.org/TR/sparql11-results-csv-tsv/#tsv">SPARQL 1.1 Query Results TSV Format</a>
  */
 public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements TupleQueryResultWriter, CharSink {
 

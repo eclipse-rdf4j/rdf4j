@@ -41,8 +41,8 @@ import com.fasterxml.jackson.core.JsonToken;
 /**
  * Parser for SPARQL-1.1 JSON Results Format documents.
  *
- * @see <a href="http://www.w3.org/TR/sparql11-results-json/">SPARQL 1.1 Query Results JSON Format</a>
  * @author Peter Ansell
+ * @see <a href="http://www.w3.org/TR/sparql11-results-json/">SPARQL 1.1 Query Results JSON Format</a>
  */
 public class SPARQLResultsJSONParser extends AbstractSPARQLJSONParser implements TupleQueryResultParser {
 

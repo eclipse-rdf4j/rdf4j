@@ -28,13 +28,19 @@ public class CustomGraphQueryInferencerSchema {
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/customGraphQueryInferencer#";
 
-	/** <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#queryLanguage</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#queryLanguage</var>
+	 */
 	public final static IRI QUERY_LANGUAGE;
 
-	/** <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#ruleQuery</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#ruleQuery</var>
+	 */
 	public final static IRI RULE_QUERY;
 
-	/** <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#matcherQuery</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail/customGraphQueryInferencer#matcherQuery</var>
+	 */
 	public final static IRI MATCHER_QUERY;
 
 	static {

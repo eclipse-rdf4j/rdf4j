@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * RDF Tutorial example 10: Getting all values of a property for a particular subject.
- *
+ * <p>
  * In this example, we show how you can get retrieve all paintings that Van Gogh created.
  *
  * @author Jeen Broekstra

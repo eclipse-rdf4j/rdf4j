@@ -26,7 +26,6 @@ import com.google.common.base.Strings;
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
- *
  */
 enum FNFunction {
 	CONCAT("CONCAT", FN.CONCAT),

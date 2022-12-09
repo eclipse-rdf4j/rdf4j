@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Experimental
 public interface MutableBindings {

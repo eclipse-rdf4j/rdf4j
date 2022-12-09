@@ -34,8 +34,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class CachingRepositoryConnection extends RepositoryConnectionWrapper implements Clearable {
 	private final LRUResultCache<ReusableTupleQueryResult> localTupleQueryResultCache;
@@ -112,7 +112,9 @@ public class CachingRepositoryConnection extends RepositoryConnectionWrapper imp
 		super.close();
 	}
 
-	/** As we are changing the repository's content, we have to reset all caches (even though it */
+	/**
+	 * As we are changing the repository's content, we have to reset all caches (even though it
+	 */
 	@Override
 	public void markDirty() {
 		this.localGraphQueryResultCache.markDirty();

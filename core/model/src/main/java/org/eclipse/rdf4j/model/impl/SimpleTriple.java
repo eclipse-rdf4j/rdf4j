@@ -50,7 +50,6 @@ public class SimpleTriple extends AbstractTriple {
 	 * @param subject   The triple's subject, must not be <var>null</var>.
 	 * @param predicate The triple's predicate, must not be <var>null</var>.
 	 * @param object    The triple's object, must not be <var>null</var>.
-	 *
 	 * @see SimpleValueFactory#createTriple(Resource, IRI, Value)
 	 */
 	protected SimpleTriple(Resource subject, IRI predicate, Value object) {

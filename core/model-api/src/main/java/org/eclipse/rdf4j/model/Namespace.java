@@ -39,7 +39,6 @@ public interface Namespace extends Serializable, Comparable<Namespace> {
 	 * Compares this namespace to another object.
 	 *
 	 * @param o The object to compare this namespace to
-	 *
 	 * @return {@code true} if the other object is an instance of {@code Namespace} and their {@linkplain #getPrefix()
 	 *         prefixes} and {@linkplain #getName() names} are equal, {@code false} otherwise.
 	 */

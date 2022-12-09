@@ -19,7 +19,6 @@ import java.io.IOException;
 import org.junit.Test;
 
 /**
- *
  * @author Bart.Hanssens
  */
 public class VByteTest {

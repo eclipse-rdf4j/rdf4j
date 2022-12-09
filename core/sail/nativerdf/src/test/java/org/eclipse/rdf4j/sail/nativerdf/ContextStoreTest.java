@@ -29,7 +29,6 @@ import org.junit.rules.TemporaryFolder;
  * Unit tests for {@link ContextStore}
  *
  * @author Jeen Broekstra
- *
  */
 public class ContextStoreTest {
 

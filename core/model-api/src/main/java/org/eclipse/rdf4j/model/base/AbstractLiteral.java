@@ -91,9 +91,7 @@ public abstract class AbstractLiteral implements Literal {
 	 *               throws an {@code IllegalArgumentException} if the label of this literal doesn't represent a value
 	 *               of the expected type
 	 * @param <V>    the expected value type
-	 *
 	 * @return the value returned by {@code mapper}
-	 *
 	 * @throws NullPointerException if {@code mapper} is {@code null}
 	 */
 	private <V> V value(Function<String, V> mapper) {

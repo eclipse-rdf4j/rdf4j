@@ -14,7 +14,7 @@ import java.util.zip.Checksum;
 
 /**
  * CRC32C checksum
- *
+ * <p>
  * Note that CRC32C is not available in JDK8, but there is a CRC32 in JDK9.
  *
  * @author Bart Hanssens

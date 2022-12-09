@@ -23,7 +23,6 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * Test SPARQL 1.1 Update functionality on LMDB store.
- *
  */
 public class LmdbPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTest {
 
