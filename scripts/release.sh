@@ -75,6 +75,8 @@ if  ! git status --porcelain --branch | grep -q "## main...origin/main"; then
   exit 1;
 fi
 
+mvn clean;
+
 echo "Running git pull to make sure we are up to date"
 git pull
 
@@ -100,7 +102,12 @@ if ! git push --dry-run > /dev/null 2>&1; then
     exit 1;
 fi
 
-echo "Running mvn clean";
+mvn clean;
+git checkout develop;
+mvn clean;
+git pull;
+mvn clean;
+git checkout main;
 mvn clean;
 
 MVN_CURRENT_SNAPSHOT_VERSION=$(xmllint --xpath "//*[local-name()='project']/*[local-name()='version']/text()" pom.xml)
@@ -208,7 +215,12 @@ gh pr create -B develop --title "sync develop branch after release ${MVN_VERSION
 echo "It's ok to merge this PR later, so wait for the Jenkins tests to finish."
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";
 
-mvn clean
+mvn clean -Dmaven.clean.failOnError=false
+
+git checkout develop
+mvn clean -Dmaven.clean.failOnError=false
+git checkout main
+mvn clean -Dmaven.clean.failOnError=false
 
 echo "Build javadocs"
 read -n 1 -srp "Press any key to continue (ctrl+c to cancel)"; printf "\n\n";

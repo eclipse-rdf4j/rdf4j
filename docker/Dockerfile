@@ -10,8 +10,10 @@ WORKDIR /tmp
 RUN unzip -q /tmp/rdf4j.zip
 
 # Final workbench
-FROM tomcat:8.5-jre11-temurin AS wb
+FROM tomcat:8.5-jre11-temurin
 MAINTAINER Bart Hanssens (bart.hanssens@bosa.fgov.be)
+
+RUN apt-get update && apt-get upgrade -y && apt-get clean
 
 ENV JAVA_OPTS="-Xmx2g"
 ENV CATALINA_OPTS="-Dorg.eclipse.rdf4j.appdata.basedir=/var/rdf4j"

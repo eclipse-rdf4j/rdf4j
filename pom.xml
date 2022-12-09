@@ -650,9 +650,9 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
-					<version>3.8.1</version>
+					<version>3.10.1</version>
 					<configuration>
-						<fork>true</fork>
+						<fork>false</fork>
 						<encoding>utf8</encoding>
 					</configuration>
 				</plugin>
