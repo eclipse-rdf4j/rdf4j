@@ -106,6 +106,7 @@ public class FederationManager {
 		FederationEvaluationStrategyFactory strategyFactory = federation.getFederationEvaluationStrategyFactory();
 		strategyFactory.setFederationType(federationType);
 		strategyFactory.setFederationContext(federationContext);
+		strategyFactory.setCollectionFactory(federation.getCollectionFactory());
 		return strategyFactory;
 	}
 
