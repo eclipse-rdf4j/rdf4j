@@ -77,7 +77,7 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
  * // Ex 3: this method retrieves all statements that have no associated context in
  * // the repository.
  * // Observe that this is not equivalent to the previous method call.
- * RepositoryConnection.getStatements(null, null, null, true, (Resource)null);
+ * RepositoryConnection.getStatements(null, null, null, true, (Resource) null);
  *
  * // Ex 4: this method adds a statement to the store. If the statement object
  * // itself has a context (i.e. statement.getContext() != null) the statement is added
