@@ -805,9 +805,7 @@
 					<version>3.0.0-M7</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
-						<forkCount>1</forkCount>
-						<reuseForks>false</reuseForks>
-						<argLine>-Xmx1G</argLine>
+						<forkCount>0</forkCount>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
