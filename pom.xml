@@ -373,7 +373,7 @@
 				<scope>import</scope>
 			</dependency>
 			<!-- Annotations is designed to be fixed at the 2.x.0 minor version level, but in practice is still being released for
-				2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
+                2.8.x patch versions. See https://github.com/FasterXML/jackson-bom/issues/4 -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.core</groupId>
 				<artifactId>jackson-annotations</artifactId>
@@ -805,7 +805,6 @@
 					<version>3.0.0-M7</version>
 					<configuration>
 						<encoding>UTF-8</encoding>
-						<forkCount>0</forkCount>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>
@@ -899,10 +898,10 @@
 							<overrideCompatibilityChangeParameters>
 								<!-- The override below was previously activated, left as a comment in case we want to activate it again.
                                 <overrideCompatibilityChangeParameter>
-                                	<compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
-                                	<binaryCompatible>true</binaryCompatible>
-                                	<sourceCompatible>true</sourceCompatible>
-                                	<semanticVersionLevel>MINOR</semanticVersionLevel>
+                                    <compatibilityChange>METHOD_ABSTRACT_ADDED_IN_IMPLEMENTED_INTERFACE</compatibilityChange>
+                                    <binaryCompatible>true</binaryCompatible>
+                                    <sourceCompatible>true</sourceCompatible>
+                                    <semanticVersionLevel>MINOR</semanticVersionLevel>
                                 </overrideCompatibilityChangeParameter>
                                  -->
 								<overrideCompatibilityChangeParameter>

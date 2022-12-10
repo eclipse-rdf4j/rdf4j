@@ -26,7 +26,7 @@
 			<version>${project.version}</version>
 		</dependency>
 		<!-- FIXME: Move SPARQLFederatedService out to another module to avoid the following
-			dependency -->
+            dependency -->
 		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-repository-sparql</artifactId>

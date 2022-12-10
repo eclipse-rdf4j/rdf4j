@@ -40,7 +40,7 @@
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
-							<forkCount>1</forkCount>
+							<!--	There are some issues with isolation between tests that rely on a server running on a particular port -->
 							<reuseForks>false</reuseForks>
 							<excludedGroups>slow</excludedGroups>
 						</configuration>
@@ -217,4 +217,16 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<configuration>
+					<!--	There are some issues with isolation between tests that rely on a server running on a particular port -->
+					<reuseForks>false</reuseForks>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
 </project>
