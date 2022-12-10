@@ -33,6 +33,8 @@
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-surefire-plugin</artifactId>
 						<configuration>
+							<forkCount>1</forkCount>
+							<reuseForks>false</reuseForks>
 							<excludedGroups>slow</excludedGroups>
 						</configuration>
 					</plugin>
@@ -40,6 +42,8 @@
 						<groupId>org.apache.maven.plugins</groupId>
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
+							<forkCount>1</forkCount>
+							<reuseForks>false</reuseForks>
 							<excludedGroups>slow</excludedGroups>
 						</configuration>
 					</plugin>
