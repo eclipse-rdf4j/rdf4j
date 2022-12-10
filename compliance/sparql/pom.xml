@@ -233,6 +233,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
 				<configuration>
+					<argLine>-Xms2G</argLine>
 					<!--	There are some issues with isolation between tests that make some tests fail for the LmdbSail -->
 					<reuseForks>false</reuseForks>
 				</configuration>

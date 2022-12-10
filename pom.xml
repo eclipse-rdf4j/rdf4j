@@ -651,10 +651,6 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-compiler-plugin</artifactId>
 					<version>3.10.1</version>
-					<configuration>
-						<fork>false</fork>
-						<encoding>utf8</encoding>
-					</configuration>
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -733,7 +729,6 @@
 					<artifactId>maven-javadoc-plugin</artifactId>
 					<version>3.4.1</version>
 					<configuration>
-						<encoding>utf8</encoding>
 						<source>11</source>
 						<doclint>none</doclint>
 						<additionalOptions>
@@ -795,8 +790,7 @@
 					<artifactId>maven-surefire-plugin</artifactId>
 					<version>3.0.0-M7</version>
 					<configuration>
-						<encoding>UTF-8</encoding>
-						<argLine>-Xmx2048M</argLine>
+						<argLine>-Xms2G</argLine>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -804,7 +798,7 @@
 					<artifactId>maven-failsafe-plugin</artifactId>
 					<version>3.0.0-M7</version>
 					<configuration>
-						<encoding>UTF-8</encoding>
+						<argLine>-Xms2G</argLine>
 						<includes>
 							<include>**/*IT.java</include>
 						</includes>

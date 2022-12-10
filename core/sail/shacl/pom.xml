@@ -95,7 +95,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
-					<encoding>UTF-8</encoding>
+					<argLine>-Xms2G</argLine>
 					<systemProperties>
 						<property>
 							<name>jmh.ignoreLock</name>
