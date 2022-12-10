@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  *
  * @author Arjohn Kampman
  * @author James Leigh
- * 
+ *
  * @deprecated since 4.1.0. Use
  *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstraintOptimizer} instead.
  */

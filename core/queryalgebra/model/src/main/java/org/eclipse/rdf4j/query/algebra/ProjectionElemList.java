@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 /**
+ *
  */
 public class ProjectionElemList extends AbstractQueryModelNode {
 
@@ -81,7 +82,6 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	}
 
 	/**
-	 *
 	 * @deprecated since 4.1.1. Use {@link #getProjectedNames()} instead.
 	 */
 	@Deprecated(since = "4.1.1", forRemoval = true)
@@ -100,7 +100,6 @@ public class ProjectionElemList extends AbstractQueryModelNode {
 	}
 
 	/**
-	 *
 	 * @deprecated since 4.1.1. Use {@link #getProjectedNamesFor(Collection)} instead.
 	 */
 	@Deprecated(since = "4.1.1", forRemoval = true)

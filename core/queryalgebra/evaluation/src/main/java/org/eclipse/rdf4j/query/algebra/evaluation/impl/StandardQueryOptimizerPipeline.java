@@ -17,14 +17,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 
 /**
- *
  * A standard pipeline with the default {@link QueryOptimizer}s that will be used by {@link StrictEvaluationStrategy}
  * and its subclasses, unless specifically overridden.
  *
  * @author Jeen Broekstra
- *
  * @see EvaluationStrategyFactory#setOptimizerPipeline(QueryOptimizerPipeline)
- * 
+ *
  * @deprecated since 4.1.0. Use
  *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline} instead.
  */

@@ -16,8 +16,8 @@ import java.io.Writer;
  * A CharSink writes data as characters to a {@link Writer}.
  *
  * @author Jeen Broekstra
- * @since 3.5.0
  * @see ByteSink
+ * @since 3.5.0
  */
 public interface CharSink extends Sink {
 

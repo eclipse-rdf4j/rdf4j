@@ -35,10 +35,8 @@ import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
  * @param <ENTITY>
  * @param <INPUT>
  * @param <ID>
- *
- *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 	private static final String KEY_READ_QUERY = "readQuery";
@@ -100,7 +98,6 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 	 * When updating an entity via {@link #save(Object)}, its triples are removed first using this method. The default
 	 * implementation used {@link RDF4JTemplate#deleteTriplesWithSubject(IRI)}. If more complex deletion behaviour (e.g.
 	 * cascading) is needed, this method should be overriden.
-	 *
 	 */
 	protected void deleteForUpdate(ID id) {
 		IRI iri = convertIdToIri(id);
@@ -171,8 +168,8 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 	 * Obtains the entity with the specified id, throwing an exception if none is found.
 	 *
 	 * @param id the id
-	 * @throws IncorrectResultSetSizeException if no entity is found with the specified id
 	 * @return the entity
+	 * @throws IncorrectResultSetSizeException if no entity is found with the specified id
 	 */
 	public final ENTITY getById(ID id) {
 		return getByIdOptional(id)
@@ -197,7 +194,6 @@ public abstract class RDF4JCRUDDao<ENTITY, INPUT, ID> extends RDF4JDao {
 	/**
 	 * Naive implementation using {@link RDF4JTemplate#delete(IRI)}. DAOs that need more complex deletion behaviour
 	 * (e.g. cascading) should override this method.
-	 *
 	 */
 	public void delete(ID id) {
 		if (idClass.equals(IRI.class)) {

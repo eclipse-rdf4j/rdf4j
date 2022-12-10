@@ -30,9 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Uses {@link ArtistDao} and {@link PaintingDao} to query and manipulate the repository.
  *
- *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Component
 public class ArtService {

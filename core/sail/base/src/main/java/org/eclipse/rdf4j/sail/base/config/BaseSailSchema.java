@@ -19,7 +19,9 @@ import org.eclipse.rdf4j.model.IRI;
  */
 public class BaseSailSchema {
 
-	/** The BaseSail schema namespace (<var>http://www.openrdf.org/config/sail/base#</var>). */
+	/**
+	 * The BaseSail schema namespace (<var>http://www.openrdf.org/config/sail/base#</var>).
+	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail/base#";
 
 	/** <var>http://www.openrdf.org/config/sail/base#evaluationStrategyFactory</var> */

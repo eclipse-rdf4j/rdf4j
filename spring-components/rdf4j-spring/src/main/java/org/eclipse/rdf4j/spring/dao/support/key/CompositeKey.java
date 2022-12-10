@@ -12,8 +12,8 @@
 package org.eclipse.rdf4j.spring.dao.support.key;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface CompositeKey {
 	/**

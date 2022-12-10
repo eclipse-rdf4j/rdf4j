@@ -17,7 +17,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
  * Optimizes a query model by inlining {@link BindingSetAssignment} values where possible.
  *
  * @author Jeen Broekstra
- * 
+ *
  * @deprecated since 4.1.0. Use
  *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer}
  *             instead.

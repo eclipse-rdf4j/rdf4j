@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  * query model itself. The former takes precedence over the latter.
  *
  * @author Arjohn Kampman
- *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */

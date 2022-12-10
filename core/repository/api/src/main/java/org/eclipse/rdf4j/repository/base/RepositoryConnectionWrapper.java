@@ -80,6 +80,9 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	/**
 	 * If false then the following add methods will call {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}.
 	 *
+	 * @return <code>true</code> to delegate add methods, <code>false</code> to call
+	 *         {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}
+	 * @throws RepositoryException
 	 * @see #add(Iterable, Resource...)
 	 * @see #add(Iteration, Resource...)
 	 * @see #add(Statement, Resource...)
@@ -88,9 +91,6 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 * @see #add(Reader, String, RDFFormat, Resource...)
 	 * @see #add(Resource, IRI, Value, Resource...)
 	 * @see #add(URL, String, RDFFormat, Resource...)
-	 * @return <code>true</code> to delegate add methods, <code>false</code> to call
-	 *         {@link #addWithoutCommit(Resource, IRI, Value, Resource[])}
-	 * @throws RepositoryException
 	 */
 	protected boolean isDelegatingAdd() throws RepositoryException {
 		return true;
@@ -100,13 +100,13 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 * If false then the following has/export/isEmpty methods will call
 	 * {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}.
 	 *
+	 * @return <code>true</code> to delegate read methods, <code>false</code> to call
+	 *         {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}
+	 * @throws RepositoryException
 	 * @see #exportStatements(Resource, IRI, Value, boolean, RDFHandler, Resource...)
 	 * @see #hasStatement(Statement, boolean, Resource...)
 	 * @see #hasStatement(Resource, IRI, Value, boolean, Resource...)
 	 * @see #isEmpty()
-	 * @return <code>true</code> to delegate read methods, <code>false</code> to call
-	 *         {@link #getStatements(Resource, IRI, Value, boolean, Resource[])}
-	 * @throws RepositoryException
 	 */
 	protected boolean isDelegatingRead() throws RepositoryException {
 		return true;
@@ -116,14 +116,14 @@ public class RepositoryConnectionWrapper extends AbstractRepositoryConnection
 	 * If false then the following remove methods will call
 	 * {@link #removeWithoutCommit(Resource, IRI, Value, Resource[])}.
 	 *
+	 * @return <code>true</code> to delegate remove methods, <code>false</code> to call
+	 *         {@link #removeWithoutCommit(Resource, IRI, Value, Resource...)}
+	 * @throws RepositoryException
 	 * @see #clear(Resource...)
 	 * @see #remove(Iterable, Resource...)
 	 * @see #remove(Iteration, Resource...)
 	 * @see #remove(Statement, Resource...)
 	 * @see #remove(Resource, IRI, Value, Resource...)
-	 * @return <code>true</code> to delegate remove methods, <code>false</code> to call
-	 *         {@link #removeWithoutCommit(Resource, IRI, Value, Resource...)}
-	 * @throws RepositoryException
 	 */
 	protected boolean isDelegatingRemove() throws RepositoryException {
 		return true;

@@ -57,42 +57,52 @@ interface TransactionXMLConstants {
 	String CONTEXTS_TAG = "contexts";
 
 	/**
+	 *
 	 */
 	String SPARQL_UPDATE_TAG = "sparql";
 
 	/**
+	 *
 	 */
 	String UPDATE_STRING_TAG = "updateString";
 
 	/**
+	 *
 	 */
 	String BASE_URI_ATT = "baseURI";
 
 	/**
+	 *
 	 */
 	String INCLUDE_INFERRED_ATT = "includeInferred";
 
 	/**
+	 *
 	 */
 	String DATASET_TAG = "dataset";
 
 	/**
+	 *
 	 */
 	String GRAPH_TAG = "graph";
 
 	/**
+	 *
 	 */
 	String DEFAULT_GRAPHS_TAG = "defaultGraphs";
 
 	/**
+	 *
 	 */
 	String NAMED_GRAPHS_TAG = "namedGraphs";
 
 	/**
+	 *
 	 */
 	String DEFAULT_REMOVE_GRAPHS_TAG = "defaultRemoveGraphs";
 
 	/**
+	 *
 	 */
 	String DEFAULT_INSERT_GRAPH = "defaultInsertGraph";
 

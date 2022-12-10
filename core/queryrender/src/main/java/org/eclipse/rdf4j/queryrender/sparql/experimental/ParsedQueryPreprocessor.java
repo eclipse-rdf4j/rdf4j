@@ -110,7 +110,6 @@ import com.google.common.collect.Lists;
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
- *
  */
 class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException> {
 
@@ -232,8 +231,9 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	 */
 	public SerializableParsedBooleanQuery transformToSerialize(ParsedBooleanQuery query) {
 		TupleExpr tupleExpr = query.getTupleExpr();
-		if (tupleExpr instanceof QueryRoot)
+		if (tupleExpr instanceof QueryRoot) {
 			tupleExpr = ((QueryRoot) tupleExpr).getArg();
+		}
 		if (!(tupleExpr instanceof Slice)) {
 			throw new IllegalArgumentException(
 					"Unexpected boolean query: Slice expected as a root element, was "

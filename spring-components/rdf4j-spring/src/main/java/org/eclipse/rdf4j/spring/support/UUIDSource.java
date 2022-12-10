@@ -21,9 +21,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
  * <p>
  * For more information, see {@link org.eclipse.rdf4j.spring.uuidsource}.
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
- *
+ * @since 4.0.0
  */
 public interface UUIDSource {
 	IRI nextUUID();

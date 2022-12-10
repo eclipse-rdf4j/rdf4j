@@ -763,7 +763,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	/**
 	 * create a query from the params
-	 * 
+	 *
 	 * @param queryPatterns the params
 	 * @return boolean query for multiple params, query for single param, null for empty collection
 	 * @throws ParseException query parsing exception

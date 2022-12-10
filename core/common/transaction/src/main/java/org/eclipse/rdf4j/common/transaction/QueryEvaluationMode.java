@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.common.transaction;
 /**
  * The Query Evaluation Mode determines the behaviour of the SPARQL query engine on RDF4J repositories. It currently
  * supports two modes, {@link #STRICT} and and {@link #STANDARD}.
- * 
+ *
  * @author Jeen Broekstra
  */
 public enum QueryEvaluationMode implements TransactionSetting {

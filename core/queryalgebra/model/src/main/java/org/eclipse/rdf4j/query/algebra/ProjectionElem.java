@@ -26,7 +26,7 @@ import java.util.Optional;
  * expressions to the required statement patterns. In this case, each projection element will have an additional
  * {@link #getProjectionAlias() target name} that maps each projection variable name to one of {@code subject},
  * {@code predicate}, {@code object} or {@code context}.
- * 
+ *
  * @author Jeen Broekstra
  */
 public class ProjectionElem extends AbstractQueryModelNode {
@@ -49,7 +49,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 
 	/**
 	 * Create a new {@link ProjectionElem} with a variable name.
-	 * 
+	 *
 	 * @param name The name of the projection element (typically the name of the variable in the select expressions).
 	 *             May not be <code>null</code>.
 	 */
@@ -60,7 +60,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	/**
 	 * Create a new {@link ProjectionElem} with a variable name and an additional mapped {@link #getProjectionAlias()
 	 * target name}
-	 * 
+	 *
 	 * @param name       The name of the projection element (typically the name of the variable in the select
 	 *                   expressions). May not be <code>null</code>.
 	 * @param targetName The name of the variable the projection element value should be mapped to, to produce the
@@ -74,7 +74,6 @@ public class ProjectionElem extends AbstractQueryModelNode {
 
 	/**
 	 * Get the name of the projection element (typically the name of the variable in the select expressions)
-	 * 
 	 */
 	public String getName() {
 		return name;
@@ -98,7 +97,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 
 	/**
 	 * Set the name of the projection element (typically the name of the variable in the select expressions)
-	 * 
+	 *
 	 * @param name the projection variable name. May not be {@code null}.
 	 */
 	public void setName(String name) {
@@ -108,7 +107,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	/**
 	 * Get the alias the projection element value should be mapped to. Used in CONSTRUCT queries for mapping select
 	 * expressions to statement patterns.
-	 * 
+	 *
 	 * @return an optionally empty projection alias.
 	 */
 	public Optional<String> getProjectionAlias() {
@@ -118,7 +117,7 @@ public class ProjectionElem extends AbstractQueryModelNode {
 	/**
 	 * Set the alias the projection element value should be mapped to. Used in CONSTRUCT queries for mapping select
 	 * expressions to statement patterns.
-	 * 
+	 *
 	 * @param alias the projection alias.
 	 */
 	public void setProjectionAlias(String alias) {

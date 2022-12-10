@@ -21,8 +21,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class BindingsBuilder implements MutableBindings {
 	private final Map<String, Value> bindings;

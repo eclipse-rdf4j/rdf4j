@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import org.junit.Test;
 
 /**
- *
  * @author Bart.Hanssens
  */
 public class CRC8Test {

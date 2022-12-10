@@ -38,12 +38,12 @@ public interface RepositoryConnectionInterceptor {
 	boolean begin(RepositoryConnection conn);
 
 	/**
-	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
 	 * @param conn       the RepositoryConnection to perform the
 	 *                   {@link RepositoryConnectionInterceptor#setAutoCommit(RepositoryConnection, boolean) }operation
 	 *                   on.
 	 * @param autoCommit
 	 * @return true if the interceptor has been denied access to the setAutoCommit operation, false otherwise.
+	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
 	 */
 	@Deprecated
 	boolean setAutoCommit(RepositoryConnection conn, boolean autoCommit);

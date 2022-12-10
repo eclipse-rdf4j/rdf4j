@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.rio.RDFParserFactory;
 
 /**
  * @author jeen
- *
  */
 public class TurtleBaseURIHandlingTest extends BaseURIHandlingTest {
 

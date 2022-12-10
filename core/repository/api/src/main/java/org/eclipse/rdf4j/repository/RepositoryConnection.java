@@ -77,7 +77,7 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
  * // Ex 3: this method retrieves all statements that have no associated context in
  * // the repository.
  * // Observe that this is not equivalent to the previous method call.
- * RepositoryConnection.getStatements(null, null, null, true, (Resource)null);
+ * RepositoryConnection.getStatements(null, null, null, true, (Resource) null);
  *
  * // Ex 4: this method adds a statement to the store. If the statement object
  * // itself has a context (i.e. statement.getContext() != null) the statement is added
@@ -500,10 +500,10 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * <b>NOTE:</b> If this connection is switched to auto-commit mode during a transaction, the transaction is
 	 * committed.
 	 *
-	 * @deprecated As of release 2.7.0, use {@link #begin()} instead.
 	 * @throws RepositoryException In case the mode switch failed, for example because a currently active transaction
 	 *                             failed to commit.
 	 * @see #commit()
+	 * @deprecated As of release 2.7.0, use {@link #begin()} instead.
 	 */
 	@Deprecated
 	void setAutoCommit(boolean autoCommit) throws RepositoryException;
@@ -516,8 +516,8 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * <li>{@link #commit()} or {@link #rollback()} have been called to finish the transaction.
 	 * </ol>
 	 *
-	 * @deprecated since 2.0. Use {@link #isActive()} instead.
 	 * @throws RepositoryException If a repository access error occurs.
+	 * @deprecated since 2.0. Use {@link #isActive()} instead.
 	 */
 	@Deprecated
 	boolean isAutoCommit() throws RepositoryException;
@@ -637,14 +637,12 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException              If there is an active transaction and it cannot be committed.
 	 * @throws IllegalStateException            If the connection has been closed or prepare was already called by
 	 *                                          another thread.
-	 *
 	 * @implNote this default method throws an {@link UnsupportedOperationException} and is a temporary measure to
 	 *           ensure backward compatibility only. Implementing classes should override.
-	 *
-	 * @since 3.5.0
 	 * @see #commit()
 	 * @see #begin()
 	 * @see #rollback()
+	 * @since 3.5.0
 	 */
 	default void prepare() throws RepositoryException {
 		throw new UnsupportedOperationException();
@@ -713,7 +711,6 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                   contextual information in the actual data. If no contexts are supplied the contextual
 	 *                   information in the input stream is used, if no context information is available the data is
 	 *                   added without any context.
-	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the input stream.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
@@ -733,13 +730,11 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param dataFormat The serialization format of the data.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
-	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the reader.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 *
 	 * @since 3.5.0
 	 */
 	default void add(Reader reader, RDFFormat dataFormat, Resource... contexts)
@@ -779,13 +774,11 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @param url      The URL of the RDF data.
 	 * @param contexts The contexts to add the data to. If one or more contexts are specified the data is added to these
 	 *                 contexts, ignoring any context information in the data itself.
-	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the URL.
 	 * @throws UnsupportedRDFormatException If the RDF format could not be recognized.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 *
 	 * @since 3.5.0
 	 */
 	default void add(URL url, Resource... contexts)
@@ -803,14 +796,12 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                   that, the file name extension of the supplied URL.
 	 * @param contexts   The contexts to add the data to. If one or more contexts are specified the data is added to
 	 *                   these contexts, ignoring any context information in the data itself.
-	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the URL.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format, or the RDF format
 	 *                                      could not be automatically determined.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 *
 	 * @since 3.5.0
 	 */
 	default void add(URL url, RDFFormat dataFormat, Resource... contexts)
@@ -854,13 +845,11 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                 if the data contains no context, it is added without context. If one or more contexts are
 	 *                 specified the data is added to these contexts, ignoring any context information in the data
 	 *                 itself.
-	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the file.
 	 * @throws UnsupportedRDFormatException If the RDF format of the supplied file could not be recognized.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 *
 	 * @since 3.5.0
 	 */
 	default void add(File file, Resource... contexts)
@@ -879,13 +868,11 @@ public interface RepositoryConnection extends AutoCloseable {
 	 *                   file, or if the data contains no context, it is added without context. If one or more contexts
 	 *                   are specified the data is added to these contexts, ignoring any context information in the data
 	 *                   itself.
-	 *
 	 * @throws IOException                  If an I/O error occurred while reading from the file.
 	 * @throws UnsupportedRDFormatException If no parser is available for the specified RDF format.
 	 * @throws RDFParseException            If an error was found while parsing the RDF data.
 	 * @throws RepositoryException          If the data could not be added to the repository, for example because the
 	 *                                      repository is not writable.
-	 *
 	 * @since 3.5.0
 	 */
 	default void add(File file, RDFFormat dataFormat, Resource... contexts)

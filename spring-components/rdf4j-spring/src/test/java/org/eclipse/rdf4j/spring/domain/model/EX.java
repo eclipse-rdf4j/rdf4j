@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class EX {
 	private static final String base = "http://example.org/";

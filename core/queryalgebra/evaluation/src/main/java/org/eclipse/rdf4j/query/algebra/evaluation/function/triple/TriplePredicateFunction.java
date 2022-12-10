@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * Function returning the predicate component of RDF-star Triple reused the IRI of rdf:predicate as name
  *
  * @author damyan.ognyanov
- *
  */
 public class TriplePredicateFunction implements Function {
 	@Override

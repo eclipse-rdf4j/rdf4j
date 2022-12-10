@@ -19,12 +19,11 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
-import org.springframework.transaction.support.SmartTransactionObject;
 
 /**
- * @since 4.0.0
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Experimental
 public class TransactionObject {

@@ -15,7 +15,6 @@ import org.eclipse.testsuite.rdf4j.sail.lucene.AbstractLuceneSailIndexedProperti
 
 /**
  * @author jeen
- *
  */
 public class LuceneSailIndexedPropertiesTest extends AbstractLuceneSailIndexedPropertiesTest {
 

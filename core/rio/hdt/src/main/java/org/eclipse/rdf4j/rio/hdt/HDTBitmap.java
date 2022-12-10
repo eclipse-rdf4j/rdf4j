@@ -17,7 +17,6 @@ import java.util.zip.CheckedInputStream;
 import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
- *
  * @author Bart Hanssens
  */
 class HDTBitmap extends HDTPart {

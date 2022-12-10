@@ -26,7 +26,7 @@ import com.google.common.math.LongMath;
  * Class supplying access to an ID file. An ID file maps IDs (integers &gt;= 1) to file pointers (long integers). There
  * is a direct correlation between IDs and the position at which the file pointers are stored; the file pointer for ID X
  * is stored at position 8*X.
- *
+ * <p>
  * This class supports parallel reads but not parallel writes.
  *
  * @author Arjohn Kampman

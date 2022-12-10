@@ -31,7 +31,7 @@ public class RegexValueEvaluationStepSupplier {
 	/**
 	 * Returns value evaluation steps that determines whether the two operands match according to the <code>regex</code>
 	 * operator.
-	 *
+	 * <p>
 	 * If possible it will cache the Pattern and flags, and if everything is constant it will return a constant value.
 	 */
 	private static final class ChangingRegexQueryValueEvaluationStep implements QueryValueEvaluationStep {

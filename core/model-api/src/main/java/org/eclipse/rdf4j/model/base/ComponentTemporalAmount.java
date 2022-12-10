@@ -30,10 +30,9 @@ import java.util.Map;
  * </p>
  *
  * @author Alessandro Bollini
- * @since 3.5.0
- *
  * @apiNote {@link java.time} doesn't include concrete {@link TemporalAmount} classes able to represent XML Schema
  *          duration values including both date and time components.
+ * @since 3.5.0
  */
 class ComponentTemporalAmount implements TemporalAmount {
 

@@ -72,7 +72,7 @@ import org.slf4j.LoggerFactory;
  * SailRepository repository = new SailRepository(lucenesail);
  * repository.initialize();
  * </pre>
- *
+ * <p>
  * Example with storage in a RAM directory:
  *
  * <pre>
@@ -100,16 +100,16 @@ import org.slf4j.LoggerFactory;
  * <http://www.openrdf.org/contrib/lucenesail#query> {"my Lucene query"};
  * <http://www.openrdf.org/contrib/lucenesail#score> {Score};
  * <http://www.openrdf.org/contrib/lucenesail#snippet> {Snippet}</code>
- *
+ * <p>
  * In SPARQL: <code>
  * SELECT ?subject ?score ?snippet ?resource WHERE {
  * ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
- *      a <http://www.openrdf.org/contrib/lucenesail#LuceneQuery> ;
- *      <http://www.openrdf.org/contrib/lucenesail#query> "my Lucene query" ;
- *      <http://www.openrdf.org/contrib/lucenesail#score> ?score ;
- *      <http://www.openrdf.org/contrib/lucenesail#snippet> ?snippet ;
- *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
- *   ]
+ * a <http://www.openrdf.org/contrib/lucenesail#LuceneQuery> ;
+ * <http://www.openrdf.org/contrib/lucenesail#query> "my Lucene query" ;
+ * <http://www.openrdf.org/contrib/lucenesail#score> ?score ;
+ * <http://www.openrdf.org/contrib/lucenesail#snippet> ?snippet ;
+ * <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
+ * ]
  * }
  * </code> When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
  * mandatory</b>. When one of these misses, the query will not be executed as expected. The failure behavior can be
@@ -163,7 +163,7 @@ import org.slf4j.LoggerFactory;
  * 	      search:score ?score;
  * 	      search:snippet ?snippet ] .
  * </pre>
- *
+ * <p>
  * If a LuceneSail is using another LuceneSail as a base sail, the evaluation mode should be set to
  * {@link TupleFunctionEvaluationMode#NATIVE}.
  *
@@ -175,7 +175,7 @@ import org.slf4j.LoggerFactory;
  * http\://www.w3.org/1999/02/22-rdf-syntax-ns#type=http://example.org/mytype1 http://example.org/mytype2
  * http\://example.org/mytypedef=http://example.org/mytype3
  * </pre>
- *
+ * <p>
  * {@link #INDEXEDLANG} Syntax:
  *
  * <pre>

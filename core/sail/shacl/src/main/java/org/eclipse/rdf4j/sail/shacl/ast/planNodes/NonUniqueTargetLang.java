@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * This PlanNode takes a stream of Tuples like: (ex:companyA, "Company A"@en). It assumes that the stream is sorted on
  * index 0 (eg. ex:CompanyA). It will cache all non-empty languages from index 1 (eg. "en") and outputs any tuples where
  * the language has already been seen.
- *
+ * <p>
  * If a Value on index 1 has no language because it is a literal without a language or because it is an IRI or BNode,
  * then its language is considered empty and not cached.
  *

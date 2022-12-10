@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.model.Namespace;
  * Vocabulary constants for the <a href="http://www.w3.org/2004/02/skos/">Simple Knowledge Organization System
  * (SKOS)</a>.
  *
- * @see <a href="http://www.w3.org/TR/skos-reference/">SKOS Simple Knowledge Organization System Reference</a>
  * @author Jeen Broekstra
+ * @see <a href="http://www.w3.org/TR/skos-reference/">SKOS Simple Knowledge Organization System Reference</a>
  */
 public class SKOS {
 

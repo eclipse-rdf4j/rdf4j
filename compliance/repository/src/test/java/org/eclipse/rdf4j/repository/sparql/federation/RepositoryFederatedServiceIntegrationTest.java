@@ -45,7 +45,6 @@ import com.google.common.collect.Lists;
  * Integration tests for {@link RepositoryFederatedService}
  *
  * @author Andreas Schwarte
- *
  */
 public class RepositoryFederatedServiceIntegrationTest {
 

@@ -30,7 +30,6 @@ import org.junit.jupiter.api.Test;
  * Unit tests for {@link AbstractSail}.
  *
  * @author Jeen Broekstra
- *
  */
 public class AbstractSailTest {
 

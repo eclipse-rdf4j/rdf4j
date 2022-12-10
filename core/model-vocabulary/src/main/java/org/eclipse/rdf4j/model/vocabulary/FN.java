@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.model.Namespace;
 /**
  * Defines constants for the standard <a href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>.
  *
- * @see <a href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>
  * @author Jeen Broekstra
+ * @see <a href="http://www.w3.org/TR/xpath-functions/">XPath functions</a>
  */
 public class FN {
 

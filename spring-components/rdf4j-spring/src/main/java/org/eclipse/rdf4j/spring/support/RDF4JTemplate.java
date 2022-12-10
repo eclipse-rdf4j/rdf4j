@@ -58,9 +58,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ResourceLoader;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
  * @author Gabriel Pickl
+ * @since 4.0.0
  */
 @Experimental
 public class RDF4JTemplate {
@@ -131,7 +131,7 @@ public class RDF4JTemplate {
 	 * Uses a cached {@link Update} if one is available under the specified <code>operationName
 	 * </code> for the {@link RepositoryConnection} that is used, otherwise the query string is obtained from the
 	 * specified supplier, a new Update is instantiated and cached for future calls to this method.
-	 *
+	 * <p>
 	 * Note: this call is equivalent to {@link #update(String)} if operation caching is disabled.
 	 *
 	 * @param owner                the class of the client requesting the update, used to generate a cache key in
@@ -152,7 +152,6 @@ public class RDF4JTemplate {
 	 * Reads the update from the specified resource and provides it through a {@link Supplier <String>} in
 	 * {@link #update(Class, String, Supplier)}, using the <code>resourceName
 	 * </code> as the <code>operationName</code>.
-	 *
 	 */
 	public UpdateExecutionBuilder updateFromResource(Class<?> owner, String resourceName) {
 		return update(
@@ -206,7 +205,6 @@ public class RDF4JTemplate {
 	 * Reads the query from the specified resource and provides it through a {@link Supplier <String>} in
 	 * {@link #tupleQuery(Class, String, Supplier)}, using the <code>
 	 * resourceName</code> as the <code>operationName</code>.
-	 *
 	 */
 	public TupleQueryEvaluationBuilder tupleQueryFromResource(Class<?> owner, String resourceName) {
 		return tupleQuery(
@@ -292,7 +290,7 @@ public class RDF4JTemplate {
 
 	/**
 	 * Deletes the specified resource and all resources <code>R</code> reached via any of the specified property paths.
-	 *
+	 * <p>
 	 * Deletion means that all triples are removed in which <code>start</code> or any resource in <code>R</code> are the
 	 * subject or the object.
 	 *

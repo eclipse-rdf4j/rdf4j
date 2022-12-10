@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.rio.helpers.XMLWriterSettings;
 
 /**
  * @author Jeen Broekstra
- *
  */
 public abstract class AbstractRDFXMLWriterTest extends RDFWriterTest {
 

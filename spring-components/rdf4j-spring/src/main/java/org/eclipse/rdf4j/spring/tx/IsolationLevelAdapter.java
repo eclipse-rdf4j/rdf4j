@@ -18,9 +18,9 @@ import org.springframework.transaction.InvalidIsolationLevelException;
 import org.springframework.transaction.TransactionDefinition;
 
 /**
- * @since 4.0.0
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class IsolationLevelAdapter {
 	static IsolationLevel adaptToRdfIsolation(Sail sail, int springIsolation) {

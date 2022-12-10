@@ -127,7 +127,7 @@ public class QueryStringUtil {
 
 	/**
 	 * Converts a value to its SPARQL string representation.
-	 *
+	 * <p>
 	 * Null will be converted to UNDEF (may be used in VALUES only).
 	 *
 	 * @param value the value to convert
@@ -139,7 +139,7 @@ public class QueryStringUtil {
 
 	/**
 	 * Converts a value to its SPARQL string representation and appends it to a StringBuilder.
-	 *
+	 * <p>
 	 * Null will be converted to UNDEF (may be used in VALUES only).
 	 *
 	 * @param sb    StringBuilder to append to

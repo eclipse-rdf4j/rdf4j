@@ -30,10 +30,9 @@ public interface DynamicStatistics {
 	void removeByQuery(Resource subj, IRI pred, Value obj, boolean inferred, Resource... contexts);
 
 	/**
-	 *
+	 * @param expectedSize
 	 * @return 1 if stale, 0 if not stale, 0.5 if 50% stale. Seen as, given a random statement (that has either been
 	 *         added, or removed), what is the probability that the statistics will return an incorrect result?
-	 * @param expectedSize
 	 */
 	double staleness(long expectedSize);
 

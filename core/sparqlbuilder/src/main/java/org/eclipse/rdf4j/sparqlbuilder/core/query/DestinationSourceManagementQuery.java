@@ -36,7 +36,6 @@ public abstract class DestinationSourceManagementQuery<T extends DestinationSour
 	 * Specify the query source graph
 	 *
 	 * @param from the Iri identifying the source graph
-	 *
 	 * @return this query instance
 	 */
 	public T from(Iri from) {
@@ -53,7 +52,6 @@ public abstract class DestinationSourceManagementQuery<T extends DestinationSour
 	 * Specify the query destination graph
 	 *
 	 * @param to the Iri identifying the destination graph
-	 *
 	 * @return this query instance
 	 */
 	public T to(Iri to) {
@@ -66,7 +64,6 @@ public abstract class DestinationSourceManagementQuery<T extends DestinationSour
 	 * Specify the query destination graph
 	 *
 	 * @param to the Iri identifying the destination graph
-	 *
 	 * @return this query instance
 	 */
 	public T to(IRI to) {
@@ -86,7 +83,6 @@ public abstract class DestinationSourceManagementQuery<T extends DestinationSour
 	 * Specify if this query's source should be the default graph
 	 *
 	 * @param fromDefault if this query's source should be the default graph
-	 *
 	 * @return this query instance
 	 */
 	@SuppressWarnings("unchecked")
@@ -109,7 +105,6 @@ public abstract class DestinationSourceManagementQuery<T extends DestinationSour
 	 * Specify if this query's destination should be the default graph
 	 *
 	 * @param toDefault if this query's destination should be the default graph
-	 *
 	 * @return this query instance
 	 */
 	@SuppressWarnings("unchecked")

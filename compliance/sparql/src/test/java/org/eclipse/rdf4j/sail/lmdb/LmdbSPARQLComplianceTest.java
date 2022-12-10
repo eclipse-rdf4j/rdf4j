@@ -20,7 +20,6 @@ import org.junit.BeforeClass;
 
 /**
  * Test additional SPARQL functionality on LMDB store.
- *
  */
 public class LmdbSPARQLComplianceTest extends RepositorySPARQLComplianceTestSuite {
 

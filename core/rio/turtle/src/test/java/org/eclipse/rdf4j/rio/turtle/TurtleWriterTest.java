@@ -124,7 +124,6 @@ public class TurtleWriterTest extends AbstractTurtleWriterTest {
 
 	/**
 	 * Test that blank node subjects are processed in correct order even when not supplied in order.
-	 *
 	 */
 	@Test
 	public void testBlanknodeInlining_SubjectOrder() throws Exception {

@@ -258,8 +258,9 @@ public class SailConnectionWrapper
 
 	@Override
 	public boolean supportsConcurrentReads() {
-		if (wrappedCon instanceof ThreadSafetyAware)
+		if (wrappedCon instanceof ThreadSafetyAware) {
 			return ((ThreadSafetyAware) wrappedCon).supportsConcurrentReads();
+		}
 		return false;
 	}
 }

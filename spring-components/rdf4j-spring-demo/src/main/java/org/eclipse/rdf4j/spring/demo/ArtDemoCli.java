@@ -26,13 +26,13 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * Command line interface for the demo. Takes no parameters. It outputs the content of the demo repository, then adds
  * some data and outputs the content of the repository again.
- *
+ * <p>
  * Accessing the repository is done via the {@link ArtService} class, which just encapsulates accesses to the
  * {@link org.eclipse.rdf4j.spring.demo.dao.PaintingDao} and {@link org.eclipse.rdf4j.spring.demo.dao.ArtistDao}
  * classes.
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @SpringBootApplication
 public class ArtDemoCli implements CommandLineRunner {

@@ -45,7 +45,6 @@ import org.slf4j.LoggerFactory;
  * There is no write-ahead logging, so a failure during a transaction may result in partially persisted changes.
  * </p>
  *
- *
  * @author Håvard Mikkelsen Ottestad
  */
 @Experimental

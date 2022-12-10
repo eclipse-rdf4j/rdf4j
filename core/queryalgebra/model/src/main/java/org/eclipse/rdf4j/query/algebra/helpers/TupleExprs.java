@@ -134,7 +134,6 @@ public class TupleExprs {
 	 * @param expr a {@link TupleExpr}
 	 * @return <code>true</code> if the {@link TupleExpr} is {@link GraphPatternGroupable} and has its graph pattern
 	 *         group flag set to <code>true</code>, <code>false</code> otherwise.
-	 *
 	 * @deprecated since 3.2. Use {@link #isVariableScopeChange(TupleExpr)} instead.
 	 */
 	@Deprecated

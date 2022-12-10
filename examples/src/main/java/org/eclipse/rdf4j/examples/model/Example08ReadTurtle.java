@@ -19,7 +19,7 @@ import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * RDF Tutorial example 08: Reading a Turtle syntax file to create a Model
- *
+ * <p>
  * In this example, we show how you can use the Rio Parser/writer toolkit to read files
  *
  * @author Jeen Broekstra

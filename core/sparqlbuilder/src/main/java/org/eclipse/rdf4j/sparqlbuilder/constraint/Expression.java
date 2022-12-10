@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
  * other expressions.
  *
  * @param <T> the type of Expression (ie, Function or Operation). Used to support fluency
- *
  * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#termConstraint">SPARQL Filters</a>
  * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#having"> SPARQL HAVING</a>
  * @see <a href= "http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOrderBy" >SPARQL ORDER BY</a>

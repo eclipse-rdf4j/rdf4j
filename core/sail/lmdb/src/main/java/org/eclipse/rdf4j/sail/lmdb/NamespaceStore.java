@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
  *   byte A+1 - A+2 : the length of the encoded namespace prefix
  *   byte A+3 - end : the UTF-8 encoded namespace prefix
  * </pre>
- *
  */
 class NamespaceStore implements Iterable<SimpleNamespace> {
 

@@ -50,7 +50,7 @@ public interface Binding extends Serializable {
 	 * <pre>
 	 * name.hashCode() &circ; value.hashCode()
 	 * </pre>
-	 *
+	 * <p>
 	 * .
 	 *
 	 * @return A hash code for the binding.

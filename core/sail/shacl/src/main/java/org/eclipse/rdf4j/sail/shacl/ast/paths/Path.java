@@ -82,7 +82,6 @@ public abstract class Path implements Identifiable, Exportable, Targetable {
 			Resource[] dataGraph, PlanNodeWrapper planNodeWrapper);
 
 	/**
-	 *
 	 * @return true if feature is currently supported by the ShaclSail
 	 */
 	public abstract boolean isSupported();

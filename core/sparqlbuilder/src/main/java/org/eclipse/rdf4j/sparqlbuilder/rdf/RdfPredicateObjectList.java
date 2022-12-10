@@ -67,7 +67,6 @@ public class RdfPredicateObjectList extends StandardQueryElementCollection<RdfOb
 	 * Add {@link RdfObject} instances to this predicate-object list
 	 *
 	 * @param objects the objects to add to this list
-	 *
 	 * @return this {@link RdfPredicateObjectList} instance
 	 */
 	public RdfPredicateObjectList and(RdfObject... objects) {

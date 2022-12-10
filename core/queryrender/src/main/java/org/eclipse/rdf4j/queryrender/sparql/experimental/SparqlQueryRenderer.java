@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
- *
  * @apiNote This feature is in an experimental state: its existence, signature or behavior may change without warning
  *          from one release to the next.
  */

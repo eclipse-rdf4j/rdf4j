@@ -104,9 +104,7 @@ public interface RdfBlankNode extends RdfResource {
 		 *
 		 * @param predicate the predicate of the triple to add
 		 * @param objects   the object or objects of the triple to add
-		 *
 		 * @return this blank node
-		 *
 		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#predObjLists"> Predicate-Object
 		 *      Lists</a>
 		 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#objLists"> Object Lists</a>

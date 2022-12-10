@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
  * the given input IRI and outputs a single literal of the form "related to v1, v2, v3".
  *
  * @author Jeen Broekstra
- *
  */
 public class TestTripleSourceCustomFunction implements Function {
 

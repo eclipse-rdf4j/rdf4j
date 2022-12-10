@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.SailException;
 /**
  * A plan node that can only be closed once
  *
- *
  * @author Håvard Ottestad
  */
 public class SingleCloseablePlanNode implements PlanNode {

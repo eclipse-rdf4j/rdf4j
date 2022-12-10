@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * RDF Tutorial example 12: Building a Model with named graphs
- *
+ * <p>
  * In this example, we show how you can use the context mechanism to add statements separate named graphs within the
  * same Model.
  *

@@ -11,8 +11,8 @@
 package org.eclipse.rdf4j.query.resultio.sparqlxml;
 
 /**
- * @deprecated since 2.0. Use {@link AbstractSPARQLXMLParser} instead.
  * @author Jeen Broekstra
+ * @deprecated since 2.0. Use {@link AbstractSPARQLXMLParser} instead.
  */
 @Deprecated
 public abstract class SPARQLXMLParserBase extends AbstractSPARQLXMLParser {

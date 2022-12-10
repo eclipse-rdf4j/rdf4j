@@ -38,7 +38,7 @@ public class Statements {
 	/**
 	 * A {@link Function} that maps {@link Triple} to {@link org.eclipse.rdf4j.model.BNode} consistently. Multiple
 	 * invocations for the same {@link Triple} will return the same {@link org.eclipse.rdf4j.model.BNode}.
-	 *
+	 * <p>
 	 * The current implementation creates a {@link org.eclipse.rdf4j.model.BNode} by encoding the string representation
 	 * of the {@link Triple} using base64 URL-safe encoding.
 	 */
@@ -85,9 +85,9 @@ public class Statements {
 	 * @param object     the object of each statement. May not be null.
 	 * @param collection the collection of Statements to which the newly created Statements will be added. May not be
 	 *                   null.
+	 * @param contexts   the context(s) for which to produce statements. This argument is an optional vararg: leave it
+	 *                   out completely to produce a single statement without context.
 	 * @return the input collection of Statements, with the newly created Statements added.
-	 * @param contexts the context(s) for which to produce statements. This argument is an optional vararg: leave it out
-	 *                 completely to produce a single statement without context.
 	 */
 	public static <C extends Collection<Statement>> C create(ValueFactory vf, Resource subject, IRI predicate,
 			Value object, C collection, Resource... contexts) {
@@ -102,7 +102,6 @@ public class Statements {
 	 *
 	 * @param statement the statement to strip the context from
 	 * @return a statement without context
-	 *
 	 * @since 3.1.0
 	 */
 	public static Statement stripContext(Statement statement) {
@@ -116,7 +115,6 @@ public class Statements {
 	 * @param vf        the {@link ValueFactory} to use for creating a new {@link Statement}.
 	 * @param statement the statement to strip the context from.
 	 * @return a statement without context
-	 *
 	 * @since 3.1.0
 	 */
 	public static Statement stripContext(ValueFactory vf, Statement statement) {
@@ -146,7 +144,6 @@ public class Statements {
 	 * @param statement a statement to convert to an RDF-star triple
 	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
-	 *
 	 * @deprecated since 3.5.0 - use {@link Values#triple(ValueFactory, Statement)} instead
 	 */
 	@Deprecated
@@ -213,7 +210,7 @@ public class Statements {
 	 * @return an {@link Statement} with the same subject, predicate and object as the input triple, and having the
 	 *         supplied context.
 	 * @since 3.4.0
-	 * @deprecated Use {@link #statement(ValueFactory,Triple,Resource)} instead
+	 * @deprecated Use {@link #statement(ValueFactory, Triple, Resource)} instead
 	 */
 	public static Statement toStatement(ValueFactory vf, Triple triple, Resource context) {
 		return statement(vf, triple, context);

@@ -20,10 +20,14 @@ import org.eclipse.rdf4j.model.Namespace;
  */
 public class VANN {
 
-	/** The VANN namespace: http://purl.org/vocab/vann/ */
+	/**
+	 * The VANN namespace: http://purl.org/vocab/vann/
+	 */
 	public static final String NAMESPACE = "http://purl.org/vocab/vann/";
 
-	/** Recommended prefix for the VANN namespace: "vann" */
+	/**
+	 * Recommended prefix for the VANN namespace: "vann"
+	 */
 	public static final String PREFIX = "vann";
 
 	/**

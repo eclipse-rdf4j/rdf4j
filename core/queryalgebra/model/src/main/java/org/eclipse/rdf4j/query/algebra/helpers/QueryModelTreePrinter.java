@@ -97,7 +97,6 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 	}
 
 	/**
-	 *
 	 * @return Human readable number. Eg. 12.1M for 1212213.4 and UNKNOWN for -1.
 	 */
 	static String toHumanReadableNumber(double number) {
@@ -118,7 +117,6 @@ public class QueryModelTreePrinter extends AbstractQueryModelVisitor<RuntimeExce
 	}
 
 	/**
-	 *
 	 * @return Human readable time.
 	 */
 	static String toHumanReadableTime(long nanos) {

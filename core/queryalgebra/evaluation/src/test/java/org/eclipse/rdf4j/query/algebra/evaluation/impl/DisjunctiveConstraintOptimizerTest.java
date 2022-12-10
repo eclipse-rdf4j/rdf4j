@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.DisjunctiveConstrain
 
 /**
  * @author jeen
- *
  */
 public class DisjunctiveConstraintOptimizerTest extends QueryOptimizerTest {
 

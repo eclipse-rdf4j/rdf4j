@@ -23,10 +23,14 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
  */
 public class SailRepositorySchema {
 
-	/** The SailRepository schema namespace (<var>http://www.openrdf.org/config/repository/sail#</var>). */
+	/**
+	 * The SailRepository schema namespace (<var>http://www.openrdf.org/config/repository/sail#</var>).
+	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/sail#";
 
-	/** <var>http://www.openrdf.org/config/repository/sail#sailImpl</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/sail#sailImpl</var>
+	 */
 	public final static IRI SAILIMPL;
 
 	static {

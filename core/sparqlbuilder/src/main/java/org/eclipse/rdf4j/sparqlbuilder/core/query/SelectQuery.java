@@ -31,7 +31,6 @@ public class SelectQuery extends OuterQuery<SelectQuery> {
 	 * Specify the query's projection to be distinct
 	 *
 	 * @return this
-	 *
 	 * @see Projection#distinct()
 	 */
 	public SelectQuery distinct() {
@@ -43,7 +42,6 @@ public class SelectQuery extends OuterQuery<SelectQuery> {
 	 *
 	 * @param isDistinct if this query's projection should be distinct
 	 * @return this
-	 *
 	 * @see Projection#distinct(boolean)
 	 */
 	public SelectQuery distinct(boolean isDistinct) {
@@ -59,7 +57,6 @@ public class SelectQuery extends OuterQuery<SelectQuery> {
 	 * {@link #select(Projectable...)} or {@link #select(Projection)} when printing
 	 *
 	 * @return this
-	 *
 	 * @see Projection#all()
 	 */
 	public SelectQuery all() {
@@ -75,7 +72,6 @@ public class SelectQuery extends OuterQuery<SelectQuery> {
 	 *
 	 * @param selectAll if all in-scope expressions should be selected
 	 * @return this
-	 *
 	 * @see Projection#all(boolean)
 	 */
 	public SelectQuery all(boolean selectAll) {
@@ -92,7 +88,6 @@ public class SelectQuery extends OuterQuery<SelectQuery> {
 	 *
 	 * @param projectables expressions to add
 	 * @return this
-	 *
 	 * @see Projection#select(Projectable...)
 	 */
 	public SelectQuery select(Projectable... projectables) {

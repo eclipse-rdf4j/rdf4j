@@ -14,7 +14,6 @@ import java.io.OutputStream;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 
 /**
  * Writer for SPARQL-star JSON results. This is equivalent to the SPARQL JSON writer with the addition of support for

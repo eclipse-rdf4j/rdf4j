@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 4.1.0. Use
  *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer} instead.
  */

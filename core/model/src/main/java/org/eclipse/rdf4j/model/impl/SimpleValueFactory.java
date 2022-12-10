@@ -38,7 +38,6 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * Default implementation of the {@link ValueFactory} interface.
  *
  * @author Arjohn Kampman
- *
  */
 public class SimpleValueFactory extends AbstractValueFactory {
 

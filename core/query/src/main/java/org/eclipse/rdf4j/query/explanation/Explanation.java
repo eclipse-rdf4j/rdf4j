@@ -14,7 +14,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
  * This is an experimental feature. The interface may be changed, moved or potentially removed in a future release.
- *
+ * <p>
  * The interface is used to implement query explanations (query plan)
  *
  * @since 3.2.0

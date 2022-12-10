@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  * Processes blank nodes in the query body, replacing them with variables while retaining scope.
  *
  * @author Arjohn Kampman
- *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */

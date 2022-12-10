@@ -24,8 +24,8 @@ import org.eclipse.rdf4j.spring.dao.support.sparql.NamedSparqlSupplier;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Experimental
 public abstract class RDF4JDao {
@@ -119,7 +119,9 @@ public abstract class RDF4JDao {
 			this.key = key;
 		}
 
-		/** Supplies the specified SPARQL String. */
+		/**
+		 * Supplies the specified SPARQL String.
+		 */
 		public NamedSparqlSupplierPreparer supplySparql(String sparql) {
 			prepareNamedSparqlSupplier(key, sparql);
 			return new NamedSparqlSupplierPreparer();

@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 /**
  * Associates a String key with a {@link Supplier<String>} that provides a SPARQL operation.
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Experimental
 public class NamedSparqlSupplier {
@@ -46,10 +46,12 @@ public class NamedSparqlSupplier {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		NamedSparqlSupplier that = (NamedSparqlSupplier) o;
 		return Objects.equals(name, that.name);
 	}

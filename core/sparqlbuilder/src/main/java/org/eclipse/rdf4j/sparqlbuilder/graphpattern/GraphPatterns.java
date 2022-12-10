@@ -42,9 +42,7 @@ public class GraphPatterns {
 	 * @param subject
 	 * @param predicate
 	 * @param objects
-	 *
 	 * @return a new {@link TriplePattern}
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples"> Triple pattern syntax</a>
 	 */
 	public static TriplePattern tp(RdfSubject subject, RdfPredicate predicate, RdfObject... objects) {
@@ -61,9 +59,7 @@ public class GraphPatterns {
 	 * @param subject   the triple pattern subject
 	 * @param predicate the triple pattern predicate as a {@link IRI}
 	 * @param objects   the triples pattern object(s)
-	 *
 	 * @return a new {@link TriplePattern}
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples"> Triple pattern syntax</a>
 	 */
 	public static TriplePattern tp(RdfSubject subject, IRI predicate, RdfObject... objects) {
@@ -80,9 +76,7 @@ public class GraphPatterns {
 	 * @param subject   the triple pattern subject
 	 * @param predicate the triple pattern predicate as a {@link IRI}
 	 * @param objects   the triples pattern object(s)
-	 *
 	 * @return a new {@link TriplePattern}
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples"> Triple pattern syntax</a>
 	 */
 	public static TriplePattern tp(Resource subject, RdfPredicate predicate, RdfObject... objects) {
@@ -102,9 +96,7 @@ public class GraphPatterns {
 	 * @param subject   the triple pattern subject as a {@link Resource}
 	 * @param predicate the triple pattern predicate as a {@link IRI}
 	 * @param objects   the triples pattern object(s)
-	 *
 	 * @return a new {@link TriplePattern}
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples"> Triple pattern syntax</a>
 	 */
 	public static TriplePattern tp(Resource subject, IRI predicate, RdfObject... objects) {
@@ -120,9 +112,7 @@ public class GraphPatterns {
 	 *
 	 * @param subject
 	 * @param lists
-	 *
 	 * @return a new {@link TriplePattern}
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynTriples"> Triple pattern syntax</a>
 	 */
 	public static TriplePattern tp(RdfSubject subject, RdfPredicateObjectList... lists) {
@@ -133,9 +123,7 @@ public class GraphPatterns {
 	 * Create a triple pattern from a property-list blank node
 	 *
 	 * @param bnode the PropertiesBlankNode instance to convert to a triple pattern
-	 *
 	 * @return the triple pattern represented by the expansion of this blank node
-	 *
 	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynBlankNodes"> blank node syntax</a>
 	 */
 	public static TriplePattern tp(PropertiesBlankNode bnode) {
@@ -149,7 +137,6 @@ public class GraphPatterns {
 	 * @param propertyPathConfigurer an object that accepts an {@link EmptyPropertyPathBuilder} and uses it to create a
 	 *                               property path
 	 * @param objects                the object(s) of the triple(s)
-	 *
 	 * @return the triple pattern
 	 */
 	public static TriplePattern tp(RdfSubject subject, Consumer<EmptyPropertyPathBuilder> propertyPathConfigurer,
@@ -164,7 +151,6 @@ public class GraphPatterns {
 	 *
 	 * @param patterns the patterns to include in the group graph a pattern
 	 * @return a new group graph pattern
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns">SPARQL Group Graph
 	 *      Pattern</a>
 	 */
@@ -183,7 +169,6 @@ public class GraphPatterns {
 	 *
 	 * @param patterns the patterns to include in the union
 	 * @return a new alternative graph pattern
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives"> SPARQL Alternative Graph
 	 *      Patterns</a>
 	 */
@@ -209,7 +194,6 @@ public class GraphPatterns {
 	 *
 	 * @param patterns the patterns to include in the optional graph pattern
 	 * @return a new optional graph pattern
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals"> SPARQL Optional Graph
 	 *      Patterns</a>
 	 */
@@ -244,7 +228,6 @@ public class GraphPatterns {
 	 *
 	 * @param projectables the elements to include in the projection of the subquery
 	 * @return a new subquery
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#subqueries"> SPARQL Subquery</a>
 	 */
 	public static SubSelect select(Projectable... projectables) {

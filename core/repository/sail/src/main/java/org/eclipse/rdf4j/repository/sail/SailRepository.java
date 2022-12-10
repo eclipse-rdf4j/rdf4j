@@ -42,7 +42,7 @@ import org.eclipse.rdf4j.sail.StackableSail;
  * Repository repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()));
  * repository.initialize();
  * </pre>
- *
+ * <p>
  * Or, alternatively:
  *
  * <pre>

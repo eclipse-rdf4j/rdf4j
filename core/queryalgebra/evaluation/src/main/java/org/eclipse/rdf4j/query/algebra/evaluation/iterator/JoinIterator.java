@@ -24,13 +24,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
  * Interleaved join iterator.
- *
+ * <p>
  * This join iterator produces results by interleaving results from its left argument into its right argument to speed
  * up bindings and produce fail-fast results. Note that this join strategy is only valid in cases where all bindings
  * from the left argument can be considered in scope for the right argument.
  *
  * @author Jeen Broekstra
- *
  */
 public class JoinIterator extends LookAheadIteration<BindingSet, QueryEvaluationException> {
 

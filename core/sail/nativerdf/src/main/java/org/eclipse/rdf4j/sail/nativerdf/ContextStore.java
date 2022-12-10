@@ -46,7 +46,7 @@ import org.slf4j.LoggerFactory;
  *  byte 4           : the file format version
  *  byte 5-8         : the number of mapped contexts contained in the file, as an int.
  * </pre>
- *
+ * <p>
  * Each context is encoded in the file as a record, as follows:
  *
  * <pre>
@@ -57,7 +57,6 @@ import org.slf4j.LoggerFactory;
  * </pre>
  *
  * @author Jeen Broekstra
- *
  */
 class ContextStore implements Iterable<Resource> {
 

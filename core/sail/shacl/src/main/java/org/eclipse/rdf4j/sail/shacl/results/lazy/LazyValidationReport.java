@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.sail.shacl.results.ValidationResult;
 
 /**
  * A ValidationReport that will defer calculating any ValidationResults until the user asks for them
- *
  */
 @InternalUseOnly
 public class LazyValidationReport extends ValidationReport {

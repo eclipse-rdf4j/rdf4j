@@ -33,7 +33,6 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
  * A SPARQL Update query
  *
  * @param <T> The type of update query. Used to support fluency.
- *
  * @see <a href="https://www.w3.org/TR/sparql11-update/"> SPARQL Update Query</a>
  */
 @SuppressWarnings("unchecked")

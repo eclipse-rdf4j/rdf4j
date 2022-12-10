@@ -125,7 +125,9 @@ class ValueStore extends AbstractValueFactory {
 	private long writeTxn;
 	private final boolean forceSync;
 	private final boolean autoGrow;
-	/** This lock is required to block transactions while auto-growing the map size. */
+	/**
+	 * This lock is required to block transactions while auto-growing the map size.
+	 */
 	private final ReadWriteLock txnLock = new ReentrantReadWriteLock();
 
 	/**
@@ -277,7 +279,7 @@ class ValueStore extends AbstractValueFactory {
 
 	/**
 	 * Get value from cache by ID.
-	 *
+	 * <p>
 	 * Thread-safety with synchronized is not required here.
 	 *
 	 * @param id ID of a value object
@@ -293,7 +295,7 @@ class ValueStore extends AbstractValueFactory {
 
 	/**
 	 * Cache value by ID.
-	 *
+	 * <p>
 	 * Thread-safety with synchronized is not required here.
 	 *
 	 * @param id    ID of a value object

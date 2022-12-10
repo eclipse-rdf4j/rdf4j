@@ -11,8 +11,8 @@
 package org.eclipse.rdf4j.query;
 
 /**
- * @deprecated since 2.0. Use {@link QueryResults} instead.
  * @author Jeen Broekstra
+ * @deprecated since 2.0. Use {@link QueryResults} instead.
  */
 @Deprecated
 public class QueryResultUtil extends QueryResults {
