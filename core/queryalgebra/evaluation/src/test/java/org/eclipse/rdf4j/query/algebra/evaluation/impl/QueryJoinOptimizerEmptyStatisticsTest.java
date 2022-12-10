@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 
 /**
  * Tests to monitor QueryJoinOptimizer behaviour when cardinalities are below 1.
- *
  */
 public class QueryJoinOptimizerEmptyStatisticsTest extends QueryJoinOptimizerTest {
 

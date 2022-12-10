@@ -25,7 +25,7 @@ package org.eclipse.rdf4j.sail.lucene;
  * # Lucene Indexed literals:
  * my:subj2 "demo 2"
  * </pre>
- *
+ * <p>
  * The option will define how the Sail will handle the update:
  *
  * <pre>
@@ -37,7 +37,7 @@ public enum TypeBacktraceMode {
 	/**
 	 * The sail will get all previous triples of the subject and add them (if required) in the Lucene index, this mode
 	 * is enabled by default.
-	 *
+	 * <p>
 	 * the future state of the Lucene index in the <a href="#backtrace_example">above example</a> would be:
 	 *
 	 * <pre>
@@ -48,7 +48,7 @@ public enum TypeBacktraceMode {
 	/**
 	 * The sail won't get any previous triples of the subject in the Lucene index, this mode is useful if you won't
 	 * change the type and values of your subjects in multiple queries.
-	 *
+	 * <p>
 	 * the future state of the Lucene index in the <a href="#backtrace_example">above example</a> would be:
 	 *
 	 * <pre>

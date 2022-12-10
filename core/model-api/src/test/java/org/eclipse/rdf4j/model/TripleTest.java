@@ -32,7 +32,6 @@ public abstract class TripleTest {
 	 * @param subject   the subject of the triple
 	 * @param predicate the predicate of the triple
 	 * @param object    the object of the triple
-	 *
 	 * @return a new instance of the concrete triple class under test
 	 */
 	protected abstract Triple triple(Resource subject, IRI predicate, Value object);
@@ -41,7 +40,6 @@ public abstract class TripleTest {
 	 * Creates a test IRI instance.
 	 *
 	 * @param iri the IRI of the datatype
-	 *
 	 * @return a new instance of the concrete IRI class under test
 	 */
 	protected abstract IRI iri(String iri);

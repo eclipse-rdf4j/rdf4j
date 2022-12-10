@@ -21,7 +21,7 @@ public class TurtleWriterSettings {
 	/**
 	 * Boolean setting for Turtle/TriG Writer to determine if the abbreviated syntax for numeric datatypes is to be used
 	 * when {@link org.eclipse.rdf4j.rio.helpers.BasicWriterSettings.html#PRETTY_PRINT} is <code>true</code>.
-	 *
+	 * <p>
 	 * This setting has no effect when pretty print is false.
 	 *
 	 * <p>
@@ -29,8 +29,8 @@ public class TurtleWriterSettings {
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.turtle.abbreviate_numbers}
 	 *
-	 * @since 3.7.0
 	 * @see <a href="https://www.w3.org/TR/turtle/#abbrev">https://www.w3.org/TR/turtle/#abbrev</a>
+	 * @since 3.7.0
 	 */
 	public static final RioSetting<Boolean> ABBREVIATE_NUMBERS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.abbreviate_numbers", "Abbreviate numbers", Boolean.TRUE);

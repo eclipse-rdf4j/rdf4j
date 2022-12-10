@@ -132,7 +132,7 @@ final class LmdbUtil {
 
 	/**
 	 * Returns the next unallocated page for a given transaction handle.
-	 *
+	 * <p>
 	 * The function expects the following layout of the transaction struct:
 	 *
 	 * <pre>

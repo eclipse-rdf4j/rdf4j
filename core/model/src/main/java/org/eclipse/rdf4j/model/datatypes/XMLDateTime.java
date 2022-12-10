@@ -33,70 +33,114 @@ public class XMLDateTime implements Cloneable, Comparable<XMLDateTime> {
 	 * Variables *
 	 *-----------*/
 
-	/** The raw dateTime string that was used to initialize this object. */
+	/**
+	 * The raw dateTime string that was used to initialize this object.
+	 */
 	private final String dateTimeString;
 
-	/** Flag indicating whether the year is positive or negative. */
+	/**
+	 * Flag indicating whether the year is positive or negative.
+	 */
 	private boolean isNegativeYear;
 
-	/** year part of the dateTime object as String */
+	/**
+	 * year part of the dateTime object as String
+	 */
 	private String year;
 
-	/** month part of the dateTime object as String */
+	/**
+	 * month part of the dateTime object as String
+	 */
 	private String months;
 
-	/** day part of the dateTime object as String */
+	/**
+	 * day part of the dateTime object as String
+	 */
 	private String days;
 
-	/** hour part of the dateTime object as String */
+	/**
+	 * hour part of the dateTime object as String
+	 */
 	private String hours;
 
-	/** minutes part of the dateTime object as String */
+	/**
+	 * minutes part of the dateTime object as String
+	 */
 	private String minutes;
 
-	/** seconds part of the dateTime object as String */
+	/**
+	 * seconds part of the dateTime object as String
+	 */
 	private String seconds;
 
-	/** fractional seconds part of the dateTime object as String */
+	/**
+	 * fractional seconds part of the dateTime object as String
+	 */
 	private String fractionalSeconds;
 
-	/** Flag indicating whether the timezone, if any, is positive or negative. */
+	/**
+	 * Flag indicating whether the timezone, if any, is positive or negative.
+	 */
 	private boolean isNegativeTimezone;
 
-	/** hours part of the optional timezone as String */
+	/**
+	 * hours part of the optional timezone as String
+	 */
 	private String hoursTimezone;
 
-	/** minutes part of the optional timezone as String */
+	/**
+	 * minutes part of the optional timezone as String
+	 */
 	private String minutesTimezone;
 
-	/** year part of the dateTime object as int */
+	/**
+	 * year part of the dateTime object as int
+	 */
 	private int iYear;
 
-	/** month part of the dateTime object as int */
+	/**
+	 * month part of the dateTime object as int
+	 */
 	private int iMonths;
 
-	/** day part of the dateTime object as int */
+	/**
+	 * day part of the dateTime object as int
+	 */
 	private int iDays;
 
-	/** hour part of the dateTime object as int */
+	/**
+	 * hour part of the dateTime object as int
+	 */
 	private int iHours;
 
-	/** minute part of the dateTime object as int */
+	/**
+	 * minute part of the dateTime object as int
+	 */
 	private int iMinutes;
 
-	/** second part of the dateTime object as int */
+	/**
+	 * second part of the dateTime object as int
+	 */
 	private int iSeconds;
 
-	/** fractional seconds part of the dateTime object as int */
+	/**
+	 * fractional seconds part of the dateTime object as int
+	 */
 	private double iFractionalSeconds;
 
-	/** hours part of the optional timezone as int */
+	/**
+	 * hours part of the optional timezone as int
+	 */
 	private int iHoursTimezone;
 
-	/** minutes part of the optional timezone as int */
+	/**
+	 * minutes part of the optional timezone as int
+	 */
 	private int iMinutesTimezone;
 
-	/** Flag indicating whether the values have been normalized. */
+	/**
+	 * Flag indicating whether the values have been normalized.
+	 */
 	private boolean isNormalized = false;
 
 	/*--------------*

@@ -26,8 +26,8 @@ import org.slf4j.LoggerFactory;
  * A registry that stores services by some key. Upon initialization, the registry searches for service description files
  * at <var>META-INF/services/&lt;service class name&gt;</var> and initializes itself accordingly.
  *
- * @see javax.imageio.spi.ServiceRegistry
  * @author Arjohn Kampman
+ * @see javax.imageio.spi.ServiceRegistry
  */
 public abstract class ServiceRegistry<K, S> {
 

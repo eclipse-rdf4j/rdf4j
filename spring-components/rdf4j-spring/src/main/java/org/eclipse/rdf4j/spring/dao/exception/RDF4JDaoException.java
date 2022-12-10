@@ -12,8 +12,8 @@
 package org.eclipse.rdf4j.spring.dao.exception;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class RDF4JDaoException extends RDF4JSpringException {
 	public RDF4JDaoException() {

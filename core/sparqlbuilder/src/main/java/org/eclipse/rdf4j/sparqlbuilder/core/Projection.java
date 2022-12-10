@@ -35,7 +35,6 @@ public class Projection extends QueryElementCollection<Projectable> {
 	 * Specify this projection to be distinct
 	 *
 	 * @return this
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modDistinct"> SPARQL Distinct modifier</a>
 	 */
 	public Projection distinct() {
@@ -47,7 +46,6 @@ public class Projection extends QueryElementCollection<Projectable> {
 	 *
 	 * @param isDistinct if this projection should be distinct
 	 * @return this
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modDistinct"> SPARQL Distinct modifier</a>
 	 */
 	public Projection distinct(boolean isDistinct) {
@@ -60,7 +58,6 @@ public class Projection extends QueryElementCollection<Projectable> {
 	 * Specify that this projection should select all in-scope expressions
 	 *
 	 * @return this
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select"> SPARQL Select</a>
 	 */
 	public Projection all() {
@@ -72,7 +69,6 @@ public class Projection extends QueryElementCollection<Projectable> {
 	 *
 	 * @param selectAll if this projection should select all expressions
 	 * @return this
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#select"> SPARQL Select</a>
 	 */
 	public Projection all(boolean selectAll) {

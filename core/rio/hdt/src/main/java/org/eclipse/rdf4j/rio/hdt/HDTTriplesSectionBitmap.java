@@ -15,21 +15,21 @@ import java.io.InputStream;
 
 /**
  * HDT Triples section.
- *
+ * <p>
  * This part contains two levels of bitmaps and arrays.
- *
+ * <p>
  * Typically (in SPO order), the Y-level corresponds to the predicates and the Z-level to the objects.
- *
+ * <p>
  * The X (subjects) is implicit since triples are already ordered by X, and bitmap Y is used to notify when there is a
  * new X: X will be used until a 1 is found in bitmap Y, which indicates that the next triple uses X+1.
- *
+ * <p>
  * The array contains numeric references to the predicates and objects in the HDT dictionaries, starting with the
  * entries in the "shared" {@link org.eclipse.rdf4j.rio.hdt.HDTDictionary Dictionary} These positions are counted
  * starting with 1, not 0.
- *
+ * <p>
  * E.g. Y-bitmap <code>0 1 1</code> and Y-array <code>1 2 3</code> results in <code>S1-P1 S1-P2 S2-P3</code>
- *
- *
+ * <p>
+ * <p>
  * Structure:
  *
  * <pre>

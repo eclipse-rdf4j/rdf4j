@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * The AVG operator as defined in http://www.w3.org/TR/sparql11-query/#aggregates.
- * <P>
+ * <p>
  * Note that we introduce AVG as a first-class object into the algebra, despite it being defined as a compound of other
  * operators (namely, SUM and COUNT). This allows us to more easily optimize evaluation.
  *

@@ -36,8 +36,8 @@ import org.eclipse.rdf4j.spring.tx.exception.WriteDeniedException;
 /**
  * Connection wrapper that throws an exception if a write operation is attempted in a read-only transaction.
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class TransactionalRepositoryConnection extends RepositoryConnectionWrapper {
 

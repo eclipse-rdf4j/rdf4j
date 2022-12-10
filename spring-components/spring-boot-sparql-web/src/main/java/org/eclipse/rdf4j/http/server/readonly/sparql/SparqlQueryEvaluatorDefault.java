@@ -42,11 +42,11 @@ class SparqlQueryEvaluatorDefault implements SparqlQueryEvaluator {
 	}
 
 	/**
-	 * @see <a href="https://www.w3.org/TR/sparql11-protocol/#dataset">protocol dataset</a>
 	 * @param q               the query
 	 * @param defaultGraphUri
 	 * @param namedGraphUris
 	 * @param connection
+	 * @see <a href="https://www.w3.org/TR/sparql11-protocol/#dataset">protocol dataset</a>
 	 */
 	private Dataset getQueryDataSet(String defaultGraphUri, String[] namedGraphUris, RepositoryConnection connection) {
 		SimpleDataset dataset = new SimpleDataset();

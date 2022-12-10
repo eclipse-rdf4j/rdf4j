@@ -58,7 +58,7 @@ public class JSONLDSettings {
 
 	/**
 	 * If set to true, the JSON-LD processor may emit blank nodes for triple predicates, otherwise they will be omitted.
-	 *
+	 * <p>
 	 * Note: the use of blank node identifiers to label properties is obsolete, and may be removed in a future version
 	 * of JSON-LD,
 	 * <p>

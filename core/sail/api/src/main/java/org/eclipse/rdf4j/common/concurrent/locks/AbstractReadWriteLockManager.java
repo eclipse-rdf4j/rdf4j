@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockCleaner;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockDiagnostics;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockMonitoring;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.LockTracking;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.slf4j.LoggerFactory;
 
 /**

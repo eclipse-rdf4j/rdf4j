@@ -16,9 +16,8 @@ import org.eclipse.rdf4j.model.Namespace;
 /**
  * Constants for the Provenance Ontology.
  *
- * @see <a href="https://www.w3.org/TR/prov-overview/">Provenance Ontology</a>
- *
  * @author Bart Hanssens
+ * @see <a href="https://www.w3.org/TR/prov-overview/">Provenance Ontology</a>
  */
 public class PROV {
 	/**

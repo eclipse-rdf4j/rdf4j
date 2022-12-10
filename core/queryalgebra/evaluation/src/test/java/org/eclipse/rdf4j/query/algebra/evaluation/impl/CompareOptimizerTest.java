@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 
 /**
  * @author jeen
- *
  */
 public class CompareOptimizerTest extends QueryOptimizerTest {
 

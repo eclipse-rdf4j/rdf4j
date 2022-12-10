@@ -55,7 +55,6 @@ import org.junit.Test;
  * test common cases against user expectations here.
  *
  * @author Jeen Broekstra
- *
  */
 public class ValuesTest {
 

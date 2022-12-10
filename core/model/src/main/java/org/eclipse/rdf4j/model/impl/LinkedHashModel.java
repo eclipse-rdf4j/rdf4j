@@ -45,7 +45,6 @@ import org.eclipse.rdf4j.model.util.PatternIterator;
  * "wrapped" using the * Models.synchronizedModel method.
  * </p>
  *
- *
  * @author James Leigh
  */
 @SuppressWarnings("unchecked")

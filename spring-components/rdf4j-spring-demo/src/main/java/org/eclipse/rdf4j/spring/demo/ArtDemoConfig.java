@@ -26,7 +26,7 @@ import org.springframework.core.io.Resource;
 
 /**
  * Spring config for the demo.
- *
+ * <p>
  * Here is what it does:
  *
  * <ul>
@@ -37,11 +37,11 @@ import org.springframework.core.io.Resource;
  * <li>it configures the 'data inserter' beans, which read data from the 'artists.ttl' file and adds them to the
  * repository at startup</li>
  * </ul>
- *
+ * <p>
  * See {@link org.eclipse.rdf4j.spring Rdf4J-Spring} for an overview and more pointers.
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Configuration
 @Import(RDF4JConfig.class)

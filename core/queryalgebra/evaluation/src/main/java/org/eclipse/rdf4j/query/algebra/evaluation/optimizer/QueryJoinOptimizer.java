@@ -281,8 +281,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private List<TupleExpr> getExtensionTupleExprs(List<TupleExpr> expressions) {
-			if (expressions.isEmpty())
+			if (expressions.isEmpty()) {
 				return List.of();
+			}
 
 			List<TupleExpr> extensions = List.of();
 			for (TupleExpr expr : expressions) {
@@ -301,8 +302,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected List<TupleExpr> getSubSelects(List<TupleExpr> expressions) {
-			if (expressions.isEmpty())
+			if (expressions.isEmpty()) {
 				return List.of();
+			}
 
 			List<TupleExpr> subselects = List.of();
 			for (TupleExpr expr : expressions) {
@@ -483,8 +485,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// More specific path expression found
 					lowestCost = cost;
 					result = tupleExpr;
-					if (cost == 0)
+					if (cost == 0) {
 						break;
+					}
 				}
 			}
 

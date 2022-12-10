@@ -710,8 +710,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			}
 			if (deprecated != null) {
 				return deprecated.contains(statement);
-			} else
+			} else {
 				return false;
+			}
 		} finally {
 			readWriteLock.unlockReader(readLock);
 		}

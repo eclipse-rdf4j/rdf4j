@@ -89,7 +89,7 @@ public interface BindingSet extends Iterable<Binding>, Serializable {
 	 * 	hashCode &circ;= binding.getName().hashCode() &circ; binding.getValue().hashCode();
 	 * }
 	 * </pre>
-	 *
+	 * <p>
 	 * Note: the calculated hash code intentionally does not depend on the order in which the bindings are iterated
 	 * over.
 	 *

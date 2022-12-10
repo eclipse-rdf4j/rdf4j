@@ -20,22 +20,34 @@ public class Compare extends BinaryValueOperator {
 	 *---------------*/
 
 	public enum CompareOp {
-		/** equal to */
+		/**
+		 * equal to
+		 */
 		EQ("="),
 
-		/** not equal to */
+		/**
+		 * not equal to
+		 */
 		NE("!="),
 
-		/** lower than */
+		/**
+		 * lower than
+		 */
 		LT("<"),
 
-		/** lower than or equal to */
+		/**
+		 * lower than or equal to
+		 */
 		LE("<="),
 
-		/** greater than or equal to */
+		/**
+		 * greater than or equal to
+		 */
 		GE(">="),
 
-		/** greater than */
+		/**
+		 * greater than
+		 */
 		GT(">");
 
 		private final String symbol;

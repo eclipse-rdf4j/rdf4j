@@ -21,7 +21,6 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
  * ValueStore's revision object is changed whenever values are removed from it or IDs are changed.
  *
  * @author Arjohn Kampman
- *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */

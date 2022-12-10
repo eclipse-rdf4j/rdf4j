@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
  * Assigns values to variables based on a supplied set of bindings.
  *
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 4.1.0. Use {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer}
  *             instead.
  */

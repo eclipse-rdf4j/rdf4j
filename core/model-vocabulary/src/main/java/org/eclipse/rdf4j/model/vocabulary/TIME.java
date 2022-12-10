@@ -16,9 +16,8 @@ import org.eclipse.rdf4j.model.Namespace;
 /**
  * Constants for the Time Ontology in OWL.
  *
- * @see <a href="https://www.w3.org/TR/owl-time/">Time Ontology in OWL</a>
- *
  * @author Bart Hanssens
+ * @see <a href="https://www.w3.org/TR/owl-time/">Time Ontology in OWL</a>
  */
 public class TIME {
 	/**

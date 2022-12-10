@@ -32,7 +32,6 @@ public class SPARQLQueries {
 	 *
 	 * @param namespaces one or more {@link Namespace} objects.
 	 * @return one or more SPARQL prefix declarations (each separated by a newline), as a String.
-	 *
 	 * @since 3.6.0
 	 */
 	public static String getPrefixClauses(Iterable<Namespace> namespaces) {
@@ -48,7 +47,6 @@ public class SPARQLQueries {
 	 * value in a SPARQL query.
 	 *
 	 * @see <a href="https://www.w3.org/TR/sparql11-query/#grammarEscapes">SPAQL 1.1 grammar escapes</a>
-	 *
 	 * @since 3.6.0
 	 */
 	public static String escape(String s) {
@@ -69,10 +67,8 @@ public class SPARQLQueries {
 	 *
 	 * @param s An SPARQL literal string with backslash escapes.
 	 * @return The un-escaped string.
-	 * @exception IllegalArgumentException If the supplied string is not a correctly escaped SPARQL string.
-	 *
+	 * @throws IllegalArgumentException If the supplied string is not a correctly escaped SPARQL string.
 	 * @see <a href="https://www.w3.org/TR/sparql11-query/#grammarEscapes">SPAQL 1.1 grammar escapes</a>
-	 *
 	 * @since 3.6.0
 	 */
 	public static String unescape(String s) {

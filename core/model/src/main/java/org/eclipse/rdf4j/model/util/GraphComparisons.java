@@ -50,11 +50,10 @@ import com.google.common.hash.Hashing;
 /**
  * Functions for canonicalizing RDF models and computing isomorphism.
  *
+ * @author Jeen Broekstra
  * @implNote The algorithms used in this class are based on the iso-canonical algorithm as described in: Hogan, A.
  *           (2017). Canonical forms for isomorphic and equivalent RDF graphs: algorithms for leaning and labelling
  *           blank nodes. ACM Transactions on the Web (TWEB), 11(4), 1-62.
- *
- * @author Jeen Broekstra
  */
 class GraphComparisons {
 
@@ -80,13 +79,11 @@ class GraphComparisons {
 	 *           for each model, and using that as a basis for comparison. The algorithm is described in detail in:
 	 *           Hogan, A. (2017). Canonical forms for isomorphic and equivalent RDF graphs: algorithms for leaning and
 	 *           labelling blank nodes. ACM Transactions on the Web (TWEB), 11(4), 1-62.
-	 *
 	 * @see <a href="http://www.w3.org/TR/rdf11-concepts/#graph-isomorphism">RDF Concepts &amp; Abstract Syntax, section
 	 *      3.6 (Graph Comparison)</a>
 	 * @see <a href="http://aidanhogan.com/docs/rdf-canonicalisation.pdf">Hogan, A. (2017). Canonical forms for
 	 *      isomorphic and equivalent RDF graphs: algorithms for leaning and labelling blank nodes. ACM Transactions on
 	 *      the Web (TWEB), 11(4), 1-62. Technical Paper (PDF )</a>
-	 *
 	 */
 	public static boolean isomorphic(Model model1, Model model2) {
 		if (model1 == model2) {
@@ -381,7 +378,6 @@ class GraphComparisons {
 	/**
 	 * Encapsulates the current partitioning state of the algorithm, keeping track of previous and current node:hashcode
 	 * mappings as well as static value mappings.
-	 *
 	 */
 	static class Partitioning {
 

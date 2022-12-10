@@ -17,8 +17,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @ConfigurationProperties(prefix = "rdf4j.spring.resultcache")
 @Validated
@@ -26,10 +26,14 @@ public class ResultCacheProperties {
 
 	private boolean enabled = false;
 
-	/** Initial size of each cache * */
+	/**
+	 * Initial size of each cache *
+	 */
 	private int initialSize = 10;
 
-	/** Maximum size of each cache * */
+	/**
+	 * Maximum size of each cache *
+	 */
 	private int maxSize = 1000;
 
 	/**
@@ -38,7 +42,9 @@ public class ResultCacheProperties {
 	 */
 	private boolean assumeNoOtherRepositoryClients = false;
 
-	/** Max age for cache entries. Specifiy as Duration, e.g. 1H, 10m, etc. */
+	/**
+	 * Max age for cache entries. Specifiy as Duration, e.g. 1H, 10m, etc.
+	 */
 	private Duration entryLifetime = Duration.ofHours(1);
 
 	public boolean isEnabled() {

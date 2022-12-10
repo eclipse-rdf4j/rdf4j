@@ -18,7 +18,9 @@ import org.eclipse.rdf4j.model.Namespace;
  */
 public class RSX {
 
-	/** The namespace (<var>http://rdf4j.org/shacl-extensions#</var>). */
+	/**
+	 * The namespace (<var>http://rdf4j.org/shacl-extensions#</var>).
+	 */
 	public static final String NAMESPACE = "http://rdf4j.org/shacl-extensions#";
 
 	/**

@@ -269,7 +269,7 @@ public class QueryJoinOptimizer extends org.eclipse.rdf4j.query.algebra.evaluati
 		 * <pre>
 		 *   [f] [a b c] [e f] [a d] [b e]
 		 * </pre>
-		 *
+		 * <p>
 		 * should result in:
 		 *
 		 * <pre>

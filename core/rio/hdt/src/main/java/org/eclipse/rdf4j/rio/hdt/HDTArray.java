@@ -18,12 +18,12 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
  * HDT Array
- *
+ * <p>
  * This part starts with a byte indicating the type of the array, followed by a byte containing the number of bits used
  * to encode an entry in the array, and the VByte-encoded number of entries.
- *
+ * <p>
  * Then the 8-bit CRC, followed by the array data itself.
- *
+ * <p>
  * Structure:
  *
  * <pre>

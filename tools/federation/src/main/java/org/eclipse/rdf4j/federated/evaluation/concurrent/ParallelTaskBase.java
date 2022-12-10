@@ -59,7 +59,8 @@ public abstract class ParallelTaskBase<T> implements ParallelTask<T> {
 				}
 			} else if (closed) {
 				assert Thread.currentThread()
-						.isInterrupted() : "Exception was thrown and task was closed, but the current thread is not interrupted which means that the exception was either something bad or some code forgot to re-interrupt the current thread: "
+						.isInterrupted()
+						: "Exception was thrown and task was closed, but the current thread is not interrupted which means that the exception was either something bad or some code forgot to re-interrupt the current thread: "
 								+ e;
 				logger.trace(
 						"Exception was thrown while performing task, but it was ignored because the task was closed.",

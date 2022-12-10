@@ -19,7 +19,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * @author jeen
- *
  */
 public class MemoryRDFStarSupportTest extends RDFStarSupportTest {
 

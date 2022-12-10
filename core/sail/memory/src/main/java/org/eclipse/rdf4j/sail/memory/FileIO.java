@@ -57,10 +57,14 @@ class FileIO {
 	 * Constants *
 	 *-----------*/
 
-	/** Magic number for Binary Memory Store Files */
+	/**
+	 * Magic number for Binary Memory Store Files
+	 */
 	private static final byte[] MAGIC_NUMBER = new byte[] { 'B', 'M', 'S', 'F' };
 
-	/** The version number of the current format. */
+	/**
+	 * The version number of the current format.
+	 */
 	// Version 1: initial version
 	// Version 2: don't use read/writeUTF() to remove 64k limit on strings,
 	// removed dummy "up-to-date status" boolean for namespace records

@@ -29,7 +29,6 @@ public abstract class IRITest {
 	 * Creates a test IRI instance.
 	 *
 	 * @param iri the string value of the IRI
-	 *
 	 * @return a new instance of the concrete IRI class under test
 	 */
 	protected abstract IRI iri(String iri);
@@ -39,7 +38,6 @@ public abstract class IRITest {
 	 *
 	 * @param namespace the namespace of the IRI
 	 * @param localname the localname of the IRI
-	 *
 	 * @return a new instance of the concrete IRI class under test
 	 */
 	protected abstract IRI iri(String namespace, String localname);

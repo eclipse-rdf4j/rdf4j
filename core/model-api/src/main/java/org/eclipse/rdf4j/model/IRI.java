@@ -26,11 +26,10 @@ package org.eclipse.rdf4j.model;
  * from the rest of the IRI. The implementation should check this upon object creation.
  *
  * @author Jeen Broekstra
- * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
- *
  * @implNote In order to ensure interoperability of concrete classes implementing this interface,
  *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
  *           specs.
+ * @see <a href="http://tools.ietf.org/html/rfc3987">RFC 3987</a>
  */
 public interface IRI extends Resource {
 
@@ -61,7 +60,6 @@ public interface IRI extends Resource {
 	 * Compares this IRI to another object.
 	 *
 	 * @param o the object to compare this IRI to
-	 *
 	 * @return {@code true}, if the other object is an instance of {@code IRI} and their {@linkplain #stringValue()
 	 *         string values} are equal; {@code false}, otherwise
 	 */

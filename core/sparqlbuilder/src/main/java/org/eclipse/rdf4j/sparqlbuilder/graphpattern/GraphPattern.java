@@ -35,7 +35,6 @@ public interface GraphPattern extends QueryElement {
 	 *
 	 * @param patterns the patterns to add
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#GroupPatterns">SPARQL Group Graph
 	 *      Pattern</a>
 	 */
@@ -59,7 +58,6 @@ public interface GraphPattern extends QueryElement {
 	 *
 	 * @param patterns the patterns to add
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#alternatives">SPARQL Alternative Graph
 	 *      Pattern</a>
 	 */
@@ -75,7 +73,6 @@ public interface GraphPattern extends QueryElement {
 	 * </pre>
 	 *
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals"> SPARQL Optional Graph
 	 *      Patterns</a>
 	 */
@@ -91,7 +88,6 @@ public interface GraphPattern extends QueryElement {
 	 *
 	 * @param isOptional if this graph pattern should be optional or not
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#optionals"> SPARQL Optional Graph
 	 *      Patterns</a>
 	 */
@@ -111,7 +107,6 @@ public interface GraphPattern extends QueryElement {
 	 *
 	 * @param constraint the filter constraint
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/sparql11-query/#termConstraint"> SPARQL Filter</a>
 	 */
 	default GraphPattern filter(Expression<?> constraint) {
@@ -130,9 +125,7 @@ public interface GraphPattern extends QueryElement {
 	 * </pre>
 	 *
 	 * @param patterns the patterns to pass as arguments to the <code>EXISTS</code> expression
-	 *
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern"> Filtering using Graph
 	 *      Pattern</a>
 	 */
@@ -152,9 +145,7 @@ public interface GraphPattern extends QueryElement {
 	 * </pre>
 	 *
 	 * @param patterns the patterns to pass as arguments to the <code>NOT EXISTS</code> expression
-	 *
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-pattern"> Filtering using Graph
 	 *      Pattern</a>
 	 */
@@ -188,7 +179,6 @@ public interface GraphPattern extends QueryElement {
 	 *
 	 * @param patterns the patterns to construct the <code>MINUS</code> graph pattern with
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#neg-minus"> SPARQL MINUS Graph Pattern</a>
 	 */
 	default GraphPattern minus(GraphPattern... patterns) {
@@ -204,7 +194,6 @@ public interface GraphPattern extends QueryElement {
 	 *
 	 * @param name the name to specify
 	 * @return the new {@code GraphPattern} instance
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#queryDataset"> Specifying Datasets in SPARQL
 	 *      Queries</a>
 	 */

@@ -16,9 +16,8 @@ import org.eclipse.rdf4j.model.Namespace;
 /**
  * Constants for the Open Digital Rights Language.
  *
- * @see <a href="https://www.w3.org/TR/odrl-vocab/">Open Digital Rights Language</a>
- *
  * @author Bart Hanssens
+ * @see <a href="https://www.w3.org/TR/odrl-vocab/">Open Digital Rights Language</a>
  */
 public class ODRL2 {
 	/**

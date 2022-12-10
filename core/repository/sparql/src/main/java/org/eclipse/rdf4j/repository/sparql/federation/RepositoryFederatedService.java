@@ -98,7 +98,6 @@ public class RepositoryFederatedService implements FederatedService {
 	 * {@link RepositoryFederatedService#select(Service, Set, BindingSet, String)} routine.
 	 *
 	 * @author Andreas Schwarte
-	 *
 	 */
 	private class FallbackServiceIteration extends JoinExecutorBase<BindingSet> {
 
@@ -128,7 +127,6 @@ public class RepositoryFederatedService implements FederatedService {
 	 * Wrapper iteration which closes a {@link RepositoryConnection} upon {@link #close()}
 	 *
 	 * @author Andreas Schwarte
-	 *
 	 */
 	private static class CloseConnectionIteration implements CloseableIteration<BindingSet, QueryEvaluationException> {
 
@@ -490,7 +488,6 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 *
 	 * @param boundJoinBlockSize the bound join block size, 0 to evaluate all in a single request
 	 */
 	public void setBoundJoinBlockSize(int boundJoinBlockSize) {
@@ -498,7 +495,6 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 *
 	 * @param flag whether to use a fresh {@link RepositoryConnection} for each individual query
 	 */
 	public void setUseFreshConnection(boolean flag) {

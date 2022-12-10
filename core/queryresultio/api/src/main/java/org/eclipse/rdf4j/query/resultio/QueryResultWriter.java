@@ -63,9 +63,9 @@ public interface QueryResultWriter extends QueryResultHandler {
 	/**
 	 * Indicates the start of the header.
 	 *
+	 * @throws QueryResultHandlerException If there was an error writing the start of the header.
 	 * @see <a href="http://www.w3.org/TR/2012/PER-rdf-sparql-XMLres-20121108/#head">SPARQL Query Results XML Format
 	 *      documentation for head element.</a>
-	 * @throws QueryResultHandlerException If there was an error writing the start of the header.
 	 */
 	void startHeader() throws QueryResultHandlerException;
 

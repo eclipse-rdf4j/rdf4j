@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 
 /**
  * Connection to an {@link LmdbStore}.
- *
  */
 public class LmdbStoreConnection extends SailSourceConnection {
 

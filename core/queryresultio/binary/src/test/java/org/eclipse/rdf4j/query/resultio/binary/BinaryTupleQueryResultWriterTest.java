@@ -17,7 +17,6 @@ import org.eclipse.rdf4j.testsuite.query.resultio.AbstractTupleQueryResultWriter
 
 /**
  * @author jeen
- *
  */
 public class BinaryTupleQueryResultWriterTest extends AbstractTupleQueryResultWriterTest {
 

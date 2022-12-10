@@ -256,8 +256,9 @@ public class LuceneIndexIdFilteringTest {
 							continue;
 						}
 						elementValue = set.getValue(el.resultName);
-						if (elementValue == null)
+						if (elementValue == null) {
 							continue;
+						}
 
 						String element = elementValue.stringValue().substring(NAMESPACE.length());
 						if (!el.elements.remove(element)) {

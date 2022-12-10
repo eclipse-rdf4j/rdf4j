@@ -23,8 +23,8 @@ import org.eclipse.rdf4j.spring.dao.support.bindingsBuilder.BindingsBuilder;
 import org.eclipse.rdf4j.spring.support.RDF4JTemplate;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class OperationBuilder<T extends Operation, SUB extends OperationBuilder<T, SUB>> {
 	private final T operation;

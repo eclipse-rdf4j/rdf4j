@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 
 /**
  * @author Jeen
- *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */

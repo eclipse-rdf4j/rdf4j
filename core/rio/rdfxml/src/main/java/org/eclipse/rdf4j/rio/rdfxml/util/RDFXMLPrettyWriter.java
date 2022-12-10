@@ -69,7 +69,7 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  *    &lt;/rdf:li&gt;
  * &lt;/rdf:Seq&gt;
  * </pre>
- *
+ * <p>
  * Typed node elements means that we write out type information in the short form of
  *
  * <pre>
@@ -77,7 +77,7 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  *     ...
  *  &lt;/foaf:Person&gt;
  * </pre>
- *
+ * <p>
  * instead of
  *
  * <pre>
@@ -86,7 +86,7 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  *     ...
  *  &lt;/rdf:Description&gt;
  * </pre>
- *
+ * <p>
  * Empty property elements are of the form
  *
  * <pre>
@@ -94,7 +94,7 @@ import org.eclipse.rdf4j.rio.rdfxml.RDFXMLWriter;
  *    &lt;foaf:homepage rdf:resource=&quot;http://www.cs.vu.nl/&tilde;marta&quot;/&gt;
  * &lt;/foaf:Person&gt;
  * </pre>
- *
+ * <p>
  * instead of
  *
  * <pre>

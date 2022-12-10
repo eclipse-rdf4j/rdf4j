@@ -58,7 +58,7 @@ public class DataStore implements Closeable {
 	 *
 	 * @param id A value ID, should be larger than 0.
 	 * @return The value for the ID, or <var>null</var> if no such value could be found.
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public byte[] getData(int id) throws IOException {
 		assert id > 0 : "id must be larger than 0, is: " + id;
@@ -78,7 +78,7 @@ public class DataStore implements Closeable {
 	 *
 	 * @param queryData The value to get the ID for, must not be <var>null</var>.
 	 * @return The ID for the specified value, or <var>-1</var> if no such ID could be found.
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public int getID(byte[] queryData) throws IOException {
 		assert queryData != null : "queryData must not be null";
@@ -121,7 +121,7 @@ public class DataStore implements Closeable {
 	 *
 	 * @param data The data to store, must not be <var>null</var>.
 	 * @return The ID that has been assigned to the value.
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public int storeData(byte[] data) throws IOException {
 		assert data != null : "data must not be null";
@@ -141,7 +141,7 @@ public class DataStore implements Closeable {
 	/**
 	 * Synchronizes any recent changes to the data to disk.
 	 *
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public void sync() throws IOException {
 		hashFile.sync();
@@ -152,7 +152,7 @@ public class DataStore implements Closeable {
 	/**
 	 * Removes all values from the DataStore.
 	 *
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
 		try {
@@ -170,7 +170,7 @@ public class DataStore implements Closeable {
 	 * Closes the DataStore, releasing any file references, etc. In case a transaction is currently open, it will be
 	 * rolled back. Once closed, the DataStore can no longer be used.
 	 *
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	@Override
 	public void close() throws IOException {

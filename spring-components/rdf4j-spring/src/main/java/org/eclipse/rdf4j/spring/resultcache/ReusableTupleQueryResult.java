@@ -49,8 +49,8 @@ import org.eclipse.rdf4j.spring.support.query.DelegatingIterator;
  *
  * </pre>
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class ReusableTupleQueryResult implements TupleQueryResult, ThrowableRecorder {
 	private TupleQueryResult originalResult;

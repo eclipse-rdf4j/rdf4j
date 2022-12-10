@@ -322,7 +322,8 @@ public class ValidationTuple {
 			return this;
 		}
 
-		assert scope == ConstraintComponent.Scope.propertyShape : "Can't set value on NodeShape scoped ValidationTuple because it will also change the target!";
+		assert scope == ConstraintComponent.Scope.propertyShape
+				: "Can't set value on NodeShape scoped ValidationTuple because it will also change the target!";
 
 		Value[] chain;
 

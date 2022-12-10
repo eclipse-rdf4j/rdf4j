@@ -809,7 +809,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					nonExclusiveSerializableValidationLock = sail.serializableValidationLock.getReadLock();
 				}
 			} else {
-				assert !useSerializableValidation : "ShaclSail does not have serializable validation enabled but ShaclSailConnection still attempted to use serializable validation!";
+				assert !useSerializableValidation
+						: "ShaclSail does not have serializable validation enabled but ShaclSailConnection still attempted to use serializable validation!";
 			}
 
 			if (!isValidationEnabled()) {
@@ -823,7 +824,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			}
 
 			assert !shapeRefreshNeeded
-					|| !shapesModifiedInCurrentTransaction : "isShapeRefreshNeeded should trigger shapesModifiedInCurrentTransaction once we have loaded the modified shapes, but shapesModifiedInCurrentTransaction should be null until then";
+					|| !shapesModifiedInCurrentTransaction
+					: "isShapeRefreshNeeded should trigger shapesModifiedInCurrentTransaction once we have loaded the modified shapes, but shapesModifiedInCurrentTransaction should be null until then";
 
 			if (!shapeRefreshNeeded && !isBulkValidation() && addedStatementsSet.isEmpty()
 					&& removedStatementsSet.isEmpty()) {

@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstrain
 
 /**
  * @author jeen
- *
  */
 public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 

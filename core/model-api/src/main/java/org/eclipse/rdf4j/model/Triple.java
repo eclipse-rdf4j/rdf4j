@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * {@link org.eclipse.rdf4j.model.util.Statements} and {@link org.eclipse.rdf4j.model.util.Values} utility classes.
  *
  * @author Pavel Mihaylov
- *
  * @implNote In order to ensure interoperability of concrete classes implementing this interface,
  *           {@link #equals(Object)} and {@link #hashCode()} methods must be implemented exactly as described in their
  *           specs.
@@ -59,7 +58,6 @@ public interface Triple extends Resource {
 	 * Compares this triple to another object.
 	 *
 	 * @param other the object to compare this triple to
-	 *
 	 * @return {@code true} if the {@code other} object is an instance of {@code Triple} and if their
 	 *         {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates} and {@linkplain #getObject()
 	 *         objects} are equal; {@code false} otherwise

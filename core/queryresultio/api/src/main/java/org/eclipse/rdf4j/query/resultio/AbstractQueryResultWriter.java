@@ -78,7 +78,6 @@ public abstract class AbstractQueryResultWriter implements QueryResultWriter, Si
 	 *
 	 * @param bindings the solution to handle
 	 * @throws TupleQueryResultHandlerException
-	 *
 	 * @implNote this temporary implementation throws an {@link UnsupportedOperationException} and is only provided for
 	 *           backward compatility.
 	 * @since 3.2.0

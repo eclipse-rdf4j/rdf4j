@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.query.parser.sparql;
  * SPARQL-related utility methods.
  *
  * @author Arjohn Kampman
- *
  * @deprecated since 3.6.0 Use {@link SPARQLQueries} instead.
  */
 @Deprecated

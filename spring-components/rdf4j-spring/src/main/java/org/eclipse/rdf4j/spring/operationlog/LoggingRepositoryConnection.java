@@ -41,8 +41,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class LoggingRepositoryConnection extends RepositoryConnectionWrapper {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());

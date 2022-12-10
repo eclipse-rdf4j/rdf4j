@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory;
  * visible until a transaction is committed and that concurrent transactions are not possible. When another transaction
  * is active, calls to <var>startTransaction()</var> will block until the active transaction is committed or rolled
  * back.
- *
+ * <p>
  * The MemoryStore is designed for datasets with fewer than 100,000 triples. The MemoryStore uses hash tables, and when
  * these hash tables fill up it copies the values to larger hash tables. This can cause strain on the garbage collector
  * due to lots of memory being allocated and freed.
@@ -121,10 +121,14 @@ public class MemoryStore extends AbstractNotifyingSail implements FederatedServi
 
 	private EvaluationStrategyFactory evalStratFactory;
 
-	/** independent life cycle */
+	/**
+	 * independent life cycle
+	 */
 	private FederatedServiceResolver serviceResolver;
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private SPARQLServiceResolver dependentServiceResolver;
 
 	/*--------------*

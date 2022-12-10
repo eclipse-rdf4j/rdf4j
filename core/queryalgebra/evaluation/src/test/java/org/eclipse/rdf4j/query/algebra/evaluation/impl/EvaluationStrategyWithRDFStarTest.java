@@ -48,7 +48,6 @@ import org.junit.runners.Parameterized.Parameters;
  * either {@link TripleSource} or {@link RDFStarTripleSource} interfaces
  *
  * @author damyan.ognyanov
- *
  */
 @RunWith(Parameterized.class)
 public class EvaluationStrategyWithRDFStarTest {
@@ -77,7 +76,6 @@ public class EvaluationStrategyWithRDFStarTest {
 	 * RDFStarTripleSource The sources for the eval strategies just forward the evaluation to an instance of that
 	 *
 	 * @author damyan.ognyanov
-	 *
 	 */
 	class CommonBaseSource {
 		public CloseableIteration<? extends Triple, QueryEvaluationException> getRdfStarTriples(Resource subj,

@@ -82,10 +82,11 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	private BiConsumer<MutableBindingSet, BindingSet> andThen(BiConsumer<MutableBindingSet, BindingSet> consumer,
 			BiConsumer<MutableBindingSet, BindingSet> next) {
-		if (consumer == null)
+		if (consumer == null) {
 			return next;
-		else
+		} else {
 			return consumer.andThen(next);
+		}
 	}
 
 	private boolean determineOuterProjection(QueryModelNode ancestor) {

@@ -20,7 +20,8 @@ import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 
 /**
-  */
+ *
+ */
 public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default size of the triple database.

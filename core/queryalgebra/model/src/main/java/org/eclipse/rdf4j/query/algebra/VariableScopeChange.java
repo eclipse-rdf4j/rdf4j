@@ -21,7 +21,6 @@ public interface VariableScopeChange {
 	 * indicates if the node represents a variable scope change.
 	 *
 	 * @return true iff the node represents a variable scope change.
-	 *
 	 */
 	boolean isVariableScopeChange();
 

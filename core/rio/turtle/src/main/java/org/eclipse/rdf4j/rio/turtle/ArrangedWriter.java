@@ -46,7 +46,6 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  *
  * @author James Leigh
  * @since 2.3
- *
  * @deprecated since 3.3.1. pretty printing / bnode inlining logic has been moved to {@link TurtleWriter} internally.
  */
 @Deprecated

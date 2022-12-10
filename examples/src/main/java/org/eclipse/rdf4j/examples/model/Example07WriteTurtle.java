@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * RDF Tutorial example 07: Writing an RDF model in Turtle syntax
- *
+ * <p>
  * In this example, we show how you can use the Rio Parser/writer toolkit to write your model in Turtle syntax.
  *
  * @author Jeen Broekstra

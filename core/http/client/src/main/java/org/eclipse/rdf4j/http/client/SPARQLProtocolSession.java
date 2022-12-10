@@ -657,7 +657,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundTupleResult}
 	 * or (in the error-case) in this method.
-	 * 
+	 *
 	 * @deprecated WeakReference<?> callerRef argument will be removed
 	 */
 	@Deprecated(since = "4.1.2")
@@ -790,7 +790,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	/**
 	 * Parse the response in a background thread. HTTP connections are dealt with in the {@link BackgroundGraphResult}
 	 * or (in the error-case) in this method.
-	 * 
+	 *
 	 * @deprecated WeakReference<?> callerRef argument will be removed
 	 */
 	@Deprecated(since = "4.1.2")

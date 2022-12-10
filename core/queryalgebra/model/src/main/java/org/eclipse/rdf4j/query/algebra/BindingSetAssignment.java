@@ -17,6 +17,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
+ *
  */
 public class BindingSetAssignment extends AbstractQueryModelNode implements TupleExpr {
 

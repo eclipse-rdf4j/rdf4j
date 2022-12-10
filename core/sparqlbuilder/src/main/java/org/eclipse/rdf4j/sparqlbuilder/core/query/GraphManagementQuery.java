@@ -34,7 +34,6 @@ abstract class GraphManagementQuery<T extends GraphManagementQuery<T>> implement
 	 * Specify if the <code>SILENT</code> option should be on for this query
 	 *
 	 * @param isSilent if this should be a SILENT operation or not
-	 *
 	 * @return this query instance
 	 */
 	@SuppressWarnings("unchecked")

@@ -17,8 +17,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
 /**
  * Base class for {@link RioSetting}. Includes base functionality for reading default values from system properties.
  *
- * @author Jeen Broekstra
  * @param <T> the setting type
+ * @author Jeen Broekstra
  */
 public abstract class AbstractRioSetting<T> implements RioSetting<T> {
 

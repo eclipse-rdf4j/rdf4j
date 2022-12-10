@@ -34,7 +34,6 @@ public class CreateQuery extends GraphManagementQuery<CreateQuery> {
 	 * Specify the graph to create
 	 *
 	 * @param graph the IRI identifier for the new graph
-	 *
 	 * @return this CreateQuery instance
 	 */
 	public CreateQuery graph(Iri graph) {

@@ -14,14 +14,16 @@ package org.eclipse.rdf4j.spring.repository.inmemory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * @since 4.0.0
  * @author Gabriel Pickl
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @ConfigurationProperties(prefix = "rdf4j.spring.repository.inmemory")
 public class InMemoryRepositoryProperties {
 	private boolean enabled = true;
-	/** Should a SHACL Sail be used? */
+	/**
+	 * Should a SHACL Sail be used?
+	 */
 	private boolean useShaclSail = false;
 
 	public boolean isUseShaclSail() {

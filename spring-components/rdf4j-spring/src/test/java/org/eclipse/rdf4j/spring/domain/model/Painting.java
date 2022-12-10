@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class Painting {
 	public static final Variable PAINTING_ID = SparqlBuilder.var("painting_id");

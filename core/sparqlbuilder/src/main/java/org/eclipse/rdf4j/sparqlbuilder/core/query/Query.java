@@ -76,7 +76,6 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 *
 	 * @param queryPatterns the patterns to add
 	 * @return this
-	 *
 	 * @see QueryPattern
 	 */
 	public T where(GraphPattern... queryPatterns) {
@@ -102,7 +101,6 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 *
 	 * @param groupables the objects to group on, in order (appended to the end of any existing grouping specifiers)
 	 * @return this
-	 *
 	 * @see GroupBy
 	 */
 	public T groupBy(Groupable... groupables) {
@@ -129,7 +127,6 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 *
 	 * @param conditions the objects to order on, in order
 	 * @return this
-	 *
 	 * @see OrderBy
 	 */
 	public T orderBy(Orderable... conditions) {
@@ -156,7 +153,6 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 *
 	 * @param constraints the constraints to add to the clause
 	 * @return this
-	 *
 	 * @see Having
 	 */
 	public T having(Expression<?>... constraints) {
@@ -183,7 +179,6 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 *
 	 * @param limit
 	 * @return this
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modResultLimit"> Limits in SPARQL
 	 *      Queries</a>
 	 */
@@ -198,7 +193,6 @@ public abstract class Query<T extends Query<T>> implements QueryElement {
 	 *
 	 * @param offset
 	 * @return this
-	 *
 	 * @see <a href="http://www.w3.org/TR/2013/REC-sparql11-query-20130321/#modOffset">Offsets in SPARQL Queries</a>
 	 */
 	public T offset(int offset) {

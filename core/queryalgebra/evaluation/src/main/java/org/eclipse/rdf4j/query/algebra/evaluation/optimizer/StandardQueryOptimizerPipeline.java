@@ -23,17 +23,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 
 /**
- *
  * A standard pipeline with the default {@link QueryOptimizer}s that will be used by {@link StrictEvaluationStrategy}
  * and its subclasses, unless specifically overridden.
  *
  * @author Jeen Broekstra
- *
  * @see EvaluationStrategyFactory#setOptimizerPipeline(QueryOptimizerPipeline)
  */
 public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
 	private static boolean assertsEnabled = false;
+
 	static {
 		// noinspection AssertWithSideEffects
 		assert assertsEnabled = true;

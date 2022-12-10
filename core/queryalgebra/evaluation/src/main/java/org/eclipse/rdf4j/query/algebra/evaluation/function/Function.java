@@ -58,10 +58,10 @@ public interface Function {
 	/**
 	 * UUID() and STRUUID() must return a different result for each invocation.
 	 *
+	 * @return if each invocation must return a different result.
 	 * @see https://www.w3.org/TR/sparql11-query/#func-uuid
 	 * @see https://www.w3.org/TR/sparql11-query/#func-struuid
 	 * @see https://www.w3.org/TR/sparql11-query/#func-numerics
-	 * @return if each invocation must return a different result.
 	 */
 	default boolean mustReturnDifferentResult() {
 		return false;

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 public class ParserConfig extends RioConfig {
 
 	/**
+	 *
 	 */
 	private static final long serialVersionUID = 270L;
 

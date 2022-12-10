@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.spring.operationlog.log.slf4j.DebuggingOperationExecuti
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class OperationLog {
 

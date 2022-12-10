@@ -15,33 +15,53 @@ package org.eclipse.rdf4j.rio.trix;
  */
 public interface TriXConstants {
 
-	/** The TriX namespace. */
+	/**
+	 * The TriX namespace.
+	 */
 	String NAMESPACE = "http://www.w3.org/2004/03/trix/trix-1/";
 
-	/** The root tag. */
+	/**
+	 * The root tag.
+	 */
 	String ROOT_TAG = "TriX";
 
-	/** The tag that starts a new context/graph. */
+	/**
+	 * The tag that starts a new context/graph.
+	 */
 	String CONTEXT_TAG = "graph";
 
-	/** The tag that starts a new triple. */
+	/**
+	 * The tag that starts a new triple.
+	 */
 	String TRIPLE_TAG = "triple";
 
-	/** The tag for URI values. */
+	/**
+	 * The tag for URI values.
+	 */
 	String URI_TAG = "uri";
 
-	/** The tag for BNode values. */
+	/**
+	 * The tag for BNode values.
+	 */
 	String BNODE_TAG = "id";
 
-	/** The tag for plain literal values. */
+	/**
+	 * The tag for plain literal values.
+	 */
 	String PLAIN_LITERAL_TAG = "plainLiteral";
 
-	/** The tag for typed literal values. */
+	/**
+	 * The tag for typed literal values.
+	 */
 	String TYPED_LITERAL_TAG = "typedLiteral";
 
-	/** The attribute for language tags of plain literal. */
+	/**
+	 * The attribute for language tags of plain literal.
+	 */
 	String LANGUAGE_ATT = "xml:lang";
 
-	/** The attribute for datatypes of typed literal. */
+	/**
+	 * The attribute for datatypes of typed literal.
+	 */
 	String DATATYPE_ATT = "datatype";
 }

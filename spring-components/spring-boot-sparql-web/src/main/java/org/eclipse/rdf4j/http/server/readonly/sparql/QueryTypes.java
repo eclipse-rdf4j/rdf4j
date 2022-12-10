@@ -98,8 +98,9 @@ enum QueryTypes {
 			} else {
 				for (FileFormat format : formats) {
 					for (String mimeType : format.getMIMETypes()) {
-						if (acceptHeader.contains(mimeType))
+						if (acceptHeader.contains(mimeType)) {
 							return true;
+						}
 					}
 				}
 			}
@@ -113,7 +114,9 @@ enum QueryTypes {
 
 	protected boolean accepts(Query q) {
 		return typeChecker.test(q);
-	};
+	}
+
+	;
 
 	protected FileFormat bestFormat(String acceptHeader) {
 		if (acceptHeader == null || acceptHeader.isEmpty()) {
@@ -121,8 +124,9 @@ enum QueryTypes {
 		} else {
 			for (FileFormat format : formats) {
 				for (String mimeType : format.getMIMETypes()) {
-					if (acceptHeader.contains(mimeType))
+					if (acceptHeader.contains(mimeType)) {
 						return format;
+					}
 				}
 			}
 		}

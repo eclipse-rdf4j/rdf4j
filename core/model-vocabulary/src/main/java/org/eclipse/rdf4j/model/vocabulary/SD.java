@@ -16,8 +16,8 @@ import org.eclipse.rdf4j.model.Namespace;
 /**
  * Namespace Sparql-service-description. Prefix: {@code <http://www.w3.org/ns/sparql-service-description#>}
  *
- * @see <a href="http://www.w3.org/TR/sparql11-service-description/">SPARQL 1.1 Service Description</a>
  * @author Peter Ansell
+ * @see <a href="http://www.w3.org/TR/sparql11-service-description/">SPARQL 1.1 Service Description</a>
  */
 public class SD {
 

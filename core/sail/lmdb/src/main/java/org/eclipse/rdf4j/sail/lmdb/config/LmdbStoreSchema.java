@@ -18,38 +18,57 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 /**
  * Defines constants for the LmdbStore schema which is used by {@link LmdbStoreFactory}s to initialize
  * {@link LmdbStore}s.
- *
  */
 public class LmdbStoreSchema {
 
-	/** The LmdbStore schema namespace (<tt>http://rdf4j.org/config/sail/lmdb#</tt>). */
+	/**
+	 * The LmdbStore schema namespace (<tt>http://rdf4j.org/config/sail/lmdb#</tt>).
+	 */
 	public static final String NAMESPACE = "http://rdf4j.org/config/sail/lmdb#";
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#tripleIndexes</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#tripleIndexes</tt>
+	 */
 	public final static IRI TRIPLE_INDEXES;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#tripleDBSize</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#tripleDBSize</tt>
+	 */
 	public final static IRI TRIPLE_DB_SIZE;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#forceSync</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#forceSync</tt>
+	 */
 	public final static IRI FORCE_SYNC;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#valueCacheSize</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#valueCacheSize</tt>
+	 */
 	public final static IRI VALUE_CACHE_SIZE;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#valueDBSize</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#valueDBSize</tt>
+	 */
 	public final static IRI VALUE_DB_SIZE;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#valueIDCacheSize</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#valueIDCacheSize</tt>
+	 */
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#namespaceCacheSize</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#namespaceCacheSize</tt>
+	 */
 	public final static IRI NAMESPACE_CACHE_SIZE;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#namespaceIDCacheSize</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#namespaceIDCacheSize</tt>
+	 */
 	public final static IRI NAMESPACE_ID_CACHE_SIZE;
 
-	/** <tt>http://rdf4j.org/config/sail/lmdb#autoGrow</tt> */
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#autoGrow</tt>
+	 */
 	public final static IRI AUTO_GROW;
 
 	static {

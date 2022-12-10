@@ -20,9 +20,9 @@ import java.util.zip.CheckedInputStream;
 
 /**
  * Helper class for different HDT parts.
- *
+ * <p>
  * Each part starts with <code>$HDT</code>, followed by a byte indicating the type of the part.
- *
+ * <p>
  * Structure:
  *
  * <pre>

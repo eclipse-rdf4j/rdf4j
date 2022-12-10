@@ -65,7 +65,9 @@ public class RemoteRepositoryManager extends RepositoryManager {
 		return manager;
 	}
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private volatile SharedHttpClientSessionManager client;
 
 	/**

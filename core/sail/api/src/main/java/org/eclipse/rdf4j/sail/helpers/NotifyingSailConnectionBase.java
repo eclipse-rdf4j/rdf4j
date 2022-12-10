@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.sail.helpers;
 
 /**
  * @author Jeen Broekstra
- *
  * @deprecated since RDF4J 4.0. Use {@link AbstractNotifyingSailConnection} instead.
  */
 @Deprecated(forRemoval = true)

@@ -42,7 +42,6 @@ import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
  * File-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  *
  * @author Arjohn Kampman
- *
  * @apiNote This feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */
@@ -177,7 +176,7 @@ public class ValueStore extends SimpleValueFactory {
 	 *
 	 * @param id A value ID.
 	 * @return The value for the ID, or <var>null</var> no such value could be found.
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public NativeValue getValue(int id) throws IOException {
 		// Check value cache
@@ -204,7 +203,7 @@ public class ValueStore extends SimpleValueFactory {
 	 *
 	 * @param value A value.
 	 * @return The ID for the specified value, or {@link NativeValue#UNKNOWN_ID} if no such ID could be found.
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public int getID(Value value) throws IOException {
 		// Try to get the internal ID from the value itself
@@ -274,7 +273,7 @@ public class ValueStore extends SimpleValueFactory {
 	 *
 	 * @param value The Value to store.
 	 * @return The ID that has been assigned to the value.
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public int storeValue(Value value) throws IOException {
 		// Try to get the internal ID from the value itself
@@ -327,7 +326,7 @@ public class ValueStore extends SimpleValueFactory {
 	/**
 	 * Removes all values from the ValueStore.
 	 *
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public void clear() throws IOException {
 		try {
@@ -352,7 +351,7 @@ public class ValueStore extends SimpleValueFactory {
 	/**
 	 * Synchronizes any changes that are cached in memory to disk.
 	 *
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public void sync() throws IOException {
 		dataStore.sync();
@@ -361,7 +360,7 @@ public class ValueStore extends SimpleValueFactory {
 	/**
 	 * Closes the ValueStore, releasing any file references, etc. Once closed, the ValueStore can no longer be used.
 	 *
-	 * @exception IOException If an I/O error occurred.
+	 * @throws IOException If an I/O error occurred.
 	 */
 	public void close() throws IOException {
 		dataStore.close();

@@ -16,8 +16,8 @@ import java.util.function.Consumer;
 
 /**
  * @param <T>
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class DelegatingIterator<T> implements Iterator<T> {
 	private final Iterator<T> delegate;

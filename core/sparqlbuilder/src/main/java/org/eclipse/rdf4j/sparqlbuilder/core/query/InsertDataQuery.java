@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.sparqlbuilder.graphpattern.TriplePattern;
  * The SPARQL Insert Data Query
  *
  * @see <a href="https://www.w3.org/TR/sparql11-update/#insertData"> SPARQL INSERT DATA Query</a>
- *
  */
 public class InsertDataQuery extends UpdateDataQuery<InsertDataQuery> {
 	private static final String INSERT_DATA = "INSERT DATA";
@@ -28,7 +27,6 @@ public class InsertDataQuery extends UpdateDataQuery<InsertDataQuery> {
 	 * Add triples to be inserted
 	 *
 	 * @param triples the triples to add to this insert data query
-	 *
 	 * @return this Insert Data query instance
 	 */
 	public InsertDataQuery insertData(TriplePattern... triples) {
@@ -39,7 +37,6 @@ public class InsertDataQuery extends UpdateDataQuery<InsertDataQuery> {
 	 * Set this query's triples template
 	 *
 	 * @param triplesTemplate the {@link TriplesTemplate} instance to set
-	 *
 	 * @return this instance
 	 */
 	public InsertDataQuery insertData(TriplesTemplate triplesTemplate) {
@@ -50,7 +47,6 @@ public class InsertDataQuery extends UpdateDataQuery<InsertDataQuery> {
 	 * Specify a graph to insert the data into
 	 *
 	 * @param graph the identifier of the graph
-	 *
 	 * @return this Insert Data query instance
 	 */
 	public InsertDataQuery into(GraphName graph) {

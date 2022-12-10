@@ -48,7 +48,9 @@ public class QueryResultsTest {
 
 	private MutableTupleQueryResult tqr3;
 
-	/** a stub GraphQueryResult, containing a number of duplicate statements */
+	/**
+	 * a stub GraphQueryResult, containing a number of duplicate statements
+	 */
 	private GraphQueryResult gqr;
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();

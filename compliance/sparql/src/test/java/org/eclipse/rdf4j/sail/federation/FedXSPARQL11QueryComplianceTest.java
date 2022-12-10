@@ -31,7 +31,6 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * @author jeen
- *
  */
 public class FedXSPARQL11QueryComplianceTest extends SPARQL11QueryComplianceTest {
 

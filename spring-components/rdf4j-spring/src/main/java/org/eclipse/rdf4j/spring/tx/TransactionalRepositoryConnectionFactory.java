@@ -28,9 +28,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @since 4.0.0
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class TransactionalRepositoryConnectionFactory implements RepositoryConnectionFactory {
 

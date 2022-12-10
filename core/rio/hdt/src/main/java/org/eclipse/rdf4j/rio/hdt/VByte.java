@@ -15,17 +15,16 @@ import java.io.InputStream;
 
 /**
  * Variable byte encoding for numbers.
- *
+ * <p>
  * A variable number of bytes is used to encode (unsigned) numeric values, the first bit (MSB) of each byte indicates if
  * there are more bytes to read, the other 7 bits are used to encode the value.
- *
+ * <p>
  * In this implementation, the MSB is set to <code>1</code> if this byte is the last one.
- *
+ * <p>
  * E.g: <code>10000001</code> is value 1, <code>00000001 10000001</code> is 128 (decimal). Note that the value is stored
  * little-endian, so in this example <code>10000001 00000001</code>.
  *
  * @author Bart.Hanssens
- *
  * @see <a href="https://nlp.stanford.edu/IR-book/html/htmledition/variable-byte-codes-1.html">Variable byte codes</a>
  */
 public class VByte {

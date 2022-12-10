@@ -55,7 +55,6 @@ import com.github.tomakehurst.wiremock.junit.WireMockRule;
  * Unit tests for {@link RDFLoader}.
  *
  * @author Manuel Fiorelli
- *
  */
 public class RDFLoaderTest {
 
@@ -140,7 +139,8 @@ public class RDFLoaderTest {
 						.withHeader("Content-Type", RDFFormat.TURTLE.getDefaultMIMEType())
 						.withBody("<http://example.org/Socrates> a <http://xmlns.com/foaf/0.1/Person> .")));
 
-		/* nullable */ String oldMaxRedirects = System.getProperty("http.maxRedirects");
+		/* nullable */
+		String oldMaxRedirects = System.getProperty("http.maxRedirects");
 		try {
 			ProtocolException actualException = null;
 

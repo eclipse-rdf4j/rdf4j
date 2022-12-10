@@ -50,7 +50,6 @@ public interface QueryResult<T>
 	T next() throws QueryEvaluationException;
 
 	/**
-	 *
 	 * Convert the result elements to a Java {@link Stream}. Note that the consumer should take care to close the stream
 	 * (by calling Stream#close() or using try-with-resource) if it is not fully consumed.
 	 *

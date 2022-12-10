@@ -23,7 +23,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A read/write-lock manager backed by a StampedLock.
- *
+ * <p>
  * This class is in an experimental state: its existence, signature or behavior may change without warning from one
  * release to the next.
  *

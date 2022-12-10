@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author James Leigh
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 4.1.0. Use {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer} instead.
  */
 @Deprecated(forRemoval = true, since = "4.1.0")

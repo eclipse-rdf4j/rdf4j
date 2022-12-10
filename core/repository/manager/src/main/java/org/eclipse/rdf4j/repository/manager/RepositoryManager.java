@@ -59,7 +59,9 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/proxy#";
 
-	/** <var>http://www.openrdf.org/config/repository/proxy#proxiedID</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/proxy#proxiedID</var>
+	 */
 	public final static IRI PROXIED_ID = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "proxiedID");
 
 	/*-----------*

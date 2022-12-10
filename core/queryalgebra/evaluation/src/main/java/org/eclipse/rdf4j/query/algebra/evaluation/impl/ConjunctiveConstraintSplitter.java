@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  * Splits conjunctive constraints into seperate constraints.
  *
  * @author Arjohn Kampman
- * 
+ *
  * @deprecated since 4.1.0. Use
  *             {@link org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer}
  *             instead.

@@ -12,8 +12,8 @@
 package org.eclipse.rdf4j.spring.tx.exception;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class NoTransactionException extends RDF4JTransactionException {
 	public NoTransactionException() {

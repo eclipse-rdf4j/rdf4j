@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 
 /**
  * @author Jeen Broekstra
- *
  */
 public abstract class AbstractNTriplesWriterTest extends RDFWriterTest {
 
