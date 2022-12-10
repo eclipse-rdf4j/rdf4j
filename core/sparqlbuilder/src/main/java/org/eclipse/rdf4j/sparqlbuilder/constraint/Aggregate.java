@@ -43,7 +43,6 @@ public class Aggregate extends Expression<Aggregate> {
 	 * Specify if this aggregate expression should be distinct or not
 	 *
 	 * @param isDistinct if this aggregate should be distinct
-	 *
 	 * @return this aggregate instance
 	 */
 	public Aggregate distinct(boolean isDistinct) {
@@ -65,7 +64,6 @@ public class Aggregate extends Expression<Aggregate> {
 	 * If this is a {@code count} aggregate expressions, specify if it should count all
 	 *
 	 * @param countAll if this should count all arguments or not
-	 *
 	 * @return this aggregate instance
 	 */
 	public Aggregate countAll(boolean countAll) {
@@ -78,9 +76,7 @@ public class Aggregate extends Expression<Aggregate> {
 	 * If this is a {@code group_concat} aggregate expression, specify the separator to use
 	 *
 	 * @param separator the separator to use
-	 *
 	 * @return this aggregate instance
-	 *
 	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#defn_aggGroupConcat"> group_concat()</a>
 	 */
 	public Aggregate separator(String separator) {

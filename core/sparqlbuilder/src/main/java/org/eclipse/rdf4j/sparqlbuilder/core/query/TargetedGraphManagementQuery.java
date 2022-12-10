@@ -33,7 +33,6 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 	 * Specify which graph to target
 	 *
 	 * @param graph the IRI identifying the graph to target
-	 *
 	 * @return this query instance
 	 */
 	@SuppressWarnings("unchecked")
@@ -47,7 +46,6 @@ public abstract class TargetedGraphManagementQuery<T extends TargetedGraphManage
 	 * Specify which graph to target
 	 *
 	 * @param graph the IRI identifying the graph to target
-	 *
 	 * @return this query instance
 	 */
 	@SuppressWarnings("unchecked")

@@ -14,8 +14,8 @@ package org.eclipse.rdf4j.spring.dao.support;
 import java.util.function.Function;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface MappingPostProcessor<I, O> extends Function<I, O> {
 }

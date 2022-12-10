@@ -26,16 +26,24 @@ public class SailConfigSchema {
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/sail#";
 
-	/** <var>http://www.openrdf.org/config/sail#sailType</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail#sailType</var>
+	 */
 	public final static IRI SAILTYPE;
 
-	/** <var>http://www.openrdf.org/config/sail#delegate</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail#delegate</var>
+	 */
 	public final static IRI DELEGATE;
 
-	/** <var>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail#iterationCacheSyncTreshold</var>
+	 */
 	public final static IRI ITERATION_CACHE_SYNC_THRESHOLD;
 
-	/** <var>http://www.openrdf.org/config/sail#connectionTimeOut</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/sail#connectionTimeOut</var>
+	 */
 	public final static IRI CONNECTION_TIME_OUT;
 
 	static {

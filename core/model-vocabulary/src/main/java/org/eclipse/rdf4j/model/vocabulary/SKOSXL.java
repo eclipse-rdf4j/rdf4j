@@ -17,9 +17,9 @@ import org.eclipse.rdf4j.model.Namespace;
  * Vocabulary constants for the <a href="https://www.w3.org/TR/skos-reference/#xl">SKOS eXtension for Labels
  * (SKOS-XL)</a>.
  *
+ * @author Manuel Fiorelli
  * @see <a href="https://www.w3.org/TR/skos-reference/#xl">Appendix B of SKOS Simple Knowledge Organization System
  *      Reference</a>
- * @author Manuel Fiorelli
  */
 public class SKOSXL {
 

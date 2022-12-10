@@ -111,7 +111,7 @@ public abstract class AbstractRDFWriter implements RDFWriter, Sink {
 
 	/**
 	 * Consume a statement.
-	 *
+	 * <p>
 	 * Extending classes must override this method instead of overriding {@link #handleStatement(Statement)} in order to
 	 * benefit from automatic handling of RDF-star conversion or encoding.
 	 *

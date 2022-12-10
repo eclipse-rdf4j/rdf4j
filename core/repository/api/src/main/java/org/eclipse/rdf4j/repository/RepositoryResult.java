@@ -38,11 +38,11 @@ import org.eclipse.rdf4j.model.Value;
  * A RepositoryResult needs to be {@link #close() closed} after use to free up any resources (open connections, read
  * locks, etc.) it has on the underlying repository.
  *
+ * @author Jeen Broekstra
+ * @author Arjohn Kampman
  * @see RepositoryConnection#getStatements(Resource, IRI, Value, boolean, Resource[])
  * @see RepositoryConnection#getNamespaces()
  * @see RepositoryConnection#getContextIDs()
- * @author Jeen Broekstra
- * @author Arjohn Kampman
  */
 public class RepositoryResult<T> extends AbstractCloseableIteration<T, RepositoryException> implements Iterable<T> {
 
@@ -81,7 +81,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	 * Switches on duplicate filtering while iterating over objects. The RepositoryResult will keep track of the
 	 * previously returned objects in a {@link java.util.Set} and on calling next() or hasNext() will ignore any objects
 	 * that already occur in this Set.
-	 * <P>
+	 * <p>
 	 * Caution: use of this filtering mechanism is potentially memory-intensive.
 	 *
 	 * @throws RepositoryException if a problem occurred during initialization of the filter.
@@ -97,7 +97,7 @@ public class RepositoryResult<T> extends AbstractCloseableIteration<T, Repositor
 	/**
 	 * Returns a {@link List} containing all objects of this RepositoryResult in order of iteration. The
 	 * RepositoryResult is fully consumed and automatically closed by this operation.
-	 * <P>
+	 * <p>
 	 * Note: use this method with caution! It pulls the entire RepositoryResult in memory and as such is potentially
 	 * very memory-intensive.
 	 *

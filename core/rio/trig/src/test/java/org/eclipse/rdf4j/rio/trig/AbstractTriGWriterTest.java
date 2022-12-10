@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
 
 /**
  * @author Jeen Broesktra
- *
  */
 public abstract class AbstractTriGWriterTest extends RDFWriterTest {
 

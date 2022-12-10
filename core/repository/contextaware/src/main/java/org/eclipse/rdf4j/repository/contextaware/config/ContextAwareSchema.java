@@ -24,33 +24,51 @@ public class ContextAwareSchema {
 	 */
 	public static final String NAMESPACE = "http://www.openrdf.org/config/repository/contextaware#";
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#includeInferred</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#includeInferred</var>
+	 */
 	public final static IRI INCLUDE_INFERRED;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#maxQueryTime</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#maxQueryTime</var>
+	 */
 	public final static IRI MAX_QUERY_TIME;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#queryLanguage</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#queryLanguage</var>
+	 */
 	public final static IRI QUERY_LANGUAGE;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#base</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#base</var>
+	 */
 	public final static IRI BASE_URI;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#readContext</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#readContext</var>
+	 */
 	public final static IRI READ_CONTEXT;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#addContext</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#addContext</var>
+	 */
 	@Deprecated
 	public final static IRI ADD_CONTEXT;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#removeContext</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#removeContext</var>
+	 */
 	public final static IRI REMOVE_CONTEXT;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#archiveContext</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#archiveContext</var>
+	 */
 	@Deprecated
 	public final static IRI ARCHIVE_CONTEXT;
 
-	/** <var>http://www.openrdf.org/config/repository/contextaware#insertContext</var> */
+	/**
+	 * <var>http://www.openrdf.org/config/repository/contextaware#insertContext</var>
+	 */
 	public final static IRI INSERT_CONTEXT;
 
 	static {

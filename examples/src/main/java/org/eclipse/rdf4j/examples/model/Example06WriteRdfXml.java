@@ -22,7 +22,7 @@ import org.eclipse.rdf4j.rio.Rio;
 
 /**
  * RDF Tutorial example 06: Writing an RDF model in RDF/XML syntax
- *
+ * <p>
  * In this example, we show how you can use the Rio Parser/writer toolkit to write your model in RDF/XML syntax.
  *
  * @author Jeen Broekstra

@@ -33,7 +33,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 
 	/**
 	 * Replaces all occurrences of all declared namespaces with their prefix labels in the specified query string.
-	 *
+	 * <p>
 	 * For example, if the <code>foaf:</code> prefix is declared with {@link PrefixDeclarations}, the query
 	 *
 	 * <pre>
@@ -41,7 +41,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	 *   ?x &lt;http://xmlns.com/foaf/0.1/name&gt; ?name .
 	 * }
 	 * </pre>
-	 *
+	 * <p>
 	 * is transformed to
 	 *
 	 * <pre>
@@ -49,8 +49,8 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 	 *   ?x foaf:name ?name .
 	 * }
 	 * </pre>
-	 *
-	 *
+	 * <p>
+	 * <p>
 	 * Rules applied:
 	 * <ul>
 	 * <li>The longest matching namespace wins (if one namespace is a substring of another)</li>
@@ -129,7 +129,7 @@ public class PrefixDeclarations extends StandardQueryElementCollection<Prefix> {
 					int posOfClosingBracket = queryString.indexOf('>', pos);
 					if (posOfClosingBracket > -1) {
 						int replacementLength = matchingPrefix.getIri().getQueryString().length() - 2; // subtract 2 for
-																										// '<'
+						// '<'
 						// and '>'
 						sb
 								.append(matchingPrefix.getLabel())

@@ -45,11 +45,10 @@ public class ShaclSailValidationException extends SailException implements Valid
 	}
 
 	/**
-	 * @deprecated The returned ValidationReport is planned to be moved to a different package and this method is
-	 *             planned to return that class.
-	 *
 	 * @return A ValidationReport Java object that describes what failed and can optionally be converted to a Model as
 	 *         specified by the SHACL Recommendation
+	 * @deprecated The returned ValidationReport is planned to be moved to a different package and this method is
+	 *             planned to return that class.
 	 */
 	@Deprecated
 	public ValidationReport getValidationReport() {

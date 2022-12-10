@@ -87,7 +87,9 @@ public class FOAF {
 
 	public final static IRI FAMILY_NAME;
 
-	/** @deprecated Use FAMILY_NAME instead for new statements */
+	/**
+	 * @deprecated Use FAMILY_NAME instead for new statements
+	 */
 	@Deprecated
 	public final static IRI FAMILYNAME;
 
@@ -103,7 +105,9 @@ public class FOAF {
 
 	public final static IRI GIVEN_NAME;
 
-	/** @deprecated Use GIVEN_NAME instead for new statements */
+	/**
+	 * @deprecated Use GIVEN_NAME instead for new statements
+	 */
 	@Deprecated
 	public final static IRI GIVENNAME;
 

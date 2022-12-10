@@ -113,7 +113,7 @@ public interface SearchIndex {
 
 	/**
 	 * Removes the specified Statement from the indexes.This should be called from within a begin-commit-rollback
-	 *
+	 * <p>
 	 * block.
 	 *
 	 * @param statement

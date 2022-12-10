@@ -83,7 +83,7 @@ public interface Repository {
 	 * 	// perform operations on the connection
 	 * }
 	 * </pre>
-	 *
+	 * <p>
 	 * Note that {@link RepositoryConnection} is not guaranteed to be thread-safe! The recommended pattern for
 	 * repository access in a multi-threaded application is to share the Repository object between threads, but have
 	 * each thread create and use its own {@link RepositoryConnection}s.

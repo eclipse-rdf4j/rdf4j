@@ -39,7 +39,6 @@ import com.github.tomakehurst.wiremock.junit.WireMockRule;
  * Unit tests for {@link RemoteRepositoryManager}
  *
  * @author Jeen Broekstra
- *
  */
 public class RemoteRepositoryManagerTest extends RepositoryManagerTest {
 

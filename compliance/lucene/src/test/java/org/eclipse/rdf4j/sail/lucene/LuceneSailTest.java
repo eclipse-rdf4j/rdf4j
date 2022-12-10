@@ -25,7 +25,6 @@ import org.junit.Test;
 
 /**
  * @author jeen
- *
  */
 public class LuceneSailTest extends AbstractLuceneSailTest {
 

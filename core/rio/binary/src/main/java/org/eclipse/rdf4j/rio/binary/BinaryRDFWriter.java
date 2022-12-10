@@ -212,7 +212,9 @@ public class BinaryRDFWriter extends AbstractRDFWriter implements ByteSink {
 		}
 	}
 
-	/** Writes the first statement from the statement queue */
+	/**
+	 * Writes the first statement from the statement queue
+	 */
 	private void writeStatement() throws RDFHandlerException, IOException {
 		Statement st = statementQueue.remove();
 

@@ -25,8 +25,8 @@ import org.eclipse.rdf4j.query.QueryResults;
  * results of another Iteration (the right argument) or that have no shared variables. This iteration uses the formal
  * definition of the SPARQL 1.1 MINUS operator to determine which BindingSets to return.
  *
- * @see <a href="http://www.w3.org/TR/sparql11-query/#sparqlAlgebra">SPARQL Algebra Documentation</a>
  * @author Jeen
+ * @see <a href="http://www.w3.org/TR/sparql11-query/#sparqlAlgebra">SPARQL Algebra Documentation</a>
  */
 @Deprecated(since = "4.1.0")
 public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<BindingSet, X> {

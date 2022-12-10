@@ -14,7 +14,6 @@ import org.eclipse.rdf4j.model.ModelFactory;
 
 /**
  * Creates {@link DynamicModel}.
- *
  */
 public class DynamicModelFactory implements ModelFactory {
 

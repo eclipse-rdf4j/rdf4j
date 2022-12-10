@@ -521,7 +521,6 @@ public class TurtleParserTest {
 
 	/**
 	 * Extend standard Turtle parser to also accept RDF-star data (see GH-2511)
-	 *
 	 */
 	@Test
 	public void testParseRDFStarData() throws IOException {

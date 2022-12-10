@@ -610,11 +610,11 @@ public class NTriplesUtil {
 	/**
 	 * Checks whether the supplied character is a letter or number according to the N-Triples specification.
 	 *
-	 * @deprecated use {@link ASCIIUtil#isLetterOrNumber(int)}
-	 * @see #isLetter
-	 * @see #isNumber
 	 * @param c
 	 * @return true if it is a letter or a number
+	 * @see #isLetter
+	 * @see #isNumber
+	 * @deprecated use {@link ASCIIUtil#isLetterOrNumber(int)}
 	 */
 	@Deprecated
 	public static boolean isLetterOrNumber(int c) {
@@ -625,9 +625,9 @@ public class NTriplesUtil {
 	 * Checks whether the supplied character is a letter according to the N-Triples specification.N-Triples letters are
 	 * A - Z and a - z.
 	 *
-	 * @deprecated use {@link ASCIIUtil#isLetter(int)}
 	 * @param c
 	 * @return true if c is an ascii leter
+	 * @deprecated use {@link ASCIIUtil#isLetter(int)}
 	 */
 	@Deprecated
 	public static boolean isLetter(int c) {
@@ -638,9 +638,9 @@ public class NTriplesUtil {
 	 * Checks whether the supplied character is a number according to the N-Triples specification.N-Triples numbers are
 	 * 0 - 9.
 	 *
-	 * @deprecated use {@link ASCIIUtil#isNumber(int)}
 	 * @param c
 	 * @return true if the character is a number
+	 * @deprecated use {@link ASCIIUtil#isNumber(int)}
 	 */
 	@Deprecated
 	public static boolean isNumber(int c) {
@@ -650,9 +650,9 @@ public class NTriplesUtil {
 	/**
 	 * Checks whether the supplied character is valid character as per N-Triples specification.
 	 *
-	 * @see <a href="https://www.w3.org/TR/n-triples/#BNodes">https://www.w3.org/TR/n-triples/#BNodes</a>
 	 * @param c
 	 * @return true if valid
+	 * @see <a href="https://www.w3.org/TR/n-triples/#BNodes">https://www.w3.org/TR/n-triples/#BNodes</a>
 	 */
 	public static boolean isValidCharacterForBNodeLabel(int c) {
 		return ASCIIUtil.isLetterOrNumber(c) || isLiberalCharactersButNotDot(c) || isDot(c);

@@ -15,7 +15,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.testsuite.sail.EvaluationStrategyTest;
 
 /**
-  *
+ *
  */
 public class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 

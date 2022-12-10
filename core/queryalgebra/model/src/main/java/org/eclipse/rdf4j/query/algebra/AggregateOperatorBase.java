@@ -11,8 +11,8 @@
 package org.eclipse.rdf4j.query.algebra;
 
 /**
- * @deprecated since 2.0. Use {@link AbstractAggregateOperator} instead.
  * @author Jeen Broekstra
+ * @deprecated since 2.0. Use {@link AbstractAggregateOperator} instead.
  */
 @Deprecated
 public abstract class AggregateOperatorBase extends AbstractAggregateOperator {

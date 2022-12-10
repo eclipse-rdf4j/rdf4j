@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.sparqlbuilder.core.QueryElement;
 
 /**
  * Utility functions for the SparqlBuilder
- *
  */
 public class SparqlBuilderUtils {
 	private static final String PAD = " ";
@@ -70,9 +69,9 @@ public class SparqlBuilderUtils {
 	/**
 	 * For string literals that contain single- or double-quotes
 	 *
-	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynLiterals"> RDF Literal Syntax</a>
 	 * @param contents
 	 * @return a "long quoted" string
+	 * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynLiterals"> RDF Literal Syntax</a>
 	 */
 	public static String getLongQuotedString(String contents) {
 		return getEnclosedString("'''", "'''", contents, false);
@@ -100,7 +99,7 @@ public class SparqlBuilderUtils {
 	/**
 	 * Escape the specified String value according to the SPARQL 1.1 Spec
 	 * https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#grammarEscapes
-	 *
+	 * <p>
 	 * Note that there is no special handling for Codepoint escape sequences as described by
 	 * https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#codepointEscape
 	 *

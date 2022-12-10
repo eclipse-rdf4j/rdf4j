@@ -47,7 +47,9 @@ public class ProxyRepository extends AbstractRepository implements RepositoryRes
 
 	private String proxiedID;
 
-	/** independent life cycle */
+	/**
+	 * independent life cycle
+	 */
 	private volatile RepositoryResolver resolver;
 
 	public ProxyRepository() {

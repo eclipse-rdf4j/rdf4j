@@ -21,10 +21,14 @@ import org.eclipse.rdf4j.model.Namespace;
  */
 public class RDFS {
 
-	/** The RDF Schema namepace: http://www.w3.org/2000/01/rdf-schema# */
+	/**
+	 * The RDF Schema namepace: http://www.w3.org/2000/01/rdf-schema#
+	 */
 	public static final String NAMESPACE = "http://www.w3.org/2000/01/rdf-schema#";
 
-	/** Recommended prefix for the RDF Schema namespace: "rdfs" */
+	/**
+	 * Recommended prefix for the RDF Schema namespace: "rdfs"
+	 */
 	public static final String PREFIX = "rdfs";
 
 	/**

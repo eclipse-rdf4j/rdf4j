@@ -12,8 +12,8 @@
 package org.eclipse.rdf4j.spring.operationlog.log;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface OperationExecutionStatsConsumer {
 	void consumeOperationExecutionStats(OperationExecutionStats operationExecutionStats);

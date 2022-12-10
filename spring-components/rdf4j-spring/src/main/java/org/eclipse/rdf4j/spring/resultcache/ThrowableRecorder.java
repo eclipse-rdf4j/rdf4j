@@ -14,8 +14,8 @@ package org.eclipse.rdf4j.spring.resultcache;
 import java.util.function.Supplier;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface ThrowableRecorder {
 	void recordThrowable(Throwable t);

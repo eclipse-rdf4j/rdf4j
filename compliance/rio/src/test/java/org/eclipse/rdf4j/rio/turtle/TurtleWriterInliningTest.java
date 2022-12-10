@@ -31,10 +31,9 @@ import org.junit.Test;
 /**
  * Integration tests on blank node inlining behavior of the TurtleWriter.
  *
+ * @author Jeen Broekstra
  * @implNote added as integration test instead of unit test because we reuse code from rdf4j-queryalgebra-evaluation
  *           (for statement sorting), which would introduce a cyclic dependency in the rio-turtle module.
- *
- * @author Jeen Broekstra
  */
 public class TurtleWriterInliningTest {
 

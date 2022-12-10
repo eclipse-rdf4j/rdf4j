@@ -20,7 +20,6 @@ import org.junit.Test;
 
 /**
  * @author Jeen Broekstra
- *
  */
 public class SPARQLCSVTupleQueryResultWriterTest extends AbstractTupleQueryResultWriterTest {
 

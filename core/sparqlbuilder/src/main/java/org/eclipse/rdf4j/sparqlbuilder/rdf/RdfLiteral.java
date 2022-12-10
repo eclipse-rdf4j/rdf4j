@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.sparqlbuilder.util.SparqlBuilderUtils;
  * Denotes an RDF literal
  *
  * @param <T> the datatype of the literal
- *
  * @see <a href="http://www.w3.org/TR/2014/NOTE-rdf11-primer-20140225/#section-literal"> RDF Literals</a>
  * @see <a href="https://www.w3.org/TR/2013/REC-sparql11-query-20130321/#QSynLiterals"> RDF Literal Syntax</a>
  */

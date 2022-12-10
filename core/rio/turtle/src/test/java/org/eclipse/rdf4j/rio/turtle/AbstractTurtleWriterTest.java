@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
 
 /**
  * @author Jeen Broekstra
- *
  */
 public abstract class AbstractTurtleWriterTest extends RDFWriterTest {
 

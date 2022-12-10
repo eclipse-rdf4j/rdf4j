@@ -57,7 +57,6 @@ public interface Statement extends Serializable {
 	 * Compares this statement to another object.
 	 *
 	 * @param other the object to compare this statement to
-	 *
 	 * @return {@code true} if the other object is an instance of {@code Statement} and if their
 	 *         {@linkplain #getSubject() subjects}, {@linkplain #getPredicate() predicates}, {@linkplain #getObject()
 	 *         objects} and {@linkplain #getContext() contexts} are equal; {@code false} otherwise

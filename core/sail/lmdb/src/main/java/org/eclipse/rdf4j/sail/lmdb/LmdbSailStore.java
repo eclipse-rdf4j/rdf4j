@@ -50,7 +50,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
- *
  */
 class LmdbSailStore implements SailStore {
 

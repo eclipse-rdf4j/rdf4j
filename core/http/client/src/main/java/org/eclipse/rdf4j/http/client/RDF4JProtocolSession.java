@@ -122,7 +122,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private long pingDelay = PINGDELAY;
 
 	/**
-	 *
 	 * @deprecated since 3.6.2 - use {@link #RDF4JProtocolSession(HttpClient, ExecutorService)} instead
 	 */
 	@Deprecated
@@ -413,7 +412,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	 * @throws RDFHandlerException
 	 * @throws QueryInterruptedException
 	 * @throws UnauthorizedException
-	 *
 	 * @since 3.1.0
 	 */
 	public void getRepositoryConfig(StatementCollector statementCollector) throws UnauthorizedException,
@@ -840,11 +838,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	/**
 	 * Sends a transaction list as serialized XML to the server.
 	 *
-	 * @deprecated since 2.8.0
 	 * @param txn
 	 * @throws IOException
 	 * @throws RepositoryException
 	 * @throws UnauthorizedException
+	 * @deprecated since 2.8.0
 	 */
 	@Deprecated
 	public void sendTransaction(final Iterable<? extends TransactionOperation> txn)

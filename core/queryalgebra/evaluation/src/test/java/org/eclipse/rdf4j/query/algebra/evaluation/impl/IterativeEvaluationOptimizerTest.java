@@ -15,7 +15,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationO
 
 /**
  * @author jeen
- *
  */
 public class IterativeEvaluationOptimizerTest extends QueryOptimizerTest {
 

@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 
 /**
  * RDF Tutorial example 05: Adding blank nodes to an RDF Model.
- *
+ * <p>
  * In this example, we show how you can use a blank node for representing composite objects - in this case, an address.
  *
  * @author Jeen Broekstra

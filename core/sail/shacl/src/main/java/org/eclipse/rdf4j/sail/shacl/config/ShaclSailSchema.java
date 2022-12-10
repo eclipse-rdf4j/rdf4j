@@ -23,34 +23,54 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail;
  */
 public class ShaclSailSchema {
 
-	/** The ShaclSail schema namespace (<code>http://rdf4j.org/config/sail/shacl#</code>). */
+	/**
+	 * The ShaclSail schema namespace (<code>http://rdf4j.org/config/sail/shacl#</code>).
+	 */
 	public static final String NAMESPACE = "http://rdf4j.org/config/sail/shacl#";
 
-	/** <code>http://rdf4j.org/config/sail/shacl#parallelValidation</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#parallelValidation</code>
+	 */
 	public final static IRI PARALLEL_VALIDATION = create("parallelValidation");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#logValidationPlans</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#logValidationPlans</code>
+	 */
 	public final static IRI LOG_VALIDATION_PLANS = create("logValidationPlans");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#logValidationViolations</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#logValidationViolations</code>
+	 */
 	public final static IRI LOG_VALIDATION_VIOLATIONS = create("logValidationViolations");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#validationEnabled</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#validationEnabled</code>
+	 */
 	public final static IRI VALIDATION_ENABLED = create("validationEnabled");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#cacheSelectNodes</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#cacheSelectNodes</code>
+	 */
 	public final static IRI CACHE_SELECT_NODES = create("cacheSelectNodes");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#globalLogValidationExecution</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#globalLogValidationExecution</code>
+	 */
 	public final static IRI GLOBAL_LOG_VALIDATION_EXECUTION = create("globalLogValidationExecution");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#rdfsSubClassReasoning</code>
+	 */
 	public final static IRI RDFS_SUB_CLASS_REASONING = create("rdfsSubClassReasoning");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#performanceLogging</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#performanceLogging</code>
+	 */
 	public final static IRI PERFORMANCE_LOGGING = create("performanceLogging");
 
-	/** <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code> */
+	/**
+	 * <code>http://rdf4j.org/config/sail/shacl#serializableValidation</code>
+	 */
 	public final static IRI SERIALIZABLE_VALIDATION = create("serializableValidation");
 
 	public final static IRI ECLIPSE_RDF4J_SHACL_EXTENSIONS = create("eclipseRdf4jShaclExtensions");

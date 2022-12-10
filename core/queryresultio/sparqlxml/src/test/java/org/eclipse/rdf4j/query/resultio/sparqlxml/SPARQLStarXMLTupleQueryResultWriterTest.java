@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.testsuite.query.resultio.AbstractTupleQueryResultWriter
 
 /**
  * @author Jeen Broekstra
- *
  */
 public class SPARQLStarXMLTupleQueryResultWriterTest extends AbstractTupleQueryResultWriterTest {
 

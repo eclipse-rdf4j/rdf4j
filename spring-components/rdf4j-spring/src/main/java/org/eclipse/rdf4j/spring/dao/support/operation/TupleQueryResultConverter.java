@@ -37,8 +37,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class TupleQueryResultConverter {
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
@@ -113,12 +113,16 @@ public class TupleQueryResultConverter {
 		return toStreamInternal(andThenOrElseNull(mapper, postProcessor));
 	}
 
-	/** Maps the whole {@link TupleQueryResult} to one object, which may be null. */
+	/**
+	 * Maps the whole {@link TupleQueryResult} to one object, which may be null.
+	 */
 	public <T> T toSingletonMaybeOfWholeResult(TupleQueryResultMapper<T> mapper) {
 		return applyToResult(mapper);
 	}
 
-	/** Maps the whole {@link TupleQueryResult} to one {@link Optional}. */
+	/**
+	 * Maps the whole {@link TupleQueryResult} to one {@link Optional}.
+	 */
 	public <T> Optional<T> toSingletonOptionalOfWholeResult(TupleQueryResultMapper<T> mapper) {
 		return Optional.ofNullable(toSingletonMaybeOfWholeResult(mapper));
 	}
@@ -194,23 +198,31 @@ public class TupleQueryResultConverter {
 						.collect(collector));
 	}
 
-	/** Maps the query result to a {@link List}. */
+	/**
+	 * Maps the query result to a {@link List}.
+	 */
 	public <T> List<T> toList(BindingSetMapper<T> mapper) {
 		return mapAndCollect(mapper, Collectors.toList());
 	}
 
-	/** Maps the query result to a {@link List}. */
+	/**
+	 * Maps the query result to a {@link List}.
+	 */
 	public <T, O> List<O> toList(
 			BindingSetMapper<T> mapper, MappingPostProcessor<T, O> postProcessor) {
 		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), Collectors.toList());
 	}
 
-	/** Maps the query result to a {@link Set}. */
+	/**
+	 * Maps the query result to a {@link Set}.
+	 */
 	public <T> Set<T> toSet(BindingSetMapper<T> mapper) {
 		return mapAndCollect(mapper, Collectors.toSet());
 	}
 
-	/** Maps the query result to a {@link Set}. */
+	/**
+	 * Maps the query result to a {@link Set}.
+	 */
 	public <T, O> Set<O> toSet(
 			BindingSetMapper<T> mapper, MappingPostProcessor<T, O> postProcessor) {
 		return mapAndCollect(andThenOrElseNull(mapper, postProcessor), Collectors.toSet());
@@ -224,7 +236,9 @@ public class TupleQueryResultConverter {
 		return mapAndCollect(Function.identity(), Collectors.toMap(keyMapper, valueMapper));
 	}
 
-	/** Maps the query result to a {@link Map} of {@link Set}s. */
+	/**
+	 * Maps the query result to a {@link Map} of {@link Set}s.
+	 */
 	public <K, V> Map<K, Set<V>> toMapOfSet(
 			Function<BindingSet, K> keyMapper, Function<BindingSet, V> valueMapper) {
 		return mapAndCollect(
@@ -233,7 +247,9 @@ public class TupleQueryResultConverter {
 						keyMapper, Collectors.mapping(valueMapper, Collectors.toSet())));
 	}
 
-	/** Maps the query result to a {@link Map} of {@link List}s. */
+	/**
+	 * Maps the query result to a {@link Map} of {@link List}s.
+	 */
 	public <K, V> Map<K, List<V>> toMapOfList(
 			Function<BindingSet, K> keyMapper, Function<BindingSet, V> valueMapper) {
 		return mapAndCollect(
@@ -261,14 +277,18 @@ public class TupleQueryResultConverter {
 						bs -> entryMapper.apply(bs).getValue()));
 	}
 
-	/** Maps the query result to a {@link Map} of {@link Set}s. */
+	/**
+	 * Maps the query result to a {@link Map} of {@link Set}s.
+	 */
 	public <T, K, V> Map<K, Set<V>> toMapOfSet(
 			BindingSetMapper<T> mapper, Function<T, K> keyMapper, Function<T, V> valueMapper) {
 		return mapAndCollect(
 				mapper, Collectors.groupingBy(keyMapper, mapping(valueMapper, Collectors.toSet())));
 	}
 
-	/** Maps the query result to a {@link Map} of {@link List}s. */
+	/**
+	 * Maps the query result to a {@link Map} of {@link List}s.
+	 */
 	public <T, K, V> Map<K, List<V>> toMapOfList(
 			BindingSetMapper<T> mapper, Function<T, K> keyMapper, Function<T, V> valueMapper) {
 		return mapAndCollect(

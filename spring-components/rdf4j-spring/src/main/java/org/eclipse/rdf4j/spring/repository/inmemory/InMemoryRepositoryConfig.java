@@ -22,9 +22,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * @since 4.0.0
  * @author Gabriel Pickl
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 @Configuration
 @EnableConfigurationProperties(InMemoryRepositoryProperties.class)

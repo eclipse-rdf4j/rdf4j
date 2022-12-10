@@ -100,7 +100,6 @@ public class RDFLoader {
 	 * <var>true</var> will also follow redirects from HTTP to HTTPS. The maximum number of redirects can be controlled
 	 * using system property <var>http.maxRedirects</var>.
 	 *
-	 *
 	 * @param url        The URL of the RDF data.
 	 * @param baseURI    The base URI to resolve any relative URIs that are in the data against. This defaults to the
 	 *                   value of {@link java.net.URL#toExternalForm() url.toExternalForm()} if the value is set to
@@ -147,7 +146,8 @@ public class RDFLoader {
 				}
 			}
 
-			/* Nullable */ HttpURLConnection httpCon = null;
+			/* Nullable */
+			HttpURLConnection httpCon = null;
 			if (con instanceof HttpURLConnection) {
 				if (followRedirects) {
 					httpCon = (HttpURLConnection) con;
@@ -159,7 +159,8 @@ public class RDFLoader {
 			try (InputStream in = con.getInputStream()) {
 				// httpCon is non-null only if this is an HTTP connection and followRedirects is true
 				if (httpCon != null && isRedirection(httpCon.getResponseCode())) {
-					/* Nullable */ String redirectionLocation = httpCon.getHeaderField("Location");
+					/* Nullable */
+					String redirectionLocation = httpCon.getHeaderField("Location");
 					if (StringUtils.isAllBlank(redirectionLocation)) {
 						throw new IOException("Could not find redirection location for URL: " + url);
 					}

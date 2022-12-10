@@ -27,8 +27,6 @@ import org.junit.rules.TemporaryFolder;
 
 /**
  * Unit tests for {@link ContextStore}
- *
- *
  */
 public class ContextStoreTest {
 

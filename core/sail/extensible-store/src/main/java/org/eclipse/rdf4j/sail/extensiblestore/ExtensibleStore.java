@@ -47,7 +47,6 @@ import org.slf4j.LoggerFactory;
  * interfaces and the like are likely to change in future releases.
  * </p>
  *
- *
  * @author Håvard Mikkelsen Ottestad
  */
 @Experimental

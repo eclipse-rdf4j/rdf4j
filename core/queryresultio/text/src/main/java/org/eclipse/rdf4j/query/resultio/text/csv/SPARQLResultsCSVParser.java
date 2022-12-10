@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractTupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
-import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 
 import com.opencsv.bean.CsvToBeanBuilder;
 
@@ -44,9 +43,9 @@ public class SPARQLResultsCSVParser extends AbstractTupleQueryResultParser {
 
 			List<BindingSet> bindingSets = new CsvToBeanBuilder<BindingSet>(
 					new InputStreamReader(in, StandardCharsets.UTF_8)).withType(BindingSet.class)
-							.withMappingStrategy(strategy)
-							.build()
-							.parse();
+					.withMappingStrategy(strategy)
+					.build()
+					.parse();
 			List<String> bindingNames = strategy.getBindingNames();
 			handler.startQueryResult(bindingNames);
 			for (BindingSet bs : bindingSets) {

@@ -14,8 +14,8 @@ package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath;
 import org.eclipse.rdf4j.sparqlbuilder.rdf.RdfPredicate;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface PropertyPath extends RdfPredicate {
 }

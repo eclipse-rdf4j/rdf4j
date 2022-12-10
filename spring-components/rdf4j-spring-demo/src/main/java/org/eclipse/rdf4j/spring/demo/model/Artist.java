@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.sparqlbuilder.core.SparqlBuilder;
 import org.eclipse.rdf4j.sparqlbuilder.core.Variable;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class Artist {
 	public static final Variable ARTIST_ID = SparqlBuilder.var("artist_id");
@@ -55,10 +55,12 @@ public class Artist {
 
 	@Override
 	public boolean equals(Object o) {
-		if (this == o)
+		if (this == o) {
 			return true;
-		if (o == null || getClass() != o.getClass())
+		}
+		if (o == null || getClass() != o.getClass()) {
 			return false;
+		}
 		Artist artist = (Artist) o;
 		return Objects.equals(id, artist.id);
 	}

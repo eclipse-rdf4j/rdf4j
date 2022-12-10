@@ -39,7 +39,6 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Integration tests for checking Lmdb Store index consistency.
- *
  */
 public class LmdbStoreConsistencyIT {
 	private static final Logger logger = LoggerFactory.getLogger(LmdbStoreConsistencyIT.class);

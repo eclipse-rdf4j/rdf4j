@@ -37,7 +37,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
 
 /**
  * Optimizes a query model by pushing {@link Filter}s as far down in the model tree as possible.
- *
+ * <p>
  * To make the first optimization succeed more often it splits filters which contains {@link And} conditions.
  *
  * <code>
@@ -54,19 +54,19 @@ import org.eclipse.rdf4j.query.algebra.helpers.VarNameCollector;
  * FILTER(?o2 < '4'^^xsd:int)
  * }
  * </code>
- *
+ * <p>
  * Then it optimizes a query model by merging adjacent {@link Filter}s. e.g. <code>
  * SELECT * WHERE {
- *  ?s ?p ?o .
- *  FILTER(?o > 2) .
- *  FILTER(?o < 4) .
- *  }
+ * ?s ?p ?o .
+ * FILTER(?o > 2) .
+ * FILTER(?o < 4) .
+ * }
  * </code> may be merged into <code>
  * SELECT * WHERE {
- *   ?s ?p ?o .
- *   FILTER(?o > 2 && ?o < 4) . }
- *  </code>
- *
+ * ?s ?p ?o .
+ * FILTER(?o > 2 && ?o < 4) . }
+ * </code>
+ * <p>
  * This optimization allows for sharing evaluation costs in the future and removes an iterator. This is done as a second
  * step to not break the first optimization. In the case that the splitting was done but did not help it is now undone.
  *

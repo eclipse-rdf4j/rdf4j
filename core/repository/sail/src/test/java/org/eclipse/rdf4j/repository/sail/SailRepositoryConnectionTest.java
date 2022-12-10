@@ -33,7 +33,6 @@ import org.junit.Test;
  * Unit tests for {@link SailRepositoryConnection}
  *
  * @author Jeen Broekstra
- *
  */
 public class SailRepositoryConnectionTest {
 

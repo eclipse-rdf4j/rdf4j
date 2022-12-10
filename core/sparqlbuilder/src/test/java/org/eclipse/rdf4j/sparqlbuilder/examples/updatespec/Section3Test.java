@@ -91,7 +91,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX dc: <http://purl.org/dc/elements/1.1/>
-	 *
+	 * <p>
 	 * DELETE DATA { <http://example/book2> dc:title "David Copperfield" ; dc:creator "Edmund Wells" . }
 	 */
 	@Test
@@ -113,7 +113,7 @@ public class Section3Test extends BaseExamples {
 	/**
 	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> DELETE DATA { GRAPH <http://example/bookStore> {
 	 * <http://example/book1> dc:title "Fundamentals of Compiler Desing" } } ;
-	 *
+	 * <p>
 	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> INSERT DATA { GRAPH <http://example/bookStore> {
 	 * <http://example/book1> dc:title "Fundamentals of Compiler Design" } }
 	 */
@@ -172,7 +172,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-	 *
+	 * <p>
 	 * WITH <http://example/addresses> DELETE { ?person foaf:givenName 'Bill' } INSERT { ?person foaf:givenName
 	 * 'William' } WHERE { ?person foaf:givenName 'Bill' }
 	 */
@@ -198,7 +198,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-	 *
+	 * <p>
 	 * DELETE { ?book ?p ?v } WHERE { ?book dc:date ?date . FILTER ( ?date > "1970-01-01T00:00:00-02:00"^^xsd:dateTime )
 	 * ?book ?p ?v }
 	 */
@@ -228,7 +228,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-	 *
+	 * <p>
 	 * WITH <http://example/addresses> DELETE { ?person ?property ?value } WHERE { ?person ?property ?value ;
 	 * foaf:givenName 'Fred' }
 	 */
@@ -256,7 +256,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-	 *
+	 * <p>
 	 * INSERT { GRAPH <http://example/bookStore2> { ?book ?p ?v } } WHERE { GRAPH <http://example/bookStore> { ?book
 	 * dc:date ?date . FILTER ( ?date > "1970-01-01T00:00:00-02:00"^^xsd:dateTime ) ?book ?p ?v } }
 	 */
@@ -288,7 +288,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-	 *
+	 * <p>
 	 * INSERT { GRAPH <http://example/addresses> { ?person foaf:name ?name . ?person foaf:mbox ?email } } WHERE { GRAPH
 	 * <http://example/people> { ?person foaf:name ?name . OPTIONAL { ?person foaf:mbox ?email } } }
 	 */
@@ -327,10 +327,10 @@ public class Section3Test extends BaseExamples {
 	/**
 	 * PREFIX dc: <http://purl.org/dc/elements/1.1/> PREFIX dcmitype: <http://purl.org/dc/dcmitype/> PREFIX xsd:
 	 * <http://www.w3.org/2001/XMLSchema#>
-	 *
+	 * <p>
 	 * INSERT { GRAPH <http://example/bookStore2> { ?book ?p ?v } } WHERE { GRAPH <http://example/bookStore> { ?book
 	 * dc:date ?date . FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime ) ?book ?p ?v } } ;
-	 *
+	 * <p>
 	 * WITH <http://example/bookStore> DELETE { ?book ?p ?v } WHERE { ?book dc:date ?date ; dc:type
 	 * dcmitype:PhysicalObject . FILTER ( ?date < "2000-01-01T00:00:00-02:00"^^xsd:dateTime ) ?book ?p ?v }
 	 */
@@ -369,8 +369,8 @@ public class Section3Test extends BaseExamples {
 				.delete(book.has(p, v))
 				.where(and(book.has(dc.iri("date"), date).andHas(dc.iri("type"), dcmitype.iri("PhysicalObject")),
 						book.has(p, v))
-								.filter(Expressions.lt(date,
-										Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
+						.filter(Expressions.lt(date,
+								Rdf.literalOfType("2000-01-01T00:00:00-02:00", xsd.iri("dateTime")))));
 
 		Assert.assertThat(deleteFromBookStoreQuery.getQueryString(), stringEqualsIgnoreCaseAndWhitespace(
 				"WITH <http://example/bookStore>\n"
@@ -384,7 +384,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-	 *
+	 * <p>
 	 * DELETE WHERE { ?person foaf:givenName 'Fred'; ?property ?value }
 	 */
 	@Test
@@ -407,7 +407,7 @@ public class Section3Test extends BaseExamples {
 
 	/**
 	 * PREFIX foaf: <http://xmlns.com/foaf/0.1/>
-	 *
+	 * <p>
 	 * DELETE WHERE { GRAPH <http://example.com/names> { ?person foaf:givenName 'Fred' ; ?property1 ?value1 } GRAPH
 	 * <http://example.com/addresses> { ?person ?property2 ?value2 } }
 	 */
@@ -486,7 +486,9 @@ public class Section3Test extends BaseExamples {
 		));
 	}
 
-	/** COPY DEFAULT TO \<http://example.org/named> */
+	/**
+	 * COPY DEFAULT TO \<http://example.org/named>
+	 */
 	@Test
 	public void example_13() {
 		CopyQuery copy = Queries.COPY().fromDefault().to(iri("http://example.org/named"));
@@ -495,7 +497,9 @@ public class Section3Test extends BaseExamples {
 		));
 	}
 
-	/** MOVE DEFAULT TO <http://example.org/named> */
+	/**
+	 * MOVE DEFAULT TO <http://example.org/named>
+	 */
 	@Test
 	public void example_14() {
 		MoveQuery move = Queries.MOVE().fromDefault().to(iri("http://example.org/named"));
@@ -504,7 +508,9 @@ public class Section3Test extends BaseExamples {
 		));
 	}
 
-	/** ADD DEFAULT TO <http://example.org/named> */
+	/**
+	 * ADD DEFAULT TO <http://example.org/named>
+	 */
 	@Test
 	public void example_15() {
 		AddQuery add = Queries.ADD().fromDefault().to(iri("http://example.org/named"));

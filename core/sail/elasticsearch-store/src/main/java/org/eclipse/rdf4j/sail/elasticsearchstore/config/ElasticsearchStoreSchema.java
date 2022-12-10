@@ -25,7 +25,9 @@ public class ElasticsearchStoreSchema {
 
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 
-	/** The ElasticsearchStore schema namespace (<code>http://rdf4j.org/config/sail/elasticsearchstore#</code>). */
+	/**
+	 * The ElasticsearchStore schema namespace (<code>http://rdf4j.org/config/sail/elasticsearchstore#</code>).
+	 */
 	public static final String NAMESPACE = "http://rdf4j.org/config/sail/elasticsearchstore#";
 	public static final String PREFIX = "ess";
 

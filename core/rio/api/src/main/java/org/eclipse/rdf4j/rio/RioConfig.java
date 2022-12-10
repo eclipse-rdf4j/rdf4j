@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 public class RioConfig implements Serializable {
 
 	/**
+	 *
 	 */
 	private static final long serialVersionUID = 2714L;
 

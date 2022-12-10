@@ -12,8 +12,8 @@
 package org.eclipse.rdf4j.sparqlbuilder.constraint.propertypath;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public interface PredicatePathOrInversePredicatePath extends PropertyPath {
 }

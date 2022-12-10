@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.common.io;
 import org.eclipse.rdf4j.common.lang.FileFormat;
 
 /**
- *
  * A Sink writes a data stream in a particular {@link FileFormat}.
  *
  * @author Jeen Broekstra
@@ -31,12 +30,11 @@ public interface Sink {
 	/**
 	 * Check if this Sink accepts the supplied {@link FileFormat}.
 	 *
+	 * @param format the {@link FileFormat} to check.
+	 * @return {@code true} if the sink accepts the supplied format, {@code false} otherwise.
 	 * @implNote the default implementation of this method only returns {@code true} if the supplied format is equal to
 	 *           the format supplied by {@link #getFileFormat()}. Specific Sink implementations can choose to override
 	 *           this behavior if they wish to indicate they can also accept other formats.
-	 *
-	 * @param format the {@link FileFormat} to check.
-	 * @return {@code true} if the sink accepts the supplied format, {@code false} otherwise.
 	 */
 	default boolean acceptsFileFormat(FileFormat format) {
 		return getFileFormat().equals(format);

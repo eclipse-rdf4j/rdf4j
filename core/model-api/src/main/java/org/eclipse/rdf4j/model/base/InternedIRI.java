@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.model.Value;
  * reference. Must only be used for IRIs that are effectively ´public static final´ and only for a very limited number
  * of objects because string interning affects the GC root set
  * (https://shipilev.net/jvm/anatomy-quarks/10-string-intern/).
- *
  */
 @InternalUseOnly
 public final class InternedIRI implements IRI {

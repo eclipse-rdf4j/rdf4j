@@ -26,7 +26,6 @@ import org.junit.jupiter.params.provider.MethodSource;
  * TransactionSettingFactory
  *
  * @author Jeen Broekstra, Håvard M. Ottestad
- *
  */
 public class TransactionSettingsFactoryTest {
 

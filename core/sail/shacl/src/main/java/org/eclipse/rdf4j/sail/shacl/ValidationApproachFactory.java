@@ -20,7 +20,6 @@ import org.eclipse.rdf4j.sail.shacl.ShaclSail.TransactionSettings.ValidationAppr
  * Factory class for producing instances of {@link ValidationApproach} from string values.
  *
  * @author Jeen Broekstra
- *
  */
 public class ValidationApproachFactory implements TransactionSettingFactory {
 

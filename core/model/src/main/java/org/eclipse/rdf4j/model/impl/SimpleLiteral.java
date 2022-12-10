@@ -221,8 +221,8 @@ public class SimpleLiteral extends AbstractLiteral {
 	}
 
 	/**
-	 * @deprecated Use {@link #getCoreDatatype()} instead.
 	 * @return
+	 * @deprecated Use {@link #getCoreDatatype()} instead.
 	 */
 	@Deprecated(since = "4.0.0", forRemoval = true)
 	public Optional<XSD.Datatype> getXsdDatatype() {

@@ -33,8 +33,6 @@ import java.util.stream.Stream;
  *             methods directly. The interface will also stop requiring implementations to automatically close when
  *             exhausted, instead making this an optional feature and requiring the user to always call close. This
  *             interface may also be removed.
- *
- *
  */
 @Deprecated(since = "4.1.0")
 public interface CloseableIteration<E, X extends Exception> extends Iteration<E, X>, AutoCloseable {

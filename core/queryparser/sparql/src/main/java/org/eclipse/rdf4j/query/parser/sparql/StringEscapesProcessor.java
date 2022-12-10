@@ -22,7 +22,6 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  * sequences in strings</a>.
  *
  * @author Arjohn Kampman
- *
  * @apinote This feature is for internal use only: its existence, signature or behavior may change without warning from
  *          one release to the next.
  */

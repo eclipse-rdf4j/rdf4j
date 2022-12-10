@@ -22,8 +22,8 @@ import org.eclipse.rdf4j.spring.support.UUIDSource;
  * the value for generating a UUID. Useful for unit tests as newly generated entities will receive the same UUIDs each
  * time the tests are executed.
  *
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class PredictableUUIDSource implements UUIDSource {
 

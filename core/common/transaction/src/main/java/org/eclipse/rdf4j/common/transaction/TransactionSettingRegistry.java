@@ -13,13 +13,10 @@ package org.eclipse.rdf4j.common.transaction;
 import org.eclipse.rdf4j.common.lang.service.ServiceRegistry;
 
 /**
- *
  * A {@link ServiceRegistry} for creating/retrieving {@link TransactionSetting}s in a transparent way.
  *
  * @author Jeen Broekstra
- *
  * @since 3.3.0
- *
  */
 public class TransactionSettingRegistry extends ServiceRegistry<String, TransactionSettingFactory> {
 

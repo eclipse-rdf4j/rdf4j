@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.model.Value;
  * retrieving and removing data. The model will upgrade to a full model (provided by the modelFactory) if more complex
  * operations are called, for instance removing data according to a pattern (eg. all statements with rdf:type as
  * predicate).
- *
+ * <p>
  * DynamicModel is thread safe to the extent that the underlying LinkedHashMap or Model is. The upgrade path is
  * protected by the actual upgrade method being synchronized. The LinkedHashMap storage is not removed once upgraded, so
  * concurrent reads that have started reading from the LinkedHashMap can continue to read even during an upgrade. We do

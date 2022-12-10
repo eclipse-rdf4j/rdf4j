@@ -21,7 +21,9 @@ import org.eclipse.rdf4j.model.Namespace;
  */
 public class OWL {
 
-	/** The OWL namespace: http://www.w3.org/2002/07/owl# */
+	/**
+	 * The OWL namespace: http://www.w3.org/2002/07/owl#
+	 */
 	public static final String NAMESPACE = "http://www.w3.org/2002/07/owl#";
 
 	/**

@@ -25,7 +25,6 @@ import junit.framework.TestSuite;
  * Unit tests for {@link Model} implementations to check conformance with Java Collection Framework.
  *
  * @author Jeen Broekstra
- *
  */
 public class ModelCollectionTest {
 	public static Test suite() {

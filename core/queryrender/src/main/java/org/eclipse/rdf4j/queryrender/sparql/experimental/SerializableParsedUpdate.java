@@ -29,7 +29,7 @@ import com.google.common.collect.Lists;
  */
 class SerializableParsedUpdate extends AbstractSerializableParsedQuery {
 
-//    public MultiProjection projection = null;
+	// public MultiProjection projection = null;
 	public UpdateExpr updateExpr = null;
 
 //    public Group groupBy = null;

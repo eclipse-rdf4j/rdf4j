@@ -17,7 +17,6 @@ import java.util.Optional;
  *
  * @author Jeen Broekstra
  * @see TransactionSettingRegistry
- *
  * @since 3.3.0
  */
 public interface TransactionSettingFactory {

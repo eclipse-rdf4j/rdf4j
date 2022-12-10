@@ -18,8 +18,6 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  * A {@link ValueStore ValueStore} revision for {@link LmdbValue LmdbValue} objects. For a cached value ID of a
  * LmdbValue to be valid, the revision object needs to be equal to the concerning ValueStore's revision object. The
  * ValueStore's revision object is changed whenever values are removed from it or IDs are changed.
- *
- *
  */
 public class ValueStoreRevision implements Serializable {
 

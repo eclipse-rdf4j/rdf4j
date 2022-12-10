@@ -122,14 +122,12 @@ import com.google.common.collect.Sets;
  * @author Andriy Nikolov
  * @author Jeen Broekstra
  * @author Andreas Schwarte
- *
  */
 class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeException> {
 
 	/**
 	 * Enumeration of standard SPARQL 1.1 functions that are neither recognized by RDF4J as special value expressions
 	 * nor defined as IRI functions in the <i>fn:</i> namespace (see {@link FNFunction}).
-	 *
 	 */
 	protected enum NonIriFunctions {
 		STRLANG,
@@ -1219,7 +1217,6 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	/**
 	 * A special case check: we project a variable from a subquery that has the same name We must avoid writing SELECT
 	 * (?x as ?x) WHERE { { SELECT ?x WHERE { ... } } }
-	 *
 	 */
 	private boolean isTautologicalExtensionElem(ExtensionElem val) {
 		String varName = val.getName();

@@ -18,7 +18,6 @@ import org.junit.Test;
 
 /**
  * @author jeen
- *
  */
 public class SPARQLQueryBindingSetTest {
 

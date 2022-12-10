@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
  * Unit tests for the memory-specific implementation of the {@link Triple} interface.
  *
  * @author Jeen Broekstra
- *
  */
 public class MemTripleTest {
 

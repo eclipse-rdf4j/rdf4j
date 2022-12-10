@@ -19,14 +19,14 @@ import org.eclipse.rdf4j.common.io.UncloseableInputStream;
 
 /**
  * HDT Triples Part.
- *
+ * <p>
  * This part starts with <code>$HDT</code>, followed by a byte indicating the type of the part, the NULL-terminated URI
  * string for the format, and optionally one or more <code>key=value;</code> properties.
- *
+ * <p>
  * These properties may include the order (SPO, SOP...), and the number of triples.
- *
+ * <p>
  * Then a <code>NULL</code> byte, followed by the 16-bit CRC (<code>$HDT</code> and <code>NULL</code> included)
- *
+ * <p>
  * Structure:
  *
  * <pre>

@@ -19,6 +19,7 @@ package org.eclipse.rdf4j.rio;
 public class WriterConfig extends RioConfig {
 
 	/**
+	 *
 	 */
 	private static final long serialVersionUID = 270L;
 

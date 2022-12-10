@@ -27,8 +27,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * @since 4.0.0
  * @author Florian Kleedorfer
+ * @since 4.0.0
  */
 public class RDF4JCrudDaoTests extends RDF4JSpringTestBase {
 	@Autowired

@@ -34,6 +34,7 @@ public class SparqlQueryParserCache {
 			.build();
 
 	private static final QueryParser QUERY_PARSER;
+
 	static {
 		Optional<QueryParserFactory> queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL);

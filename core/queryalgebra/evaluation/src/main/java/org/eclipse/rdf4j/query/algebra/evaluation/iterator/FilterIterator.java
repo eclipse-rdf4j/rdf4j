@@ -75,7 +75,6 @@ public class FilterIterator extends FilterIteration<BindingSet, QueryEvaluationE
 	/**
 	 * This is used to make sure that no variable is seen by the filter that are not in scope. Historically important in
 	 * subquery cases.
-	 *
 	 */
 	public static final class RetainedVariableFilteredQueryEvaluationContext implements QueryEvaluationContext {
 		private final Filter node;

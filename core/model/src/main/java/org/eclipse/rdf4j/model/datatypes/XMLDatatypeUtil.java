@@ -208,9 +208,9 @@ public class XMLDatatypeUtil {
 	 * Checks whether the supplied datatype is equal to xsd:dateTime, xsd:date, xsd:time, xsd:gYearMonth, xsd:gMonthDay,
 	 * xsd:gYear, xsd:gMonth or xsd:gDay.These are the primitive datatypes that represent dates and/or times.
 	 *
-	 * @see XMLGregorianCalendar
 	 * @param datatype
 	 * @return true if it is a calendar type
+	 * @see XMLGregorianCalendar
 	 */
 	public static boolean isCalendarDatatype(IRI datatype) {
 		return calendarDatatypes.contains(datatype);
@@ -220,9 +220,9 @@ public class XMLDatatypeUtil {
 	 * Checks whether the supplied datatype is equal to xsd:duration, xsd:dayTimeDuration, xsd:yearMonthDuration. These
 	 * are the datatypes that represents durations.
 	 *
-	 * @see Duration
 	 * @param datatype
 	 * @return true if it is a duration type
+	 * @see Duration
 	 */
 	public static boolean isDurationDatatype(IRI datatype) {
 		return durationDatatypes.contains(datatype);
@@ -2110,7 +2110,7 @@ public class XMLDatatypeUtil {
 	/**
 	 * Maps a datatype QName from the javax.xml.namespace package to an XML Schema 1.0 URI for the corresponding
 	 * datatype. This method recognizes the XML Schema qname mentioned in {@link DatatypeConstants}.
-	 *
+	 * <p>
 	 * Note that Java 8 / 11 do not have constants for XML Schema 1.1 datatypes like xsd:dateTimeStamp.
 	 *
 	 * @param qname One of the XML Schema qnames from {@link DatatypeConstants}.

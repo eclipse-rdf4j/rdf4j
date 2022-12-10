@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A SAIL implementation using B-Tree indexing on disk for storing and querying its data.
- *
+ * <p>
  * The NativeStore is designed for datasets between 100,000 and 100 million triples. On most operating systems, if there
  * is sufficient physical memory, the NativeStore will act like the MemoryStore, because the read/write commands will be
  * cached by the OS. This technique allows the NativeStore to operate quite well for millions of triples.
@@ -140,10 +140,14 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 
 	private EvaluationStrategyFactory evalStratFactory;
 
-	/** independent life cycle */
+	/**
+	 * independent life cycle
+	 */
 	private FederatedServiceResolver serviceResolver;
 
-	/** dependent life cycle */
+	/**
+	 * dependent life cycle
+	 */
 	private SPARQLServiceResolver dependentServiceResolver;
 
 	/**
@@ -290,7 +294,7 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 	/**
 	 * Initializes this NativeStore.
 	 *
-	 * @exception SailException If this NativeStore could not be initialized using the parameters that have been set.
+	 * @throws SailException If this NativeStore could not be initialized using the parameters that have been set.
 	 */
 	@Override
 	protected void initializeInternal() throws SailException {

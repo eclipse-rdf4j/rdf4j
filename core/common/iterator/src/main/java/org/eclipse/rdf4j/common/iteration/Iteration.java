@@ -22,9 +22,9 @@ import java.util.stream.Stream;
  *
  * @param <E> Object type of objects contained in the iteration.
  * @param <X> Exception type that is thrown when a problem occurs during iteration.
- * @see java.util.Iterator
  * @author jeen
  * @author Herko ter Horst
+ * @see java.util.Iterator
  * @deprecated For performance and simplification the Iteration interface is deprecated and will be removed in 5.0.0.
  *             Use CloseableIteration instead, even if your iteration doesn't require AutoCloseable.
  */
@@ -60,7 +60,6 @@ public interface Iteration<E, X extends Exception> {
 	void remove() throws X;
 
 	/**
-	 *
 	 * Convert the results to a Java 8 Stream. If this iteration implements CloseableIteration it should be closed (by
 	 * calling Stream#close() or using try-with-resource) if it is not fully consumed.
 	 *

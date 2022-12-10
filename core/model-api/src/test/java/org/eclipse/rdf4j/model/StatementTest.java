@@ -33,7 +33,6 @@ public abstract class StatementTest {
 	 * @param predicate the predicate of the statement
 	 * @param object    the predicate of the statement
 	 * @param context   the context of the statement; possibly {@code null}
-	 *
 	 * @return a new instance of the concrete statement class under test
 	 */
 	protected abstract Statement statement(Resource subject, IRI predicate, Value object, Resource context);
@@ -42,7 +41,6 @@ public abstract class StatementTest {
 	 * Creates a test IRI instance.
 	 *
 	 * @param iri the IRI of the datatype
-	 *
 	 * @return a new instance of the concrete IRI class under test
 	 */
 	protected abstract IRI iri(String iri);
