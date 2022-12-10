@@ -70,7 +70,7 @@ public class Select implements PlanNode {
 					.normalize("select * where {\n" + queryFragment + "\n}" + (sorted ? " order by " + orderBy : ""));
 		}
 
-		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
 
 	}
 
@@ -200,13 +200,13 @@ public class Select implements PlanNode {
 							.equals(((MemoryStoreConnection) that.connection).getSail())
 					&&
 					mapper.equals(that.mapper) &&
-					dataset.equals(that.dataset) &&
+					Objects.equals(dataset, that.dataset) &&
 					query.equals(that.query);
 		} else {
 			return sorted == that.sorted &&
 					Objects.equals(connection, that.connection) &&
 					mapper.equals(that.mapper) &&
-					dataset.equals(that.dataset) &&
+					Objects.equals(dataset, that.dataset) &&
 					query.equals(that.query);
 		}
 	}
