@@ -11,8 +11,11 @@
 package org.eclipse.rdf4j.model.impl;
 
 import java.io.Serializable;
+import java.util.Collection;
 
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
+import org.eclipse.rdf4j.model.Statement;
 
 /**
  * Creates {@link LinkedHashModel}.
@@ -26,6 +29,11 @@ public class LinkedHashModelFactory implements ModelFactory, Serializable {
 	@Override
 	public LinkedHashModel createEmptyModel() {
 		return new LinkedHashModel();
+	}
+
+	@Override
+	public Model createFrom(Collection<? extends Statement> collection) {
+		return new LinkedHashModel(collection);
 	}
 
 }

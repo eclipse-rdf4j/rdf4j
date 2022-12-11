@@ -10,7 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model.impl;
 
+import java.util.Collection;
+
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
+import org.eclipse.rdf4j.model.Statement;
 
 /**
  * Creates {@link TreeModel}.
@@ -22,6 +26,11 @@ public class TreeModelFactory implements ModelFactory {
 	@Override
 	public TreeModel createEmptyModel() {
 		return new TreeModel();
+	}
+
+	@Override
+	public Model createFrom(Collection<? extends Statement> collection) {
+		return new TreeModel(collection);
 	}
 
 }

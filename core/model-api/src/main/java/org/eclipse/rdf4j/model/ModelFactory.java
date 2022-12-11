@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.model;
 
+import java.util.Collection;
+
 /**
  * Factory to create empty {@link Model} implementations.
  *
@@ -21,5 +23,11 @@ public interface ModelFactory {
 	 * @return a newly created {@link Model}
 	 */
 	Model createEmptyModel();
+
+	default Model createFrom(Collection<? extends Statement> collection) {
+		Model newModel = createEmptyModel();
+		newModel.addAll(collection);
+		return newModel;
+	}
 
 }

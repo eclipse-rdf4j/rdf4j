@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.model.impl;
 
 import java.util.AbstractSet;
 import java.util.Collection;
-import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -52,10 +52,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private static final Resource[] NULL_CTX = new Resource[] { null };
 
-	private Map<Statement, Statement> statements = new LinkedHashMap<>();
+	private volatile Map<Statement, Statement> statements = new LinkedHashMap<>();
 	final Set<Namespace> namespaces = new LinkedHashSet<>();
 
-	volatile private Model model = null;
+	private volatile Model model = null;
 
 	private final ModelFactory modelFactory;
 
@@ -118,11 +118,15 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		}
 
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
+
 			boolean added = false;
 			for (Resource context : contexts) {
 				Statement statement = SimpleValueFactory.getInstance().createStatement(subj, pred, obj, context);
-				added = added
-						| statements.put(statement, statement) == null;
+				added = added | statements.put(statement, statement) == null;
 			}
 			return added;
 		} else {
@@ -143,6 +147,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		}
 
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
+
 			boolean removed = false;
 			for (Resource context : contexts) {
 				removed = removed
@@ -188,6 +197,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public int size() {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
+
 			return statements.size();
 		}
 		return model.size();
@@ -196,6 +210,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean isEmpty() {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
+
 			return statements.isEmpty();
 		}
 		return model.isEmpty();
@@ -204,6 +223,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean contains(Object o) {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
+
 			return statements.containsKey(o);
 		}
 		return model.contains(o);
@@ -212,6 +236,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public Iterator<Statement> iterator() {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return statements.values().iterator();
 		}
 
@@ -221,6 +249,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public Object[] toArray() {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return statements.values().toArray();
 		}
 		return model.toArray();
@@ -229,6 +261,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public <T> T[] toArray(T[] a) {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return statements.values().toArray(a);
 		}
 		return model.toArray(a);
@@ -238,6 +274,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean add(Statement statement) {
 		Objects.requireNonNull(statement);
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return statements.put(statement, statement) == null;
 		}
 		return model.add(statement);
@@ -247,6 +287,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean remove(Object o) {
 		Objects.requireNonNull(o);
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return statements.remove(o) != null;
 		}
 		return model.remove(o);
@@ -256,6 +300,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public boolean containsAll(Collection<?> c) {
 		Objects.requireNonNull(c);
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return statements.keySet().containsAll(c);
 		}
 		return model.containsAll(c);
@@ -267,6 +315,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (model == null) {
 			return c.stream()
 					.map(s -> {
+						Map<Statement, Statement> statements = this.statements;
+						if (statements == null) {
+							throw new ConcurrentModificationException();
+						}
 						Objects.requireNonNull(s);
 						return statements.put(s, s) == null;
 					})
@@ -279,6 +331,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean retainAll(Collection<?> c) {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return statements.keySet().retainAll(c);
 		}
 		return model.retainAll(c);
@@ -287,6 +343,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public boolean removeAll(Collection<?> c) {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			return c
 					.stream()
 					.map(statements::remove)
@@ -300,6 +360,10 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	@Override
 	public void clear() {
 		if (model == null) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
 			statements.clear();
 		} else {
 			model.clear();
@@ -310,6 +374,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	public Iterable<Statement> getStatements(Resource subject, IRI predicate, Value object, Resource... contexts) {
 		if (model == null && subject != null && predicate != null && object != null && contexts != null
 				&& contexts.length == 1) {
+			Map<Statement, Statement> statements = this.statements;
+			if (statements == null) {
+				throw new ConcurrentModificationException();
+			}
+
 			Statement statement = SimpleValueFactory.getInstance()
 					.createStatement(subject, predicate, object, contexts[0]);
 			Statement foundStatement = statements.get(statement);
@@ -334,12 +403,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	synchronized private void synchronizedUpgrade() {
 		if (model == null) {
-			// make statements unmodifiable first, to increase chance of an early failure if the user is doing
-			// concurrent write with reads
-			statements = Collections.unmodifiableMap(statements);
-			Model tempModel = modelFactory.createEmptyModel();
-			tempModel.addAll(statements.values());
-			model = tempModel;
+			// Increase the chance of detecting if the user is doing concurrent write with reads by setting the
+			// statements field to null while we upgrade.
+			Map<Statement, Statement> statements = this.statements;
+			this.statements = null;
+			model = modelFactory.createFrom(statements.values());
 		}
 	}
 
