@@ -643,6 +643,32 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	@Override
+	public void add(Statement st, Resource... contexts) throws RepositoryException {
+		boolean localTransaction = startLocalTransaction();
+		addWithoutCommit(st, contexts);
+		try {
+			conditionalCommit(localTransaction);
+		} catch (RepositoryException e) {
+			conditionalRollback(localTransaction);
+			throw e;
+		}
+	}
+
+	@Override
+	public void add(Iterable<? extends Statement> statements, Resource... contexts) throws RepositoryException {
+		boolean localTransaction = startLocalTransaction();
+		for (Statement st : statements) {
+			addWithoutCommit(st, contexts);
+		}
+		try {
+			conditionalCommit(localTransaction);
+		} catch (RepositoryException e) {
+			conditionalRollback(localTransaction);
+			throw e;
+		}
+	}
+
+	@Override
 	public void clear(Resource... contexts) throws RepositoryException {
 		Objects.requireNonNull(contexts,
 				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");

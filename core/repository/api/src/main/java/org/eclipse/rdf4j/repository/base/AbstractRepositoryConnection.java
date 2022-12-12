@@ -15,9 +15,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
-import java.util.HashSet;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.Iteration;
@@ -370,20 +368,19 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		boolean localTransaction = startLocalTransaction();
-		Set<Namespace> newNamespaces = new HashSet<>();
 
 		try {
 			for (Statement st : statements) {
-				if (st instanceof NamespaceAware) {
-					newNamespaces.addAll(((NamespaceAware) st).getNamespaces());
-				}
 				addWithoutCommit(st, contexts);
 			}
 
-			for (Namespace newNamespace : newNamespaces) {
-				String nsPrefix = newNamespace.getPrefix();
-				if (getNamespace(nsPrefix) == null) {
-					setNamespace(nsPrefix, newNamespace.getName());
+			if (statements instanceof NamespaceAware) {
+				var newNamespaces = ((NamespaceAware) statements).getNamespaces();
+				for (Namespace newNamespace : newNamespaces) {
+					String nsPrefix = newNamespace.getPrefix();
+					if (getNamespace(nsPrefix) == null) {
+						setNamespace(nsPrefix, newNamespace.getName());
+					}
 				}
 			}
 
@@ -426,15 +423,6 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				"contexts argument may not be null; either the value should be cast to Resource or an empty array should be supplied");
 
 		addWithoutCommit(st, contexts);
-
-		if (st instanceof NamespaceAware) {
-			for (Namespace newNamespace : ((NamespaceAware) st).getNamespaces()) {
-				String nsPrefix = newNamespace.getPrefix();
-				if (getNamespace(nsPrefix) == null) {
-					setNamespace(nsPrefix, newNamespace.getName());
-				}
-			}
-		}
 
 		conditionalCommit(localTransaction);
 	}
