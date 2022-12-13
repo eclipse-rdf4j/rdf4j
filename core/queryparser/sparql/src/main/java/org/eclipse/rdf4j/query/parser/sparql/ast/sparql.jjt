@@ -235,6 +235,7 @@ TOKEN [IGNORE_CASE] :
 |	<FALSE: "false">
 |	<BIND: "bind">
 |	<SERVICE: "service">
+|	<LATERAL: "lateral">  
 |	<BINDINGS: "bindings">
 |	<VALUES: "values">
 |	<UNDEF: "UNDEF">
@@ -705,6 +706,7 @@ void GraphPatternNotTriples() #void :
 |	GraphGraphPattern()
 |	MinusGraphPattern()
 |	ServiceGraphPattern()
+|	LateralGraphPattern()
 | 	InlineData()
 }
 
@@ -749,6 +751,12 @@ void ServiceGraphPattern() :
 	jjtThis.setEndTokenLinePos(t.beginLine);
 	jjtThis.setEndTokenColumnPos(t.beginColumn);
     }
+}
+
+void LateralGraphPattern() :
+{}
+{
+    <LATERAL> GroupGraphPattern()
 }
 
 void Filter() #void :

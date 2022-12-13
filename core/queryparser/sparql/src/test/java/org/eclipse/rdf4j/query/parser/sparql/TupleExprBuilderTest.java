@@ -20,6 +20,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -240,5 +241,33 @@ public class TupleExprBuilderTest {
 		public List<String> getGraphPatterns() {
 			return graphPatterns;
 		}
+	}
+
+	@Test
+	public void testLateralGraphPattern() throws Exception {
+
+		String query = "SELECT (?a as ?c) WHERE { ?a ?x ?z . LATERAL { ?b ?x ?z } }";
+
+		try {
+			TupleExprBuilder builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
+			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
+			TupleExpr result = builder.visit(qc, null);
+
+			assertThat(result instanceof Projection).isTrue();
+
+			Projection p = (Projection) result;
+			assertThat(p.getArg()).isInstanceOf(Extension.class);
+			Extension extension = (Extension) p.getArg();
+
+			assertThat(extension.getElements()).hasSize(1)
+					.allMatch(elem -> elem.getName().equals("c") && ((Var) elem.getExpr()).getName().equals("a"));
+
+			assertThat(extension.getArg()).isInstanceOf(Lateral.class);
+
+		} catch (Exception e) {
+			e.printStackTrace();
+			fail("should parse simple select query");
+		}
+
 	}
 }
