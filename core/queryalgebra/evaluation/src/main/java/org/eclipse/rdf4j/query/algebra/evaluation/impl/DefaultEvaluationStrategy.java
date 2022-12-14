@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Like;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -130,6 +131,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
@@ -545,6 +547,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return new JoinQueryEvaluationStep(this, node, context);
 	}
 
+	protected QueryEvaluationStep prepare(Lateral node, QueryEvaluationContext context)
+			throws QueryEvaluationException {
+		return LateralQueryEvaluationStep.supply(this, node, context);
+	}
+
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		return LeftJoinQueryEvaluationStep.supply(this, node, context);
@@ -886,6 +893,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			BindingSet bindings) throws QueryEvaluationException {
 		if (expr instanceof Join) {
 			return evaluate((Join) expr, bindings);
+		} else if (expr instanceof Lateral) {
+			return precompile(expr).evaluate(bindings);
 		} else if (expr instanceof LeftJoin) {
 			return evaluate((LeftJoin) expr, bindings);
 		} else if (expr instanceof Union) {
@@ -905,6 +914,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		if (expr instanceof Join) {
 			return prepare((Join) expr, context);
+		} else if (expr instanceof Lateral) {
+			return prepare((Lateral) expr, context);
 		} else if (expr instanceof LeftJoin) {
 			return prepare((LeftJoin) expr, context);
 		} else if (expr instanceof Union) {
