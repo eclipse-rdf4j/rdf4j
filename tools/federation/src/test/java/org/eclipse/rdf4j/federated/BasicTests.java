@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.util.Repositories;
 import org.junit.jupiter.api.Assertions;
@@ -181,6 +182,51 @@ public class BasicTests extends SPARQLBaseTest {
 		}
 
 	}
+	
+	@Test
+	public void testFederationSubSetQueryWithDataset() throws Exception {
+		String ns1 = "http://namespace1.org/";
+		String ns2 = "http://namespace2.org/";
+		prepareTest(Arrays.asList("/tests/data/data1.trig", "/tests/data/data2.ttl"));
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection()) {
+			TupleQuery tq = conn
+					.prepareTupleQuery("SELECT ?person WHERE { ?person a <http://xmlns.com/foaf/0.1/Person> }");
+
+			try (TupleQueryResult result = tq.evaluate()) {
+
+				try (TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
+						.add(List.of(vf.createIRI(ns1, "Person_1")))
+						.add(List.of(vf.createIRI(ns1, "Person_2")))
+						.add(List.of(vf.createIRI(ns1, "Person_3")))
+						.add(List.of(vf.createIRI(ns1, "Person_4")))
+						.add(List.of(vf.createIRI(ns1, "Person_5")))
+						.add(List.of(vf.createIRI(ns2, "Person_6")))
+						.add(List.of(vf.createIRI(ns2, "Person_7")))
+						.add(List.of(vf.createIRI(ns2, "Person_8")))
+						.add(List.of(vf.createIRI(ns2, "Person_9")))
+						.add(List.of(vf.createIRI(ns2, "Person_10")))
+						.build()) {
+
+					compareTupleQueryResults(result, expected, false);
+				}
+			}
+
+			// evaluate against ep 1 and ep 3 only
+			SimpleDataset fedxDataset = new SimpleDataset();
+			fedxDataset.addDefaultGraph(vf.createIRI(ns1, "PG1"));
+			tq.setDataset(fedxDataset);
+			try (TupleQueryResult result = tq.evaluate()) {
+
+				try (TupleQueryResult expected = tupleQueryResultBuilder(List.of("person"))
+						.add(List.of(vf.createIRI(ns1, "Person_1")))
+						.build()) {
+
+					compareTupleQueryResults(result, expected, false);
+				}
+			}
+		}
+
+	}
 
 	@Test
 	public void testQueryBinding() throws Exception {
@@ -198,13 +244,13 @@ public class BasicTests extends SPARQLBaseTest {
 		TupleQuery query = qm.prepareTupleQuery(queryString);
 		query.setBinding("person", vf.createIRI("http://namespace1.org/", "Person_1"));
 
-		TupleQueryResult actual = query.evaluate();
+		try (TupleQueryResult actual = query.evaluate();
 
-		TupleQueryResult expected = tupleQueryResultBuilder(List.of("name"))
-				.add(List.of(vf.createLiteral("Person1")))
-				.build();
+				TupleQueryResult expected = tupleQueryResultBuilder(List.of("name"))
+						.add(List.of(vf.createLiteral("Person1"))).build()) {
 
-		compareTupleQueryResults(actual, expected, false);
+			compareTupleQueryResults(actual, expected, false);
+		}
 	}
 
 	@Test
