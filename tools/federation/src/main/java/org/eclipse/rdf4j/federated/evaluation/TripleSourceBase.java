@@ -79,6 +79,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				applyBindings(tQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(tQuery);
 				configureInference(tQuery, queryInfo);
+				tQuery.setDataset(queryInfo.getDataset());
 				if (queryInfo.getResultHandler().isPresent()) {
 					// pass through result to configured handler, and return an empty iteration as marker result
 					tQuery.evaluate(queryInfo.getResultHandler().get());
@@ -91,6 +92,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			case DESCRIBE:
 				monitorRemoteRequest();
 				GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
+				gQuery.setDataset(queryInfo.getDataset());
 				applyBindings(gQuery, queryBindings);
 				applyMaxExecutionTimeUpperBound(gQuery);
 				configureInference(gQuery, queryInfo);
@@ -101,6 +103,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				boolean hasResults;
 				try (RepositoryConnection _conn = conn) {
 					BooleanQuery bQuery = _conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
+					bQuery.setDataset(queryInfo.getDataset());
 					applyBindings(bQuery, queryBindings);
 					applyMaxExecutionTimeUpperBound(bQuery);
 					configureInference(bQuery, queryInfo);
@@ -185,6 +188,7 @@ public abstract class TripleSourceBase implements TripleSource {
 		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings, group.getQueryInfo().getDataset());
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			BooleanQuery query = conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedAskQuery);
+			query.setDataset(group.getQueryInfo().getDataset());
 			configureInference(query, group.getQueryInfo());
 			applyMaxExecutionTimeUpperBound(query);
 			return query.evaluate();
