@@ -182,7 +182,7 @@ public class BasicTests extends SPARQLBaseTest {
 		}
 
 	}
-	
+
 	@Test
 	public void testFederationSubSetQueryWithDataset() throws Exception {
 		String ns1 = "http://namespace1.org/";
@@ -247,7 +247,8 @@ public class BasicTests extends SPARQLBaseTest {
 		try (TupleQueryResult actual = query.evaluate();
 
 				TupleQueryResult expected = tupleQueryResultBuilder(List.of("name"))
-						.add(List.of(vf.createLiteral("Person1"))).build()) {
+						.add(List.of(vf.createLiteral("Person1")))
+						.build()) {
 
 			compareTupleQueryResults(actual, expected, false);
 		}
