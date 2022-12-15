@@ -10,6 +10,21 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Flow.Processor;
+import java.util.concurrent.Flow.Publisher;
+import java.util.concurrent.Flow.Subscriber;
+import java.util.concurrent.Flow.Subscription;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Phaser;
+import java.util.concurrent.SubmissionPublisher;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -30,8 +45,7 @@ public interface QueryEvaluationStep {
 	 * that may be created and used later.
 	 */
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	class DelayedEvaluationIteration
-			extends DelayedIteration<BindingSet, QueryEvaluationException> {
+	class DelayedEvaluationIteration extends DelayedIteration<BindingSet, QueryEvaluationException> {
 		private final QueryEvaluationStep arg;
 		private final BindingSet bs;
 
@@ -64,7 +78,15 @@ public interface QueryEvaluationStep {
 	}
 
 	static QueryEvaluationStep empty() {
-		return bs -> new EmptyIteration<>();
+		return EMPTY;
+	}
+
+	public default boolean canPublish() {
+		return false;
+	}
+
+	public default EvaluationStepSubmitter publisher(BindingSet initialValues) {
+		throw new UnsupportedOperationException();
 	}
 
 	/**
@@ -78,5 +100,107 @@ public interface QueryEvaluationStep {
 	static QueryEvaluationStep wrap(QueryEvaluationStep qes,
 			Function<CloseableIteration<BindingSet, QueryEvaluationException>, CloseableIteration<BindingSet, QueryEvaluationException>> wrap) {
 		return bs -> wrap.apply(qes.evaluate(bs));
+	}
+
+	public static class EvaluationStepSubmitter {
+		private final CloseableIteration<BindingSet, QueryEvaluationException> iter;
+		private final SubmissionPublisher<BindingSet> submitter;
+
+		public EvaluationStepSubmitter(CloseableIteration<BindingSet, QueryEvaluationException> iter) {
+			super();
+			this.iter = iter;
+			this.submitter = new SubmissionPublisher<BindingSet>();
+		}
+
+		public void submit() {
+			while (iter.hasNext()) {
+				submitter.submit(iter.next());
+			}
+			iter.close();
+			submitter.close();
+		}
+
+		public SubmissionPublisher<BindingSet> getSubmissionPublisher() {
+			return submitter;
+		}
+	}
+
+	public static class EvaluationStepSubscriberToIterator
+			implements CloseableIteration<BindingSet, QueryEvaluationException> {
+		private volatile boolean closed;
+		private volatile QueryEvaluationException exception;
+		private final BlockingQueue<BindingSet> next = new ArrayBlockingQueue<>(2);
+		private CompletableFuture<Void> consume;
+
+		public EvaluationStepSubscriberToIterator() {
+			super();
+		}
+
+		@Override
+		public boolean hasNext() throws QueryEvaluationException {
+			if (next.peek() != null)
+				return true;
+			while (!closed && exception == null) {
+				if (next.peek() != null) {
+					return true;
+				} else if (consume.isDone()) {
+					if (next.peek() != null) {
+						return true;
+					} else {
+						return false;
+					}
+				}
+				Thread.onSpinWait();
+			}
+			if (exception != null)
+				throw exception;
+			return false;
+		}
+
+		@Override
+		public BindingSet next() throws QueryEvaluationException {
+			if (exception != null)
+				throw exception;
+			while (true) {
+				try {
+					BindingSet next2 = next.take();
+					return next2;
+				} catch (InterruptedException e) {
+					Thread.interrupted();
+				}
+			}
+		}
+
+		@Override
+		public void remove() throws QueryEvaluationException {
+			throw new QueryEvaluationException(new UnsupportedOperationException());
+		}
+
+		public void setException(QueryEvaluationException exception2) {
+			this.exception = exception2;
+		}
+
+		public Consumer<? super BindingSet> consumer() {
+			return (bs) -> {
+				while (!closed) {
+					try {
+						if (next.offer(bs, 20, TimeUnit.MILLISECONDS)) {
+							return;
+						}
+					} catch (InterruptedException e) {
+						Thread.interrupted();
+					}
+				}
+			};
+		}
+
+		public void setFuture(CompletableFuture<Void> consume) {
+			this.consume = consume;
+		}
+
+		@Override
+		public void close() throws QueryEvaluationException {
+			this.closed = true;
+		}
 	}
 }

@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.Set;
+import java.util.concurrent.Flow.Publisher;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -206,20 +207,26 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return EMPTY_ITERATION;
 		} else {
-			JoinStatementWithBindingSetIterator iteration = getIteration(bindings);
-			if (iteration == null) {
-				return EMPTY_ITERATION;
-			}
-			return iteration;
+			return getIteration(bindings);
 		}
 	}
 
-	private JoinStatementWithBindingSetIterator getIteration(BindingSet bindings) {
+	@Override
+	public boolean canPublish() {
+		return true;
+	}
+
+	@Override
+	public EvaluationStepSubmitter publisher(BindingSet bindings) {
+		return new EvaluationStepSubmitter(evaluate(bindings));
+	}
+
+	private CloseableIteration<BindingSet, QueryEvaluationException> getIteration(BindingSet bindings) {
 		final Value contextValue = getContextVar != null ? getContextVar.apply(bindings) : null;
 
 		Resource[] contexts = contextSup.apply(contextValue);
 		if (contexts == null) {
-			return null;
+			return EMPTY_ITERATION;
 		}
 
 		// Check that the subject is a Resource and the predicate can be an IRI
@@ -227,12 +234,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Value subject = getSubjectVar != null ? getSubjectVar.apply(bindings) : null;
 		if (subject != null && !subject.isResource()) {
-			return null;
+			return EMPTY_ITERATION;
 		}
 
 		Value predicate = getPredicateVar != null ? getPredicateVar.apply(bindings) : null;
 		if (predicate != null && !predicate.isIRI()) {
-			return null;
+			return EMPTY_ITERATION;
 		}
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
@@ -241,7 +248,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		try {
 			iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
 			if (iteration instanceof EmptyIteration) {
-				return null;
+				return EMPTY_ITERATION;
 			}
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
