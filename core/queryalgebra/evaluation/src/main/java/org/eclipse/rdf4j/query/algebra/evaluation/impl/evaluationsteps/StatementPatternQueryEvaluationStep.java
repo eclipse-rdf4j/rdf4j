@@ -68,8 +68,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		this.context = context;
 		this.tripleSource = tripleSource;
 		Set<IRI> graphs = null;
-		//If the graph part is empty we do not need to check this 
-		//in the conversion etc.
+		// If the graph part is empty we do not need to check this
+		// in the conversion etc.
 		Dataset dataset = context.getDataset();
 		if (dataset != null) {
 			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
@@ -583,7 +583,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	/**
 	 * We need to test every binding with hasBinding etc. as these are not guaranteed to be equivalent between calls of
 	 * evaluate(bs).
-	 * 
+	 *
 	 * Each conversion kind is special cased in with a specific method.
 	 *
 	 * @return a converter from statement into MutableBindingSet
