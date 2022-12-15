@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
- * A DefaultColelctionFactory that provides lists/sets/maps using standard common java in memory types
+ * A DefaultCollectionFactory that provides lists/sets/maps using standard common java in memory types
  */
 public class DefaultCollectionFactory implements CollectionFactory {
 
