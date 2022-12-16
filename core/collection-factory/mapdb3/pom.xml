@@ -6,8 +6,8 @@
 		<artifactId>rdf4j-collection-factory</artifactId>
 		<version>4.3.0-SNAPSHOT</version>
 	</parent>
-	<artifactId>rdf4j-collection-factory-mapdb</artifactId>
-	<name>RDF4J: Collection Factory - Map DB backed</name>
+	<artifactId>rdf4j-collection-factory-mapdb3</artifactId>
+	<name>RDF4J: Collection Factory - Map DB v3 backed</name>
 	<description>Evaluation</description>
 	<dependencies>
 		<dependency>
@@ -27,7 +27,7 @@
 		<dependency>
 			<groupId>org.mapdb</groupId>
 			<artifactId>mapdb</artifactId>
-			<version>1.0.8</version>
+			<version>3.0.9</version>
 		</dependency>
 		<dependency>
 			<groupId>org.openjdk.jmh</groupId>
