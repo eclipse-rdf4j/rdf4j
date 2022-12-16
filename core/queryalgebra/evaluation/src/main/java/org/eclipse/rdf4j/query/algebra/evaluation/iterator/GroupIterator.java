@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -18,21 +17,19 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.LongFunction;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.function.ToIntFunction;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetEntry;
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
@@ -62,7 +59,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.ExtendedEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
@@ -281,16 +277,25 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
 			throws QueryEvaluationException {
 		try (var iter = arguments.evaluate(parentBindings)) {
-
-			Function<BindingSet, Integer> hashMaker = hashMaker(context, group);
-			Map<Key, Entry> entries = new LinkedHashMap<>();
+			List<Function<BindingSet, Value>> getValues = group.getGroupBindingNames()
+					.stream()
+					.map(n -> context.getValue(n))
+					.collect(Collectors.toList());
 
 			if (!iter.hasNext()) {
 				return emptySolutionSpecialCase(aggregates);
 			} else {
+				// TODO: this is an in memory map with no backing into any disk form.
+				// Fixing this requires separating the computation of the aggregates and their
+				// distinct sets if needed from the intermediary values.
+
+				Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
+				// Make an optimized hash function valid during this query evaluation step.
+				ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
 				while (iter.hasNext()) {
 					BindingSet sol = iter.next();
-					Key key = new Key(sol, hashMaker.apply(sol));
+					// The binding set key will be constant
+					BindingSetKey key = cf.createBindingSetKey(sol, getValues, hashMaker);
 					Entry entry = entries.get(key);
 					if (entry == null) {
 						List<AggregateCollector> collectors = makeCollectors(aggregates);
@@ -305,8 +310,8 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 
 					entry.addSolution(sol, aggregates);
 				}
+				return entries.values();
 			}
-			return entries.values();
 		}
 	}
 
@@ -331,30 +336,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		return Collections.emptyList();
 	}
 
-	private Collection<Entry> constructEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates,
-			CloseableIteration<BindingSet, QueryEvaluationException> iter) {
-		List<Function<BindingSet, Value>> getValues = getValueFunctions(context, group);
-		Map<BindingSetKey, Entry> entries = new LinkedHashMap<>();
-		while (iter.hasNext()) {
-			BindingSet sol = iter.next();
-			BindingSetKey key = cf.createBindingSetKey(sol, getValues);
-			Entry entry = entries.get(key);
-			if (entry == null) {
-				List<AggregateCollector> collectors = makeCollectors(aggregates);
-				List<Predicate<?>> predicates = new ArrayList<>(aggregates.size());
-				for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
-					predicates.add(a.makePotentialDistinctTest.get());
-				}
-
-				entry = new Entry(sol, collectors, predicates);
-				entries.put(key, entry);
-			}
-
-			entry.addSolution(sol, aggregates);
-		}
-		return entries.values();
-	}
-
 	private List<AggregateCollector> makeCollectors(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates) {
 		List<AggregateCollector> collectors = new ArrayList<>(aggregates.size());
 		for (AggregatePredicateCollectorSupplier<?, ?> a : aggregates) {
@@ -362,108 +343,6 @@ public class GroupIterator extends CloseableIteratorIteration<BindingSet, QueryE
 		}
 
 		return collectors;
-	}
-
-	private static Function<BindingSet, Integer> hashMaker(QueryEvaluationContext context, Group group) {
-		Set<String> groupBindingNames = group.getGroupBindingNames();
-		int size = groupBindingNames.size();
-
-		if (size == 1) {
-			Function<BindingSet, Value> getValue = context.getValue(groupBindingNames.iterator().next());
-			return (bs) -> {
-				Value value = getValue.apply(bs);
-				return value != null ? value.hashCode() : 1;
-			};
-		} else {
-
-			List<Function<BindingSet, Value>> getValues = new ArrayList<>(size);
-			for (String name : groupBindingNames) {
-				Function<BindingSet, Value> getValue = context.getValue(name);
-				getValues.add(getValue);
-			}
-
-			return (bs) -> {
-				final int prime = 31;
-				int nextHash = 1;
-				for (Function<BindingSet, Value> getValue : getValues) {
-					Value value = getValue.apply(bs);
-					if (value != null) {
-						nextHash = prime * nextHash + value.hashCode();
-					}
-				}
-				return nextHash;
-			};
-		}
-	}
-
-	/**
-	 * A unique key for a set of existing bindings.
-	 *
-	 * @author David Huynh
-	 */
-	protected class Key implements Serializable {
-
-		private static final long serialVersionUID = 4461951265373324084L;
-
-		private final BindingSet bindingSet;
-
-		private final int hash;
-
-		public Key(BindingSet bindingSet) {
-			this.bindingSet = bindingSet;
-			int nextHash = 1;
-			final int prime = 31;
-			for (String name : group.getGroupBindingNames()) {
-				Value value = bindingSet.getValue(name);
-				if (value != null) {
-					nextHash = prime * nextHash + value.hashCode();
-				}
-			}
-			this.hash = nextHash;
-		}
-
-		public Key(BindingSet bindingSet, int hash) {
-			this.bindingSet = bindingSet;
-			this.hash = hash;
-		}
-
-		@Override
-		public int hashCode() {
-			return hash;
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			if (this == other) {
-				return true;
-			}
-
-			if (other instanceof Key && other.hashCode() == hash) {
-				BindingSet otherBindingSet = ((Key) other).bindingSet;
-
-				for (String name : group.getGroupBindingNames()) {
-					Value v1 = bindingSet.getValue(name);
-					Value v2 = otherBindingSet.getValue(name);
-
-					if (!Objects.equals(v1, v2)) {
-						return false;
-					}
-				}
-
-				return true;
-			}
-
-			return false;
-		}
-	}
-
-	private static List<Function<BindingSet, Value>> getValueFunctions(QueryEvaluationContext context, Group group) {
-		List<Function<BindingSet, Value>> getValues = new ArrayList<>(group.getGroupBindingNames().size());
-		for (String name : group.getGroupBindingNames()) {
-			Function<BindingSet, Value> getValue = context.getValue(name);
-			getValues.add(getValue);
-		}
-		return getValues;
 	}
 
 	private static class Entry implements BindingSetEntry {
