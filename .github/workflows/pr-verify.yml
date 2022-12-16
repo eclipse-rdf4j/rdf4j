@@ -5,15 +5,12 @@ on: pull_request
 jobs:
   formatting:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        jdk: 18
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK
       uses: actions/setup-java@v3
       with:
-        java-version: ${{ matrix.jdk }}
+        java-version: 17
         cache: 'maven'
     - name: Check formatting
       run: mvn -B formatter:validate impsort:check xml-format:xml-check
