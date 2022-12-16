@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -173,8 +174,9 @@ public class MapDbCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
-		return delegate.createBindingSetKey(bindingSet, getValues);
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
+			ToIntFunction<BindingSet> hashOfBindingSetCalculator) {
+		return delegate.createBindingSetKey(bindingSet, getValues, hashOfBindingSetCalculator);
 	}
 
 	protected static final class CommitingSet<T> extends AbstractSet<T> {

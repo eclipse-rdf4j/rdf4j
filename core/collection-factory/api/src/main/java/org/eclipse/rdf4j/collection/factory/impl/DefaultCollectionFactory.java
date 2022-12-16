@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.ToIntFunction;
 
 import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -88,27 +89,13 @@ public class DefaultCollectionFactory implements CollectionFactory {
 	}
 
 	@Override
-	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues) {
-		Function<BindingSet, Integer> hashMaker = hashMaker(getValues);
+	public BindingSetKey createBindingSetKey(BindingSet bindingSet, List<Function<BindingSet, Value>> getValues,
+			ToIntFunction<BindingSet> hashOfBindingSetCalculator) {
 		List<Value> values = new ArrayList<>(getValues.size());
 		for (int i = 0; i < getValues.size(); i++) {
 			values.add(getValues.get(i).apply(bindingSet));
 		}
-		return new DefaultBindingSetKey(values, hashMaker.apply(bindingSet));
+		return new DefaultBindingSetKey(values, hashOfBindingSetCalculator.applyAsInt(bindingSet));
 	}
 
-	private static Function<BindingSet, Integer> hashMaker(List<Function<BindingSet, Value>> getValues) {
-
-		Function<BindingSet, Integer> hashFunction = (bs) -> {
-			int nextHash = 0;
-			for (Function<BindingSet, Value> getValue : getValues) {
-				Value value = getValue.apply(bs);
-				if (value != null) {
-					nextHash ^= value.hashCode();
-				}
-			}
-			return nextHash;
-		};
-		return hashFunction;
-	}
 }
