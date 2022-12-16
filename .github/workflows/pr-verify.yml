@@ -10,6 +10,7 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v3
       with:
+        distribution: 'temurin'
         java-version: 17
         cache: 'maven'
     - name: Check formatting
@@ -31,6 +32,7 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v3
       with:
+        distribution: 'temurin'
         java-version: ${{ matrix.jdk }}
         cache: 'maven'
     - name: Build
@@ -56,6 +58,7 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v3
       with:
+        distribution: 'temurin'
         java-version: 11
         cache: 'maven'
     - name: Build
@@ -81,6 +84,7 @@ jobs:
     - name: Set up JDK
       uses: actions/setup-java@v3
       with:
+        distribution: 'temurin'
         java-version: 11
         cache: 'maven'
     - name: Build
