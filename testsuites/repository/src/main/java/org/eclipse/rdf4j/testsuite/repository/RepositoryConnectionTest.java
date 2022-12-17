@@ -1127,6 +1127,22 @@ public abstract class RepositoryConnectionTest {
 		assertThat(map.get(RDF_PREFIX)).isEqualTo("http://www.w3.org/1999/02/22-rdf-syntax-ns#");
 	}
 
+	@Test
+	public void testImportNamespacesFromIterable() throws Exception {
+		Model nsAwareModel = new LinkedHashModel();
+		nsAwareModel.setNamespace(RDFS_PREFIX, RDFS_NS);
+		nsAwareModel.setNamespace(EXAMPLE, EXAMPLE_NS);
+
+		testCon.add(nsAwareModel);
+		assertThat(testCon.getNamespace(RDFS_PREFIX)).isEqualTo(RDFS_NS);
+		assertThat(testCon.getNamespace(EXAMPLE)).isEqualTo(EXAMPLE_NS);
+
+		// Test that existing namespaces are not overwritten
+		nsAwareModel.setNamespace(EXAMPLE, "http://something.else/");
+		testCon.add(nsAwareModel);
+		assertThat(testCon.getNamespace(EXAMPLE)).isEqualTo(EXAMPLE_NS);
+	}
+
 	private void setupNamespaces() throws IOException, RDFParseException, RepositoryException {
 		testCon.setNamespace(EXAMPLE, EXAMPLE_NS);
 		testCon.setNamespace(RDF_PREFIX, "http://www.w3.org/1999/02/22-rdf-syntax-ns#");

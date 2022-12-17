@@ -257,6 +257,13 @@ public class SPARQLStoreConnectionTest extends RepositoryConnectionTest {
 
 	@Override
 	@Ignore
+	public void testImportNamespacesFromIterable() throws Exception {
+		System.err
+				.println("disabled testImportNamespacesFromIterable() as namespace setting is not supported by SPARQL");
+	}
+
+	@Override
+	@Ignore
 	public void testTransactionIsolation() throws Exception {
 		System.err.println("temporarily disabled testTransactionIsolation() for SPARQLRepository");
 	}
