@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -442,6 +443,29 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 
 	}
+
+	/**
+	 * @see https://github.com/eclipse/rdf4j/issues/4290
+	 */
+	@Test
+	public void testCountOrderBy() {
+		mixedDataForNumericAggregates();
+
+		String query = "select (count(*) as ?c) where { \n"
+				+ "	?s ?p ?o .\n"
+				+ "} \n"
+				+ "order by (?s)";
+
+		try (var result = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(result).hasSize(1);
+
+			BindingSet bs = result.next();
+			assertThat(bs.size()).isEqualTo(1);
+			assertThat(Literals.getIntValue(bs.getValue("c"), 0)).isEqualTo(19);
+		}
+	}
+
+	// private methods
 
 	private void mixedDataForNumericAggregates() {
 		IRI node1 = Values.iri("http://example.com/1");
