@@ -940,7 +940,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	/**
 	 * Adds the supplied statements to this repository, optionally to one or more named contexts.
 	 *
-	 * @param statements The statements that should be added.
+	 * @param statements The statements that should be added. In case the iterable is
+	 *                   {@link org.eclipse.rdf4j.model.NamespaceAware} and the target repository supports it, the
+	 *                   iterable's namespaces are also added to the repository, without overwriting existing ones.
 	 * @param contexts   The contexts to add the statements to. Note that this parameter is a vararg and as such is
 	 *                   optional. If no contexts are specified, each statement is added to any context specified in the
 	 *                   statement, or if the statement contains no context, it is added without context. If one or more
