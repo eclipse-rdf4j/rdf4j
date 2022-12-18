@@ -50,7 +50,7 @@ public class HTTPTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 			conn.flushTransactionState(Protocol.Action.QUERY);
 
 			return client.sendTupleQuery(queryLanguage, queryString, baseURI, dataset, getIncludeInferred(),
-					getMaxExecutionTime(), ((WeakReference) null), getBindingsArray());
+					getMaxExecutionTime(), ((WeakReference<?>) null), getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new HTTPQueryEvaluationException(e.getMessage(), e);
 		}
