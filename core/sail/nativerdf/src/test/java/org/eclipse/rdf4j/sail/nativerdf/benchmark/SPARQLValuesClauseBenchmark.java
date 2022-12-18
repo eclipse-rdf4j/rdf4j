@@ -23,6 +23,7 @@ import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -99,8 +100,10 @@ public class SPARQLValuesClauseBenchmark {
 
 		repository = new SailRepository(new NativeStore(file, "spoc,posc,cspo,opsc"));
 
-		int numberOfItems = 10_000;
-		int numberOfChildren = 10_000;
+		int numberOfItems = 2;
+		int numberOfChildren = 2;
+		int numberOfTypeOwlClassStatements = 500;
+		int numberOfSubClassOfStatements = 10_000;
 
 		try (var conn = repository.getConnection()) {
 			conn.begin(IsolationLevels.NONE);
@@ -129,6 +132,14 @@ public class SPARQLValuesClauseBenchmark {
 						conn.add(m);
 					}
 				}
+
+			}
+			for (int i = 0; i < numberOfTypeOwlClassStatements; i++) {
+				conn.add(Values.bnode(), RDF.TYPE, OWL.CLASS);
+			}
+
+			for (int i = 0; i < numberOfSubClassOfStatements; i++) {
+				conn.add(Values.bnode(), RDFS.SUBCLASSOF, Values.bnode());
 			}
 			conn.commit();
 		}
