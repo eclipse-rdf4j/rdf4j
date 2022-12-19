@@ -11,10 +11,9 @@
 package org.eclipse.rdf4j.query.resultio.sparqlstarjson;
 
 /**
- * @deprecated since 3.4.0 - moved to
- *             {@link org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONParserFactory}
+ * @deprecated Moved to {@link org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONParserFactory}
  */
-@Deprecated
+@Deprecated(since = "3.4.0")
 public class SPARQLStarResultsJSONParserFactory
 		extends org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLStarResultsJSONParserFactory {
 }

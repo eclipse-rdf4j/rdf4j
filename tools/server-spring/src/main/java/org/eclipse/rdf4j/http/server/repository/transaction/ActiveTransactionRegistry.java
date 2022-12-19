@@ -44,17 +44,17 @@ public enum ActiveTransactionRegistry {
 	 * Configurable system property {@code rdf4j.server.txn.registry.timeout} for specifying the transaction cache
 	 * timeout (in seconds).
 	 *
-	 * @deprecated since 2.3 use {@link Protocol#CACHE_TIMEOUT_PROPERTY}
+	 * @deprecated Use {@link Protocol#CACHE_TIMEOUT_PROPERTY}
 	 */
-	@Deprecated
+	@Deprecated(since = "2.3")
 	public static final String CACHE_TIMEOUT_PROPERTY = Protocol.TIMEOUT.CACHE_PROPERTY;
 
 	/**
 	 * Default timeout setting for transaction cache entries (in seconds).
 	 *
-	 * @deprecated since 2.3 use {@link Protocol#DEFAULT_TIMEOUT}
+	 * @deprecated Use {@link Protocol#DEFAULT_TIMEOUT}
 	 */
-	@Deprecated
+	@Deprecated(since = "2.3")
 	public final static int DEFAULT_TIMEOUT = Protocol.TIMEOUT.DEFAULT;
 
 	/**

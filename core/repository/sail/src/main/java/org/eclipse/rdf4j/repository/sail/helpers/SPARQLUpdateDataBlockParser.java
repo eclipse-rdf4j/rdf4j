@@ -13,9 +13,9 @@ package org.eclipse.rdf4j.repository.sail.helpers;
 import org.eclipse.rdf4j.model.ValueFactory;
 
 /**
- * @deprecated since 3.2.2. Use {@link org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser} instead.
+ * @deprecated Use {@link org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser} instead.
  */
-@Deprecated
+@Deprecated(since = "3.2.2")
 public class SPARQLUpdateDataBlockParser extends org.eclipse.rdf4j.query.parser.sparql.SPARQLUpdateDataBlockParser {
 
 	@Deprecated

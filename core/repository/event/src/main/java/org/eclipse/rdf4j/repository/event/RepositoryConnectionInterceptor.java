@@ -43,9 +43,9 @@ public interface RepositoryConnectionInterceptor {
 	 *                   on.
 	 * @param autoCommit
 	 * @return true if the interceptor has been denied access to the setAutoCommit operation, false otherwise.
-	 * @deprecated since 2.0. Use {@link #begin(RepositoryConnection)} instead.
+	 * @deprecated Use {@link #begin(RepositoryConnection)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.0")
 	boolean setAutoCommit(RepositoryConnection conn, boolean autoCommit);
 
 	/**

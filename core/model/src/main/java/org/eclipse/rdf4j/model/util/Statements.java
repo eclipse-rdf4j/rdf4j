@@ -130,9 +130,9 @@ public class Statements {
 	 * @param statement a statement to convert to an RDF-star triple
 	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
-	 * @deprecated since 3.5.0 - use {@link Values#triple(Statement)} instead
+	 * @deprecated Use {@link Values#triple(Statement)} instead
 	 */
-	@Deprecated
+	@Deprecated(since = "3.5.0")
 	public static Triple toTriple(Statement statement) {
 		return toTriple(SimpleValueFactory.getInstance(), statement);
 	}
@@ -144,9 +144,9 @@ public class Statements {
 	 * @param statement a statement to convert to an RDF-star triple
 	 * @return an {@link Triple RDF-star triple} with the same subject, predicate and object as the input statement.
 	 * @since 3.4.0
-	 * @deprecated since 3.5.0 - use {@link Values#triple(ValueFactory, Statement)} instead
+	 * @deprecated Use {@link Values#triple(ValueFactory, Statement)} instead
 	 */
-	@Deprecated
+	@Deprecated(since = "3.5.0")
 	public static Triple toTriple(ValueFactory vf, Statement statement) {
 		return vf.createTriple(statement.getSubject(), statement.getPredicate(), statement.getObject());
 	}

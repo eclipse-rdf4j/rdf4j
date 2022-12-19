@@ -39,9 +39,9 @@ public class QueryStringUtil {
 	 * @param queryString
 	 * @param bindings
 	 * @return the modified queryString
-	 * @deprecated since 2.0.use {@link #getTupleQueryString(String, BindingSet)}
+	 * @deprecated Use {@link #getTupleQueryString(String, BindingSet)}
 	 */
-	@Deprecated
+	@Deprecated(since = "2.0")
 	public static String getQueryString(String queryString, BindingSet bindings) {
 		return getTupleQueryString(queryString, bindings);
 	}

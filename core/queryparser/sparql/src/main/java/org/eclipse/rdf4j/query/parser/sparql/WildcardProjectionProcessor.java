@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.parser.sparql;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
@@ -35,10 +36,11 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
  *
  * @author arjohn
  * @author Jeen Broekstra
- * @deprecated since 3.0. This feature is for internal use only: its existence, signature or behavior may change without
- *             warning from one release to the next.
+ * @deprecated This feature is for internal use only: its existence, signature or behavior may change without warning
+ *             from one release to the next.
  */
-@Deprecated
+@Deprecated(since = "3.0")
+@InternalUseOnly
 public class WildcardProjectionProcessor extends AbstractASTVisitor {
 
 	public static void process(ASTOperationContainer container) throws MalformedQueryException {

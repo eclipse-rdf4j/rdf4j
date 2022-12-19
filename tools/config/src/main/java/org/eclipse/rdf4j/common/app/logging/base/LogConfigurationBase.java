@@ -13,10 +13,10 @@ package org.eclipse.rdf4j.common.app.logging.base;
 import java.io.IOException;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractLogConfiguration} instead.
+ * @deprecated Use {@link AbstractLogConfiguration} instead.
  * @author Jeen Broekstra
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public abstract class LogConfigurationBase extends AbstractLogConfiguration {
 
 	/**

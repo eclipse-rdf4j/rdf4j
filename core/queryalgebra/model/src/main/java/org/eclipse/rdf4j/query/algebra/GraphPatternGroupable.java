@@ -12,9 +12,9 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * @author jeen
- * @deprecated since 3.2. Use {@link VariableScopeChange} instead.
+ * @deprecated Use {@link VariableScopeChange} instead.
  */
-@Deprecated
+@Deprecated(since = "3.2")
 public interface GraphPatternGroupable {
 
 	/**

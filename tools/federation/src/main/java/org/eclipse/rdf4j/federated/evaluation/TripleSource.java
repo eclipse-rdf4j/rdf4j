@@ -87,7 +87,7 @@ public interface TripleSource {
 	 * @Deprecated will be removed in 4.0. Replaced with
 	 *             {@link #getStatements(String, BindingSet, QueryType, QueryInfo)}
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true)
 	default CloseableIteration<BindingSet, QueryEvaluationException> getStatements(String preparedQuery,
 			QueryType queryType, QueryInfo queryInfo)
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
@@ -194,7 +194,7 @@ public interface TripleSource {
 	 * @return true if a prepared query is to be used preferably, false otherwise
 	 * @deprecated replaced with {@link #usePreparedQuery(StatementPattern, QueryInfo)}, to be removed in 4.0
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true)
 	default boolean usePreparedQuery() {
 		return true;
 	}

@@ -428,11 +428,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 	 * can use {@link AbstractSailConnection#verifyIsActive()} as a convenience method for this check.
 	 *
 	 * @throws SailException if no transaction is active.
-	 * @deprecated since 2.7.0. Use {@link #verifyIsActive()} instead. We should not automatically start a transaction
-	 *             at the sail level. Instead, an exception should be thrown when an update is executed without first
-	 *             starting a transaction.
+	 * @deprecated Use {@link #verifyIsActive()} instead. We should not automatically start a transaction at the sail
+	 *             level. Instead, an exception should be thrown when an update is executed without first starting a
+	 *             transaction.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.7.0")
 	protected void autoStartTransaction() throws SailException {
 		verifyIsActive();
 	}

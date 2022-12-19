@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 /**
  * @deprecated since 2.0. Use {@link TripleSources} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public final class Statements extends TripleSources {
 
 }

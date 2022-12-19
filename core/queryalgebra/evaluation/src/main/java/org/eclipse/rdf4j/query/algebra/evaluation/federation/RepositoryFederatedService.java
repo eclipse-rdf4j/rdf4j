@@ -16,9 +16,9 @@ import org.eclipse.rdf4j.repository.Repository;
  * Federated Service wrapping the {@link Repository} to communicate with a SPARQL endpoint.
  *
  * @author Andreas Schwarte
- * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService}
+ * @deprecated Use {@link org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService}
  */
-@Deprecated
+@Deprecated(since = "2.3")
 public class RepositoryFederatedService
 		extends org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService {
 

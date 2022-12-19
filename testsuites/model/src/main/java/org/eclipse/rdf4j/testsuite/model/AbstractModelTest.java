@@ -11,9 +11,9 @@
 package org.eclipse.rdf4j.testsuite.model;
 
 /**
- * @deprecated since 3.5.0. Use {@link ModelTest} instead.
+ * @deprecated Use {@link ModelTest} instead.
  */
-@Deprecated
+@Deprecated(since = "3.5.0")
 public abstract class AbstractModelTest extends ModelTest {
 
 }

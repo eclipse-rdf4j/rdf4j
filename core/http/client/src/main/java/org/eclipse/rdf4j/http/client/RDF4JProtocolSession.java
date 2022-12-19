@@ -122,9 +122,9 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private long pingDelay = PINGDELAY;
 
 	/**
-	 * @deprecated since 3.6.2 - use {@link #RDF4JProtocolSession(HttpClient, ExecutorService)} instead
+	 * @deprecated Use {@link #RDF4JProtocolSession(HttpClient, ExecutorService)} instead
 	 */
-	@Deprecated
+	@Deprecated(since = "3.6.2")
 	public RDF4JProtocolSession(HttpClient client, ScheduledExecutorService executor) {
 		this(client, (ExecutorService) executor);
 	}
@@ -844,7 +844,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	 * @throws UnauthorizedException
 	 * @deprecated since 2.8.0
 	 */
-	@Deprecated
+	@Deprecated(since = "2.8.0")
 	public void sendTransaction(final Iterable<? extends TransactionOperation> txn)
 			throws IOException, RepositoryException, UnauthorizedException {
 		checkRepositoryURL();

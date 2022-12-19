@@ -15,5 +15,5 @@
  *
  * @since 3.1.0 2019
  */
-@Deprecated
+@Deprecated(since = "3.1.0")
 package org.eclipse.rdf4j.spin;

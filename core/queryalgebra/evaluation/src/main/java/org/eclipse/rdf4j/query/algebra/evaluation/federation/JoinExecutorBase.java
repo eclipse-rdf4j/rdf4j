@@ -22,9 +22,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
  * is synchronized).
  *
  * @author Andreas Schwarte
- * @deprecated since 2.3 use {@link org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase}
+ * @deprecated Use {@link org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase}
  */
-@Deprecated
+@Deprecated(since = "2.3")
 public abstract class JoinExecutorBase<T> extends org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase<T> {
 
 	public JoinExecutorBase(CloseableIteration<T, QueryEvaluationException> leftIter, TupleExpr rightArg,

@@ -503,9 +503,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * @throws RepositoryException In case the mode switch failed, for example because a currently active transaction
 	 *                             failed to commit.
 	 * @see #commit()
-	 * @deprecated As of release 2.7.0, use {@link #begin()} instead.
+	 * @deprecated Use {@link #begin()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.7.0")
 	void setAutoCommit(boolean autoCommit) throws RepositoryException;
 
 	/**
@@ -517,9 +517,9 @@ public interface RepositoryConnection extends AutoCloseable {
 	 * </ol>
 	 *
 	 * @throws RepositoryException If a repository access error occurs.
-	 * @deprecated since 2.0. Use {@link #isActive()} instead.
+	 * @deprecated Use {@link #isActive()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "2.0")
 	boolean isAutoCommit() throws RepositoryException;
 
 	/**

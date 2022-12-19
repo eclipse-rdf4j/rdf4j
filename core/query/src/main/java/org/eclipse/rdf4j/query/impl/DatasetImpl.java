@@ -12,9 +12,9 @@ package org.eclipse.rdf4j.query.impl;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 2.0. Use {@link SimpleDataset} instead.
+ * @deprecated Use {@link SimpleDataset} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public class DatasetImpl extends SimpleDataset {
 
 	private static final long serialVersionUID = 1L;

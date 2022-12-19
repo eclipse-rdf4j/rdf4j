@@ -16,9 +16,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link StrictEvaluationStrategy} instead.
+ * @deprecated Use {@link StrictEvaluationStrategy} instead.
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public class EvaluationStrategyImpl extends StrictEvaluationStrategy {
 
 	public EvaluationStrategyImpl(TripleSource tripleSource, Dataset dataset,

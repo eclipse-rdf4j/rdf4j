@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.common.platform;
  * @deprecated since 4.0. Use {@link AbstractPlatform} instead.
  * @author Jeen Broekstra
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public abstract class PlatformBase extends AbstractPlatform {
 
 }
