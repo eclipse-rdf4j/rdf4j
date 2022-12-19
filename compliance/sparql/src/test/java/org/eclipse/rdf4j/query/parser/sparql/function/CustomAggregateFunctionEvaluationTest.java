@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.parser.sparql.function;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.fail;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -484,8 +485,8 @@ public class CustomAggregateFunctionEvaluationTest {
 		String query = "select (<http://example.org/doesNotExist>(?o) as ?m) where { ?s <urn:n> ?o . }";
 		try (RepositoryConnection conn = rep.getConnection()) {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-				QueryEvaluationException queryEvaluationException = Assertions
-						.assertThrows(QueryEvaluationException.class, result::next);
+				fail();
+			} catch (QueryEvaluationException queryEvaluationException) {
 				Assertions.assertFalse(queryEvaluationException.toString().contains("aggregate"));
 			}
 		}

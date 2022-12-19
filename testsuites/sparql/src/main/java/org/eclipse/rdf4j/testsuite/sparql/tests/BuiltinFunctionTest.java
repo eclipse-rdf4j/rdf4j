@@ -82,10 +82,11 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 
 		try (TupleQueryResult result = tq.evaluate()) {
 			assertNotNull(result);
-
+			assertTrue(result.hasNext());
 			Literal d1 = (Literal) result.next().getValue("d");
+			assertTrue(result.hasNext());
 			Literal d2 = (Literal) result.next().getValue("d");
-
+			assertFalse(result.hasNext());
 			assertNotNull(d1);
 			assertEquals(d1, d2);
 		} catch (QueryEvaluationException e) {
