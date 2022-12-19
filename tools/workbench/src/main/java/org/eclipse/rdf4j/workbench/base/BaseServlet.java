@@ -11,10 +11,10 @@
 package org.eclipse.rdf4j.workbench.base;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractServlet} instead.
+ * @deprecated Use {@link AbstractServlet} instead.
  * @author Jeen Broekstra
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public abstract class BaseServlet extends AbstractServlet {
 
 }

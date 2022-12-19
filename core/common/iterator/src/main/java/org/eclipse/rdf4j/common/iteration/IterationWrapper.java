@@ -30,7 +30,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 *
 	 * @deprecated This will be changed to private, possibly with an accessor in future. Do not rely on it.
 	 */
-	@Deprecated
+	@Deprecated(since = "4.1.0")
 	protected final Iteration<? extends E, ? extends X> wrappedIter;
 
 	/*--------------*

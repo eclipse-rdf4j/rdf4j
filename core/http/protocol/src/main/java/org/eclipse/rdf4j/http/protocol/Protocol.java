@@ -212,9 +212,9 @@ public abstract class Protocol {
 	 * Parameter name for the isolation level used in transactions.
 	 *
 	 * @see #TRANSACTION_SETTINGS_PREFIX
-	 * @deprecated since 3.3.0. Use <code>transaction-setting__isolation-level</code> instead.
+	 * @deprecated Use <code>transaction-setting__isolation-level</code> instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.3.0")
 	public static final String ISOLATION_LEVEL_PARAM_NAME = "isolation-level";
 
 	/**

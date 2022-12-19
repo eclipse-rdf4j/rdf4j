@@ -11,10 +11,10 @@
 package org.eclipse.rdf4j.common.webapp.navigation;
 
 /**
- * @deprecated since 4.0. Use {@link AbstractNavigationNode} instead.
+ * @deprecated Use {@link AbstractNavigationNode} instead.
  * @author Jeen Broekstra
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public abstract class NavigationNodeBase extends AbstractNavigationNode {
 
 	public NavigationNodeBase(String id) {

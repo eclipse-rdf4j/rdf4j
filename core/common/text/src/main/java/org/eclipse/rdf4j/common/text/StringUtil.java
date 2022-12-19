@@ -34,7 +34,7 @@ public class StringUtil {
 	 * @return The result String containing the substitutions; if no substitutions were made, the result is 'text'.
 	 * @deprecated use {@link String#replace(CharSequence, CharSequence) instead}.
 	 */
-	@Deprecated
+	@Deprecated(since = "4.0.0")
 	public static String gsub(String olds, String news, String text) {
 		if (olds == null || olds.length() == 0) {
 			// Nothing to substitute.

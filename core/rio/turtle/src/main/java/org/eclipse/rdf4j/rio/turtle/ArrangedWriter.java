@@ -46,9 +46,9 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
  *
  * @author James Leigh
  * @since 2.3
- * @deprecated since 3.3.1. pretty printing / bnode inlining logic has been moved to {@link TurtleWriter} internally.
+ * @deprecated Pretty printing / bnode inlining logic has been moved to {@link TurtleWriter} internally.
  */
-@Deprecated
+@Deprecated(since = "3.3.1")
 public class ArrangedWriter extends AbstractRDFWriter {
 
 	private final static int DEFAULT_QUEUE_SIZE = 100;

@@ -444,17 +444,17 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 	public abstract Collection<RepositoryInfo> getAllRepositoryInfos() throws RepositoryException;
 
 	/**
-	 * @deprecated since 4.0 - use {@link #getAllRepositoryInfos()} instead.
+	 * @deprecated Use {@link #getAllRepositoryInfos()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "4.0")
 	public Collection<RepositoryInfo> getAllUserRepositoryInfos() throws RepositoryException {
 		return getAllRepositoryInfos();
 	}
 
 	/**
-	 * @deprecated since 4.0 - use {@link #getAllRepositoryInfos()} instead.
+	 * @deprecated Use {@link #getAllRepositoryInfos()} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "4.0")
 	public Collection<RepositoryInfo> getAllRepositoryInfos(boolean skipSystemRepo) throws RepositoryException {
 		return getAllRepositoryInfos();
 	}

@@ -16,13 +16,13 @@ package org.eclipse.rdf4j.query.parser.sparql;
  * @author Arjohn Kampman
  * @deprecated since 3.6.0 Use {@link SPARQLQueries} instead.
  */
-@Deprecated
+@Deprecated(since = "3.6.0")
 public class SPARQLUtil extends SPARQLQueries {
 
 	/**
 	 * @deprecated since 3.6.0. Use {@link SPARQLQueries#escape(String)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.6.0")
 	public static String encodeString(String string) {
 		return escape(string);
 	}
@@ -30,7 +30,7 @@ public class SPARQLUtil extends SPARQLQueries {
 	/**
 	 * @deprecated since 3.6.0. Use {@link SPARQLQueries#unescape(String)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.6.0")
 	public static String decodeString(String string) {
 		return unescape(string);
 	}

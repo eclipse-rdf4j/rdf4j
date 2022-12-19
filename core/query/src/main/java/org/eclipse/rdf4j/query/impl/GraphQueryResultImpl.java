@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @author Jeen Broekstra
  * @deprecated since 2.0. Use {@link IteratingGraphQueryResult} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public class GraphQueryResultImpl extends IteratingGraphQueryResult {
 
 	public GraphQueryResultImpl(Map<String, String> namespaces,

@@ -134,8 +134,6 @@ public interface SailSink extends SailClosable {
 	/**
 	 * Removes a statement with the specified subject, predicate, object, and context. All four parameters may be
 	 * non-null.
-	 * <p>
-	 * Deprecated since 3.1.0 2019.
 	 *
 	 * @param subj The subject of the statement that should be removed
 	 * @param pred The predicate of the statement that should be removed
@@ -143,7 +141,7 @@ public interface SailSink extends SailClosable {
 	 * @param ctx  The context from which to remove the statement
 	 * @throws SailException If the statement could not be removed, for example because no transaction is active.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.1.0")
 	default void deprecate(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
 		deprecate(SimpleValueFactory.getInstance().createStatement(subj, pred, obj, ctx));
 	}

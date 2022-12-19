@@ -387,9 +387,9 @@ public class Literals {
 	 * @param object       an object to be converted to a typed literal.
 	 * @return a typed literal representation of the supplied object.
 	 * @throws NullPointerException If the object was null.
-	 * @deprecated since 3.5.0 - use {@link Values#literal(Object)} instead.
+	 * @deprecated Use {@link Values#literal(Object)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.5.0")
 	public static Literal createLiteral(ValueFactory valueFactory, Object object) {
 		try {
 			return createLiteral(valueFactory, object, false);
@@ -410,9 +410,9 @@ public class Literals {
 	 * @return a typed literal representation of the supplied object.
 	 * @throws LiteralUtilException If the literal could not be created.
 	 * @throws NullPointerException If the object was null.
-	 * @deprecated since 3.5.0 - use {@link Values#literal(Object, boolean)} instead.
+	 * @deprecated Use {@link Values#literal(Object, boolean)} instead.
 	 */
-	@Deprecated
+	@Deprecated(since = "3.5.0")
 	public static Literal createLiteralOrFail(ValueFactory valueFactory, Object object) throws LiteralUtilException {
 		return createLiteral(valueFactory, object, true);
 	}

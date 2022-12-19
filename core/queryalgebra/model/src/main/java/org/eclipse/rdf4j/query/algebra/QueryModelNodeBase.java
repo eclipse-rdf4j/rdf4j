@@ -12,9 +12,9 @@ package org.eclipse.rdf4j.query.algebra;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 2.0. Use {@link AbstractQueryModelNode} instead.
+ * @deprecated Use {@link AbstractQueryModelNode} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public abstract class QueryModelNodeBase extends AbstractQueryModelNode {
 
 	private static final long serialVersionUID = 1L;

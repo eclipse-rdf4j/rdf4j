@@ -14,7 +14,7 @@ package org.eclipse.rdf4j.query.algebra.helpers;
  * @author Jeen Broekstra
  * @deprecated since 2.0. Use {@link AbstractQueryModelVisitor} instead.
  */
-@Deprecated
+@Deprecated(since = "2.0")
 public abstract class QueryModelVisitorBase<X extends Exception> extends AbstractQueryModelVisitor<X> {
 
 }

@@ -12,9 +12,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 /**
  * @author Jeen Broekstra
- * @deprecated since 4.0. Use {@link AbstractFederatedServiceResolver} instead.
+ * @deprecated Use {@link AbstractFederatedServiceResolver} instead.
  */
-@Deprecated
+@Deprecated(since = "4.0")
 public abstract class FederatedServiceResolverBase extends AbstractFederatedServiceResolver {
 
 }

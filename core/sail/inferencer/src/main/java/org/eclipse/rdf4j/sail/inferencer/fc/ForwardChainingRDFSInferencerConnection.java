@@ -32,10 +32,10 @@ import org.slf4j.LoggerFactory;
  * inferencer can be used to add RDF Schema semantics to any Sail that returns {@link InferencerConnection}s from their
  * {@link Sail#getConnection()} method.
  *
- * @deprecated since 2.5. This inferencer implementation will be phased out. Consider switching to the
+ * @deprecated This inferencer implementation will be phased out. Consider switching to the
  *             {@link SchemaCachingRDFSInferencer} instead.
  */
-@Deprecated
+@Deprecated(since = "2.5")
 class ForwardChainingRDFSInferencerConnection extends AbstractForwardChainingInferencerConnection {
 
 	static private final Logger logger = LoggerFactory.getLogger(ForwardChainingRDFSInferencerConnection.class);

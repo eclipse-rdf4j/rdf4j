@@ -54,7 +54,7 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	 *
 	 * @deprecated use {@link #ControlledWorkerScheduler(int, String)}. Scheduled to be removed in 4.0
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true)
 	public ControlledWorkerScheduler() {
 		this(20, "FedX Worker");
 	}

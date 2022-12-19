@@ -49,7 +49,7 @@ public class LuceneDocument implements SearchDocument {
 	/**
 	 * To be removed, no longer used.
 	 */
-	@Deprecated
+	@Deprecated(forRemoval = true)
 	public LuceneDocument() {
 		this(null);
 	}

@@ -29,7 +29,7 @@ import com.google.common.collect.Iterables;
 /**
  * To be removed, no longer used.
  */
-@Deprecated
+@Deprecated(forRemoval = true)
 public class ElasticsearchQuery implements SearchQuery {
 
 	private final SearchRequestBuilder request;

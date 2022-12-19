@@ -11,8 +11,8 @@
 package org.eclipse.rdf4j.query.resultio.textstar.tsv;
 
 /**
- * @deprecated since 3.4.0 - moved to {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVParser}.
+ * @deprecated Moved to {@link org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVParser}.
  */
-@Deprecated
+@Deprecated(since = "3.4.0")
 public class SPARQLStarResultsTSVParser extends org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLStarResultsTSVParser {
 }
