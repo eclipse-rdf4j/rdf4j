@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,14 +8,17 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.turtle;
 
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
 
 /**
  * Parser Settings that are specific to {@link org.eclipse.rdf4j.rio.RDFFormat#TURTLE} parsers.
  *
  * @author Peter Ansell
+ *
+ * @since 4.3.0
  */
 public class TurtleParserSettings {
 
@@ -26,10 +29,7 @@ public class TurtleParserSettings {
 	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.turtle.case_insensitive_directives}.
-	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.turtle.TurtleParserSettings#CASE_INSENSITIVE_DIRECTIVES} instead.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> CASE_INSENSITIVE_DIRECTIVES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.case_insensitive_directives",
 			"Allows case-insensitive directives to be recognised", Boolean.FALSE);
@@ -42,10 +42,7 @@ public class TurtleParserSettings {
 	 * This setting has no effect on the behavior of the TurtleStarParser.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.turtle.accept_turtlestar}.
-	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.turtle.TurtleParserSettings#ACCEPT_TURTLESTAR} instead.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> ACCEPT_TURTLESTAR = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.accept_turtlestar",
 			"Allow processing of Turtle-star data by the standard Turtle parser",

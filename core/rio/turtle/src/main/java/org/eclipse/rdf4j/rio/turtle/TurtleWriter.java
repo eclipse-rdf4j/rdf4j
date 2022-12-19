@@ -54,7 +54,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
-import org.eclipse.rdf4j.rio.helpers.TurtleWriterSettings;
 
 /**
  * An implementation of the RDFWriter interface that writes RDF documents in Turtle format. The Turtle format is defined

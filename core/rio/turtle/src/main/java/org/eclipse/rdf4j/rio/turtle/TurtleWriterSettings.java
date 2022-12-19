@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,14 +8,17 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.turtle;
 
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
 
 /**
  * A class encapsulating writer settings that Turtle writers may support.
  *
  * @author Bart Hanssens
+ *
+ * @since 4.3.0
  */
 public class TurtleWriterSettings {
 	/**
@@ -31,10 +34,7 @@ public class TurtleWriterSettings {
 	 *
 	 * @see <a href="https://www.w3.org/TR/turtle/#abbrev">https://www.w3.org/TR/turtle/#abbrev</a>
 	 * @since 3.7.0
-	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.turtle.TurtleWriterSettings#ABBREVIATE_NUMBERS} instead.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> ABBREVIATE_NUMBERS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.abbreviate_numbers", "Abbreviate numbers", Boolean.TRUE);
 

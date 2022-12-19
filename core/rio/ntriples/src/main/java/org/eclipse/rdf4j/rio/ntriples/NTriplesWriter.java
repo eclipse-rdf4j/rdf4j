@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFWriter;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
-import org.eclipse.rdf4j.rio.helpers.NTriplesWriterSettings;
 
 /**
  * An implementation of the RDFWriter interface that writes RDF documents in N-Triples format. The N-Triples format is

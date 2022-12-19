@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2021 Eclipse RDF4J contributors.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,9 +8,10 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.rdfjson;
 
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
 
 /**
  * A selection of writer settings specific to RDF/JSON parsers.
@@ -18,6 +19,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * Settings can be overridden by means of a system property, but only if specified at JVM startup time.
  *
  * @author Tomas Kovachev t.kovachev1996@gmail.com
+ *
+ * @since 4.3.0
  */
 public class RDFJSONWriterSettings {
 
@@ -28,10 +31,7 @@ public class RDFJSONWriterSettings {
 	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.rdfjson.allow_multiple_object_values}.
-	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.rdfjson.RDFJSONWriterSettings#ALLOW_MULTIPLE_OBJECT_VALUES} instead.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> ALLOW_MULTIPLE_OBJECT_VALUES = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.rdfjson.allow_multiple_object_values", "Allow multiple object values",
 			Boolean.FALSE);
