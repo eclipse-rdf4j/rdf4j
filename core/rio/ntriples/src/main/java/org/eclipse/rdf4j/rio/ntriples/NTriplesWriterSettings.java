@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,14 +8,17 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.ntriples;
 
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
 
 /**
  * WriterSettings for the N-Triples writer features.
  *
  * @author Peter Ansell
+ *
+ * @since 4.3.0
  */
 public class NTriplesWriterSettings {
 
@@ -25,10 +28,7 @@ public class NTriplesWriterSettings {
 	 * Defaults to false.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.ntriples.escape_unicode}
-	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.ntriples.NTriplesWriterSettings#ESCAPE_UNICODE} instead.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> ESCAPE_UNICODE = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.ntriples.escape_unicode", "Escape Unicode characters", Boolean.FALSE);
 

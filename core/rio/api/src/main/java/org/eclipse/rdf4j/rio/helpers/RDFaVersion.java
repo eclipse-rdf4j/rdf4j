@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.rio.helpers;
  *
  * @author Peter Ansell
  */
+@Deprecated(since = "4.3.0", forRemoval = true)
 public enum RDFaVersion {
 
 	/**

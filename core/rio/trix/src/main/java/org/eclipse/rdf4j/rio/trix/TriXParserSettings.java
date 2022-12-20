@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2015 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2022 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
@@ -8,9 +8,10 @@
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
-package org.eclipse.rdf4j.rio.helpers;
+package org.eclipse.rdf4j.rio.trix;
 
 import org.eclipse.rdf4j.rio.RioSetting;
+import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
 
 /**
  * ParserSettings for the TriX parser features.
@@ -18,6 +19,8 @@ import org.eclipse.rdf4j.rio.RioSetting;
  * Several of these settings can be overridden by means of a system property, but only if specified at JVM startup time.
  *
  * @author Peter Ansell
+ *
+ * @since 4.3.0
  */
 public class TriXParserSettings {
 
@@ -27,10 +30,7 @@ public class TriXParserSettings {
 	 * Defaults to true.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype}.
-	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.trix.TriXParserSettings#FAIL_ON_MISSING_DATATYPE} instead.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> FAIL_ON_MISSING_DATATYPE = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.trix.fail_on_missing_datatype", "Fail on TriX missing datatype", Boolean.TRUE);
 
@@ -40,10 +40,7 @@ public class TriXParserSettings {
 	 * Defaults to true.
 	 * <p>
 	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement}.
-	 *
-	 * @deprecated Use {@link org.eclipse.rdf4j.rio.trix.TriXParserSettings#FAIL_ON_INVALID_STATEMENT} instead.
 	 */
-	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final RioSetting<Boolean> FAIL_ON_INVALID_STATEMENT = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.trix.fail_on_invalid_statement", "Fail on TriX invalid statement", Boolean.TRUE);
 

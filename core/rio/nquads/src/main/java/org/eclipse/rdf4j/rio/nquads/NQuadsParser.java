@@ -15,8 +15,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
-import org.eclipse.rdf4j.rio.helpers.NTriplesParserSettings;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesParser;
+import org.eclipse.rdf4j.rio.ntriples.NTriplesParserSettings;
 
 /**
  * RDF parser implementation for the {@link RDFFormat#NQUADS N-Quads} RDF format, extending the Rio N-Triples parser. A
