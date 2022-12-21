@@ -202,7 +202,7 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 	@Override
 	public Clear visit(ASTDrop node, Object data) throws VisitorException {
-		// implementing drop as a synonym of clear, in Sesame this is really the
+		// implementing drop as a synonym of clear, in RDF4J this is really the
 		// same thing, as empty
 		// graphs are not recorded.
 

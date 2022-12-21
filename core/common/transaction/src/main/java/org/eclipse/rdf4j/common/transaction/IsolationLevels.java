@@ -14,7 +14,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Enumeration of Transaction {@link IsolationLevel}s supported by Sesame. Note that Sesame stores are not required to
+ * Enumeration of Transaction {@link IsolationLevel}s supported by RDF4J. Note that RDF4J stores are not required to
  * support all levels, consult the documentatation for the specific SAIL implementation you are using to find out which
  * levels are supported.
  *

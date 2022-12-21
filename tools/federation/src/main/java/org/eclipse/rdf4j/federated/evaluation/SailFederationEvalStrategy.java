@@ -37,9 +37,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
 /**
- * Implementation of a federation evaluation strategy which provides some special optimizations for Native (local)
- * Sesame repositories. The most important optimization is to use prepared Queries that are already created in the
- * internal representation used by Sesame. This is necessary to avoid String parsing overhead.
+ * Implementation of a federation evaluation strategy which provides some special optimizations for Native (local) RDF4J
+ * repositories. The most important optimization is to use prepared Queries that are already created in the internal
+ * representation used by RDF4J. This is necessary to avoid String parsing overhead.
  *
  * Joins are executed using {@link ControlledWorkerJoin}
  *
@@ -132,7 +132,7 @@ public class SailFederationEvalStrategy extends FederationEvalStrategy {
 		return tripleSource.getStatements(preparedQuery, bindings,
 				(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 
-		// other option (which might be faster for sesame native stores): join over the statements
+		// other option (which might be faster for RDF4J native stores): join over the statements
 		// TODO implement this and evaluate if it is faster ..
 
 	}

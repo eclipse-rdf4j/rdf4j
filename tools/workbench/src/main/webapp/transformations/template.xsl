@@ -111,7 +111,7 @@
 						<xsl:value-of select="$title" />
 					</h1>
 					<p id="noscript-message" class="ERROR">Scripting is not enabled. The
-						OpenRDF Sesame Workbench
+						RDF4J Workbench
 						application requires scripting to be
 						enabled in order to work
 						properly.

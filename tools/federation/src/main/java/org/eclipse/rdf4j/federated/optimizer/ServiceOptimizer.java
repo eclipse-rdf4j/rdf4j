@@ -84,7 +84,7 @@ public class ServiceOptimizer extends AbstractSimpleQueryModelVisitor<Optimizati
 
 			// endpoint is not in federation
 			if (e == null) {
-				// leave service as is, evaluate with Sesame code
+				// leave service as is, evaluate with RDF4J code
 				return new FedXService(service, queryInfo);
 			}
 

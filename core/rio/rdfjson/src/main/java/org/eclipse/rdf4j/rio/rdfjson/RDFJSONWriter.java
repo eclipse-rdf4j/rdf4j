@@ -222,7 +222,7 @@ public class RDFJSONWriter extends AbstractRDFWriter implements CharSink {
 	 * Returns the correct syntax for a Resource, depending on whether it is a URI or a Blank Node (ie, BNode)
 	 *
 	 * @param uriOrBnode The resource to serialise to a string
-	 * @return The string value of the sesame resource
+	 * @return The string value of the RDF4J resource
 	 */
 	public static String resourceToString(final Resource uriOrBnode) {
 		if (uriOrBnode instanceof IRI) {

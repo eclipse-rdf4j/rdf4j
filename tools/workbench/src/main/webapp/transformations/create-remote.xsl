@@ -53,7 +53,7 @@
 							<xsl:value-of select="$remote-repository-server.label" />
 						</th>
 						<td>
-							<input type="text" id="server" name="Sesame server location"
+							<input type="text" id="server" name="RDF4J server location"
 								size="48" value="http://localhost:8080/rdf4j-server" />
 						</td>
 						<td></td>

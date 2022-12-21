@@ -201,7 +201,7 @@ public class AppConfiguration implements Configuration {
 	}
 
 	/**
-	 * Get the long name of the application (e.g. "Aduna AutoFocus" or "OpenRDF Sesame Server").
+	 * Get the long name of the application.
 	 *
 	 * @return the long name of the application
 	 */
@@ -219,8 +219,7 @@ public class AppConfiguration implements Configuration {
 	}
 
 	/**
-	 * Get the full name of the application, which consists of the long name and the version number (e.g. "Aduna
-	 * AutoFocus 4.0-beta1" or "OpenRDF Sesame Webclient 2.0")
+	 * Get the full name of the application, which consists of the long name and the version number.
 	 *
 	 * @return the full name of the application
 	 */

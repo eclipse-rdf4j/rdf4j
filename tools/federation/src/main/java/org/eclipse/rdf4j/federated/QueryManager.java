@@ -352,7 +352,7 @@ public class QueryManager {
 
 	/**
 	 * Get the prefix declarations that have to be added while considering prefixes that are already declared in the
-	 * query. The issue here is that duplicate declaration causes exceptions in Sesame
+	 * query. The issue here is that duplicate declaration causes exceptions in RDF4J.
 	 *
 	 * @param queryString
 	 * @return the prefix declarations
