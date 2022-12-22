@@ -58,7 +58,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 	private final Writer writer;
 
 	/**
-	 * Create a SesameJSONLDWriter using a {@link java.io.OutputStream}
+	 * Create a JSONLDWriter using a {@link java.io.OutputStream}
 	 *
 	 * @param outputStream The OutputStream to write to.
 	 */
@@ -78,7 +78,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	/**
-	 * Create a SesameJSONLDWriter using a {@link java.io.Writer}
+	 * Create a JSONLDWriter using a {@link java.io.Writer}
 	 *
 	 * @param writer The Writer to write to.
 	 */
@@ -87,7 +87,7 @@ public class JSONLDWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	/**
-	 * Create a SesameJSONLDWriter using a {@link java.io.Writer}
+	 * Create a JSONLDWriter using a {@link java.io.Writer}
 	 *
 	 * @param writer  The Writer to write to.
 	 * @param baseURI base URI

@@ -183,7 +183,7 @@ public abstract class TriGParserTestCase {
 			String nextBaseUrl = testBaseUrl + nextTestFile;
 
 			if (nextTestName.contains("CARRIAGE_RETURN")) {
-				// FIXME: Sesame seems not to preserve the CARRIAGE_RETURN character
+				// FIXME: RDF4J seems not to preserve the CARRIAGE_RETURN character
 				// right now
 				logger.warn("Ignoring TriG Positive Parser Eval Test: " + nextInputURL);
 				continue;

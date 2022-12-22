@@ -50,7 +50,7 @@ public class SolrSailExample {
 	 * Create a LuceneSail and add some triples to it, ask a query.
 	 */
 	public static void createSimple() throws Exception {
-		// create a sesame memory sail
+		// create an RDF4J memory sail
 		MemoryStore memoryStore = new MemoryStore();
 
 		// create a lucenesail to wrap the memorystore

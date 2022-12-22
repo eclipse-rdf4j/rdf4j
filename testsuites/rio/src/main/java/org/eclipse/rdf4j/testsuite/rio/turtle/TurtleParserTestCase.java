@@ -197,7 +197,7 @@ public abstract class TurtleParserTestCase {
 			String nextBaseUrl = testBaseUrl + nextTestFile;
 
 			// if (nextTestName.contains("CARRIAGE_RETURN")) {
-			// // FIXME: Sesame seems not to preserve the CARRIAGE_RETURN character
+			// // FIXME: RDF4J seems not to preserve the CARRIAGE_RETURN character
 			// // right now
 			// System.err.println("Ignoring Turtle Positive Parser Eval Test: " + nextInputURL);
 			// continue;

@@ -126,7 +126,7 @@ public class FilterUtils {
 			append((ValueConstant) expr, sb);
 		} else {
 			// TODO add more!
-			throw new FilterConversionException("Expression type not supported, fallback to sesame evaluation: "
+			throw new FilterConversionException("Expression type not supported, fallback to RDF4J evaluation: "
 					+ expr.getClass().getCanonicalName());
 		}
 

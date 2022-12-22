@@ -11,7 +11,7 @@
 package org.eclipse.rdf4j.rio.rdfjson;
 
 /**
- * A utility class to help converting Sesame Models to and from RDF/JSON using Jackson.
+ * A utility class to help converting RDF4J Models to and from RDF/JSON using Jackson.
  *
  * @author Peter Ansell
  */
