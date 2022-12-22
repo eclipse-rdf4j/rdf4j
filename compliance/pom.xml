@@ -38,7 +38,6 @@
 					<plugin>
 						<groupId>org.sonatype.plugins</groupId>
 						<artifactId>nexus-staging-maven-plugin</artifactId>
-						<version>1.6.8</version>
 						<configuration>
 							<!-- we do not want to deploy the compliance modules to Sonatype -->
 							<skipNexusStagingDeployMojo>true</skipNexusStagingDeployMojo>
