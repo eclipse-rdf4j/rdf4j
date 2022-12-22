@@ -529,7 +529,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		GroupFinder groupFinder = new GroupFinder();
 		result.visit(groupFinder);
 		Group group = groupFinder.getGroup();
-		boolean existingGroup = group != null;
+		final boolean isExistingGroup = group != null;
 
 		List<String> aliasesInProjection = new ArrayList<>();
 		for (ASTProjectionElem projElemNode : node.getProjectionElemList()) {
@@ -566,7 +566,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 					for (AggregateOperator operator : collector.getOperators()) {
 						// Apply implicit grouping if necessary
 						if (group == null) {
-							group = new Group(result);
+							group = new Group(orderClause != null ? orderClause.getArg() : result);
 						}
 
 						if (operator.equals(valueExpr)) {
@@ -586,7 +586,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 						}
 
-						if (!existingGroup) {
+						if (!isExistingGroup) {
 							result = group;
 						}
 					}
@@ -611,8 +611,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (orderClause != null) {
 				// Extensions produced by SELECT expressions should be nested inside the ORDER BY clause, to make sure
 				// sorting can work on the newly introduced variable. See SES-892 and SES-1809.
-				TupleExpr arg = orderClause.getArg();
-				extension.setArg(arg);
+				if (group != null && !isExistingGroup) {
+					// we introduced a new implicit group that is not part of the original ORDER BY clause.
+					extension.setArg(group);
+				} else {
+					extension.setArg(orderClause.getArg());
+				}
 				orderClause.setArg(extension);
 				result = orderClause;
 			} else {
