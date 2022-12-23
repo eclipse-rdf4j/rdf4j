@@ -59,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Like;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -501,6 +502,11 @@ public abstract class StatementPatternVisitor implements QueryModelVisitor<Excep
 
 	@Override
 	public void meet(ValueExprTripleRef node) throws Exception {
+		node.visitChildren(this);
+	}
+
+	@Override
+	public void meet(Lateral node) throws Exception {
 		node.visitChildren(this);
 	}
 
