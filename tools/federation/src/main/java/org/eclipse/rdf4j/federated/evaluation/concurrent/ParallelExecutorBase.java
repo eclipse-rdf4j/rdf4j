@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated.evaluation.concurrent;
 
-import java.lang.ref.WeakReference;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -106,16 +105,17 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T, Quer
 
 	@Override
 	public void addResult(CloseableIteration<T, QueryEvaluationException> res) {
-		/* optimization: avoid adding empty results */
-		if (res instanceof EmptyIteration<?, ?>) {
-			return;
-		}
-		if (isClosed() || rightQueue.isClosed()) {
-			res.close();
-			return;
-		}
 
 		try {
+			/* optimization: avoid adding empty results */
+			if (res instanceof EmptyIteration<?, ?>) {
+				return;
+			}
+			if (isClosed() || rightQueue.isClosed()) {
+				res.close();
+				return;
+			}
+
 			rightQueue.put(res);
 
 			if (isClosed() || rightQueue.isClosed()) {
