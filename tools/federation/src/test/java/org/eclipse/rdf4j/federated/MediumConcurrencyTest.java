@@ -36,7 +36,6 @@ public class MediumConcurrencyTest extends SPARQLBaseTest {
 
 	@BeforeAll
 	public static void beforeClass() {
-
 		executor = Executors.newFixedThreadPool(10);
 	}
 

@@ -45,7 +45,7 @@ public class SPARQLTupleQuery extends AbstractHTTPQuery implements TupleQuery {
 		SPARQLProtocolSession client = getHttpClient();
 		try {
 			return client.sendTupleQuery(QueryLanguage.SPARQL, getQueryString(), baseURI, dataset, getIncludeInferred(),
-					getMaxExecutionTime(), ((WeakReference) null), getBindingsArray());
+					getMaxExecutionTime(), ((WeakReference<?>) null), getBindingsArray());
 		} catch (IOException | RepositoryException | MalformedQueryException e) {
 			throw new QueryEvaluationException(e.getMessage(), e);
 		}

@@ -188,9 +188,15 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 			checkException();
 			return take;
 		} catch (InterruptedException e) {
-			checkException();
-			close();
-			Thread.currentThread().interrupt();
+			try {
+				checkException();
+			} finally {
+				try {
+					close();
+				} finally {
+					Thread.currentThread().interrupt();
+				}
+			}
 			return null;
 		}
 	}
@@ -221,6 +227,7 @@ public abstract class QueueIteration<E, T extends Exception> extends LookAheadIt
 				}
 			}
 		}
+
 	}
 
 	private boolean isAfterLast(E take) {
