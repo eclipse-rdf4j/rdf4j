@@ -86,8 +86,7 @@ public class FedXConnection extends AbstractSailConnection {
 	 */
 	private WriteStrategy writeStrategy;
 
-	public FedXConnection(FedX federation, FederationContext federationContext)
-			throws SailException {
+	public FedXConnection(FedX federation, FederationContext federationContext) throws SailException {
 		super(federation);
 		this.federation = federation;
 		this.federationContext = federationContext;
@@ -100,9 +99,8 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(
-			TupleExpr query, Dataset dataset, BindingSet bindings,
-			boolean includeInferred) throws SailException {
+	protected CloseableIteration<? extends BindingSet, QueryEvaluationException> evaluateInternal(TupleExpr query,
+			Dataset dataset, BindingSet bindings, boolean includeInferred) throws SailException {
 
 		final TupleExpr originalQuery = query;
 
@@ -132,8 +130,8 @@ public class FedXConnection extends AbstractSailConnection {
 			FederationEvaluationStatistics stats = new FederationEvaluationStatistics(queryInfo, dataset);
 			query = strategy.optimize(query, stats, bindings);
 		} catch (Exception e) {
-			log.warn("Exception occured during optimization (Query: " + queryInfo.getQueryID() + "): "
-					+ e.getMessage());
+			log.warn(
+					"Exception occured during optimization (Query: " + queryInfo.getQueryID() + "): " + e.getMessage());
 			log.debug("Details: ", e);
 			throw new SailException(e);
 		}
@@ -250,8 +248,7 @@ public class FedXConnection extends AbstractSailConnection {
 					try (RepositoryConnection conn = e.getConnection()) {
 						// we need to materialize the contexts as they are only accessible
 						// while the connection is open
-						return new CollectionIteration<>(
-								Iterations.asList(conn.getContextIDs()));
+						return new CollectionIteration<>(Iterations.asList(conn.getContextIDs()));
 					}
 				}
 
@@ -269,13 +266,12 @@ public class FedXConnection extends AbstractSailConnection {
 		// execute the union in a separate thread
 		federationContext.getManager().getExecutor().execute(union);
 
-		return new DistinctIteration<>(
-				new ExceptionConvertingIteration<>(union) {
-					@Override
-					protected SailException convert(Exception e) {
-						return new SailException(e);
-					}
-				});
+		return new DistinctIteration<>(new ExceptionConvertingIteration<>(union) {
+			@Override
+			protected SailException convert(Exception e) {
+				return new SailException(e);
+			}
+		});
 	}
 
 	@Override
@@ -286,8 +282,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal()
-			throws SailException {
+	protected CloseableIteration<? extends Namespace, SailException> getNamespacesInternal() throws SailException {
 		// do not support this feature, but also do not throw an exception
 		// as this method is expected for the RDF4J workbench to work
 		return new EmptyIteration<>();
@@ -330,8 +325,7 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void addStatementInternal(Resource subj, IRI pred, Value obj,
-			Resource... contexts) throws SailException {
+	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		try {
 			getWriteStrategyInternal().addStatement(subj, pred, obj, contexts);
 		} catch (RepositoryException e) {
@@ -345,8 +339,8 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj,
-			Resource... contexts) throws SailException {
+	protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws SailException {
 		try {
 			getWriteStrategyInternal().removeStatement(subj, pred, obj, contexts);
 		} catch (RepositoryException e) {
@@ -383,8 +377,8 @@ public class FedXConnection extends AbstractSailConnection {
 			}
 		}
 		if (errorEndpoints.size() > 0) {
-			throw new SailException("Could not determine size for members " + errorEndpoints +
-					"(Supported for NativeStore and RemoteRepository only). Computed size: " + size);
+			throw new SailException("Could not determine size for members " + errorEndpoints
+					+ "(Supported for NativeStore and RemoteRepository only). Computed size: " + size);
 		}
 		return size;
 	}
@@ -500,8 +494,8 @@ public class FedXConnection extends AbstractSailConnection {
 	}
 
 	@Override
-	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
-			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
+			boolean includeInferred, int timeoutSeconds) {
 		throw new UnsupportedOperationException();
 	}
 

@@ -509,16 +509,17 @@ public abstract class FederationEvalStrategy extends StrictEvaluationStrategy {
 
 		return bindings -> {
 			boolean completed = false;
-			CloseableIteration<BindingSet, QueryEvaluationException> result = resultProvider.evaluate(bindings);
+			CloseableIteration<BindingSet, QueryEvaluationException> result = null;
 			try {
-				for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
+				result = resultProvider.evaluate(bindings);
 
+				for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
 					result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
 							join.getQueryInfo());
 				}
 				completed = true;
 			} finally {
-				if (!completed) {
+				if (!completed && result != null) {
 					result.close();
 				}
 			}

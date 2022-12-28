@@ -71,10 +71,11 @@ public class SailTripleSource extends TripleSourceBase {
 			// TODO we need to fix this here: if the dataset contains FROM NAMED, we cannot use
 			// the API and require to write as query
 
-			RepositoryResult<Statement> repoResult = conn.getStatements((Resource) subjValue, (IRI) predValue, objValue,
-					queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, queryInfo.getDataset()));
-
+			RepositoryResult<Statement> repoResult = null;
 			try {
+				repoResult = conn.getStatements((Resource) subjValue, (IRI) predValue, objValue,
+						queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, queryInfo.getDataset()));
+
 				// XXX implementation remark and TODO taken from Sesame
 				// The same variable might have been used multiple times in this
 				// StatementPattern, verify value equality in those cases.
@@ -94,7 +95,9 @@ public class SailTripleSource extends TripleSourceBase {
 					resultHolder.set(filteredRes);
 				}
 			} catch (Throwable t) {
-				repoResult.close();
+				if (repoResult != null) {
+					repoResult.close();
+				}
 				throw t;
 			}
 
@@ -109,9 +112,11 @@ public class SailTripleSource extends TripleSourceBase {
 
 		return withConnection((conn, resultHolder) -> {
 
-			RepositoryResult<Statement> repoResult = conn.getStatements(subj, pred, obj,
-					queryInfo.getIncludeInferred(), contexts);
+			RepositoryResult<Statement> repoResult = null;
 			try {
+				repoResult = conn.getStatements(subj, pred, obj,
+						queryInfo.getIncludeInferred(), contexts);
+
 // XXX implementation remark and TODO taken from Sesame
 				// The same variable might have been used multiple times in this
 				// StatementPattern, verify value equality in those cases.
@@ -123,7 +128,9 @@ public class SailTripleSource extends TripleSourceBase {
 					}
 				});
 			} catch (Throwable t) {
-				repoResult.close();
+				if (repoResult != null) {
+					repoResult.close();
+				}
 				throw t;
 			}
 
