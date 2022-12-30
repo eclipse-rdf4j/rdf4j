@@ -7,7 +7,7 @@ where {
     values ?type {owl:Class}
     ?parent rdf:type ?type .
     optional {
-        ?child rdfs:subClassOf ?parent ;
-               rdf:type ?type .
+        ?child rdfs:subClassOf ?parent .
+        ?child rdf:type ?type .
     }
 }

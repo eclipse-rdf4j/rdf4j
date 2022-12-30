@@ -153,6 +153,19 @@ public class SPARQLValuesClauseBenchmark {
 	@Benchmark
 	public long valuesOptionalQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+//
+//			System.out.println("ONLY PARSED:");
+//			System.out.println(connection.prepareTupleQuery(query_with_values_clause));
+//			System.out.println("\nUNOPTIMIZED:");
+//			System.out.println(
+//					connection.prepareTupleQuery(query_with_values_clause).explain(Explanation.Level.Unoptimized));
+//
+//			System.out.println();
+//			System.out.println("OPTIMIZED:");
+//			System.out.println(
+//					connection.prepareTupleQuery(query_with_values_clause).explain(Explanation.Level.Optimized));
+
+//			return 0L;
 			return connection
 					.prepareTupleQuery(query_with_values_clause)
 					.evaluate()
@@ -164,6 +177,7 @@ public class SPARQLValuesClauseBenchmark {
 	@Benchmark
 	public long simpleEquivalentQuery() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+
 			return connection
 					.prepareTupleQuery(query_without_values_clause)
 					.evaluate()

@@ -85,4 +85,5 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 			super.meetNode(node);
 		}
 	}
+
 }
