@@ -1,15 +1,15 @@
-name: Add new issue to Inbox
-on: [issues]
+name: Add new issue to project board
+on: 
+  issues:
+    types:
+      - opened
 jobs:
-  github-actions-automate-projects:
+  add-to-project:
+    name: Add issue to project
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     steps:
-    - name: add-new-issues-to-repository-based-project-column
-      uses: docker://takanabe/github-actions-automate-projects:latest
-      if: github.event_name == 'issues' && github.event.action == 'opened'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GITHUB_PROJECT_URL: https://github.com/eclipse/rdf4j/projects/19
-        GITHUB_PROJECT_COLUMN_NAME: 📥 Inbox
+      - uses: actions/add-to-project@RELEASE_VERSION
+        with:
+          project-url: https://github.com/eclipse/projects/36
+          github-token: ${{ secrets.GITHUB_TOKEN }}
  
