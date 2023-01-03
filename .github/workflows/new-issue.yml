@@ -8,7 +8,7 @@ jobs:
     name: Add issue to project
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/add-to-project@RELEASE_VERSION
+      - uses: actions/add-to-project@0.4.0
         with:
           project-url: https://github.com/eclipse/projects/36
           github-token: ${{ secrets.GITHUB_TOKEN }}
