@@ -10,6 +10,6 @@ jobs:
     steps:
       - uses: actions/add-to-project@v0.4.0
         with:
-          project-url: https://github.com/eclipse/projects/36
+          project-url: https://github.com/orgs/eclipse/projects/36
           github-token: ${{ secrets.GITHUB_TOKEN }}
  
