@@ -33,6 +33,9 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 
 public abstract class LateralJoinTest {
+
+	private static final String EX_NS = "http://example.org/";;
+
 	@BeforeClass
 	public static void setUpClass() throws Exception {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
@@ -43,14 +46,14 @@ public abstract class LateralJoinTest {
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 	}
 
-	public String q1 = "PREFIX : <http://example/>\n"
+	public String q1 = "PREFIX : <http://example.org/>\n"
 			+ "SELECT * {\n"
 			+ "    ?s a :T .\n"
 			+ "    LATERAL { SELECT * { ?s :p ?p } ORDER BY ?p LIMIT 2 }\n"
 			+ "    LATERAL { SELECT * { ?s :q ?q } ORDER BY ?q LIMIT 2 }\n"
 			+ "} ORDER BY ?s ?p ?q\n" + "";
 
-	public String q2 = "PREFIX : <http://example/>\n"
+	public String q2 = "PREFIX : <http://example.org/>\n"
 			+ "SELECT * {\n"
 			+ "    ?s a :T .\n"
 			+ "    { LATERAL { SELECT * { ?s :p ?p } ORDER BY ?p LIMIT 2 } }\n"
@@ -58,7 +61,7 @@ public abstract class LateralJoinTest {
 			+ "    { LATERAL { SELECT * { ?s :q ?q } ORDER BY ?q LIMIT 2 } }\n"
 			+ "}";
 
-	public String q2a = "PREFIX : <http://example/>\n"
+	public String q2a = "PREFIX : <http://example.org/>\n"
 			+ "\n"
 			+ "SELECT * {\n"
 			+ "    ?s a :T .\n"
@@ -69,15 +72,35 @@ public abstract class LateralJoinTest {
 			+ "    }\n"
 			+ "} ORDER BY ?s ?p ?q\n" + "";
 
-	public String q3 = "PREFIX : <http://example/>\n"
+	public String q3 = "PREFIX : <http://example.org/>\n"
 			+ "\n"
 			+ "SELECT * {\n"
 			+ "    ?s a :T .\n"
 			+ "    { LATERAL { SELECT * { ?s :p ?o } ORDER BY ?o LIMIT 2 } BIND(\"A\" AS ?x) }\n"
 			+ "    UNION \n"
 			+ "    { LATERAL { SELECT * { ?s :q ?o } ORDER BY ?o LIMIT 2 } BIND(\"B\" AS ?x) }\n"
-			+ "}ORDER BY ?s ?o ?x\n"
-			+ "";
+			+ "} ORDER BY ?s ?o ?x";
+
+	public String simple = "PREFIX : <http://example.org/>\n"
+			+ "SELECT ?s ?o WHERE {\n"
+			+ "    VALUES ?s { :S }\n"
+			+ "    LATERAL {\n"
+			+ "        { VALUES ?o { :O } }\n"
+			+ "        { FILTER(BOUND(?s) && !BOUND(?o)) }\n"
+			+ "    }\n"
+			+ "}";
+
+	public String graph = "PREFIX : <http://example.org/>\n"
+			+ "SELECT ?s ?o WHERE {\n"
+			+ "    VALUES ?s { :S }\n"
+			+ "    LATERAL { GRAPH :G { FILTER(BOUND(?s)) . VALUES ?o { :O } } }\n"
+			+ "}";
+
+	public String subselect = "PREFIX : <http://example.org/>\n"
+			+ "SELECT ?s ?o WHERE {\n"
+			+ "    ?s a :T.\n"
+			+ "    LATERAL {SELECT ?s ?o WHERE { ?s :p ?o } ORDER BY ?o LIMIT 2}\n"
+			+ "}";
 
 	private Repository repository;
 
@@ -96,15 +119,99 @@ public abstract class LateralJoinTest {
 	private IRI q;
 
 	/**
-	 * ----------------------------- | s | p | q | ============================= | :s1 | "s1-p-1" | "s1-q-1" | | :s1 |
-	 * "s1-p-1" | "s1-q-2" | | :s1 | "s1-p-2" | "s1-q-1" | | :s1 | "s1-p-2" | "s1-q-2" | | :s2 | "s2-p-1" | "s2-q-1" | |
-	 * :s2 | "s2-p-1" | "s2-q-2" | | :s2 | "s2-p-2" | "s2-q-1" | | :s2 | "s2-p-2" | "s2-q-2" |
-	 * -----------------------------
+	 * Adapted from OxiGraph MIT licensed test suite
 	 *
-	 * @throws Exception
+	 * <pre>
+	 * -----------------------------
+	 * | s | o |
+	 * =============================
+	 * | ex:S | ex:O |
+	 * </pre>
 	 */
 	@Test
-	public void q1() throws Exception {
+	public void simple() {
+		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, simple);
+		try (TupleQueryResult result = query.evaluate()) {
+
+			assertTrue(result.hasNext());
+			final BindingSet next = result.next();
+			assertEquals(vf.createIRI(EX_NS, "S"), next.getValue("s"));
+			assertEquals(vf.createIRI(EX_NS, "O"), next.getValue("o"));
+			assertFalse(result.hasNext());
+		}
+	}
+
+	/**
+	 * Adapted from OxiGraph MIT licensed test suite
+	 *
+	 * <pre>
+	 * -----------------------------
+	 * | s | o |
+	 * =============================
+	 * | ex:S | ex:O |
+	 * </pre>
+	 */
+	@Test
+	public void graph() {
+		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, graph);
+		try (TupleQueryResult result = query.evaluate()) {
+
+			assertTrue(result.hasNext());
+			final BindingSet next = result.next();
+			assertEquals(vf.createIRI(EX_NS, "S"), next.getValue("s"));
+			assertEquals(vf.createIRI(EX_NS, "O"), next.getValue("o"));
+			assertFalse(result.hasNext());
+		}
+	}
+
+	/**
+	 * Query is from the OxiGraph MIT licensed test set but results are using the W3C contrib licensed examples from
+	 * <a href="https://github.com/w3c/sparql-12/issues/100">issue 100</a>.
+	 */
+	@Test
+	public void subselect() {
+		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, subselect);
+		try (TupleQueryResult result = query.evaluate()) {
+
+			assertTrue(result.hasNext());
+			BindingSet next = result.next();
+			assertEquals(vf.createIRI(EX_NS, "s1"), next.getValue("s"));
+			assertEquals(vf.createLiteral("s1-p-1"), next.getValue("o"));
+			assertTrue(result.hasNext());
+			next = result.next();
+			assertEquals(vf.createIRI(EX_NS, "s1"), next.getValue("s"));
+			assertEquals(vf.createLiteral("s1-p-2"), next.getValue("o"));
+			assertTrue(result.hasNext());
+			next = result.next();
+			assertEquals(vf.createIRI(EX_NS, "s2"), next.getValue("s"));
+			assertEquals(vf.createLiteral("s2-p-1"), next.getValue("o"));
+			assertTrue(result.hasNext());
+			next = result.next();
+			assertEquals(vf.createIRI(EX_NS, "s2"), next.getValue("s"));
+			assertEquals(vf.createLiteral("s2-p-2"), next.getValue("o"));
+			assertFalse(result.hasNext());
+		}
+	}
+
+	/**
+	 * <pre>
+	 * -----------------------------
+	 * | s | p | q |
+	 * =============================
+	 * | :s1 | "s1-p-1" | "s1-q-1" |
+	 * | :s1 | "s1-p-1" | "s1-q-2" |
+	 * | :s1 | "s1-p-2" | "s1-q-1" |
+	 * | :s1 | "s1-p-2" | "s1-q-2" |
+	 * | :s2 | "s2-p-1" | "s2-q-1" |
+	 * | :s2 | "s2-p-1" | "s2-q-2" |
+	 * | :s2 | "s2-p-2" | "s2-q-1" |
+	 * | :s2 | "s2-p-2" | "s2-q-2" |
+	 * -----------------------------
+	 * </pre>
+	 *
+	 */
+	@Test
+	public void q1() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q1);
 		try (TupleQueryResult result = query.evaluate()) {
 			for (int i = 0; i < 4; i++) {
@@ -122,14 +229,24 @@ public abstract class LateralJoinTest {
 	}
 
 	/**
-	 * ----------------------------- | s | p | q | ============================= | :s1 | | "s1-q-1" | | :s1 | | "s1-q-2"
-	 * | | :s1 | "s1-p-1" | | | :s1 | "s1-p-2" | | | :s2 | | "s2-q-1" | | :s2 | | "s2-q-2" | | :s2 | "s2-p-1" | | | :s2
-	 * | "s2-p-2" | | -----------------------------
+	 * <pre>
+	 * -----------------------------
+	 * | s | p | q |
+	 * =============================
+	 * | :s1 | | "s1-q-1" |
+	 * | :s1 | | "s1-q-2" |
+	 * | :s1 | "s1-p-1" | |
+	 * | :s1 | "s1-p-2" | |
+	 * | :s2 | | "s2-q-1" |
+	 * | :s2 | | "s2-q-2" |
+	 * | :s2 | "s2-p-1" | |
+	 * | :s2 | "s2-p-2" | |
+	 * -----------------------------
+	 * </pre>
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void q2() throws Exception {
+	public void q2() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q2);
 		try (TupleQueryResult result = query.evaluate()) {
 			for (int i = 0; i < 4; i++) {
@@ -161,14 +278,23 @@ public abstract class LateralJoinTest {
 	}
 
 	/**
-	 * | s | p | q | ============================= | :s1 | | "s1-q-1" | | :s1 | | "s1-q-2" | | :s2 | | "s2-q-1" | | :s2
-	 * | | "s2-q-2" | | :s1 | "s1-p-1" | | | :s1 | "s1-p-2" | | | :s2 | "s2-p-1" | | | :s2 | "s2-p-2" | |
+	 * <pre>
+	 * | s | p | q |
+	 * =============================
+	 * | :s1 | | "s1-q-1" |
+	 * | :s1 | | "s1-q-2" |
+	 * | :s2 | | "s2-q-1" |
+	 * | :s2 | | "s2-q-2" |
+	 * | :s1 | "s1-p-1" | |
+	 * | :s1 | "s1-p-2" | |
+	 * | :s2 | "s2-p-1" | |
+	 * | :s2 | "s2-p-2" | |
 	 * -----------------------------
+	 * </pre>
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void q2a() throws Exception {
+	public void q2a() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q2a);
 		try (TupleQueryResult result = query.evaluate()) {
 			for (int i = 0; i < 4; i++) {
@@ -200,14 +326,24 @@ public abstract class LateralJoinTest {
 	}
 
 	/**
-	 * ------------------------ | s | o | x | ======================== | :s1 | "s1-p-1" | "A" | | :s1 | "s1-p-2" | "A" |
-	 * | :s1 | "s1-q-1" | "B" | | :s1 | "s1-q-2" | "B" | | :s2 | "s2-p-1" | "A" | | :s2 | "s2-p-2" | "A" | | :s2 |
-	 * "s2-q-1" | "B" | | :s2 | "s2-q-2" | "B" | ------------------------
+	 * <pre>
+	 * ------------------------
+	 * | s | o | x |
+	 * ========================
+	 * | :s1 | "s1-p-1" | "A" |
+	 * | :s1 | "s1-p-2" | "A" |
+	 * | :s1 | "s1-q-1" | "B" |
+	 * | :s1 | "s1-q-2" | "B" |
+	 * | :s2 | "s2-p-1" | "A" |
+	 * | :s2 | "s2-p-2" | "A" |
+	 * | :s2 | "s2-q-1" | "B" |
+	 * | :s2 | "s2-q-2" | "B" |
+	 * ------------------------
+	 * </pre>
 	 *
-	 * @throws Exception
 	 */
 	@Test
-	public void q3() throws Exception {
+	public void q3() {
 		TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, q3);
 		try (TupleQueryResult result = query.evaluate()) {
 			for (int i = 0; i < 4; i++) {
@@ -264,14 +400,19 @@ public abstract class LateralJoinTest {
 		vf = null;
 	}
 
+	/**
+	 * Example dataset from <a href="https://github.com/w3c/sparql-12/issues/100">issue 100</a>
+	 *
+	 * @throws RepositoryException
+	 */
 	private void addTestData() throws RepositoryException {
 		try (RepositoryConnection conn = repository.getConnection()) {
-			String exns = "http://example/";
-			s1 = vf.createIRI(exns, "s1");
-			s2 = vf.createIRI(exns, "s2");
-			tC = vf.createIRI(exns, "T");
-			p = vf.createIRI(exns, "p");
-			q = vf.createIRI(exns, "q");
+
+			s1 = vf.createIRI(EX_NS, "s1");
+			s2 = vf.createIRI(EX_NS, "s2");
+			tC = vf.createIRI(EX_NS, "T");
+			p = vf.createIRI(EX_NS, "p");
+			q = vf.createIRI(EX_NS, "q");
 			conn.add(s1, RDF.TYPE, tC);
 			conn.add(s1, p, vf.createLiteral("s1-p-1"));
 			conn.add(s1, p, vf.createLiteral("s1-p-2"));
