@@ -68,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Load;
@@ -796,6 +797,14 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	public void meet(Join node) throws RuntimeException {
 		node.getLeftArg().visit(this);
 		node.getRightArg().visit(this);
+	}
+
+	@Override
+	public void meet(Lateral node) throws RuntimeException {
+		node.getLeftArg().visit(this);
+		builder.append(" LATERAL { ");
+		node.getRightArg().visit(this);
+		builder.append("}");
 	}
 
 	@Override
