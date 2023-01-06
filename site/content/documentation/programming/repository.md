@@ -109,6 +109,10 @@ The ElasticsearchStore stores RDF data in Elasticsearch. Not to be confused with
 The ElasticsearchStore is experimental and future releases may be incompatible with the current version. Write-ahead-logging is not supported.
 This means that a write operation can appear to have partially succeeded if the ElasticsearchStore looses its connection to Elasticsearch during a commit.
 
+Note that, while RDF4J is licensed under the EDL, several ElasticSearch dependencies are licensed under the Elastic License or the SSPL,
+which may have implications for some projects.
+Please consult the ElasticSearch website and [license FAQ](https://www.elastic.co/licensing/elastic-license/faq) for more information.
+ 
 Transaction isolation is not as strong as for the other stores. The highest supported level is READ_COMMITTED, and even this
 level is only guaranteed when all other transactions also use READ_COMMITTED.
 

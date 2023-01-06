@@ -13,9 +13,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThrows;
 
-import java.io.File;
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -27,7 +25,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import org.apache.commons.lang3.time.StopWatch;
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
@@ -47,55 +44,21 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
-import org.elasticsearch.action.ActionFuture;
-import org.elasticsearch.action.admin.indices.get.GetIndexRequest;
-import org.elasticsearch.action.search.SearchResponse;
-import org.elasticsearch.client.Requests;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.TransportAddress;
-import org.elasticsearch.search.SearchHit;
-import org.elasticsearch.search.SearchHits;
-import org.elasticsearch.transport.client.PreBuiltTransportClient;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ElasticsearchStoreTransactionsIT {
+public class ElasticsearchStoreTransactionsIT extends AbstractElasticsearchStoreIT {
 
 	private static final Logger logger = LoggerFactory.getLogger(ElasticsearchStoreTransactionsIT.class);
 	private static final SimpleValueFactory vf = SimpleValueFactory.getInstance();
-
-	@TempDir
-	static File installLocation;
-	private static ElasticsearchClusterRunner runner;
-
 	private static ElasticsearchStore elasticsearchStore;
-
-	@BeforeAll
-	public static void beforeClass() throws IOException, InterruptedException {
-
-		runner = TestHelpers.startElasticsearch(installLocation);
-
-		elasticsearchStore = new ElasticsearchStore("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER,
-				"test");
-
-	}
-
-	@AfterAll
-	public static void afterClass() throws IOException {
-		elasticsearchStore.shutDown();
-		TestHelpers.stopElasticsearch(runner);
-	}
 
 	@BeforeEach
 	public void before() throws UnknownHostException {
-
+		elasticsearchStore = new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
 		elasticsearchStore.setElasticsearchScrollTimeout(60000);
 
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
@@ -103,7 +66,6 @@ public class ElasticsearchStoreTransactionsIT {
 			connection.removeStatements(null, null, null);
 			connection.commit();
 		}
-
 	}
 
 	public static void logTime(StopWatch stopWatch, String message, TimeUnit timeUnit) {
@@ -120,42 +82,6 @@ public class ElasticsearchStoreTransactionsIT {
 
 	}
 
-	private void printAllDocs() {
-		for (String index : getIndexes()) {
-			logger.info("INDEX: " + index);
-			ActionFuture<SearchResponse> res = runner.client().search(Requests.searchRequest(index));
-			SearchHits hits = res.actionGet().getHits();
-			for (SearchHit hit : hits) {
-				logger.info(hit.getSourceAsString());
-			}
-		}
-	}
-
-	private void deleteAllIndexes() {
-		for (String index : getIndexes()) {
-			logger.info("deleting: " + index);
-			runner.admin().indices().delete(Requests.deleteIndexRequest(index)).actionGet();
-		}
-	}
-
-	private String[] getIndexes() {
-
-		Settings settings = Settings.builder().put("cluster.name", TestHelpers.CLUSTER).build();
-		try (TransportClient client = new PreBuiltTransportClient(settings)) {
-			client.addTransportAddress(
-					new TransportAddress(InetAddress.getByName("localhost"), TestHelpers.getPort(runner)));
-
-			return client.admin()
-					.indices()
-					.getIndex(new GetIndexRequest())
-					.actionGet()
-					.getIndices();
-		} catch (UnknownHostException e) {
-			throw new IllegalStateException(e);
-		}
-
-	}
-
 	@Test
 	public void testAddData() {
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
@@ -163,7 +89,6 @@ public class ElasticsearchStoreTransactionsIT {
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
-
 	}
 
 	@Test
@@ -398,7 +323,7 @@ public class ElasticsearchStoreTransactionsIT {
 	}
 
 	@Test
-	public void testGetDataSailRepositoryContextIRI() {
+	public void testGetDataSailRepositoryContextIRI() throws IOException {
 		SailRepository elasticsearchStore = new SailRepository(this.elasticsearchStore);
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 

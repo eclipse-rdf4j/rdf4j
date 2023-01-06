@@ -10,49 +10,28 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.elasticsearchstore;
 
-import java.io.File;
 import java.io.IOException;
 
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
-import org.elasticsearch.common.settings.Settings.Builder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.http.HttpHost;
+import org.elasticsearch.client.RestClient;
+import org.elasticsearch.client.RestHighLevelClient;
 
 public class TestHelpers {
-	public static final String CLUSTER = "cluster1";
+	public static final String CLUSTER = "test";
+	public static final int PORT = 9300;
 
-	private static final Logger logger = LoggerFactory.getLogger(TestHelpers.class);
+	private static RestHighLevelClient CLIENT;
 
-	public static ElasticsearchClusterRunner startElasticsearch(File installLocation)
-			throws IOException, InterruptedException {
-
-		ElasticsearchClusterRunner runner = new ElasticsearchClusterRunner();
-		runner.onBuild(new ElasticsearchClusterRunner.Builder() {
-			@Override
-			public void build(int number, Builder settingsBuilder) {
-				// settingsBuilder.put("indices.breaker.total.limit", "1100m");
-			}
-		});
-		runner.build(ElasticsearchClusterRunner.newConfigs()
-				.numOfNode(1)
-				.basePath(installLocation.toString())
-				.clusterName(CLUSTER));
-
-		runner.ensureYellow();
-
-		return runner;
+	public static void openClient() {
+		CLIENT = new RestHighLevelClient(RestClient.builder(new HttpHost("localhost", 9200, "http")));
 	}
 
-	public static int getPort(ElasticsearchClusterRunner runner) {
-		return runner.node().settings().getAsInt("transport.port", 9300);
+	public static RestHighLevelClient getClient() {
+		return CLIENT;
 	}
 
-	public static void stopElasticsearch(ElasticsearchClusterRunner runner) {
-		try {
-			runner.close();
-		} catch (IOException ioe) {
-			logger.error("Error closing ES cluster", ioe);
-		}
-		runner.clean();
+	public static void closeClient() throws IOException {
+		CLIENT.close();
 	}
+
 }

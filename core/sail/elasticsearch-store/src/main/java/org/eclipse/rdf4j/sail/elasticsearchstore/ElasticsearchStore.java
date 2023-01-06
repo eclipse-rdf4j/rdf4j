@@ -40,10 +40,16 @@ import org.slf4j.LoggerFactory;
  * <p>
  * This is an EXPERIMENTAL feature. Use at your own risk!
  * </p>
- *
+ * <p>
+ * Note that, while RDF4J is licensed under the EDL, several ElasticSearch dependencies are licensed under the Elastic
+ * License or the SSPL, which may have implications for some projects. <br/>
+ * Please consult the ElasticSearch website and Elastic license FAQ for more information.
+ * </p>
  * <p>
  * There is no write-ahead logging, so a failure during a transaction may result in partially persisted changes.
  * </p>
+ *
+ * @see <a href="https://www.elastic.co/licensing/elastic-license/faq">Elastic License FAQ</a>
  *
  * @author Håvard Mikkelsen Ottestad
  */

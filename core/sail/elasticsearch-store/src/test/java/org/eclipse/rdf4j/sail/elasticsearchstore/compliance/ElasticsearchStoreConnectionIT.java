@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 import java.io.File;
 import java.io.IOException;
 
-import org.codelibs.elasticsearch.runner.ElasticsearchClusterRunner;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.repository.Repository;
@@ -24,22 +23,21 @@ import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.testsuite.repository.RepositoryConnectionTest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.io.TempDir;
 
 public class ElasticsearchStoreConnectionIT extends RepositoryConnectionTest {
-	private static ElasticsearchClusterRunner runner;
+
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
-	public static void beforeClass(@TempDir File installLocation) throws IOException, InterruptedException {
-		runner = TestHelpers.startElasticsearch(installLocation);
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.getPort(runner), TestHelpers.CLUSTER);
+	public static void beforeClass() throws IOException, InterruptedException {
+		TestHelpers.openClient();
+		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
 	}
 
 	@AfterAll
 	public static void afterClass() throws Exception {
 		clientPool.close();
-		TestHelpers.stopElasticsearch(runner);
+		TestHelpers.closeClient();
 	}
 
 	public static IsolationLevel[] parameters() {
@@ -51,8 +49,9 @@ public class ElasticsearchStoreConnectionIT extends RepositoryConnectionTest {
 	}
 
 	@Override
-	protected Repository createRepository(File dataDir) {
+	protected Repository createRepository(File f) {
 		return new SailRepository(
 				new ElasticsearchStore(clientPool, "index1"));
 	}
+
 }

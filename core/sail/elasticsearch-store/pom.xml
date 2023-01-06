@@ -12,6 +12,27 @@
 	<dependencies>
 		<dependency>
 			<groupId>org.elasticsearch.client</groupId>
+			<artifactId>elasticsearch-rest-high-level-client</artifactId>
+			<version>${elasticsearch.version}</version>
+			<optional>true</optional>
+			<exclusions>
+				<exclusion>
+					<groupId>org.apache.httpcomponents</groupId>
+					<artifactId>httpcore</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>commons-logging</groupId>
+					<artifactId>commons-logging</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.httpcomponents</groupId>
+			<artifactId>httpcore</artifactId>
+			<version>${httpcore.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.elasticsearch.client</groupId>
 			<artifactId>transport</artifactId>
 			<version>${elasticsearch.version}</version>
 			<optional>true</optional>
@@ -43,18 +64,6 @@
 			<artifactId>rdf4j-repository-sail</artifactId>
 			<version>${project.version}</version>
 			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.codelibs</groupId>
-			<artifactId>elasticsearch-cluster-runner</artifactId>
-			<version>${elasticsearch.version}.0</version>
-			<scope>test</scope>
-			<exclusions>
-				<exclusion>
-					<groupId>commons-logging</groupId>
-					<artifactId>commons-logging</artifactId>
-				</exclusion>
-			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.commons</groupId>
@@ -102,6 +111,26 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+	<profiles>
+		<profile>
+			<id>jdk11-securitymanager</id>
+			<activation>
+				<jdk>11</jdk>
+			</activation>
+			<properties>
+				<java.sec.mgr/>
+			</properties>
+		</profile>
+		<profile>
+			<id>jdk-securitymanager</id>
+			<activation>
+				<jdk>[12,)</jdk>
+			</activation>
+			<properties>
+				<java.sec.mgr>-Djava.security.manager=allow</java.sec.mgr>
+			</properties>
+		</profile>
+	</profiles>
 	<build>
 		<plugins>
 			<plugin>
@@ -110,6 +139,43 @@
 				<configuration>
 					<forkCount>0</forkCount>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>com.github.alexcojocaru</groupId>
+				<artifactId>elasticsearch-maven-plugin</artifactId>
+				<version>6.26</version>
+				<configuration>
+					<version>${elasticsearch.version}</version>
+					<clusterName>test</clusterName>
+					<transportPort>9300</transportPort>
+					<httpPort>9200</httpPort>
+					<environmentVariables>
+						<ingest.geoip.downloader.enabled>false</ingest.geoip.downloader.enabled>
+						<ES_JAVA_OPTS>${java.sec.mgr}</ES_JAVA_OPTS>
+					</environmentVariables>
+					<instanceCount>1</instanceCount>
+					<instanceSettings>
+						<properties>
+							<ingest.geoip.downloader.enabled>false</ingest.geoip.downloader.enabled>
+						</properties>
+					</instanceSettings>
+				</configuration>
+				<executions>
+					<execution>
+						<id>start-elasticsearch</id>
+						<phase>pre-integration-test</phase>
+						<goals>
+							<goal>runforked</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>stop-elasticsearch</id>
+						<phase>post-integration-test</phase>
+						<goals>
+							<goal>stop</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>
