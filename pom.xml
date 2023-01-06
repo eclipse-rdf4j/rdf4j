@@ -338,9 +338,9 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<slf4j.version>1.7.36</slf4j.version>
 		<logback.version>1.2.11</logback.version>
-		<httpclient.version>4.5.13</httpclient.version>
+		<httpclient.version>4.5.14</httpclient.version>
 		<jackson.version>2.13.4</jackson.version>
-		<httpcore.version>4.4.15</httpcore.version>
+		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.4</jsonldjava.version>
 		<last.japicmp.compare.version>4.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.3</jaxb.version>
@@ -348,7 +348,7 @@
 		<lwjgl.version>3.3.1</lwjgl.version>
 		<solr.version>8.4.1</solr.version>
 		<elasticsearch.version>7.8.1</elasticsearch.version>
-		<spring.version>5.3.23</spring.version>
+		<spring.version>5.3.24</spring.version>
 		<guava.version>30.1.1-jre</guava.version>
 		<jmhVersion>1.35</jmhVersion>
 		<servlet.version>3.1.0</servlet.version>
@@ -368,7 +368,7 @@
 			<dependency>
 				<groupId>org.eclipse.jetty</groupId>
 				<artifactId>jetty-bom</artifactId>
-				<version>9.4.49.v20220914</version>
+				<version>9.4.50.v20221201</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
