@@ -201,32 +201,27 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 	class WorkerRunnable implements Runnable {
 
 		private final ParallelTask<T> task;
+		private final ParallelExecutor<T> taskControl;
 
 		private volatile boolean aborted = false;
 
 		public WorkerRunnable(ParallelTask<T> task) {
 			super();
 			this.task = task;
+			this.taskControl = task.getControl();
+
 		}
 
 		@Override
 		public void run() {
-			if (aborted) {
-				return;
-			}
-
-			if (Thread.currentThread().isInterrupted()) {
-				return;
-			}
-
-			ParallelExecutor<T> taskControl = task.getControl();
-
-			if (taskControl.isFinished()) {
-				return;
-			}
-
 			CloseableIteration<T, QueryEvaluationException> res = null;
+
 			try {
+
+				if (aborted || Thread.currentThread().isInterrupted() || taskControl.isFinished()) {
+					throw new InterruptedException();
+				}
+
 				if (log.isTraceEnabled()) {
 					log.trace("Performing task " + task + " in " + Thread.currentThread().getName());
 				}
@@ -236,22 +231,29 @@ public class ControlledWorkerScheduler<T> implements Scheduler<T>, TaskWrapperAw
 				if (aborted) {
 					res.close();
 				}
-
 				taskControl.done();
 			} catch (Throwable t) {
-				if (t instanceof InterruptedException) {
-					Thread.currentThread().interrupt();
-				}
+				try {
+					if (t instanceof InterruptedException) {
+						Thread.currentThread().interrupt();
+					}
 
-				log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): "
-						+ t.getMessage());
-				taskControl.toss(ExceptionUtil.toException(t));
-
-				// e.g. interrupted
-				if (res != null) {
-					res.close();
+					log.debug("Exception encountered while evaluating task (" + t.getClass().getSimpleName() + "): "
+							+ t.getMessage());
+				} finally {
+					try {
+						taskControl.toss(ExceptionUtil.toException(t));
+					} finally {
+						try {
+							// e.g. interrupted
+							if (res != null) {
+								res.close();
+							}
+						} finally {
+							task.cancel();
+						}
+					}
 				}
-				task.cancel();
 
 			}
 
