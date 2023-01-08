@@ -29,7 +29,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 * Variables *
 	 *-----------*/
 
-	private final Iteration<? extends E, X> rightArg;
+	private final CloseableIteration<? extends E, X> rightArg;
 
 	private final boolean distinct;
 
@@ -50,7 +50,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
-	public MinusIteration(Iteration<? extends E, X> leftArg, Iteration<? extends E, X> rightArg) {
+	public MinusIteration(CloseableIteration<? extends E, X> leftArg, CloseableIteration<? extends E, X> rightArg) {
 		this(leftArg, rightArg, false);
 	}
 
@@ -62,7 +62,8 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public MinusIteration(Iteration<? extends E, X> leftArg, Iteration<? extends E, X> rightArg, boolean distinct) {
+	public MinusIteration(CloseableIteration<? extends E, X> leftArg, CloseableIteration<? extends E, X> rightArg,
+			boolean distinct) {
 		super(leftArg);
 
 		assert rightArg != null;
@@ -81,7 +82,8 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public MinusIteration(Iteration<? extends E, X> leftArg, Iteration<? extends E, X> rightArg, boolean distinct,
+	public MinusIteration(CloseableIteration<? extends E, X> leftArg, CloseableIteration<? extends E, X> rightArg,
+			boolean distinct,
 			Supplier<Set<E>> setMaker) {
 		super(leftArg);
 
@@ -125,7 +127,7 @@ public class MinusIteration<E, X extends Exception> extends FilterIteration<E, X
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(rightArg);
+			rightArg.close();
 		}
 	}
 }

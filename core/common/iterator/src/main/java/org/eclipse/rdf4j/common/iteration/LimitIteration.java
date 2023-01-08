@@ -44,7 +44,7 @@ public class LimitIteration<E, X extends Exception> extends IterationWrapper<E, 
 	 * @param iter  The underlying Iteration, must not be <var>null</var>.
 	 * @param limit The number of query answers to return, must be &gt;= 0.
 	 */
-	public LimitIteration(Iteration<? extends E, X> iter, long limit) {
+	public LimitIteration(CloseableIteration<? extends E, X> iter, long limit) {
 		super(iter);
 
 		assert iter != null;

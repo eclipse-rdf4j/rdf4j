@@ -19,7 +19,6 @@ import java.net.URL;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -323,7 +322,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	}
 
 	@Override
-	public <E extends Exception> void add(Iteration<? extends Statement, E> statementIter, Resource... contexts)
+	public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statementIter,
+			Resource... contexts)
 			throws RepositoryException, E {
 		final IRI insertContext = getInsertContext();
 		if (isNilContext(contexts)) {
@@ -655,7 +655,8 @@ public class ContextAwareConnection extends RepositoryConnectionWrapper {
 	 * @see #getRemoveContexts()
 	 */
 	@Override
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statementIter, Resource... contexts)
+	public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statementIter,
+			Resource... contexts)
 			throws RepositoryException, E {
 		final IRI[] removeContexts = getRemoveContexts();
 		if (isAllContext(contexts) && removeContexts.length == 1) {

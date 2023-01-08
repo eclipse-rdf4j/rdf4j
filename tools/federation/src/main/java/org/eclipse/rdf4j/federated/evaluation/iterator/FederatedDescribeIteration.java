@@ -16,7 +16,6 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
@@ -47,7 +46,7 @@ public class FederatedDescribeIteration extends DescribeIteration {
 	private final List<StatementSource> allSources;
 
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	public FederatedDescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter,
+	public FederatedDescribeIteration(CloseableIteration<BindingSet, QueryEvaluationException> sourceIter,
 			FederationEvalStrategy strategy, Set<String> describeExprNames, BindingSet parentBindings,
 			QueryInfo queryInfo) {
 		super(sourceIter, strategy, describeExprNames, parentBindings);

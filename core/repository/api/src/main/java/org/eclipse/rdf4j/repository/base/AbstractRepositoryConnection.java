@@ -18,7 +18,7 @@ import java.net.URL;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.IRI;
@@ -392,7 +392,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public <E extends Exception> void add(Iteration<? extends Statement, E> statements, Resource... contexts)
+	public <E extends Exception> void add(CloseableIteration<? extends Statement, E> statements, Resource... contexts)
 			throws RepositoryException, E {
 		try {
 			Objects.requireNonNull(contexts,
@@ -411,7 +411,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				throw e;
 			}
 		} finally {
-			Iterations.closeCloseable(statements);
+			statements.close();
 		}
 	}
 
@@ -458,7 +458,8 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	}
 
 	@Override
-	public <E extends Exception> void remove(Iteration<? extends Statement, E> statements, Resource... contexts)
+	public <E extends Exception> void remove(CloseableIteration<? extends Statement, E> statements,
+			Resource... contexts)
 			throws RepositoryException, E {
 		try {
 			boolean localTransaction = startLocalTransaction();
@@ -474,7 +475,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 				throw e;
 			}
 		} finally {
-			Iterations.closeCloseable(statements);
+			statements.close();
 		}
 	}
 

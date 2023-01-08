@@ -29,7 +29,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * Variables *
 	 *-----------*/
 
-	protected final Iteration<? extends E, ? extends X> arg2;
+	protected final CloseableIteration<? extends E, ? extends X> arg2;
 
 	private final boolean distinct;
 
@@ -50,11 +50,13 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg1 An Iteration containing the first set of elements.
 	 * @param arg2 An Iteration containing the second set of elements.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2) {
+	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
+			CloseableIteration<? extends E, ? extends X> arg2) {
 		this(arg1, arg2, false);
 	}
 
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
+			CloseableIteration<? extends E, ? extends X> arg2,
 			Supplier<Set<E>> setMaker) {
 		this(arg1, arg2, false, setMaker);
 	}
@@ -66,7 +68,8 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
+			CloseableIteration<? extends E, ? extends X> arg2,
 			boolean distinct) {
 		super(arg1);
 
@@ -85,7 +88,8 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	 * @param arg2     An Iteration containing the second set of elements.
 	 * @param distinct Flag indicating whether duplicate elements should be filtered from the result.
 	 */
-	public IntersectIteration(Iteration<? extends E, ? extends X> arg1, Iteration<? extends E, ? extends X> arg2,
+	public IntersectIteration(CloseableIteration<? extends E, ? extends X> arg1,
+			CloseableIteration<? extends E, ? extends X> arg2,
 			boolean distinct, Supplier<Set<E>> setMaker) {
 		super(arg1);
 
@@ -128,7 +132,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 	}
 
 	// this method does not seem to "addSecondSet" since the second set seems to be ignored
-	public Set<E> addSecondSet(Iteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
+	public Set<E> addSecondSet(CloseableIteration<? extends E, ? extends X> arg2, Set<E> set) throws X {
 		return Iterations.addAll(arg2, setMaker.get());
 	}
 
@@ -149,7 +153,7 @@ public class IntersectIteration<E, X extends Exception> extends FilterIteration<
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(arg2);
+			arg2.close();
 		}
 	}
 

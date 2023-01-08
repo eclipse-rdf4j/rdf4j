@@ -26,7 +26,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Variables *
 	 *-----------*/
 
-	private Iteration<? extends E, ? extends X> iter;
+	private CloseableIteration<? extends E, ? extends X> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -47,7 +47,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 	 * Creates the iteration that should be iterated over. This method is called only once, when the iteration is first
 	 * needed.
 	 */
-	protected abstract Iteration<? extends E, ? extends X> createIteration() throws X;
+	protected abstract CloseableIteration<? extends E, ? extends X> createIteration() throws X;
 
 	/**
 	 * Calls the <var>hasNext</var> method of the underlying iteration.
@@ -57,7 +57,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 		if (isClosed()) {
 			return false;
 		}
-		Iteration<? extends E, ? extends X> resultIter = iter;
+		CloseableIteration<? extends E, ? extends X> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
 			resultIter = iter;
@@ -77,7 +77,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 		if (isClosed()) {
 			throw new NoSuchElementException("Iteration has been closed");
 		}
-		Iteration<? extends E, ? extends X> resultIter = iter;
+		CloseableIteration<? extends E, ? extends X> resultIter = iter;
 		if (resultIter == null) {
 			// Underlying iterator has not yet been initialized
 			resultIter = iter;
@@ -97,7 +97,7 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
-		Iteration<? extends E, ? extends X> resultIter = iter;
+		CloseableIteration<? extends E, ? extends X> resultIter = iter;
 		if (resultIter == null) {
 			throw new IllegalStateException("Underlying iteration was null");
 		}
@@ -114,10 +114,8 @@ public abstract class DelayedIteration<E, X extends Exception> extends AbstractC
 		try {
 			super.handleClose();
 		} finally {
-			Iteration<? extends E, ? extends X> toClose = iter;
-			if (toClose != null) {
-				Iterations.closeCloseable(toClose);
-			}
+			if (iter != null)
+				iter.close();
 		}
 	}
 }

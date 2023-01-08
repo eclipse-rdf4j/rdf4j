@@ -14,8 +14,8 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -35,7 +35,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * Variables *
 	 *-----------*/
 
-	private final Iteration<BindingSet, X> rightArg;
+	private final CloseableIteration<BindingSet, X> rightArg;
 
 	private boolean initialized;
 
@@ -52,7 +52,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param leftArg  An Iteration containing the main set of elements.
 	 * @param rightArg An Iteration containing the set of elements that should be filtered from the main set.
 	 */
-	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg) {
+	public SPARQLMinusIteration(CloseableIteration<BindingSet, X> leftArg, CloseableIteration<BindingSet, X> rightArg) {
 		super(leftArg);
 
 		assert rightArg != null;
@@ -70,7 +70,8 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 	 * @param distinct This argument is ignored
 	 */
 	@Deprecated(since = "4.0.0", forRemoval = true)
-	public SPARQLMinusIteration(Iteration<BindingSet, X> leftArg, Iteration<BindingSet, X> rightArg, boolean distinct) {
+	public SPARQLMinusIteration(CloseableIteration<BindingSet, X> leftArg, CloseableIteration<BindingSet, X> rightArg,
+			boolean distinct) {
 		this(leftArg, rightArg);
 	}
 
@@ -124,7 +125,7 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 		return new HashSet<>(set);
 	}
 
-	protected Set<BindingSet> makeSet(Iteration<BindingSet, X> rightArg) throws X {
+	protected Set<BindingSet> makeSet(CloseableIteration<BindingSet, X> rightArg) throws X {
 		return Iterations.asSet(rightArg);
 	}
 
@@ -133,14 +134,14 @@ public class SPARQLMinusIteration<X extends Exception> extends FilterIteration<B
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(getRightArg());
+			rightArg.close();
 		}
 	}
 
 	/**
 	 * @return Returns the rightArg.
 	 */
-	protected Iteration<BindingSet, X> getRightArg() {
+	protected CloseableIteration<BindingSet, X> getRightArg() {
 		return rightArg;
 	}
 

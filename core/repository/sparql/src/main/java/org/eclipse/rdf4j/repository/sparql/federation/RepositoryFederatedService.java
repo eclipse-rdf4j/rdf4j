@@ -386,7 +386,9 @@ public class RepositoryFederatedService implements FederatedService {
 			if (useFreshConnection) {
 				closeQuietly(conn);
 			}
-			Iterations.closeCloseable(result);
+			if (result != null) {
+				result.close();
+			}
 			if (service.isSilent()) {
 				return new CollectionIteration<>(allBindings);
 			}
@@ -405,7 +407,9 @@ public class RepositoryFederatedService implements FederatedService {
 			if (useFreshConnection) {
 				closeQuietly(conn);
 			}
-			Iterations.closeCloseable(result);
+			if (result != null) {
+				result.close();
+			}
 			if (service.isSilent()) {
 				return new CollectionIteration<>(allBindings);
 			}
@@ -414,7 +418,9 @@ public class RepositoryFederatedService implements FederatedService {
 			if (useFreshConnection) {
 				closeQuietly(conn);
 			}
-			Iterations.closeCloseable(result);
+			if (result != null) {
+				result.close();
+			}
 			// suppress special exceptions (e.g. UndeclaredThrowable with wrapped
 			// QueryEval) if silent
 			if (service.isSilent()) {

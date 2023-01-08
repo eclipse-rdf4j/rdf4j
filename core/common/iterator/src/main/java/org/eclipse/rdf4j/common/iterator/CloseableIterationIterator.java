@@ -15,7 +15,6 @@ import java.io.IOException;
 import java.util.Iterator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 
 /**
  * Wraps a {@link CloseableIteration} as an {@link Iterator}.
@@ -25,30 +24,6 @@ import org.eclipse.rdf4j.common.iteration.Iteration;
 public class CloseableIterationIterator<E> implements Iterator<E>, Closeable {
 
 	private final CloseableIteration<? extends E, ? extends RuntimeException> iteration;
-
-	@Deprecated(since = "4.1.0", forRemoval = true)
-	public CloseableIterationIterator(Iteration<? extends E, ? extends RuntimeException> iteration) {
-		this.iteration = new CloseableIteration<>() {
-			@Override
-			public boolean hasNext() throws RuntimeException {
-				return iteration.hasNext();
-			}
-
-			@Override
-			public E next() throws RuntimeException {
-				return iteration.next();
-			}
-
-			@Override
-			public void remove() throws RuntimeException {
-				iteration.remove();
-			}
-
-			@Override
-			public void close() throws RuntimeException {
-			}
-		};
-	}
 
 	public CloseableIterationIterator(CloseableIteration<? extends E, ? extends RuntimeException> iteration) {
 		this.iteration = iteration;

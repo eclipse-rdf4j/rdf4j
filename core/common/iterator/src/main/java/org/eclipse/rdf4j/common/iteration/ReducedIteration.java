@@ -20,7 +20,7 @@ public class ReducedIteration<E, X extends Exception> extends FilterIteration<E,
 
 	private E previousObject;
 
-	public ReducedIteration(Iteration<? extends E, ? extends X> delegate) {
+	public ReducedIteration(CloseableIteration<? extends E, ? extends X> delegate) {
 		super(delegate);
 	}
 

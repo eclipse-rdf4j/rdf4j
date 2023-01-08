@@ -24,7 +24,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
@@ -1076,7 +1075,7 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	 * @return the converted iteration
 	 */
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	protected Iteration<Statement, QueryEvaluationException> toStatementIteration(TupleQueryResult iter,
+	protected CloseableIteration<Statement, QueryEvaluationException> toStatementIteration(TupleQueryResult iter,
 			final Resource subj, final IRI pred, final Value obj) {
 
 		return new ConvertingIteration<>(iter) {

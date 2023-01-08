@@ -41,7 +41,7 @@ public class OffsetIteration<E, X extends Exception> extends FilterIteration<E, 
 	 * @param iter   The underlying Iteration, must not be <var>null</var>.
 	 * @param offset The number of elements to skip, must be larger than or equal to 0.
 	 */
-	public OffsetIteration(Iteration<? extends E, X> iter, long offset) {
+	public OffsetIteration(CloseableIteration<? extends E, X> iter, long offset) {
 		super(iter);
 
 		assert offset >= 0;

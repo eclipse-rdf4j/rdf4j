@@ -12,8 +12,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.limited.iterator;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
@@ -30,7 +30,8 @@ public class LimitedSizeDistinctIteration extends DistinctIteration<BindingSet, 
 	/**
 	 * @param iter
 	 */
-	public LimitedSizeDistinctIteration(Iteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
+	public LimitedSizeDistinctIteration(
+			CloseableIteration<? extends BindingSet, ? extends QueryEvaluationException> iter,
 			AtomicLong used, long maxSize) {
 		super(iter);
 		this.used = used;

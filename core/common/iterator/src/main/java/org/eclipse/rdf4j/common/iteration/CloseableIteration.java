@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.common.iteration;
 
+import java.util.NoSuchElementException;
 import java.util.stream.Stream;
 
 /**
@@ -34,8 +35,8 @@ import java.util.stream.Stream;
  *             exhausted, instead making this an optional feature and requiring the user to always call close. This
  *             interface may also be removed.
  */
-@Deprecated(since = "4.1.0")
-public interface CloseableIteration<E, X extends Exception> extends Iteration<E, X>, AutoCloseable {
+//@Deprecated(since = "4.1.0")
+public interface CloseableIteration<E, X extends Exception> extends AutoCloseable {
 
 	/**
 	 * Convert the results to a Java 8 Stream.
@@ -52,5 +53,33 @@ public interface CloseableIteration<E, X extends Exception> extends Iteration<E,
 	 */
 	@Override
 	void close() throws X;
+
+	/**
+	 * Returns <var>true</var> if the iteration has more elements. (In other words, returns <var>true</var> if
+	 * {@link #next} would return an element rather than throwing a <var>NoSuchElementException</var>.)
+	 *
+	 * @return <var>true</var> if the iteration has more elements.
+	 * @throws X
+	 */
+	boolean hasNext() throws X;
+
+	/**
+	 * Returns the next element in the iteration.
+	 *
+	 * @return the next element in the iteration.
+	 * @throws NoSuchElementException if the iteration has no more elements or if it has been closed.
+	 */
+	E next() throws X;
+
+	/**
+	 * Removes from the underlying collection the last element returned by the iteration (optional operation). This
+	 * method can be called only once per call to next.
+	 *
+	 * @throws UnsupportedOperationException if the remove operation is not supported by this Iteration.
+	 * @throws IllegalStateException         If the Iteration has been closed, or if <var>next()</var> has not yet been
+	 *                                       called, or <var>remove()</var> has already been called after the last call
+	 *                                       to <var>next()</var>.
+	 */
+	void remove() throws X;
 
 }

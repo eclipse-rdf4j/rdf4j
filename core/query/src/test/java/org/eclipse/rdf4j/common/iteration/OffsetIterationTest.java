@@ -36,7 +36,7 @@ public class OffsetIterationTest extends CloseableIterationTest {
 	@Test
 	public void testInRangeOffset() throws Exception {
 		for (int offset = 0; offset < stringList1.size(); offset++) {
-			Iteration<String, Exception> iter = createOffsetIteration(offset);
+			CloseableIteration<String, Exception> iter = createOffsetIteration(offset);
 			List<String> resultList = Iterations.asList(iter);
 			List<String> expectedList = stringList1.subList(offset, stringList1.size());
 			assertEquals("test failed for offset: " + offset, expectedList, resultList);
@@ -45,7 +45,7 @@ public class OffsetIterationTest extends CloseableIterationTest {
 
 	@Test
 	public void testOutOfRangeOffset() throws Exception {
-		Iteration<String, Exception> iter = createOffsetIteration(2 * stringList1.size());
+		CloseableIteration<String, Exception> iter = createOffsetIteration(2 * stringList1.size());
 		List<String> resultList = Iterations.asList(iter);
 		assertEquals(Collections.emptyList(), resultList);
 	}

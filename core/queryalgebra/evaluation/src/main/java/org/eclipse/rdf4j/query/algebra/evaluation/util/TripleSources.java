@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -39,10 +38,10 @@ public class TripleSources {
 	TripleSources() {
 	}
 
-	public static Iteration<Resource, QueryEvaluationException> listResources(final Resource subj,
-			final TripleSource store) throws QueryEvaluationException {
+	public static CloseableIteration<Resource, QueryEvaluationException> listResources(Resource subj,
+			TripleSource store) throws QueryEvaluationException {
 		return new ConvertingIteration<Value, Resource, QueryEvaluationException>(
-				new FilterIteration<Value, QueryEvaluationException>(list(subj, store)) {
+				new FilterIteration<>(list(subj, store)) {
 
 					@Override
 					protected boolean accept(Value v) throws QueryEvaluationException {
@@ -57,14 +56,19 @@ public class TripleSources {
 		};
 	}
 
-	public static Iteration<Value, QueryEvaluationException> list(final Resource subj,
+	public static CloseableIteration<Value, QueryEvaluationException> list(final Resource subj,
 			final TripleSource store) throws QueryEvaluationException {
 		if (subj == null) {
 			throw new NullPointerException("RDF list subject cannot be null");
 		}
-		return new Iteration<Value, QueryEvaluationException>() {
+		return new CloseableIteration<>() {
 
 			Resource list = subj;
+
+			@Override
+			public void close() throws QueryEvaluationException {
+
+			}
 
 			@Override
 			public boolean hasNext() throws QueryEvaluationException {
@@ -145,7 +149,7 @@ public class TripleSources {
 
 	public static CloseableIteration<IRI, QueryEvaluationException> getSubjectURIs(IRI predicate,
 			Value object, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, IRI, QueryEvaluationException>(
+		return new ConvertingIteration<>(
 				new FilterIteration<Statement, QueryEvaluationException>(store.getStatements(null, predicate, object)) {
 
 					@Override
@@ -163,7 +167,7 @@ public class TripleSources {
 
 	public static CloseableIteration<Resource, QueryEvaluationException> getObjectResources(Resource subject,
 			IRI predicate, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, Resource, QueryEvaluationException>(
+		return new ConvertingIteration<>(
 				new FilterIteration<Statement, QueryEvaluationException>(
 						store.getStatements(subject, predicate, null)) {
 
@@ -182,7 +186,7 @@ public class TripleSources {
 
 	public static CloseableIteration<IRI, QueryEvaluationException> getObjectURIs(Resource subject,
 			IRI predicate, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, IRI, QueryEvaluationException>(
+		return new ConvertingIteration<>(
 				new FilterIteration<Statement, QueryEvaluationException>(
 						store.getStatements(subject, predicate, null)) {
 
@@ -201,7 +205,7 @@ public class TripleSources {
 
 	public static CloseableIteration<Literal, QueryEvaluationException> getObjectLiterals(Resource subject,
 			IRI predicate, TripleSource store) throws QueryEvaluationException {
-		return new ConvertingIteration<Statement, Literal, QueryEvaluationException>(
+		return new ConvertingIteration<>(
 				new FilterIteration<Statement, QueryEvaluationException>(
 						store.getStatements(subject, predicate, null)) {
 

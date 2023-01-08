@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.federated.evaluation.iterator;
 
 import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 
@@ -27,7 +26,7 @@ public class RepositoryExceptionConvertingIteration<T>
 		extends ExceptionConvertingIteration<T, QueryEvaluationException> {
 
 	public RepositoryExceptionConvertingIteration(
-			Iteration<? extends T, ? extends Exception> iter) {
+			CloseableIteration<? extends T, ? extends Exception> iter) {
 		super(iter);
 	}
 

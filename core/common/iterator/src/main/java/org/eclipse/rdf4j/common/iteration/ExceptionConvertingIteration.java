@@ -28,7 +28,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	/**
 	 * The underlying Iteration.
 	 */
-	private final Iteration<? extends E, ? extends Exception> iter;
+	private final CloseableIteration<? extends E, ? extends Exception> iter;
 
 	/*--------------*
 	 * Constructors *
@@ -40,7 +40,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 	 * @param iter The Iteration that this <var>ExceptionConvertingIteration</var> operates on, must not be
 	 *             <var>null</var>.
 	 */
-	protected ExceptionConvertingIteration(Iteration<? extends E, ? extends Exception> iter) {
+	protected ExceptionConvertingIteration(CloseableIteration<? extends E, ? extends Exception> iter) {
 		this.iter = Objects.requireNonNull(iter, "The iterator was null");
 	}
 
@@ -139,7 +139,7 @@ public abstract class ExceptionConvertingIteration<E, X extends Exception> exten
 			super.handleClose();
 		} finally {
 			try {
-				Iterations.closeCloseable(iter);
+				iter.close();
 			} catch (Exception e) {
 				if (e instanceof InterruptedException) {
 					Thread.currentThread().interrupt();

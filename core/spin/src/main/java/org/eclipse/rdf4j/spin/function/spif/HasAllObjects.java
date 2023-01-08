@@ -10,7 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spin.function.spif;
 
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -41,7 +40,7 @@ public class HasAllObjects extends AbstractSpinFunction implements Function {
 		IRI pred = (IRI) args[1];
 		Resource list = (Resource) args[2];
 		try {
-			Iteration<Value, QueryEvaluationException> iter = TripleSources.list(list, qp.getTripleSource());
+			CloseableIteration<Value, QueryEvaluationException> iter = TripleSources.list(list, qp.getTripleSource());
 			while (iter.hasNext()) {
 				Value obj = iter.next();
 				if (TripleSources.single(subj, pred, obj, qp.getTripleSource()) == null) {

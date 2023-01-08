@@ -31,7 +31,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 * @deprecated This will be changed to private, possibly with an accessor in future. Do not rely on it.
 	 */
 	@Deprecated(since = "4.1.0")
-	protected final Iteration<? extends E, ? extends X> wrappedIter;
+	protected final CloseableIteration<? extends E, ? extends X> wrappedIter;
 
 	/*--------------*
 	 * Constructors *
@@ -42,7 +42,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 	 *
 	 * @param iter The wrapped Iteration for this <var>IterationWrapper</var>, must not be <var>null</var>.
 	 */
-	protected IterationWrapper(Iteration<? extends E, ? extends X> iter) {
+	protected IterationWrapper(CloseableIteration<? extends E, ? extends X> iter) {
 		assert iter != null;
 		wrappedIter = iter;
 	}
@@ -124,7 +124,7 @@ public class IterationWrapper<E, X extends Exception> extends AbstractCloseableI
 		try {
 			super.handleClose();
 		} finally {
-			Iterations.closeCloseable(wrappedIter);
+			wrappedIter.close();
 		}
 	}
 }

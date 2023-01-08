@@ -39,13 +39,13 @@ public class DistinctIteration<E, X extends Exception> extends FilterIteration<E
 	 *
 	 * @param iter The underlying iterator.
 	 */
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter) {
+	public DistinctIteration(CloseableIteration<? extends E, ? extends X> iter) {
 		super(iter);
 
 		excludeSet = makeSet();
 	}
 
-	public DistinctIteration(Iteration<? extends E, ? extends X> iter, Supplier<Set<E>> setMaker) {
+	public DistinctIteration(CloseableIteration<? extends E, ? extends X> iter, Supplier<Set<E>> setMaker) {
 		super(iter);
 		excludeSet = setMaker.get();
 	}

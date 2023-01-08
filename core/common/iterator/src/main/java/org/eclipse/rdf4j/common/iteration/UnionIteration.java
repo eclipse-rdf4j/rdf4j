@@ -28,9 +28,9 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 * Variables *
 	 *-----------*/
 
-	private final Iterator<? extends Iteration<? extends E, X>> argIter;
+	private final Iterator<? extends CloseableIteration<? extends E, X>> argIter;
 
-	private Iteration<? extends E, X> currentIter;
+	private CloseableIteration<? extends E, X> currentIter;
 
 	/*--------------*
 	 * Constructors *
@@ -42,7 +42,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
 	@SafeVarargs
-	public UnionIteration(Iteration<? extends E, X>... args) {
+	public UnionIteration(CloseableIteration<? extends E, X>... args) {
 		this(Arrays.asList(args));
 	}
 
@@ -51,7 +51,7 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 	 *
 	 * @param args The Iterations containing the elements to iterate over.
 	 */
-	public UnionIteration(Iterable<? extends Iteration<? extends E, X>> args) {
+	public UnionIteration(Iterable<? extends CloseableIteration<? extends E, X>> args) {
 		argIter = args.iterator();
 
 		// Initialize with empty iteration
@@ -70,13 +70,15 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 
 		while (true) {
 
-			Iteration<? extends E, X> nextCurrentIter = currentIter;
+			CloseableIteration<? extends E, X> nextCurrentIter = currentIter;
 			if (nextCurrentIter != null && nextCurrentIter.hasNext()) {
 				return nextCurrentIter.next();
 			}
 
 			// Current Iteration exhausted, continue with the next one
-			Iterations.closeCloseable(nextCurrentIter);
+			if (nextCurrentIter != null) {
+				nextCurrentIter.close();
+			}
 
 			if (argIter.hasNext()) {
 				currentIter = argIter.next();
@@ -98,7 +100,10 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 				List<Throwable> collectedExceptions = new ArrayList<>();
 				while (argIter.hasNext()) {
 					try {
-						Iterations.closeCloseable(argIter.next());
+						var next = argIter.next();
+						if (next != null) {
+							next.close();
+						}
 					} catch (Throwable e) {
 						if (e instanceof InterruptedException) {
 							Thread.currentThread().interrupt();
@@ -110,7 +115,9 @@ public class UnionIteration<E, X extends Exception> extends LookAheadIteration<E
 					throw new UndeclaredThrowableException(collectedExceptions.get(0));
 				}
 			} finally {
-				Iterations.closeCloseable(currentIter);
+				if (currentIter != null) {
+					currentIter.close();
+				}
 			}
 		}
 	}

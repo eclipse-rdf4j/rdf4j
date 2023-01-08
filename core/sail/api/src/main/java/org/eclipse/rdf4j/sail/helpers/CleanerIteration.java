@@ -17,7 +17,8 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-final class CleanerIteration<E, X extends Exception> implements CloseableIteration<E, X> {
+final class CleanerIteration<E, X extends Exception>
+		implements CloseableIteration<E, X> {
 
 	private static final Logger logger = LoggerFactory.getLogger(CleanerIteration.class);
 

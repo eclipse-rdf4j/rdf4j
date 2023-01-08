@@ -19,7 +19,6 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
@@ -64,9 +63,10 @@ public class DescribeIteration extends LookAheadIteration<BindingSet, QueryEvalu
 
 	private Mode currentMode = Mode.OUTGOING_LINKS;
 
-	private final Iteration<BindingSet, QueryEvaluationException> sourceIter;
+	private final CloseableIteration<BindingSet, QueryEvaluationException> sourceIter;
 
-	public DescribeIteration(Iteration<BindingSet, QueryEvaluationException> sourceIter, EvaluationStrategy strategy,
+	public DescribeIteration(CloseableIteration<BindingSet, QueryEvaluationException> sourceIter,
+			EvaluationStrategy strategy,
 			Set<String> describeExprNames, BindingSet parentBindings) {
 		this.strategy = strategy;
 		this.sourceIter = sourceIter;

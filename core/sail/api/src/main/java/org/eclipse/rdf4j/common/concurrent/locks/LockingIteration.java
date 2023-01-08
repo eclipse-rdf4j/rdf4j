@@ -15,7 +15,6 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.Iteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 
 /**
@@ -37,7 +36,7 @@ public class LockingIteration<E, X extends Exception> extends IterationWrapper<E
 	 * @param iter The underlying Iteration, must not be <var>null</var>.
 	 */
 	@Deprecated(since = "4.1.0", forRemoval = true)
-	public LockingIteration(Lock lock, Iteration<? extends E, X> iter) {
+	public LockingIteration(Lock lock, CloseableIteration<? extends E, X> iter) {
 		super(iter);
 		if (iter instanceof EmptyIteration) {
 			lock.release();
