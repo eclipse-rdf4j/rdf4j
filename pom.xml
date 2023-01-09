@@ -532,6 +532,11 @@
 					</exclusion>
 				</exclusions>
 			</dependency>
+			<dependency>
+				<groupId>com.google.guava</groupId>
+				<artifactId>guava-testlib</artifactId>
+				<version>${guava.version}</version>
+			</dependency>
 			<!-- Logging: SLF4J and logback -->
 			<dependency>
 				<groupId>org.slf4j</groupId>
